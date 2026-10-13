@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello</title>
+  <meta name="description" content="A simple hello page.">
+  <style>
+    :root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #1c1917; --fg: #fafaf9; --muted: #a8a29e; }
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      min-height: 100vh; display: grid; place-items: center;
+      background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 16px; text-align: center;
+    }
+    h1 { font-size: clamp(3rem, 12vw, 7rem); font-weight: 700; letter-spacing: -0.03em; }
+    p { margin-top: 0.75rem; color: var(--muted); font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Hello</h1>
+    <p>This site is live.</p>
+  </main>
+</body>
+</html>
