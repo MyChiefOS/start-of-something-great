@@ -1,0 +1,62 @@
+# Daily sorting run (checks D1 to D5 in ACCEPTANCE.md). Plain rules, no AI.
+# - When a proposal is filed or edited: add or remove the four automatic labels. Never status labels.
+# - Each morning at 7 a.m. Pacific: re-sort every open proposal and update the "Daily queue" issue.
+name: Daily sorting run
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  schedule:
+    # 14:00 UTC is 7 a.m. Pacific in daylight time; 15:00 UTC is 7 a.m. in standard time.
+    # The script skips whichever run isn't the first one at or after 7 a.m. that day.
+    - cron: '0 14 * * *'
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sort:
+    if: >-
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'proposal') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'proposal')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    concurrency:
+      group: sort-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Tag the proposal
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: node scripts/sort.js
+
+  queue:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: daily-queue
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Sort open proposals and update the daily queue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/queue.js

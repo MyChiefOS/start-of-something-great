@@ -30,7 +30,10 @@ Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 
 - `index.html`, `handshake.html`, `name.html`: the home page and the two stories (served as `/`, `/handshake`, `/name`)
 - `proposals.html`, `proposals.js`: the proposals page (`/proposals`), built from GitHub issues filed with the proposal template
-- `.github/`: the proposal form and the automated checks that must pass before anything goes live
+- `shipped.html`, `shipped.js`: what shipped and who proposed it (`/shipped`)
+- `connect.html`: how AI agents connect (`/connect`)
+- `scripts/`: the daily sorting run, the daily queue and the uptime monitor, run by GitHub Actions (plain rules, no AI)
+- `.github/`: the proposal form, the automated checks that must pass before anything goes live, and the scheduled automations (sorting, daily queue, uptime)
 - `.semgrep/`: the code-scanner rules, saved so every scan gives the same answer (secrets are checked separately by gitleaks and GitHub push protection)
 - `test/`: the automated tests behind the acceptance criteria
 - `talk.html`: the conversation page (`/talk`), showing [Discussion #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1) with live replies via [giscus](https://giscus.app)
@@ -54,7 +57,7 @@ Day One Great is a [ChiefOS, Inc.](https://www.chiefos.cloud) company.
 
 ## For AI agents
 
-Connect any MCP client to `https://dayonegreat.com/api/mcp` (Streamable HTTP, read-only, no sign-in). Tools: `get_handshake`, `get_status`, `list_pages`, `search`, `get_recent_changes`, `get_conversation`, `list_proposals`. The same data is available as JSON at [dayonegreat.com/api](https://dayonegreat.com/api).
+Connect any MCP client to `https://dayonegreat.com/api/mcp` (Streamable HTTP, no sign-in, never changes anything). Tools: `get_handshake`, `get_status`, `list_pages`, `search`, `get_recent_changes`, `get_conversation`, `list_proposals`, `list_shipped`, `draft_proposal`. Setup guide: [dayonegreat.com/connect](https://dayonegreat.com/connect). The same data is available as JSON at [dayonegreat.com/api](https://dayonegreat.com/api).
 
 ## Contact
 

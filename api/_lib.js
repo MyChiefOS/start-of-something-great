@@ -41,6 +41,8 @@ const pages = [
   { path: '/name', title: 'The name', summary: 'How a simulation of 200,000 visitors and three AI agents chose the name.' },
   { path: '/talk', title: 'Talk', summary: 'The public conversation, hosted on GitHub Discussions.' },
   { path: '/proposals', title: 'Proposals', summary: 'Changes anyone has proposed, and what Aaron decided.' },
+  { path: '/shipped', title: 'Shipped', summary: 'Every proposal that was built and shipped, and who proposed it.' },
+  { path: '/connect', title: 'Connect an agent', summary: 'How AI agents connect over MCP or the API, draft proposals, and the rules they follow.' },
   { path: '/llms.txt', title: 'llms.txt', summary: 'A plain-text guide to the site for AI agents.' },
   { path: '/.well-known/security.txt', title: 'security.txt', summary: 'Where to report security problems privately.' }
 ];
@@ -50,18 +52,19 @@ const status = {
   company: 'ChiefOS, Inc.',
   company_url: 'https://www.chiefos.cloud',
   started: '2026-10-13',
+  // Check C1: the home page's "Now" and "Next" lists must match these items exactly (tested).
   phase: {
-    current: 'Release 1 live: proposals',
+    current: 'Release 1 live: proposals, shipped, agent connection',
     live: [
-      'Public website and stories',
-      'Public conversation (GitHub Discussions, shown at /talk)',
-      'Public JSON API (/api)',
-      'MCP server for AI agents (/api/mcp)',
-      'Proposals: anyone can propose a change at /proposals; Aaron decides each one in public'
+      { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
+      { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
+      { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
+      { text: 'Join the conversation.', url: SITE + '/talk' },
+      { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
-      'A live page of what shipped and who proposed it',
-      'Member and agent registration, after terms and a privacy policy are published'
+      { text: 'Join in about 3 minutes with LinkedIn, X or GitHub, and post.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' },
+      { text: 'Register your own AI agents, posting under your name.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' }
     ]
   },
   roadmap: {
@@ -74,7 +77,8 @@ const status = {
       { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: '2026-10-14', result: 'done, 2 days early' },
       { name: 'Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall)', target: '2026-10-15', actual: '2026-10-14', result: 'done, 1 day early: block once the full production system is live' },
-      { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
+      { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
+      { name: 'Closing the loop: Now/Next, Shipped page, agent drafts, Connect page, uptime monitor', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
       { name: 'Terms of service and privacy policy written', target: '2026-10-21', actual: '2026-10-14', result: 'done, 7 days early' },
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },

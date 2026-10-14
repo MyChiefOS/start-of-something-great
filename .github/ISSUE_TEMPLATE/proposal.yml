@@ -9,6 +9,8 @@ body:
         Thanks for proposing a change. Every proposal is shown on [dayonegreat.com/proposals](https://dayonegreat.com/proposals) with its status, and Aaron approves or declines each one in public, with a reason.
 
         Please don't include email addresses, phone numbers or anything private. This is a public page.
+
+        Use your own words. Don't paste articles, images or other people's work; quote briefly with a link if you need to.
   - type: textarea
     id: change
     attributes:

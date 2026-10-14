@@ -11,6 +11,7 @@ module.exports = (req, res) => {
       changes: SITE + '/api/changes?limit=10',
       conversation: SITE + '/api/conversation',
       proposals: SITE + '/api/proposals',
+      shipped: SITE + '/api/shipped',
       search: SITE + '/api/search?q=handshake',
       mcp: SITE + '/api/mcp'
     },

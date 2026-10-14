@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const { fakeIssue, mockGitHub, fresh, call } = require('./helpers');
 
 test('every API endpoint rejects writes (read-only)', async () => {
-  for (const name of ['index.js', 'status.js', 'handshake.js', 'changes.js', 'conversation.js', 'search.js', 'proposals.js']) {
+  for (const name of ['index.js', 'status.js', 'handshake.js', 'changes.js', 'conversation.js', 'search.js', 'proposals.js', 'shipped.js']) {
     const r = await call(fresh(name), 'POST', '/api/x', {});
     assert.strictEqual(r.status, 405, name + ' accepted a POST');
   }
