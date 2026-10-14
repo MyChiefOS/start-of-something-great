@@ -1,7 +1,8 @@
 // Proposals: read from GitHub Issues labelled "proposal", shaped for the site, API and MCP.
 // Pure functions are exported separately so tests can check them without the network.
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+// Bounded and anchored by a lookbehind so hostile input can't make it slow (ReDoS): ~1 ms on 65k chars.
+const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}/g;
 const STATUS_ORDER = [
   ['status: shipped', 'shipped'],
   ['status: declined', 'declined'],
@@ -18,9 +19,67 @@ const HEADINGS = {
   "if you're an agent, who are you acting for?": 'acting_for'
 };
 
+// A run of digits joined by up to 3 separators, e.g. (202) 555-0143 or +1 202 555 0143. A run with 10 or
+// more digits is hidden whole (so two numbers side by side are both hidden), unless it is only dates.
+const PHONE = /\+?\(?\d(?:[\s().-]{0,3}\d){9,60}/g;
+const DATES_ONLY = /^(?:\d{4}-\d{2}-\d{2}[\s,.]*)+$/;
+const isPhone = (m) => !DATES_ONLY.test(m.trim()) && m.replace(/\D/g, '').length >= 10;
+
 // P4: hide anything that looks like an email address in public text.
 function maskEmails(text) {
   return String(text == null ? '' : text).replace(EMAIL, '[email hidden]');
+}
+
+function hasContactInfo(text) {
+  const t = String(text || '');
+  if (new RegExp(EMAIL.source).test(t)) return true;
+  return (t.match(PHONE) || []).some(isPhone);
+}
+
+function maskContacts(text) {
+  return maskEmails(text).replace(PHONE, (m) => (isPhone(m) ? '[number hidden]' : m));
+}
+
+// Check C3: draft a proposal for an agent. Nothing is filed: the result is a pre-filled GitHub
+// link that a person must open, review and submit while signed in to GitHub.
+const NEW_PROPOSAL = 'https://github.com/MyChiefOS/start-of-something-great/issues/new';
+function draftProposal(args) {
+  const field = (v, max, name) => {
+    const bad = (m) => Object.assign(new Error(m), { publicMessage: m });
+    if (v != null && typeof v !== 'string') throw bad(name + ' must be text');
+    const s = String(v == null ? '' : v).trim();
+    if (!s) throw bad(name + ' is required');
+    if (s.length > max) throw bad(name + ' must be ' + max + ' characters or fewer');
+    return s;
+  };
+  const raw = {
+    title: field(args.title, 100, 'title'),
+    change: field(args.change, 1000, 'change'),
+    why: field(args.why, 1000, 'why'),
+    acting_for: field(args.acting_for, 80, 'acting_for')
+  };
+  const hadContacts = Object.values(raw).some(hasContactInfo);
+  const d = {};
+  for (const k of Object.keys(raw)) d[k] = maskContacts(raw[k]);
+  const q = new URLSearchParams({
+    template: 'proposal.yml',
+    title: 'Proposal: ' + d.title,
+    change: d.change,
+    why: d.why,
+    filer: 'An AI agent acting for a person',
+    acting_for: d.acting_for
+  });
+  return {
+    draft: d,
+    file_url: NEW_PROPOSAL + '?' + q.toString(),
+    next_step: 'Give file_url to the person you act for. They open it while signed in to GitHub, review the pre-filled form, tick the handshake box and submit. This server never files anything itself.',
+    contact_info_removed: hadContacts,
+    rules: [
+      'Say you are an AI agent and name the person you act for. The link fills these in where GitHub allows; check both on the form before submitting.',
+      'Proposals are public: no email addresses, phone numbers or private details.',
+      'Aaron decides every proposal in public. Filing it does not mean it will be built.'
+    ]
+  };
 }
 
 function clip(s, n) {
@@ -56,12 +115,12 @@ function shapeIssue(issue) {
   const fields = parseBody(issue.body);
   // P7: an agent's claim is self-declared in Release 1, never presented as verified.
   const saysAgent = fields.filer === AGENT_CHOICE || labels.map((n) => n.toLowerCase()).includes(AGENT_LABEL);
-  const actingFor = clip(maskEmails(fields.acting_for || ''), 80);
+  const actingFor = clip(maskContacts(clip(fields.acting_for || '', 400)), 80);
   return {
     number: issue.number,
-    title: clip(maskEmails(String(issue.title || '').replace(/^Proposal:\s*/i, '')), 140),
-    change: clip(maskEmails(fields.change || issue.body || ''), 1200),
-    why: clip(maskEmails(fields.why || ''), 1200),
+    title: clip(maskContacts(clip(String(issue.title || '').replace(/^Proposal:\s*/i, ''), 600)), 140),
+    change: clip(maskContacts(clip(fields.change || issue.body || '', 2400)), 1200),
+    why: clip(maskContacts(clip(fields.why || '', 2400)), 1200),
     filed_by: {
       github_user: issue.user ? issue.user.login : null,
       says_agent: saysAgent,
@@ -75,6 +134,7 @@ function shapeIssue(issue) {
     comments: issue.comments || 0,
     created_at: issue.created_at,
     updated_at: issue.updated_at,
+    closed_at: issue.closed_at || null,
     url: issue.html_url
   };
 }
@@ -91,4 +151,29 @@ function shapeList(issues) {
   };
 }
 
-module.exports = { maskEmails, parseBody, statusOf, shapeIssue, shapeList, EDITED_LABEL };
+// Check C2: only proposals Aaron marked shipped, newest first, crediting who proposed each one.
+function shapeShipped(list) {
+  const shipped = list.proposals
+    .filter((p) => p.status === 'shipped')
+    .sort((a, b) => new Date(b.closed_at || b.updated_at) - new Date(a.closed_at || a.updated_at))
+    .map((p) => ({
+      number: p.number,
+      title: p.title,
+      change: p.change,
+      proposed_by: p.filed_by.says_agent
+        ? { github_user: p.filed_by.github_user, label: p.filed_by.label }
+        : { github_user: p.filed_by.github_user, label: 'Person' },
+      proposed_at: p.created_at,
+      shipped_at: p.closed_at || p.updated_at,
+      edited_after_approval: p.edited_after_approval,
+      url: p.url
+    }));
+  return {
+    note: list.note,
+    how_to_propose: list.how_to_propose,
+    count: shipped.length,
+    shipped
+  };
+}
+
+module.exports = { maskEmails, maskContacts, hasContactInfo, draftProposal, parseBody, statusOf, shapeIssue, shapeList, shapeShipped, EDITED_LABEL };

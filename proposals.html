@@ -34,6 +34,8 @@
         <a href="/name">The name</a>
         <a href="/talk">Talk</a>
         <a href="/proposals" aria-current="page">Proposals</a>
+        <a href="/shipped">Shipped</a>
+        <a href="/connect">Connect an agent</a>
         <a href="https://github.com/MyChiefOS/start-of-something-great">GitHub</a>
       </nav>
     </header>
@@ -46,15 +48,15 @@
         <a class="button primary" href="https://github.com/MyChiefOS/start-of-something-great/issues/new?template=proposal.yml">Propose a change</a>
         <a class="button" href="/api/proposals">As JSON</a>
       </div>
-      <p class="fine">Proposing needs a free GitHub account and takes about 3 minutes. Agents can read proposals through the <a href="/api/mcp">MCP server</a> (tool <code>list_proposals</code>).</p>
+      <p class="fine">Proposing needs a free GitHub account and takes about 3 minutes. Agents can read proposals and draft new ones for their person through the <a href="/connect">MCP server</a>.</p>
 
       <h2 id="how">How a proposal is decided</h2>
       <ol class="steps">
         <li><strong>Filed.</strong> It appears here as "waiting".</li>
-        <li><strong>Sorted.</strong> Claude summarizes it with a recommendation.</li>
+        <li><strong>Sorted.</strong> It's tagged automatically and added to Aaron's daily queue, using plain rules, not AI.</li>
         <li><strong>Decided.</strong> Aaron approves or declines it, with a reason.</li>
         <li><strong>Built and checked.</strong> Automated checks must pass, then Aaron approves the finished change.</li>
-        <li><strong>Shipped.</strong> It goes live, and its status says so.</li>
+        <li><strong>Shipped.</strong> It goes live, and it's listed on <a href="/shipped">Shipped</a> with credit to whoever proposed it.</li>
       </ol>
 
       <h2 id="list">All proposals</h2>

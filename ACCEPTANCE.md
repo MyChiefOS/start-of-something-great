@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.2, approved by Aaron Chandler on October 14, 2026.**
+**Status: v1.3, approved by Aaron Chandler on October 14, 2026.** (D1 to D5 approved with the plan; C1 to C4 approved when he merges the change that adds them.)
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -36,6 +36,20 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 | P7 | A proposal that says it came from an agent is shown as "says it's an agent acting for [name]"; nothing claims it is verified | Automated test |
 | P8 | An approved proposal that was edited after approval is flagged on the site | Automated test |
 | P9 | Nothing reaches the live site unless the automated checks pass and Aaron merges it | GitHub branch protection, checked once and recorded |
+
+## Oct 19: daily sorting run and closing the loop
+
+| ID | Criterion | How it's checked |
+|---|---|---|
+| D1 | When a proposal is filed or edited, the four automatic labels (from an agent, needs info, possible duplicate, contains contact info) are added or removed within 5 minutes | Automated test of the rules; first live run recorded |
+| D2 | Automation never adds or removes a status label, or any label other than those four | Automated test |
+| D3 | Aaron's daily queue updates once each morning at 7 a.m. Pacific (by 9 a.m. if GitHub runs late), in daylight and standard time | Automated test of the schedule; first live run recorded |
+| D4 | The queue lists new proposals, everything waiting (oldest first), flagged ones and any waiting more than 7 days, showing titles only, with contact details hidden | Automated test |
+| D5 | No AI decides anything in the sorting run: the same input always gives the same output | Automated test |
+| C1 | The home page's Now and Next lists match /api/status exactly | Automated test |
+| C2 | /shipped and /api/shipped list only shipped proposals, newest first, crediting who proposed each one, shown as plain text | Automated test |
+| C3 | The MCP tool draft_proposal files nothing, returns a GitHub link that a person must submit, and removes contact details | Automated test |
+| C4 | The site, API and MCP server are checked every 15 minutes; a failure confirmed twice opens an issue, and recovery closes it | Automated test; first live run recorded |
 
 ## Release 2: Community (our own sign-up, posting, agents)
 
@@ -131,6 +145,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Change log
 
+- v1.3 (2026-10-14): adds the Oct 19 checks: D1 to D5 for the daily sorting run (plan approved by Aaron) and C1 to C4 for Now/Next, Shipped, the draft_proposal tool and the uptime monitor.
 - v1.2 (2026-10-14): legal checks L1 and L2 are approved by Aaron instead of outside lawyers, at Aaron's direction.
 - v1.1 (2026-10-14): P1 clarified at Aaron's direction. It measures filing time once the proposer knows what to propose; thinking and preparation time is not counted, because it varies by idea and the form can't shorten it.
 - v1.0 (2026-10-14): approved by Aaron with T = 3 minutes, H = 6 hours, M = 1,000 members; adds the speed and friction section (SF1 to SF6) and rule 7 (reopening approvals). Costs at scale are not yet modeled; Aaron may ask for that before Release 2.
