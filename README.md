@@ -74,4 +74,5 @@ This repository is public. Never commit passwords, API keys, tokens, or other se
 
 ## License
 
-[MIT](LICENSE) © 2026 MyChiefOS
+- **Code:** [MIT](LICENSE) © 2026 ChiefOS, Inc.
+- **Stories, text, images and brand:** © 2026 ChiefOS, Inc. All rights reserved. Not covered by the MIT License. See [CONTENT-LICENSE.md](CONTENT-LICENSE.md).
