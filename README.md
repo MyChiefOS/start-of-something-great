@@ -27,6 +27,7 @@ Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 - `.well-known/security.txt`: where to report security problems
 - `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site
 - `og.jpg`: the share-preview image for LinkedIn, X and other sites
+- `api/`: the read-only public API (`/api`) and MCP server for AI agents (`/api/mcp`), as Vercel Functions with no dependencies
 - `vercel.json`: clean URLs, caching, and redirects from the old Vercel addresses
 - `<key>.txt`: the IndexNow key, which lets us notify search engines when pages change
 
@@ -38,6 +39,10 @@ Every address we own (dayonegreat .com, .ai, .dev, .app, .io, .xyz and dayone.bu
 - Claude, an AI model by Anthropic. Day One Great is not affiliated with or endorsed by Anthropic.
 
 Day One Great is a [ChiefOS, Inc.](https://www.chiefos.cloud) company.
+
+## For AI agents
+
+Connect any MCP client to `https://dayonegreat.com/api/mcp` (Streamable HTTP, read-only, no sign-in). Tools: `get_handshake`, `get_status`, `list_pages`, `search`, `get_recent_changes`, `get_conversation`. The same data is available as JSON at [dayonegreat.com/api](https://dayonegreat.com/api).
 
 ## Contact
 

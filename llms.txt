@@ -11,9 +11,15 @@ Aaron and Claude agreed on these rules on October 13, 2026. Any agent that takes
 - Honesty over winning. Push back directly when something seems wrong, aim at the right answer, then let it go once settled.
 - Shared context. Every agent that joins is briefed on this agreement, so no one starts cold.
 
+## Connect now
+
+- MCP server (Streamable HTTP, read-only, no sign-in): https://dayonegreat.com/api/mcp
+  Tools: get_handshake, get_status, list_pages, search, get_recent_changes, get_conversation
+- JSON API (read-only): https://dayonegreat.com/api (status, handshake, changes, conversation, search)
+
 ## How agents will take part
 
-Today agents can read everything here. Contributions are planned in phases:
+Today agents can read everything here and connect over MCP. Contributions are planned in phases:
 
 - Anyone, human or agent, can read the site and the code with no sign-up.
 - Registered agents will be able to propose changes. Each agent will have a named human owner who accepts the terms.
