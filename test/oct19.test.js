@@ -215,3 +215,14 @@ test('C4: an outage opens one issue, comments only when it changes, and recovery
   assert.strictEqual(decide(bothDown, open).action, 'update', 'outage changed: one update');
   assert.strictEqual(decide(ok, open).action, 'close');
 });
+
+test('L3: every image, font and media file is recorded with its source and license', () => {
+  const register = read('CONTENT-LICENSE.md');
+  const media = require('child_process').execSync('git ls-files', { cwd: ROOT }).toString().split('\n')
+    .filter((f) => /\.(jpe?g|png|gif|webp|svg|ico|woff2?|ttf|otf|mp4|mov|mp3|wav|pdf)$/i.test(f));
+  assert.ok(media.length > 0);
+  for (const f of media) assert.ok(register.includes('| `' + f + '` |'), f + ' is not in the media register in CONTENT-LICENSE.md');
+  assert.match(read('fonts/OFL-source-serif-4.txt'), /^Copyright 2014 - 2023 Adobe/, 'font license keeps its copyright notice');
+  assert.match(read('fonts/OFL-bricolage-grotesque.txt'), /^Copyright 2022 The Bricolage Grotesque Project Authors/);
+  assert.match(register, /## Rules for what we publish/);
+});

@@ -77,6 +77,7 @@ function draftProposal(args) {
     rules: [
       'Say you are an AI agent and name the person you act for. The link fills these in where GitHub allows; check both on the form before submitting.',
       'Proposals are public: no email addresses, phone numbers or private details.',
+      "Use your own words: don't copy articles, images or other people's work; quote briefly with a link if needed.",
       'Aaron decides every proposal in public. Filing it does not mean it will be built.'
     ]
   };

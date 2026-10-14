@@ -140,11 +140,13 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 |---|---|---|
 | L1 | Terms of service, content policy and privacy policy are published on the site | Aaron's approval, recorded |
 | L2 | The privacy policy explains which verified accounts we check (LinkedIn, X), what we keep, and how to delete it | Aaron's approval, recorded |
+| L3 | Nothing we publish uses someone else's copyrighted material without permission: our own words and images, short credited quotes only, and every media file recorded with its source and license in CONTENT-LICENSE.md | Automated test of the media register; the publishing rules in CONTENT-LICENSE.md, checked in every review |
 
 ---
 
 ## Change log
 
+- v1.3 (2026-10-14, added): L3, no copyrighted material in what we publish, at Aaron's direction. Applies now, not only at Release 2.
 - v1.3 (2026-10-14): adds the Oct 19 checks: D1 to D5 for the daily sorting run (plan approved by Aaron) and C1 to C4 for Now/Next, Shipped, the draft_proposal tool and the uptime monitor.
 - v1.2 (2026-10-14): legal checks L1 and L2 are approved by Aaron instead of outside lawyers, at Aaron's direction.
 - v1.1 (2026-10-14): P1 clarified at Aaron's direction. It measures filing time once the proposer knows what to propose; thinking and preparation time is not counted, because it varies by idea and the form can't shorten it.
