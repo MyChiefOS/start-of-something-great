@@ -16,6 +16,7 @@ _Last updated: October 14, 2026_
 | Daily sorting run and GitHub automations | Mon, Oct 19 | Wed, Oct 14 | ✅ Done, 5 days early | Claude |
 | Closing the loop: Now/Next, Shipped page, agent drafts, Connect page, uptime monitor | Mon, Oct 19 | Wed, Oct 14 | ✅ Done, 5 days early | Claude |
 | Terms of service and privacy policy written | Wed, Oct 21 | Wed, Oct 14 | ✅ Done, 7 days early | Claude, with Aaron's decisions |
+| MCP protocol 2026-07-28 support, public text marked, queue fix | Wed, Oct 14 (added that day) | Wed, Oct 14 | ✅ Done, same day | Claude |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | Not started | Aaron's decision; Google Workspace plan |
 | Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | Not started | Claude, plus Aaron's account checklist |
 | Block EU, EEA, UK and Swiss traffic at the Vercel firewall | Fri, Nov 20 | | Not started | Release 2 public (full production system) |

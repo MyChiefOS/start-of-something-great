@@ -93,7 +93,9 @@ test('D4: the queue lists new, waiting (oldest first), flagged and stale proposa
     issue(1, { title: 'Old idea', created_at: '2026-10-05T10:00:00Z' }),
     issue(2, { title: 'Reach me at someone@example.com', created_at: '2026-10-19T20:00:00Z', labels: ['proposal', 'contains contact info'], change: 'secret text +1 202 555 0143' }),
     issue(3, { title: 'Approved thing', created_at: '2026-10-10T10:00:00Z', labels: ['proposal', 'status: approved'] }),
-    issue(4, { title: 'Done', state: 'closed', labels: ['proposal', 'status: shipped'] })
+    issue(4, { title: 'Done', state: 'closed', labels: ['proposal', 'status: shipped'] }),
+    // Filed and closed within the last day (like test #12 on Oct 14): needs no decision, so not "new".
+    issue(6, { title: 'Filed and closed today', state: 'closed', created_at: '2026-10-20T08:00:00Z' })
   ];
   const q = rules.buildQueue(list, now);
   assert.match(q, /<!-- queue-date: 2026-10-20 -->/);

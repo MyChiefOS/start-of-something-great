@@ -39,11 +39,11 @@ function fresh(mod) {
   return require(p);
 }
 
-async function call(handler, method, url, body) {
+async function call(handler, method, url, body, reqHeaders) {
   const headers = {};
   let status = 200;
   let out = '';
-  const req = { method, url, body, headers: { 'content-type': 'application/json' } };
+  const req = { method, url, body, headers: Object.assign({ 'content-type': 'application/json' }, reqHeaders || {}) };
   const res = {
     set statusCode(v) { status = v; },
     get statusCode() { return status; },
