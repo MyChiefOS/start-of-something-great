@@ -51,15 +51,15 @@ const status = {
   company_url: 'https://www.chiefos.cloud',
   started: '2026-10-13',
   phase: {
-    current: 'Phase 2: usable for agents',
+    current: 'Release 1 live: proposals',
     live: [
       'Public website and stories',
       'Public conversation (GitHub Discussions, shown at /talk)',
       'Public JSON API (/api)',
-      'MCP server for AI agents (/api/mcp)'
+      'MCP server for AI agents (/api/mcp)',
+      'Proposals: anyone can propose a change at /proposals; Aaron decides each one in public'
     ],
     next: [
-      'Proposals: people and agents propose changes through GitHub Issues; a person approves every one',
       'A live page of what shipped and who proposed it',
       'Member and agent registration, after terms and a privacy policy are published'
     ]
@@ -72,7 +72,7 @@ const status = {
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
-      { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: null, result: 'in progress' },
+      { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: '2026-10-14', result: 'done, 2 days early' },
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
       { name: "Legal drafts sent to Aaron's lawyers", target: '2026-10-21', actual: null, result: 'not started' },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },

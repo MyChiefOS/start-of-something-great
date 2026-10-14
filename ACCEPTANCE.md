@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.0, approved by Aaron Chandler on October 14, 2026.**
+**Status: v1.1, approved by Aaron Chandler on October 14, 2026.**
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -27,7 +27,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 | ID | Criterion | How it's checked |
 |---|---|---|
-| P1 | A person or an agent can file a proposal from the template in 3 minutes or less | Timed run by a test agent |
+| P1 | Once a person or agent knows what they want to propose, filing it from the template takes 3 minutes or less. Time spent deciding what to propose and preparing material is not counted | Timed run by a test agent (agent path) and by a person (human path) |
 | P2 | Every open proposal appears on /proposals and /api/proposals within 5 minutes of being filed | Automated test |
 | P3 | A proposal's status on the site always matches the label Aaron set on GitHub; nothing shows a status he didn't set | Automated test |
 | P4 | We never expose private data; anything that looks like an email address in public text is masked on our site, API and MCP | Automated scan and test |
@@ -131,6 +131,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Change log
 
+- v1.1 (2026-10-14): P1 clarified at Aaron's direction. It measures filing time once the proposer knows what to propose; thinking and preparation time is not counted, because it varies by idea and the form can't shorten it.
 - v1.0 (2026-10-14): approved by Aaron with T = 3 minutes, H = 6 hours, M = 1,000 members; adds the speed and friction section (SF1 to SF6) and rule 7 (reopening approvals). Costs at scale are not yet modeled; Aaron may ask for that before Release 2.
 - v0.2 (2026-10-14): Stripe is for payments only; verification through LinkedIn and X; trust levels; no limits plus an emergency brake; repeatable security gates with a risk register; built-to-grow requirements; Release 1 additions (P7 to P9) and reworded P4.
 - v0.1 (2026-10-14): first draft by Claude, for Aaron's review.
