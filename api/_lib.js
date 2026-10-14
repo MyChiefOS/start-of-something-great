@@ -82,13 +82,23 @@ const status = {
   license: 'MIT'
 };
 
+// Reads public GitHub data. Uses the read-only GITHUB_TOKEN when set (about 5,000 calls/hour);
+// if the token is missing, expired or revoked, falls back to anonymous access (about 60/hour)
+// instead of failing. The token value is never logged or returned.
+let lastLimit = null;
 async function gh(path) {
-  const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-api' };
-  if (process.env.GITHUB_TOKEN) headers.Authorization = 'Bearer ' + process.env.GITHUB_TOKEN;
-  const r = await fetch(GH + path, { headers });
+  const base = { Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-api', 'X-GitHub-Api-Version': '2022-11-28' };
+  const token = process.env.GITHUB_TOKEN;
+  let r = await fetch(GH + path, { headers: token ? { ...base, Authorization: 'Bearer ' + token } : base });
+  if (token && r.status === 401) {
+    console.warn('GITHUB_TOKEN rejected (expired or revoked); falling back to anonymous access. Renew it in GitHub > Developer settings.');
+    r = await fetch(GH + path, { headers: base });
+  }
+  lastLimit = r.headers.get('x-ratelimit-limit');
   if (!r.ok) throw new Error('GitHub returned ' + r.status);
   return r.json();
 }
+function githubLimit() { return lastLimit; }
 
 function clip(s, n) {
   s = String(s || '');
@@ -172,4 +182,4 @@ function onlyGet(req, res) {
   return true;
 }
 
-module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, searchSite, send, onlyGet, UNTRUSTED_NOTE };
+module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE };
