@@ -76,6 +76,7 @@ const status = {
       { name: 'Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall)', target: '2026-10-15', actual: null, result: 'not started', depends_on: "Aaron's decision" },
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
       { name: "Legal drafts sent to Aaron's lawyers", target: '2026-10-21', actual: null, result: 'not started' },
+      { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'lawyers sign-off, LinkedIn API approval, independent review' }
     ]
