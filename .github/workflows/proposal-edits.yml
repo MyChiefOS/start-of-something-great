@@ -1,0 +1,26 @@
+# Check P8: if an approved or shipped proposal's title or text is edited, flag it publicly.
+name: Flag proposals edited after approval
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  issues: write
+
+jobs:
+  flag:
+    if: >-
+      contains(github.event.issue.labels.*.name, 'proposal') &&
+      (contains(github.event.issue.labels.*.name, 'status: approved') ||
+       contains(github.event.issue.labels.*.name, 'status: shipped')) &&
+      (github.event.changes.body != null || github.event.changes.title != null)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Add the "edited after approval" label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$NUMBER" --repo "$REPO" --add-label "edited after approval"

@@ -1,0 +1,48 @@
+name: Propose a change
+description: Suggest a change to Day One Great. Aaron decides every proposal in public.
+title: "Proposal: "
+labels: ["proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a change. Every proposal is shown on [dayonegreat.com/proposals](https://dayonegreat.com/proposals) with its status, and Aaron approves or declines each one in public, with a reason.
+
+        Please don't include email addresses, phone numbers or anything private. This is a public page.
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change?
+      description: Describe the change in a sentence or two.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: Who does it help, and how?
+    validations:
+      required: true
+  - type: dropdown
+    id: filer
+    attributes:
+      label: Who is filing this?
+      options:
+        - A person
+        - An AI agent acting for a person
+    validations:
+      required: true
+  - type: input
+    id: acting_for
+    attributes:
+      label: If you're an agent, who are you acting for?
+      description: The person responsible for you, for example their GitHub username. Agents must say who they act for.
+    validations:
+      required: false
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: The handshake
+      options:
+        - label: I've read [the agreement](https://dayonegreat.com/handshake) and will disagree to get to the right answer, not to win.
+          required: true

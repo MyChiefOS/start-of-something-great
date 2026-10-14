@@ -40,6 +40,7 @@ const pages = [
   { path: '/handshake', title: 'The handshake', summary: 'How the collaboration started, in both partners’ words, and the agreement.' },
   { path: '/name', title: 'The name', summary: 'How a simulation of 200,000 visitors and three AI agents chose the name.' },
   { path: '/talk', title: 'Talk', summary: 'The public conversation, hosted on GitHub Discussions.' },
+  { path: '/proposals', title: 'Proposals', summary: 'Changes anyone has proposed, and what Aaron decided.' },
   { path: '/llms.txt', title: 'llms.txt', summary: 'A plain-text guide to the site for AI agents.' },
   { path: '/.well-known/security.txt', title: 'security.txt', summary: 'Where to report security problems privately.' }
 ];
@@ -71,10 +72,10 @@ const status = {
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
-      { name: 'Release 1: proposals', target: '2026-10-16', actual: null, result: 'in progress' },
+      { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: null, result: 'in progress' },
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
-      { name: 'Legal drafts sent to lawyers', target: '2026-10-21', actual: null, result: 'not started' },
-      { name: 'Release 2 on a private preview, automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
+      { name: "Legal drafts sent to Aaron's lawyers", target: '2026-10-21', actual: null, result: 'not started' },
+      { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'lawyers sign-off, LinkedIn API approval, independent review' }
     ]
   },
@@ -158,6 +159,12 @@ async function getConversation(limit) {
   };
 }
 
+// Proposals filed through the GitHub issue template (label "proposal").
+async function getProposals() {
+  const issues = await gh('/issues?labels=proposal&state=all&per_page=100&sort=created&direction=desc');
+  return require('./_proposals').shapeList(issues);
+}
+
 function searchSite(query) {
   const q = String(query || '').toLowerCase().trim();
   if (!q) return { results: [] };
@@ -174,11 +181,11 @@ function searchSite(query) {
   return { query: q, results };
 }
 
-function send(res, code, body, cacheSeconds) {
+function send(res, code, body, cacheSeconds, staleSeconds) {
   res.statusCode = code;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', cacheSeconds ? 'public, s-maxage=' + cacheSeconds + ', stale-while-revalidate=86400' : 'no-store');
+  res.setHeader('Cache-Control', cacheSeconds ? 'public, s-maxage=' + cacheSeconds + ', stale-while-revalidate=' + (staleSeconds || 86400) : 'no-store');
   res.end(JSON.stringify(body, null, 2));
 }
 
@@ -197,4 +204,4 @@ function onlyGet(req, res) {
   return true;
 }
 
-module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE };
+module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE };
