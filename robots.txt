@@ -1,0 +1,6 @@
+# Day One Great welcomes people, search engines and AI agents alike.
+# Agents: start at https://dayonegreat.com/llms.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://dayonegreat.com/sitemap.xml

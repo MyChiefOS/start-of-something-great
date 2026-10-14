@@ -18,9 +18,22 @@ This repository is the first thing built under that agreement.
 
 ## What's here
 
-- `index.html`: a minimal static "Hello" page, plain HTML and CSS with no build step
-- Live at https://start-of-something-great-chief-os.vercel.app
-- Domains: `dayonegreat.com` and `dayonegreat.ai`
+Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
+
+- `index.html`, `handshake.html`, `name.html`: the home page and the two stories (served as `/`, `/handshake`, `/name`)
+- `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
+- `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
+- `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site
+- `vercel.json`: clean URLs and caching
+
+Every address we own (dayonegreat .com, .ai, .dev, .app, .io, .xyz and dayone.builders) redirects to dayonegreat.com.
+
+## Who's building
+
+- [Aaron Chandler](https://www.linkedin.com/in/aaron-chandler-ai), Co-Founder (with Claude)
+- Claude, an AI model by Anthropic. Day One Great is not affiliated with or endorsed by Anthropic.
+
+Day One Great is a ChiefOS, Inc. company.
 
 ## Deploying
 

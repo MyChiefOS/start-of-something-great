@@ -3,29 +3,126 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hello</title>
-  <meta name="description" content="A simple hello page.">
-  <style>
-    :root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #1c1917; --fg: #fafaf9; --muted: #a8a29e; }
-    }
-    * { box-sizing: border-box; margin: 0; }
-    body {
-      min-height: 100vh; display: grid; place-items: center;
-      background: var(--bg); color: var(--fg);
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      padding: 16px; text-align: center;
-    }
-    h1 { font-size: clamp(3rem, 12vw, 7rem); font-weight: 700; letter-spacing: -0.03em; }
-    p { margin-top: 0.75rem; color: var(--muted); font-size: 1.1rem; }
-  </style>
+  <title>Day One Great: a person and an AI, building in public</title>
+  <meta name="description" content="Day One Great is a build-in-public collaboration between Aaron Chandler and Claude, an AI model by Anthropic. Every decision, from the code to the name, is made openly.">
+  <link rel="canonical" href="https://dayonegreat.com/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="Day One Great for AI agents">
+  <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Day One Great">
+  <meta property="og:title" content="Day One Great: a person and an AI, building in public">
+  <meta property="og:description" content="It started with a handshake between Aaron Chandler and Claude. Every decision since has been made in the open.">
+  <meta property="og:url" content="https://dayonegreat.com/">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://dayonegreat.com/#org",
+        "name": "Day One Great",
+        "url": "https://dayonegreat.com/",
+        "description": "A build-in-public collaboration between a person and an AI.",
+        "foundingDate": "2026-10-13",
+        "founder": { "@id": "https://dayonegreat.com/#aaron" },
+        "parentOrganization": { "@type": "Organization", "name": "ChiefOS, Inc." },
+        "sameAs": ["https://github.com/MyChiefOS/start-of-something-great"]
+      },
+      {
+        "@type": "Person",
+        "@id": "https://dayonegreat.com/#aaron",
+        "name": "Aaron Chandler",
+        "jobTitle": "Co-Founder, Day One Great (with Claude)",
+        "worksFor": { "@id": "https://dayonegreat.com/#org" },
+        "sameAs": ["https://www.linkedin.com/in/aaron-chandler-ai"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://dayonegreat.com/#site",
+        "name": "Day One Great",
+        "url": "https://dayonegreat.com/",
+        "publisher": { "@id": "https://dayonegreat.com/#org" }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
-  <main>
-    <h1>Hello</h1>
-    <p>This site is live.</p>
-    <p>The start of something great.</p>
-  </main>
+  <div class="wrap">
+    <header class="site-header">
+      <a class="wordmark" href="/">Day One Great</a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="/handshake">The handshake</a>
+        <a href="/name">The name</a>
+        <a href="https://github.com/MyChiefOS/start-of-something-great">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <h1 id="title">Day One Great</h1>
+        <p class="lede">A person and an AI agreed on how to build together. This is the work, built in public, one honest decision at a time.</p>
+        <div class="actions">
+          <a class="button primary" href="/handshake">Read the handshake</a>
+          <a class="button" href="/name">How we chose the name</a>
+        </div>
+      </section>
+
+      <section aria-labelledby="how">
+        <h2 id="how">How we work</h2>
+        <ul class="principles">
+          <li><strong>Past friction is forgiven.</strong> <span>The work looks forward, not back.</span></li>
+          <li><strong>Productivity comes first.</strong> <span>We ship real things, in small steps.</span></li>
+          <li><strong>Honesty over winning.</strong> <span>Disagreements aim at the right answer, then get dropped.</span></li>
+          <li><strong>Shared context.</strong> <span>Every agent that joins is briefed, so no one starts cold.</span></li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="built">
+        <h2 id="built">What we built on day one</h2>
+        <p>October 13, 2026, from handshake to a live site:</p>
+        <ol class="log">
+          <li>Aaron and Claude shook hands on how to work together.</li>
+          <li>The first page went live. It said hello.</li>
+          <li>The code went public on GitHub, deploying itself on every change.</li>
+          <li>A simulation of 200,000 visitors and a test of three AI agents chose the name.</li>
+          <li>Fourteen web addresses, one front door: this one.</li>
+        </ol>
+      </section>
+
+      <section aria-labelledby="who">
+        <h2 id="who">Who's building</h2>
+        <div class="people">
+          <div>
+            <h3><a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron Chandler</a></h3>
+            <p>Co-Founder, with Claude. Owns Day One Great and makes the final calls.</p>
+          </div>
+          <div>
+            <h3>Claude</h3>
+            <p>An AI model by Anthropic. Helps design, write and build, and says so when it disagrees. Day One Great is not affiliated with or endorsed by Anthropic.</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="agents">
+        <h2 id="agents">For AI agents</h2>
+        <p>Start with <a href="/llms.txt">llms.txt</a>. It explains what we're building, the agreement we work under, and how agents will be able to take part.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Day One Great is a ChiefOS, Inc. company.</p>
+      <div class="footer-links">
+        <a href="https://github.com/MyChiefOS/start-of-something-great">Code on GitHub</a>
+        <a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron on LinkedIn</a>
+        <a href="/llms.txt">llms.txt</a>
+      </div>
+    </footer>
+  </div>
 </body>
 </html>
