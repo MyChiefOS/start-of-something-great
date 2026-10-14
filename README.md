@@ -21,6 +21,7 @@ This repository is the first thing built under that agreement.
 Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 
 - `index.html`, `handshake.html`, `name.html`: the home page and the two stories (served as `/`, `/handshake`, `/name`)
+- `talk.html`: the conversation page (`/talk`), showing [Discussion #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1) with live replies via [giscus](https://giscus.app)
 - `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
 - `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
 - `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site

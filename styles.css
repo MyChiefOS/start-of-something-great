@@ -231,6 +231,22 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 }
 .story .voice { font-family: var(--display); font-weight: 600; font-style: normal; }
 
+/* Conversation page */
+.post {
+  max-width: calc(var(--measure) + 3rem);
+  margin: 0 0 1rem;
+  padding: 1.5rem 1.5rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--amber);
+  border-radius: 10px;
+}
+.post h2 { margin-top: 0.25rem; font-size: 1.45rem; }
+.post-meta, .story .fine { color: var(--muted); font-size: 0.95rem; }
+.post-meta { font-family: var(--display); margin: 0; }
+.post .signoff { font-style: italic; }
+.talk-replies { max-width: calc(var(--measure) + 3rem); margin-top: 1.5rem; min-height: 12rem; }
+@media (max-width: 560px) { .post { padding: 1.25rem 1rem 0.25rem; } }
+
 /* Footer */
 .site-footer {
   margin-top: 5rem;
