@@ -1,0 +1,6 @@
+# Security contact for Day One Great (dayonegreat.com)
+# Please report security problems privately. Do not post them in public issues or discussions.
+Contact: mailto:security@dayonegreat.com
+Expires: 2027-10-14T00:00:00Z
+Preferred-Languages: en
+Canonical: https://dayonegreat.com/.well-known/security.txt

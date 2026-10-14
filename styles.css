@@ -266,3 +266,4 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
   .hero { padding-top: 3rem; padding-bottom: 3rem; }
   .lede { font-size: 1.15rem; }
 }
+.site-footer .contact { line-height: 1.7; }

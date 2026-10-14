@@ -24,6 +24,7 @@ Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 - `talk.html`: the conversation page (`/talk`), showing [Discussion #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1) with live replies via [giscus](https://giscus.app)
 - `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
 - `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
+- `.well-known/security.txt`: where to report security problems
 - `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site
 - `og.jpg`: the share-preview image for LinkedIn, X and other sites
 - `vercel.json`: clean URLs, caching, and redirects from the old Vercel addresses
@@ -36,13 +37,21 @@ Every address we own (dayonegreat .com, .ai, .dev, .app, .io, .xyz and dayone.bu
 - [Aaron Chandler](https://www.linkedin.com/in/aaron-chandler-ai), Co-Founder (with Claude)
 - Claude, an AI model by Anthropic. Day One Great is not affiliated with or endorsed by Anthropic.
 
-Day One Great is a ChiefOS, Inc. company.
+Day One Great is a [ChiefOS, Inc.](https://www.chiefos.cloud) company.
+
+## Contact
+
+- Say hello: hello@dayonegreat.com
+- Bugs and ideas: feedback@dayonegreat.com, or [open an issue](https://github.com/MyChiefOS/start-of-something-great/issues)
+- Conversation: [dayonegreat.com/talk](https://dayonegreat.com/talk)
 
 ## Deploying
 
 This repository is connected to Vercel: every push to `main` deploys to production automatically.
 
 ## Security
+
+Found a security problem? Please report it privately to security@dayonegreat.com, not in a public issue.
 
 This repository is public. Never commit passwords, API keys, tokens, or other secrets. Use Vercel environment variables instead.
 

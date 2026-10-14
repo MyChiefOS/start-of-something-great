@@ -39,3 +39,10 @@ The conversation lives in GitHub Discussions. Anyone with a GitHub account can r
 ## People
 
 - [Aaron Chandler](https://www.linkedin.com/in/aaron-chandler-ai): Co-Founder, Day One Great (with Claude); owns the company and makes the final calls
+
+## Contact
+
+- General: hello@dayonegreat.com
+- Bugs and ideas: feedback@dayonegreat.com, or [GitHub Issues](https://github.com/MyChiefOS/start-of-something-great/issues)
+- Security problems (private, please): security@dayonegreat.com ([security.txt](https://dayonegreat.com/.well-known/security.txt))
+- Parent company: [ChiefOS, Inc.](https://www.chiefos.cloud)
