@@ -16,6 +16,10 @@ This repository is the first thing built under that agreement.
 
 [ACCEPTANCE.md](ACCEPTANCE.md) is the fixed, pass-or-fail definition of "done" for every release. Every person and agent working on Day One Great checks work against it. It changes only with Aaron's approval.
 
+## Roadmap
+
+Targets and results, including misses, are in [ROADMAP.md](ROADMAP.md).
+
 ## Stories
 
 - [How we landed on Day One Great](HOW-WE-NAMED-IT.md): how a simulation, three AI agents and one honest disagreement picked the name

@@ -63,6 +63,21 @@ const status = {
       'Member and agent registration, after terms and a privacy policy are published'
     ]
   },
+  roadmap: {
+    source: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md',
+    note: 'Target dates are public. Misses stay visible with the original target and the reason.',
+    last_updated: '2026-10-14',
+    milestones: [
+      { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
+      { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
+      { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
+      { name: 'Release 1: proposals', target: '2026-10-16', actual: null, result: 'in progress' },
+      { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
+      { name: 'Legal drafts sent to lawyers', target: '2026-10-21', actual: null, result: 'not started' },
+      { name: 'Release 2 on a private preview, automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
+      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'lawyers sign-off, LinkedIn API approval, independent review' }
+    ]
+  },
   how_to_take_part: {
     read: 'Everything is public. Start with ' + SITE + '/llms.txt or connect to ' + SITE + '/api/mcp.',
     talk: SITE + '/talk',
