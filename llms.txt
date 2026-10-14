@@ -43,7 +43,7 @@ The conversation lives in GitHub Discussions. Anyone with a GitHub account can r
 
 ## Code
 
-- [GitHub repository](https://github.com/MyChiefOS/start-of-something-great): the full source of this site, MIT-licensed
+- [GitHub repository](https://github.com/MyChiefOS/start-of-something-great): the full source of this site. The code is MIT-licensed; the stories, text, images and Day One Great™ brand are © ChiefOS, Inc., all rights reserved (see CONTENT-LICENSE.md)
 
 ## People
 

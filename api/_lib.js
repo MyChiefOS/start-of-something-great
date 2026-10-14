@@ -95,7 +95,11 @@ const status = {
     { name: 'Claude', role: 'AI model by Anthropic; designs, writes and builds' }
   ],
   code: 'https://github.com/' + REPO,
-  license: 'MIT'
+  license: {
+    code: 'MIT',
+    content: '© ChiefOS, Inc. All rights reserved. Stories, text, images and the Day One Great brand are not MIT-licensed.',
+    details: 'https://github.com/' + REPO + '/blob/main/CONTENT-LICENSE.md'
+  }
 };
 
 // Reads public GitHub data. Uses the read-only GITHUB_TOKEN when set (about 5,000 calls/hour);
