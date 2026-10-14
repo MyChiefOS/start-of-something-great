@@ -14,10 +14,10 @@ _Last updated: October 14, 2026_
 | Release 1: proposals (checks P1 to P9 passing) | Fri, Oct 16 | Wed, Oct 14 | ✅ Done, 2 days early | Claude |
 | Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall) | Thu, Oct 15 | | Not started | Aaron's decision; the draft privacy policy offers the service to U.S. residents only |
 | Daily sorting run and GitHub automations | Mon, Oct 19 | | Not started | Claude |
-| Legal drafts sent to Aaron's lawyers | Wed, Oct 21 | | Not started | Claude |
+| Terms of service and privacy policy written | Wed, Oct 21 | Wed, Oct 14 | ✅ Done, 7 days early | Claude, with Aaron's decisions |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | Not started | Aaron's decision; Google Workspace plan |
 | Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | Not started | Claude, plus Aaron's account checklist |
-| Release 2 public | Fri, Nov 20 | | Not started | **Outside approvals:** lawyers' sign-off, LinkedIn API approval, independent review |
+| Release 2 public | Fri, Nov 20 | | Not started | **Outside approvals:** LinkedIn API approval, independent review |
 
 ## How we report
 
