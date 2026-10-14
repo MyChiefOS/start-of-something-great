@@ -1,6 +1,26 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "start-of-something-great-chief-os.vercel.app" }],
+      "destination": "https://dayonegreat.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "start-of-something-great.vercel.app" }],
+      "destination": "https://dayonegreat.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "start-of-something-great-git-main-chief-os.vercel.app" }],
+      "destination": "https://dayonegreat.com/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/fonts/(.*)",

@@ -24,7 +24,9 @@ Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 - `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
 - `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
 - `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site
-- `vercel.json`: clean URLs and caching
+- `og.jpg`: the share-preview image for LinkedIn, X and other sites
+- `vercel.json`: clean URLs, caching, and redirects from the old Vercel addresses
+- `<key>.txt`: the IndexNow key, which lets us notify search engines when pages change
 
 Every address we own (dayonegreat .com, .ai, .dev, .app, .io, .xyz and dayone.builders) redirects to dayonegreat.com.
 
