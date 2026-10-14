@@ -127,7 +127,8 @@ function buildQueue(issues, now, markDate) {
   const open = proposals.filter((i) => i.state === 'open');
   const waiting = open.filter((i) => ['waiting', 'in review'].includes(statusOf(i)))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at) || a.number - b.number);
-  const fresh = proposals.filter((i) => ageDays(i.created_at, now) < 1 && now - new Date(i.created_at) < 86400000)
+  // Open only: a proposal already closed needs no decision, so it doesn't belong in the queue (found live Oct 14).
+  const fresh = open.filter((i) => ageDays(i.created_at, now) < 1 && now - new Date(i.created_at) < 86400000)
     .sort((a, b) => a.number - b.number);
   const flagged = open.filter((i) => labelNames(i).some((l) => ['needs info', 'possible duplicate', 'contains contact info', 'edited after approval'].includes(l)))
     .sort((a, b) => a.number - b.number);

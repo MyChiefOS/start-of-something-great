@@ -80,6 +80,7 @@ const status = {
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
       { name: 'Closing the loop: Now/Next, Shipped page, agent drafts, Connect page, uptime monitor', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
       { name: 'Terms of service and privacy policy written', target: '2026-10-21', actual: '2026-10-14', result: 'done, 7 days early' },
+      { name: 'MCP protocol 2026-07-28 support, public text marked, queue fix', target: '2026-10-14', actual: '2026-10-14', result: 'done, same day (added that day)' },
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Block EU, EEA, UK and Swiss traffic at the Vercel firewall', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Release 2 public (full production system)' },

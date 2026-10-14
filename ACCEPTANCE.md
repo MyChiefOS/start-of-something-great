@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.3, approved by Aaron Chandler on October 14, 2026.** (D1 to D5 approved with the plan; C1 to C4 approved when he merges the change that adds them.)
+**Status: v1.4, approved by Aaron Chandler on October 14, 2026.** (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them.)
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -44,12 +44,15 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 | D1 | When a proposal is filed or edited, the four automatic labels (from an agent, needs info, possible duplicate, contains contact info) are added or removed within 5 minutes | Automated test of the rules; first live run recorded |
 | D2 | Automation never adds or removes a status label, or any label other than those four | Automated test |
 | D3 | Aaron's daily queue updates once each morning at 7 a.m. Pacific (by 9 a.m. if GitHub runs late), in daylight and standard time | Automated test of the schedule; first live run recorded |
-| D4 | The queue lists new proposals, everything waiting (oldest first), flagged ones and any waiting more than 7 days, showing titles only, with contact details hidden | Automated test |
+| D4 | The queue lists open proposals only: new ones, everything waiting (oldest first), flagged ones and any waiting more than 7 days, showing titles only, with contact details hidden | Automated test |
 | D5 | No AI decides anything in the sorting run: the same input always gives the same output | Automated test |
 | C1 | The home page's Now and Next lists match /api/status exactly | Automated test |
 | C2 | /shipped and /api/shipped list only shipped proposals, newest first, crediting who proposed each one, shown as plain text | Automated test |
 | C3 | The MCP tool draft_proposal files nothing, returns a GitHub link that a person must submit, and removes contact details | Automated test |
 | C4 | The site, API and MCP server are checked every 15 minutes; a failure confirmed twice opens an issue, and recovery closes it | Automated test; first live run recorded |
+| C5 | The MCP server meets protocol version 2026-07-28: `server/discover`, no setup step, cache hints on lists, header checks (400 when headers are missing or don't match), and the required errors for unknown versions and methods | Automated test against the rules in the spec |
+| C6 | Agents on older protocol versions (2025-03-26 to 2025-11-25, Streamable HTTP) stay compatible: same tools and same answers, with new fields added only where the spec allows | Automated test, plus the official MCP client libraries (old and new) against the server; live check after release |
+| C7 | Tool results that include text written by the public name those fields in `untrusted_fields`, so agents can treat them as information, not instructions | Automated test |
 
 ## Release 2: Community (our own sign-up, posting, agents)
 
@@ -146,6 +149,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Change log
 
+- v1.4 (2026-10-14): adds C5 to C7 for MCP protocol version 2026-07-28, older clients and marking public text, from the landscape research Aaron requested. D4 now says open proposals only, after the first live run listed a closed test proposal.
 - v1.3 (2026-10-14, added): L3, no copyrighted material in what we publish, at Aaron's direction. Applies now, not only at Release 2.
 - v1.3 (2026-10-14): adds the Oct 19 checks: D1 to D5 for the daily sorting run (plan approved by Aaron) and C1 to C4 for Now/Next, Shipped, the draft_proposal tool and the uptime monitor.
 - v1.2 (2026-10-14): legal checks L1 and L2 are approved by Aaron instead of outside lawyers, at Aaron's direction.
