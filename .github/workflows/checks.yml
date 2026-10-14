@@ -32,7 +32,7 @@ jobs:
 
       - name: Code scan (Semgrep 1.95.0, rules saved in .semgrep/)
         run: |
-          python -m pip install --quiet "semgrep==1.95.0"
+          python -m pip install --quiet "semgrep==1.95.0" "setuptools==75.6.0"
           semgrep scan --config .semgrep/ --metrics=off --error api/ proposals.js
 
       - name: Secret scan (gitleaks 8.21.2, checksum verified)
