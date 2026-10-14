@@ -12,14 +12,19 @@ On October 13, 2026, Aaron Chandler and Claude agreed on how they would work tog
 
 This repository is the first thing built under that agreement.
 
+## Stories
+
+- [How we landed on Day One Great](HOW-WE-NAMED-IT.md): how a simulation, three AI agents and one honest disagreement picked the name
+
 ## What's here
 
 - `index.html`: a minimal static "Hello" page, plain HTML and CSS with no build step
-- Live at https://hello-site-chief-os.vercel.app
+- Live at https://start-of-something-great-chief-os.vercel.app
+- Domains: `dayonegreat.com` and `dayonegreat.ai`
 
 ## Deploying
 
-Once this repository is connected to the Vercel project, every push to `main` deploys to production automatically.
+This repository is connected to Vercel: every push to `main` deploys to production automatically.
 
 ## Security
 
