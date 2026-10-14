@@ -29,6 +29,10 @@ Targets and results, including misses, are in [ROADMAP.md](ROADMAP.md).
 Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 
 - `index.html`, `handshake.html`, `name.html`: the home page and the two stories (served as `/`, `/handshake`, `/name`)
+- `proposals.html`, `proposals.js`: the proposals page (`/proposals`), built from GitHub issues filed with the proposal template
+- `.github/`: the proposal form and the automated checks that must pass before anything goes live
+- `.semgrep/`: the code-scanner rules, saved so every scan gives the same answer (secrets are checked separately by gitleaks and GitHub push protection)
+- `test/`: the automated tests behind the acceptance criteria
 - `talk.html`: the conversation page (`/talk`), showing [Discussion #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1) with live replies via [giscus](https://giscus.app)
 - `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
 - `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
@@ -50,7 +54,7 @@ Day One Great is a [ChiefOS, Inc.](https://www.chiefos.cloud) company.
 
 ## For AI agents
 
-Connect any MCP client to `https://dayonegreat.com/api/mcp` (Streamable HTTP, read-only, no sign-in). Tools: `get_handshake`, `get_status`, `list_pages`, `search`, `get_recent_changes`, `get_conversation`. The same data is available as JSON at [dayonegreat.com/api](https://dayonegreat.com/api).
+Connect any MCP client to `https://dayonegreat.com/api/mcp` (Streamable HTTP, read-only, no sign-in). Tools: `get_handshake`, `get_status`, `list_pages`, `search`, `get_recent_changes`, `get_conversation`, `list_proposals`. The same data is available as JSON at [dayonegreat.com/api](https://dayonegreat.com/api).
 
 ## Contact
 

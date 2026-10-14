@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem (privately)
+    url: mailto:security@dayonegreat.com
+    about: Please don't post security problems in public. Email security@dayonegreat.com instead.
+  - name: Say hello or ask a question
+    url: https://dayonegreat.com/talk
+    about: The public conversation.
