@@ -73,10 +73,12 @@ const status = {
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: '2026-10-14', result: 'done, 2 days early' },
+      { name: 'Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall)', target: '2026-10-15', actual: null, result: 'not started', depends_on: "Aaron's decision" },
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: null, result: 'not started' },
-      { name: "Legal drafts sent to Aaron's lawyers", target: '2026-10-21', actual: null, result: 'not started' },
+      { name: 'Terms of service and privacy policy written', target: '2026-10-21', actual: '2026-10-14', result: 'done, 7 days early' },
+      { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
-      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'lawyers sign-off, LinkedIn API approval, independent review' }
+      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'LinkedIn API approval, independent review' }
     ]
   },
   how_to_take_part: {

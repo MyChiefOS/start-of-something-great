@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.1, approved by Aaron Chandler on October 14, 2026.**
+**Status: v1.2, approved by Aaron Chandler on October 14, 2026.**
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -120,17 +120,18 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 | O2 | Database backups are on, and a restore has been tested once | Manual test, recorded |
 | O3 | Every approval, removal, ban and use of the emergency brake is in the audit log, with who did it and when | Automated test |
 
-### Legal: Aaron's lawyers sign off
+### Legal: Aaron approves
 
 | ID | Criterion | How it's checked |
 |---|---|---|
-| L1 | Terms of service, content policy and privacy policy are published on the site | Lawyer approval |
-| L2 | The privacy policy explains which verified accounts we check (LinkedIn, X), what we keep, and how to delete it | Lawyer approval |
+| L1 | Terms of service, content policy and privacy policy are published on the site | Aaron's approval, recorded |
+| L2 | The privacy policy explains which verified accounts we check (LinkedIn, X), what we keep, and how to delete it | Aaron's approval, recorded |
 
 ---
 
 ## Change log
 
+- v1.2 (2026-10-14): legal checks L1 and L2 are approved by Aaron instead of outside lawyers, at Aaron's direction.
 - v1.1 (2026-10-14): P1 clarified at Aaron's direction. It measures filing time once the proposer knows what to propose; thinking and preparation time is not counted, because it varies by idea and the form can't shorten it.
 - v1.0 (2026-10-14): approved by Aaron with T = 3 minutes, H = 6 hours, M = 1,000 members; adds the speed and friction section (SF1 to SF6) and rule 7 (reopening approvals). Costs at scale are not yet modeled; Aaron may ask for that before Release 2.
 - v0.2 (2026-10-14): Stripe is for payments only; verification through LinkedIn and X; trust levels; no limits plus an emergency brake; repeatable security gates with a risk register; built-to-grow requirements; Release 1 additions (P7 to P9) and reworded P4.
