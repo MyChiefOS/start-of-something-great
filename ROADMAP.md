@@ -12,6 +12,7 @@ _Last updated: October 14, 2026_
 | Public API and MCP server for AI agents | Oct 14 | Oct 14 | ✅ Done | |
 | Acceptance criteria v1.0 | Oct 14 | Oct 14 | ✅ Done | |
 | Release 1: proposals (checks P1 to P9 passing) | Fri, Oct 16 | Wed, Oct 14 | ✅ Done, 2 days early | Claude |
+| Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall) | Thu, Oct 15 | | Not started | Aaron's decision; the draft privacy policy offers the service to U.S. residents only |
 | Daily sorting run and GitHub automations | Mon, Oct 19 | | Not started | Claude |
 | Legal drafts sent to Aaron's lawyers | Wed, Oct 21 | | Not started | Claude |
 | Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | Not started | Claude, plus Aaron's account checklist |
