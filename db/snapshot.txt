@@ -37,8 +37,9 @@ constraint app.rate_limits rate_limits_pkey PRIMARY KEY (id)
 constraint app.review_flags review_flags_check CHECK (((source = 'report'::text) = ((reporter_id IS NOT NULL) AND (reason IS NOT NULL))))
 constraint app.review_flags review_flags_check1 CHECK (((source = 'report'::text) OR (note IS NULL)))
 constraint app.review_flags review_flags_check2 CHECK (((source = 'classifier'::text) = (classifier IS NOT NULL)))
-constraint app.review_flags review_flags_check3 CHECK (((resolved_at IS NULL) = (decision IS NULL)))
-constraint app.review_flags review_flags_check4 CHECK (((resolved_at IS NULL) = (resolved_by IS NULL)))
+constraint app.review_flags review_flags_check3 CHECK (((source = 'classifier'::text) OR (score IS NULL)))
+constraint app.review_flags review_flags_check4 CHECK (((resolved_at IS NULL) = (decision IS NULL)))
+constraint app.review_flags review_flags_check5 CHECK (((resolved_at IS NULL) = (resolved_by IS NULL)))
 constraint app.review_flags review_flags_classifier_check CHECK (((char_length(classifier) <= 64) AND (classifier ~ '^[a-z][a-z0-9_]*$'::text)))
 constraint app.review_flags review_flags_decision_check CHECK ((decision = ANY (ARRAY['approve'::text, 'keep'::text, 'remove'::text, 'restore'::text])))
 constraint app.review_flags review_flags_note_check CHECK ((char_length(note) <= 500))
@@ -93,16 +94,19 @@ function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confir
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint) body_md5=62a35b030840346a315e269f455223ea
 function app.is_reviewer() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=boolean body_md5=7d420a3147ea7f058784ef85d6f5aaab
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=2500e4949d0819d51fe512880394694a
-function app.posts_after_review() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=e91da3b5ceadee8f4e774210a752e7a5
+function app.posts_after_review() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=f1065c1650a1e0d87965e576053b6aae
 function app.posts_decide() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=ff17d8923787fed61a3f1cab6047fd98
+function app.posts_first_published() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=e75035dcb22c717f290c067a968a0eed
 function app.posts_flag_waiting() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=34b6cededdc573064e40593ca1948adb
-function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=ec5bd255fac2269714d69dde175fcedf
+function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=656eb4d51987484130df540c0e462c43
 function app.profile(p_member uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, display_name text, trust_level smallint, joined timestamp with time zone, live_posts bigint) body_md5=339d442d5da6afdad550b54b384f7fe5
 function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
-function app.review_decide(p_post uuid, p_decision text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=text body_md5=7de826de86285b1c34cb90570b5bee6f
+function app.reportable(p_post uuid, p_reporter uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=225915e52162bf0f89f7f9083ca5d1ee
+function app.review_decide(p_post uuid, p_decision text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=text body_md5=804aa7bdf2a644340cbf8973ffe082bb
 function app.review_flags_audit_close() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d057505395d47ce86184e9eeb9a9fb44
 function app.review_flags_audit_new() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=acdb2736ac0b604cb72d7a96b008e49e
 function app.review_flags_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4394db13df24fccbded88235e68bdf51
+function app.review_flags_recheck() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=68b5a4a1c7ef63cd61b6d55cb39a7cde
 function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b546c8242ddd74e8f612239c3e466d5a
 function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text) body_md5=d90fcaf4f6e5f560c7e2527941399822
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=f47122798a71797a95f59613fb2a1c3b
@@ -216,13 +220,13 @@ policy app.members members_signin_update cmd=w permissive=true to=dog_signin usi
 policy app.members members_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text))
 policy app.posts posts_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (author_id = app.current_member()) AND (lane = 'people'::text) AND (agent_id IS NULL))
 policy app.posts posts_public_select cmd=r permissive=true to=dog_public using=(status = 'live'::text) check=
-policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND ((author_id = app.current_member()) OR (status = 'live'::text))) OR app.is_reviewer()) check=
+policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (author_id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=
 policy app.posts posts_update cmd=w permissive=true to=dog_app using=app.is_reviewer() check=app.is_reviewer()
 policy app.rate_limits rate_limits_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.rate_limits rate_limits_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.rate_limits rate_limits_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.rate_limits rate_limits_signin_update cmd=w permissive=true to=dog_signin using=true check=true
-policy app.review_flags review_flags_insert cmd=a permissive=true to=dog_app using= check=(((source = 'first_posts'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.author_id = app.current_member()) AND (p.status = 'waiting'::text))))) OR ((source = 'report'::text) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (reporter_id = app.current_member()) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.status = 'live'::text) AND (p.author_id <> app.current_member()))))) OR ((source = 'classifier'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = 'system'::text)))
+policy app.review_flags review_flags_insert cmd=a permissive=true to=dog_app using= check=(((source = 'first_posts'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.status = 'waiting'::text) AND ((p.author_id = app.current_member()) OR app.is_reviewer()))))) OR ((source = 'report'::text) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (reporter_id = app.current_member()) AND app.reportable(post_id, app.current_member())) OR ((source = 'classifier'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = 'system'::text)))
 policy app.review_flags review_flags_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (reporter_id = app.current_member())) OR app.is_reviewer()) check=
 policy app.review_flags review_flags_update cmd=w permissive=true to=dog_app using=app.is_reviewer() check=app.is_reviewer()
 policy app.schema_migrations migrations_owner_only cmd=* permissive=true to=dog_owner using=true check=true
@@ -237,8 +241,10 @@ trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_truncate BEFORE TRUN
 trigger app.members enabled=A CREATE TRIGGER members_guard BEFORE UPDATE ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_guard()
 trigger app.posts enabled=A CREATE TRIGGER posts_after_review AFTER UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_after_review()
 trigger app.posts enabled=A CREATE TRIGGER posts_decide BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_decide()
+trigger app.posts enabled=A CREATE TRIGGER posts_first_published BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_first_published()
 trigger app.posts enabled=A CREATE TRIGGER posts_flag_waiting AFTER INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_flag_waiting()
 trigger app.posts enabled=A CREATE TRIGGER posts_review_guard BEFORE UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_review_guard()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_audit_close AFTER UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_audit_close()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_audit_new AFTER INSERT ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_audit_new()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_guard BEFORE UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_guard()
+trigger app.review_flags enabled=A CREATE TRIGGER review_flags_recheck AFTER INSERT ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_recheck()

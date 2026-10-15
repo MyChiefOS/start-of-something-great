@@ -4,7 +4,7 @@
   var queue = document.getElementById('queue');
   var summary = document.getElementById('summary');
   var LABEL = { approve: 'Approve', keep: 'Keep', remove: 'Remove', restore: 'Undo' };
-  var DONE = { approve: 'Approved: it’s live.', keep: 'Kept: the reports are closed.', remove: 'Removed.', restore: 'Restored: it’s live again.' };
+  var DONE = { approve: 'Approved: it’s live.', keep: 'Kept: the reports are closed.', remove: 'Removed.', live: 'Restored: it’s live again.', waiting: 'Restored: it’s waiting for review again.' };
   var REASON = { spam: 'spam', abuse: 'abuse', private_info: 'private information', illegal: 'illegal', other: 'other' };
   var open = 0;
 
@@ -39,9 +39,10 @@
           if (x.status !== 409) buttons.forEach(function (b) { b.disabled = false; });
           return;
         }
-        result.textContent = DONE[decision];
+        result.textContent = decision === 'restore' ? DONE[x.d.status] : DONE[decision];
         card.classList.add('decided');
         if (decision !== 'restore') { open = Math.max(0, open - 1); count(); }
+        else if (x.d.status === 'waiting') { open += 1; count(); }
         buttons.forEach(function (b) { b.hidden = true; });
         // A mistaken removal can be undone right here.
         if (decision === 'remove') {
@@ -92,7 +93,7 @@
         if (x.ok) return render(x.d);
         queue.textContent = '';
         summary.textContent = x.status === 401 ? 'Sign in to review.' : (x.d.error || 'The queue could not be loaded.');
-        if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join'; queue.appendChild(a); }
+        if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Freview'; queue.appendChild(a); }
       })
       .catch(function () { summary.textContent = 'The queue could not be loaded. Please try again.'; });
   }

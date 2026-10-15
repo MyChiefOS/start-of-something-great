@@ -17,3 +17,13 @@
   var el = document.getElementById('message');
   if (el && key && text[key]) { el.textContent = text[key]; el.hidden = false; }
 })();
+
+// After signing in with GitHub or X, go back to the page that sent you here (for example /review). The server
+// checks the path again (signin/http.js returnPath): only a path on this site is ever followed.
+(function () {
+  var rt = new URLSearchParams(location.search).get('return_to');
+  if (!rt || !/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/.test(rt) || rt.length > 200) return;
+  document.querySelectorAll('a[href="/auth/github/start"], a[href="/auth/x/start"]').forEach(function (a) {
+    a.setAttribute('href', a.getAttribute('href') + '?return_to=' + encodeURIComponent(rt));
+  });
+})();

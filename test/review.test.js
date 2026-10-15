@@ -40,7 +40,9 @@ test('F7: the MCP server keeps posts at most 30 seconds and the edge at most 60,
   assert.ok(mcp.POSTS_CACHE_MS > 0 && mcp.POSTS_CACHE_MS <= 30000);
   const src = fs.readFileSync(path.join(root, 'api', 'feed.js'), 'utf8');
   const fresh = Number(/const CACHE = (\d+);/.exec(src)[1]), stale = Number(/const STALE = (\d+);/.exec(src)[1]);
-  assert.ok(fresh + stale <= 60);
+  // The edge copy can be up to fresh + stale old, plus the time its own refresh takes (database reads stop at 5
+  // seconds): 45 leaves that margin inside the minute.
+  assert.ok(fresh > 0 && fresh + stale <= 45, fresh + ' + ' + stale);
 });
 
 test('the queue and decisions need a database; without one they answer safely', async () => {
@@ -180,6 +182,56 @@ test('F7: a reported post is in the queue as soon as the report answers; removin
   assert.strictEqual(await inQueue(p.id), undefined);
 });
 
+test('F7: a report racing a removal never leaves an open flag on the removed post', async () => {
+  const author = await member(2);
+  const reporter = await member(1);
+  const p = await run(author.ctx, (t) => posts.create(t, { body: 'race' }));
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Aaron's removal holds the post locked while the report arrives.
+  const removal = run(aaron.ctx, async (t) => { const r = await review.decide(t, { post: p.id, decision: 'remove' }); await gate; return r; });
+  await sleep(300);
+  const reporting = run(reporter.ctx, (t) => review.report(t, { post: p.id, reason: 'spam' }));
+  await sleep(300);
+  release();
+  assert.deepStrictEqual(await removal, { status: 'removed' });
+  assert.deepStrictEqual(await reporting, { refused: 'not_found' });
+  assert.strictEqual(await inQueue(p.id), undefined);
+  assert.strictEqual((await q(`select count(*)::int as n from app.review_flags where post_id = '${p.id}' and resolved_at is null`))[0].n, 0);
+});
+
+test('a flag left open on a removed post can be cleared with Remove, which is offered for it', async () => {
+  const author = await member(2);
+  const p = await run(author.ctx, (t) => posts.create(t, { body: 'leftover' }));
+  await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'remove' }));
+  // However it got there (here, written straight to the table as the site itself), Remove closes it.
+  await su.begin(async (t) => {
+    await t`select set_config('app.actor', 'system', true)`;
+    await t.unsafe(`insert into app.review_flags (post_id, source, classifier, score) values ('${p.id}', 'classifier', 'late', 0.5)`);
+  });
+  assert.strictEqual((await inQueue(p.id)).status, 'removed');
+  assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'remove' })), { status: 'removed' });
+  assert.strictEqual(await inQueue(p.id), undefined);
+  assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'remove' })), { refused: 'stale' }, 'nothing left to close');
+});
+
+test('Undo puts a removed post back where it was: live if it had been approved, waiting if it never was', async () => {
+  const m = await member(1);
+  const first = await run(m.ctx, (t) => posts.create(t, { body: 'never approved' }));
+  await run(aaron.ctx, (t) => review.decide(t, { post: first.id, decision: 'remove' }));
+  assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: first.id, decision: 'restore' })), { status: 'waiting' });
+  assert.strictEqual(await feedHas(first.id), false, 'not published by an undo');
+  assert.strictEqual((await inQueue(first.id)).firstPosts, true, 'back in the queue for a real decision');
+  await assert.rejects(run(aaron.ctx, (t) => t`update app.posts set status = 'removed' where id = ${first.id}`).then(() =>
+    run(aaron.ctx, (t) => t`update app.posts set status = 'live' where id = ${first.id}`)), /can't go from removed to live/);
+  const two = await member(2);
+  const live = await run(two.ctx, (t) => posts.create(t, { body: 'was live' }));
+  await run(aaron.ctx, (t) => review.decide(t, { post: live.id, decision: 'remove' }));
+  assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: live.id, decision: 'restore' })), { status: 'live' });
+  assert.strictEqual(await feedHas(live.id), true);
+});
+
 test('reports: only someone else\'s live post, once per member; reporting can\'t find hidden posts', async () => {
   const author = await member(2);
   const other = await member(1);
@@ -195,16 +247,28 @@ test('reports: only someone else\'s live post, once per member; reporting can\'t
   assert.deepStrictEqual(await run(other.ctx, (t) => review.report(t, { post: crypto.randomUUID(), reason: 'spam' })), refused, 'no such post');
   for (let i = 0; i < 3; i++) assert.deepStrictEqual(await run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'abuse' })), { status: 'reported' });
   assert.strictEqual((await inQueue(live.id)).reports, 1, 'reporting again changes nothing');
+  // Once the report is decided, a new report is a new flag (things can get worse after a "keep").
+  await run(aaron.ctx, (t) => review.decide(t, { post: live.id, decision: 'keep' }));
+  assert.deepStrictEqual(await run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'illegal' })), { status: 'reported' });
+  assert.deepStrictEqual((await inQueue(live.id)).reasons, ['illegal']);
+  // Members can't set a classifier's score on their own flags.
+  await assert.rejects(run(other.ctx, (t) => t`insert into app.review_flags (post_id, source, reason, reporter_id, score) values (${live.id}, 'report', 'spam', ${other.id}, 0.9)`), /violates check constraint/);
   await assert.rejects(run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'boring' })), /reason/);
   await assert.rejects(run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'spam', note: 'x'.repeat(501) })), /note/);
   // Even Aaron, who can see every post, can report only a live one.
   assert.deepStrictEqual(await run(aaron.ctx, (t) => review.report(t, { post: waiting.id, reason: 'spam' })), refused, 'Aaron, waiting post');
+  // A banned member's live posts are hidden like any other: reporting one looks the same as a post that doesn't exist.
+  const banned = await member(2);
+  const hidden = await run(banned.ctx, (t) => posts.create(t, { body: 'by a banned member' }));
+  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${banned.id}'`); });
+  assert.deepStrictEqual(await run(other.ctx, (t) => review.report(t, { post: hidden.id, reason: 'spam' })), refused, 'banned author');
+  assert.strictEqual((await run(other.ctx, (t) => t`select id from app.posts where id = ${hidden.id}`)).length, 0, 'members don\'t read other members\' posts directly');
   // Someone not signed in can't report, even straight to the table.
   await assert.rejects(run({ actor: 'anon' }, (t) => t`insert into app.review_flags (post_id, source, reason) values (${live.id}, 'report', 'spam')`), /row-level security|violates/);
   // Nobody reports in someone else's name.
   await assert.rejects(run(other.ctx, (t) => t`insert into app.review_flags (post_id, source, reason, reporter_id) values (${live.id}, 'report', 'spam', ${newbie.id})`), /row-level security/);
   // A member sees their own reports and nobody else's.
-  assert.strictEqual((await run(other.ctx, (t) => t`select id from app.review_flags`)).length, 1);
+  assert.strictEqual((await run(other.ctx, (t) => t`select id from app.review_flags`)).length, 2, 'their first report and the one after "keep"');
   assert.strictEqual((await run(author.ctx, (t) => t`select id from app.review_flags`)).length, 0);
 });
 
@@ -250,7 +314,7 @@ test('O3: every report, approval, removal, keep and undo is in the audit log wit
   await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'approve' }));
   await run(reporter.ctx, (t) => review.report(t, { post: p.id, reason: 'other' }));
   await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'keep' }));
-  await run(reporter.ctx, (t) => review.report(t, { post: p.id, reason: 'abuse' })); // reported again: already reported, nothing new
+  await run(reporter.ctx, (t) => review.report(t, { post: p.id, reason: 'abuse' })); // after "keep", a new report is a new flag
   const other = await member(1);
   await run(other.ctx, (t) => review.report(t, { post: p.id, reason: 'abuse' }));
   await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'remove' }));
@@ -263,7 +327,9 @@ test('O3: every report, approval, removal, keep and undo is in the audit log wit
     ['review.close', 'admin', aaron.id, 'approve'],
     ['review.flag', 'member', reporter.id, 'other'],
     ['review.close', 'admin', aaron.id, 'keep'],
+    ['review.flag', 'member', reporter.id, 'abuse'],
     ['review.flag', 'member', other.id, 'abuse'],
+    ['review.close', 'admin', aaron.id, 'remove'],
     ['post.remove', 'admin', aaron.id, 'removed'],
     ['review.close', 'admin', aaron.id, 'remove'],
     ['post.restore', 'admin', aaron.id, 'live']

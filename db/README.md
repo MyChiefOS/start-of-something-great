@@ -110,3 +110,29 @@ commit;
 ```
 
 The editor should report `UPDATE 1`. Anything else means the ID didn't match, and nothing changed.
+
+## Review queue and reports (Release 2, PR 4)
+
+**How Aaron reviews:** open [dayonegreat.com/review](https://dayonegreat.com/review) on his phone while signed in as the administrator. Each post shows why it is there (one of a new member's first 3 posts, reports with their reasons and notes, or later a classifier) and one button per decision:
+
+| The post is | Buttons | What happens |
+|---|---|---|
+| Waiting (a first post) | Approve, Remove | Approve puts it live at the top of the feed; Remove keeps it off the site |
+| Live and reported | Keep, Remove | Keep closes the reports; Remove takes it off the site, API and MCP within a minute |
+| Removed (rare: a report arrived as it was removed) | Remove, Undo | Remove closes what is left |
+
+After a removal, **Undo** puts the post back where it was: live if it had been approved, back in the queue if it never was. A second tap on another device is told the post was already decided.
+
+**The pipeline (G5), as built.** Anything that wants a post looked at adds a *flag* (`app.review_flags`): the first-posts rule, a member's report, or later an automatic classifier (source `classifier`, with its name and a score, added by the site itself). The queue is every post with an open flag, oldest first; one decision closes all of a post's flags.
+- **Adding a classifier** is a new caller adding flags; no table or rule changes. Classifiers flag posts that are waiting or already live. Holding a level 2 post back *before* it goes live would be a change to `posts_decide` (003).
+- **Adding reviewers** means changing `app.is_reviewer()` in the database and `canReview` / `actorFor` in `signin/session.js` together.
+- **Design review (G5, recorded):** an independent reviewer judged the pipeline a pass on October 15, 2026, with the two notes above (the reviewer change touches the site as well as the database; classifiers act on waiting or live posts).
+
+**What the database guarantees:**
+- Only a reviewer changes a post, and only its status, along the allowed moves.
+- Flags close once, in the reviewer's own name.
+- Every flag, decision and status change is written to the audit log by the database itself (O3), so no code path can skip it.
+- Members can report only a live post by an active member that isn't their own. Every other case looks the same as a post that doesn't exist, so reporting can't find hidden posts.
+- A report that races a removal is refused.
+
+Reports are rate limited at 20 an hour per member and 60 an hour per network (S6); posting is not limited (F4).

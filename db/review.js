@@ -8,9 +8,9 @@ const v = require('./validate');
 const REASONS = ['spam', 'abuse', 'private_info', 'illegal', 'other'];
 const DECISIONS = ['approve', 'keep', 'remove', 'restore'];
 
-// A member reports someone else's live post. Returns { status: 'reported' } (also when they had already reported
-// it, so reporting twice changes nothing), or { refused: 'not_found' } for a post that isn't live, is their own,
-// or doesn't exist; the three look the same, so a report can't be used to find hidden posts.
+// A member reports someone else's live post. Returns { status: 'reported' } (also when their earlier report on it
+// is still open, so reporting twice changes nothing), or { refused: 'not_found' } for a post that isn't live, is
+// their own, is by a banned member, or doesn't exist; they all look the same, so reporting can't find hidden posts.
 async function report(t, { post, reason, note = null }) {
   const id = v.uuid('post', post);
   const r = v.oneOf('reason', reason, REASONS);
@@ -21,8 +21,8 @@ async function report(t, { post, reason, note = null }) {
     return { status: 'reported' };
   } catch (e) {
     if (e.code === '23505') return { status: 'reported' };
-    // 42501: the row-level rule refused it (not live, own post); 23503: no such post.
-    if (e.code === '42501' || e.code === '23503') return { refused: 'not_found' };
+    // 42501: the row-level rule refused it; 23503: no such post; not_reportable: removed while the report was on its way.
+    if (e.code === '42501' || e.code === '23503' || (e.code === 'P0001' && e.message === 'not_reportable')) return { refused: 'not_found' };
     throw e;
   }
 }
@@ -61,6 +61,7 @@ async function queue(t, { limit = 50 } = {}) {
 
 // One decision on one post, closing all of its open flags. Returns { status } (the post's new status), or
 // { refused: 'not_found' | 'stale' } when the post is gone or was already decided (another tap, another device).
+// Undoing a removal ('restore') returns 'live' for a post that had been approved and 'waiting' for one that never was.
 async function decide(t, { post, decision }) {
   const id = v.uuid('post', post);
   const d = v.oneOf('decision', decision, DECISIONS);

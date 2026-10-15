@@ -30,7 +30,8 @@ const DEFINERS = {
   'app.session_resolve(text, integer)': 'dog_signin',
   'app.session_end(text)': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
-  'app.profile(uuid)': 'dog_public'
+  'app.profile(uuid)': 'dog_public',
+  'app.reportable(uuid, uuid)': 'dog_public'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 

@@ -23,8 +23,9 @@ const { onSite, sameSite, ipKey } = require('../signin/http');
 const { UNTRUSTED_NOTE } = require('./_lib');
 const { maskContacts } = require('./_proposals');
 
-const CACHE = 30; // seconds fresh at the edge
-const STALE = 30; // plus at most this long while refreshing: a removal shows within 60 seconds
+const CACHE = 20; // seconds fresh at the edge
+const STALE = 20; // plus at most this long while refreshing: 40 seconds, leaving room inside F7's minute for the
+                  // refresh itself (a database read can take up to its 5-second limit)
 const UNTRUSTED_FIELDS = ['posts[].body', 'posts[].author.name'];
 const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well inside this
 // Reporting is limited per member and per network (S6). Generous for honest use; it stops one account or one
@@ -37,7 +38,7 @@ function shape(p) {
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
 }
 
-// Public answers: Vercel's edge keeps them 30 seconds, plus up to 30 while refreshing. Browsers and any other shared
+// Public answers: Vercel's edge keeps them 20 seconds, plus up to 20 while refreshing. Browsers and any other shared
 // cache are told not to keep them, so nothing downstream can hold a removed post longer than a minute (F7).
 function sendPublic(res, code, body) {
   res.statusCode = code;
@@ -97,12 +98,13 @@ function shapeQueued(i) {
     author: { id: i.author.id, name: maskContacts(i.author.name), level: i.author.level, status: i.author.status, live_posts: i.author.livePosts },
     flagged_at: i.flaggedAt, first_posts: i.firstPosts, reports: i.reports, reasons: i.reasons, notes: i.notes.map(maskContacts), classifiers: i.classifiers,
     // The one-tap choices for this item (SF5).
-    actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['restore'] };
+    // A removed post is here only if a report arrived as it was removed: Remove closes the leftover flags.
+    actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'] };
 }
 
 // A reviewer's decision (SF5: one tap from the queue). Recorded in the audit log by the database (O3).
 async function decide(req, res, run, who, body) {
-  if (!who.isAdmin) return reply(res, 403, { error: 'Only reviewers can decide on posts.' });
+  if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can decide on posts.' });
   try {
     const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such post.' });
@@ -180,7 +182,7 @@ async function handle(req, res, run) {
     if (!run) return reply(res, 200, { open: 0, items: [] });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
-    if (!who.isAdmin) return reply(res, 403, { error: 'Only reviewers can see the review queue.' });
+    if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can see the review queue.' });
     const qd = await run(session.actorFor(who), (t) => review.queue(t, {}));
     return reply(res, 200, { open: qd.open, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
   }
