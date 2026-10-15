@@ -85,11 +85,13 @@ Names and usernames from GitHub and X are not kept; everyone starts as "New memb
 
 All of these are Vercel environment variables for **Production only**, so preview deployments never get them and sign-in stays off there.
 
-1. **Keys.** Generate each one with `openssl rand -base64 32`:
+1. **Keys.** Run `bash scripts/setup-signin-keys.sh` (SIGNIN-SETUP.md, step 1). It makes three keys and stores each one in Vercel as a secret, never shown to anyone:
    - `SESSION_SECRET`: protects the short-lived sign-in state.
-   - `FINGERPRINT_KEYS`: written as `1:<key>`. To rotate later, put the new key first (`2:<new>,1:<old>`). Each person moves to the new key at their next sign-in, so never delete an old key while it's still listed.
    - `IP_HASH_KEY`: used only for rate limits.
-2. **GitHub.** Under Settings, then Developer settings, then OAuth Apps, create a new app. Set the callback URL to exactly `https://dayonegreat.com/auth/github/callback`. Then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in Vercel.
+   - `FINGERPRINT_KEY_1`: recognises members.
+
+   To rotate the fingerprint key later, add `FINGERPRINT_KEY_2` (the highest number is the current key). Each person moves to it at their next sign-in. Never delete an older key, or the people who haven't signed in since become strangers.
+2. **GitHub, X and LinkedIn apps:** follow SIGNIN-SETUP.md, which has every value to paste.
 3. **X.** In the developer console, create an app with OAuth 2.0 as a confidential client (a "web app"). Set the callback to exactly `https://dayonegreat.com/auth/x/callback` and the scopes to `tweet.read` and `users.read`. Buy a small prepaid credit and set a spend cap: each X sign-in reads the account once, about $0.01. If the credit runs out, X sign-in fails safely and GitHub and email still work. Then set `X_CLIENT_ID` and `X_CLIENT_SECRET`.
 4. **Email links** switch on once the email service is chosen, a later small PR. Until then, the email form says "Sign-in by email isn't switched on yet."
 5. **LinkedIn** ("Verified on LinkedIn", level 2) switches on once LinkedIn approves the app.

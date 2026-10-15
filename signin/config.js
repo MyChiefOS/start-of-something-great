@@ -10,6 +10,17 @@ const SESSION_DAYS = 30; // absolute limit
 const IDLE_DAYS = 7; // ends after a week unused
 const STATE_MINUTES = 10; // an unfinished GitHub or X sign-in expires after this
 
+// Fingerprint keys, one setting each: FINGERPRINT_KEY_1, FINGERPRINT_KEY_2, ... The highest number is the
+// current key; older ones stay so people can be recognised and moved over at their next sign-in. Separate settings
+// mean a rotation only adds one, and no key ever has to be read back (each is stored as a Vercel secret).
+function keysFromEnv(env) {
+  const found = Object.keys(env).map((k) => k.match(/^FINGERPRINT_KEY_(\d{1,3})$/)).filter(Boolean)
+    .map((m) => ({ version: Number(m[1]), b64: env[m[0]] })).filter((k) => k.version >= 1)
+    .sort((a, b) => b.version - a.version);
+  if (!found.length) return null;
+  return parseKeys(found.map((k) => k.version + ':' + k.b64).join(','));
+}
+
 // "2:base64key,1:base64key": current key first. Each key at least 32 bytes.
 function parseKeys(s) {
   if (!s) return null;
@@ -30,7 +41,7 @@ const strong = (b64) => (b64 && Buffer.from(b64, 'base64').length >= 32 ? b64 : 
 
 function load(env = process.env) {
   const sessionKey = strong(env.SESSION_SECRET);
-  const fingerprintKeys = parseKeys(env.FINGERPRINT_KEYS);
+  const fingerprintKeys = keysFromEnv(env);
   const ipKey = strong(env.IP_HASH_KEY) && Buffer.from(env.IP_HASH_KEY, 'base64');
   const ready = Boolean(sessionKey && fingerprintKeys && ipKey);
   const pair = (id, s) => (env[id] && env[s] ? { clientId: env[id], clientSecret: env[s] } : null);
@@ -48,4 +59,4 @@ function load(env = process.env) {
   };
 }
 
-module.exports = { ORIGIN, HOST, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES, load, parseKeys };
+module.exports = { ORIGIN, HOST, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES, load, parseKeys, keysFromEnv };

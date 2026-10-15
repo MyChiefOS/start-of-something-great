@@ -112,6 +112,10 @@ test('sealed state can\'t be read or changed, and fingerprints depend on the key
   assert.ok(!a.includes('12345'));
   assert.strictEqual(config.parseKeys('1:' + Buffer.alloc(16).toString('base64')), null, 'keys shorter than 32 bytes are refused');
   assert.strictEqual(config.parseKeys('1:' + key() + ',1:' + key()), null, 'duplicate versions are refused');
+  const env = { FINGERPRINT_KEY_1: key(), FINGERPRINT_KEY_2: key(), FINGERPRINT_KEY_X: key(), OTHER: 'x' };
+  assert.deepStrictEqual(config.keysFromEnv(env).map((k) => k.version), [2, 1], 'one setting per key; the highest number is current');
+  assert.strictEqual(config.keysFromEnv({}), null);
+  assert.strictEqual(config.keysFromEnv({ FINGERPRINT_KEY_1: 'short' }), null, 'a weak key switches sign-in off');
 });
 
 test('CSRF: posts must come from our own pages', () => {
@@ -140,7 +144,7 @@ test('GitHub and X requests use PKCE (S256), our exact callback address per prov
 
 test('the sign-in endpoint is off unless fully set up, and only answers on dayonegreat.com', async () => {
   const saved = { ...process.env };
-  for (const k of ['SESSION_SECRET', 'FINGERPRINT_KEYS', 'IP_HASH_KEY', 'DATABASE_URL']) delete process.env[k];
+  for (const k of Object.keys(process.env).filter((x) => /^(SESSION_SECRET|FINGERPRINT_KEY_\d+|IP_HASH_KEY|DATABASE_URL)$/.test(x))) delete process.env[k];
   try {
     delete require.cache[require.resolve('../api/auth.js')];
     const auth = require('../api/auth.js');
