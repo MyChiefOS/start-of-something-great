@@ -65,6 +65,9 @@ function fromEnv() {
   return shared;
 }
 
+// Whether a database address is set (without reading or checking it here).
+const configured = () => Boolean(process.env.DATABASE_URL);
+
 // What the site's functions call: db.run({ actor: 'member', memberId }, (t) => members.get(t, id)).
 const run = async (ctx, fn) => tx(fromEnv(), ctx, fn);
 
@@ -102,4 +105,4 @@ async function tx(sql, ctx, fn) {
   });
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, ACTORS };
+module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS };

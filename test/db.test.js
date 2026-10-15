@@ -163,7 +163,7 @@ test.before(async () => {
   await server.unsafe(`create database ${NAME} owner ${OWNER}`);
   // On a server where an earlier run already made the roles, the migration login is given the admin right over
   // them that it would have had as their creator. On a fresh server (CI) it creates them itself.
-  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
+  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
@@ -179,6 +179,11 @@ test.after(async () => {
   if (server) {
     await server.unsafe(`drop database if exists ${NAME} with (force)`);
     await server.unsafe(`drop role if exists ${WEB}`);
+    // Role grants the migration login made name it as grantor; hand them to the superuser first, then drop it.
+    for (const g of await server`select r.rolname as role, m.rolname as member from pg_auth_members a join pg_roles r on r.oid = a.roleid join pg_roles m on m.oid = a.member where a.grantor = (select oid from pg_roles where rolname = ${OWNER})`) {
+      await server.unsafe(`revoke ${g.role} from ${g.member} granted by ${OWNER} cascade`).catch(() => {});
+      if (g.member !== OWNER) await server.unsafe(`grant ${g.role} to ${g.member}`);
+    }
     await server.unsafe(`drop role if exists ${OWNER}`);
     await server.end({ timeout: 5 });
   }
@@ -212,6 +217,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create table app.t6 (id uuid primary key default app.uuid_v7(), note text check (char_length(note) >= 1)); alter table app.t6 enable row level security; alter table app.t6 force row level security', /app\.t6\.note has no size limit/],
     ['create table app.t7 (id uuid primary key default app.uuid_v7(), passport_number text check (char_length(passport_number) <= 9)); alter table app.t7 enable row level security; alter table app.t7 force row level security', /ID document/],
     ['create function app.f1() returns int language sql security definer as $$ select 1 $$', /security definer/],
+    ['set local role dog_owner; grant create on schema app to dog_signin; set local role dog_signin; create function app.session_end(p integer) returns void language sql security definer set search_path = pg_catalog as $$ select $$', /app\.session_end\(integer\) runs with its owner's rights/],
     // Found by the independent review of Oct 15: each of these passed the first version of the check.
     ['grant dog_owner to dog_app', /dog_app belongs to dog_owner/],
     ['grant pg_write_all_data to dog_app', /dog_app belongs to pg_write_all_data/],
@@ -222,7 +228,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /exactly audit_insert and audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],
@@ -245,7 +251,18 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['set local role dog_owner; alter policy members_insert on app.members with check (true)', /not in the reviewed snapshot: policy app\.members members_insert/],
     ["set local role dog_owner; alter table app.audit_log alter column at set default '2001-01-01'", /not in the reviewed snapshot: default app\.audit_log\.at/],
     ['set local role dog_owner; create or replace function app.members_guard() returns trigger language plpgsql as $$ begin return new; end $$', /no longer refuses the change|not in the reviewed snapshot: function app\.members_guard/],
-    ['create schema side3; create table side3.t (n int); grant usage on schema side3 to public; grant select on side3.t to public', /dog_app can reach side3\.t/]
+    ['create schema side3; create table side3.t (n int); grant usage on schema side3 to public; grant select on side3.t to public', /dog_app can reach side3\.t/],
+    // PR 2: the sign-in role and its functions.
+    ['grant dog_signin to dog_app', /dog_app belongs to dog_signin/],
+    [`grant dog_signin to ${WEB}`, new RegExp(WEB + ' can act as dog_signin|' + WEB + ' \\(which the site signs in as\\) also belongs to dog_signin')],
+    ['grant create on schema app to dog_signin', /dog_signin can create objects in schema app/],
+    ['alter role dog_signin login', /dog_signin can sign in directly/],
+    ['grant execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid) to public', /app\.sign_in can be called by every role/],
+    ['alter function app.session_resolve(text, integer) reset search_path', /app\.session_resolve must fix its search path/],
+    ['set local role dog_owner; create function app.f4() returns int language sql security definer set search_path = pg_catalog as $$ select 1 $$', /app\.f4\(\) runs with its owner's rights/],
+    ['set local role dog_owner; create policy members_public on app.members for select to public using (false)', /members_public applies to every role/],
+    ['grant select on app.sessions to dog_app', /not in the reviewed snapshot: grant app\.sessions dog_app SELECT/],
+    ['grant update (is_admin) on app.members to dog_signin', /not in the reviewed snapshot: grant app\.members\.is_admin dog_signin UPDATE/]
   ];
   for (const [ddl, expect] of cases) {
     const found = await su.begin(async (t) => {
@@ -432,14 +449,15 @@ test('migrations: running again changes nothing, and an edited migration stops t
   assert.deepStrictEqual(await migrate(admin), []);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dog-mig-'));
   try {
-    const src = path.join(root, 'db', 'migrations', '001_foundation.sql');
-    fs.writeFileSync(path.join(dir, '001_foundation.sql'), read(path.relative(root, src)) + '\n-- edited\n');
+    for (const f of fs.readdirSync(path.join(root, 'db', 'migrations'))) fs.copyFileSync(path.join(root, 'db', 'migrations', f), path.join(dir, f));
+    fs.appendFileSync(path.join(dir, '001_foundation.sql'), '\n-- edited\n');
     await assert.rejects(migrate(admin, { dir }), /changed after it was applied/);
-    fs.writeFileSync(path.join(dir, '003_skip.sql'), 'select 1;');
+    fs.writeFileSync(path.join(dir, '009_skip.sql'), 'select 1;');
     await assert.rejects(migrate(admin, { dir }), /no gaps/);
-    fs.rmSync(path.join(dir, '001_foundation.sql'));
-    fs.renameSync(path.join(dir, '003_skip.sql'), path.join(dir, '001_other.sql'));
-    await assert.rejects(migrate(admin, { dir }), /missing from the repository: 001_foundation/);
+    fs.rmSync(path.join(dir, '009_skip.sql'));
+    fs.copyFileSync(path.join(root, 'db', 'migrations', '001_foundation.sql'), path.join(dir, '001_foundation.sql'));
+    fs.renameSync(path.join(dir, '002_signin.sql'), path.join(dir, '002_renamed.sql'));
+    await assert.rejects(migrate(admin, { dir }), /missing from the repository: 002_signin/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

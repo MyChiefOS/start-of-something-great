@@ -364,3 +364,14 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .fig .fig-mute-line { fill: none; stroke: var(--muted); stroke-width: 2.25; }
 .fig .fig-whisker { stroke: var(--text); stroke-width: 1.25; }
 .fig .fig-whisker-quiet { stroke: var(--muted); stroke-width: 1; }
+
+/* Sign-in (/join and /auth/email/continue) */
+.signin .notice { border-left: 3px solid var(--amber); padding: 0.6rem 0.9rem; background: var(--glow); }
+.email-signin { display: grid; gap: 0.6rem; max-width: 24rem; margin-top: 2rem; }
+.email-signin label { font-family: var(--display); font-weight: 600; }
+.email-signin input {
+  font: inherit; color: var(--text); background: transparent;
+  border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.65rem 0.8rem;
+}
+.email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }

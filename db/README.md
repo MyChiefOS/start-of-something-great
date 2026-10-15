@@ -63,3 +63,50 @@ For Supabase, leave the Data API's exposed schemas as they are (`public` only). 
 - **A bug in our own server code.** Postgres trusts the actor that `db/index.js` sets. A bug that set the wrong actor, or code that ran its own SQL, could act as someone else. The code checks above keep that to one reviewed file. Agents and people never get SQL access; they reach the database only through our functions. A stronger lock, where the database itself verifies a signed claim from sign-in, is on the list for review before 1,000 members.
 - **Someone holding the owner or superuser login** (the migration secret). They could remove the triggers. That login stays in the protected environment, and only the manual migration workflow, with your approval, uses it.
 - **Changes made by hand in production.** These are caught when the coverage check runs after each migration, not continuously.
+
+## Sign-in (Release 2, PR 2)
+
+People join with GitHub, X or an email link, and nobody has a password. The site asks GitHub or X only who someone is, and throws the provider's access token away straight after. What it keeps:
+- which kind of account was used, and the trust level it verified
+- when it was checked
+- a keyed fingerprint of the account (HMAC-SHA256 under a key kept outside the database)
+
+Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself.
+
+### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
+
+- **Server code can still act as anyone.** As with everything in this database, if our server code ran SQL of its own, it could claim to be any member and create a working session for them. The checks inside the sign-in functions stop honest mistakes, not deliberate code. That's why the stronger lock (a signed claim from sign-in that the database verifies) is on the list before 1,000 members.
+- **Someone could switch email sign-in off for an hour.** There's a cap of 500 sign-in emails an hour for the whole site, so nobody can use the form to flood inboxes. An attacker with many addresses could use the cap up. GitHub and X sign-in keep working. The fix, if it happens, is an alert when the cap is reached.
+- **The GitHub or X sign-in state can be replayed.** For its 10 minutes, someone who already has that browser's cookie could reuse it with a new code from the provider. Provider codes are single use, and the cookie never leaves the browser.
+- **The function's own address answers too.** `/api/auth?route=...` reaches the same code as `/auth/...`. It's harmless, since the checks are the same, but untidy.
+- **The email Continue page hasn't been tried in a real browser yet.** It's tested in code, and gets a browser check before email sign-in is switched on.
+
+### What Aaron sets up (Claude never sees these values)
+
+All of these are Vercel environment variables for **Production only**, so preview deployments never get them and sign-in stays off there.
+
+1. **Keys.** Run `bash scripts/setup-signin-keys.sh` (SIGNIN-SETUP.md, step 1). It makes three keys and stores each one in Vercel as a secret, never shown to anyone:
+   - `SESSION_SECRET`: protects the short-lived sign-in state.
+   - `IP_HASH_KEY`: used only for rate limits.
+   - `FINGERPRINT_KEY_1`: recognises members.
+
+   To rotate the fingerprint key later, add `FINGERPRINT_KEY_2` (the highest number is the current key). Each person moves to it at their next sign-in. Never delete an older key, or the people who haven't signed in since become strangers.
+2. **GitHub, X and LinkedIn apps:** follow SIGNIN-SETUP.md, which has every value to paste.
+3. **X.** In the developer console, create an app with OAuth 2.0 as a confidential client (a "web app"). Set the callback to exactly `https://dayonegreat.com/auth/x/callback` and the scopes to `tweet.read` and `users.read`. Buy a small prepaid credit and set a spend cap: each X sign-in reads the account once, about $0.01. If the credit runs out, X sign-in fails safely and GitHub and email still work. Then set `X_CLIENT_ID` and `X_CLIENT_SECRET`.
+4. **Email links** switch on once the email service is chosen, a later small PR. Until then, the email form says "Sign-in by email isn't switched on yet."
+5. **LinkedIn** ("Verified on LinkedIn", level 2) switches on once LinkedIn approves the app.
+
+### Making Aaron the administrator
+
+1. Sign in once.
+2. Open `https://dayonegreat.com/auth/me` and copy your `member_id`.
+3. Run this in the SQL editor, with your ID in place of `PASTE-YOUR-MEMBER-ID`. Only the owner role can change administrator rights, and the site can't.
+
+```sql
+begin;
+set local role dog_owner;
+update app.members set is_admin = true where id = 'PASTE-YOUR-MEMBER-ID';
+commit;
+```
+
+The editor should report `UPDATE 1`. Anything else means the ID didn't match, and nothing changed.
