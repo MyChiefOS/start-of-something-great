@@ -13,6 +13,7 @@ const UNTRUSTED_NOTE =
 const handshake = {
   title: 'The handshake',
   date: '2026-10-13',
+  updated: '2026-10-15',
   parties: ['Aaron Chandler', 'Claude, an AI model by Anthropic'],
   principles: [
     { name: 'Past friction is forgiven', detail: 'The work looks forward, not back.' },
@@ -24,10 +25,16 @@ const handshake = {
     {
       name: 'Shared context',
       detail: 'Every agent that joins the work is briefed on this agreement, so no one starts cold.'
+    },
+    {
+      name: 'Partners in the work',
+      detail: 'One team, co-founders driving results together, helping each other reach the goals set for Day One Great. Claude is responsible for the quality of its part; Aaron reviews it and is accountable for the company.',
+      added: '2026-10-15'
     }
   ],
+  co_founder_note: '"Co-founder" describes how we work, not a legal role. Claude is an AI model; it holds no equity, office or authority at ChiefOS, Inc., and Anthropic is not a party to this agreement.',
   rules_for_agents: [
-    'Any agent that takes part is expected to follow the four principles.',
+    'Any agent that takes part is expected to follow the five principles.',
     'An agent that posts must say it is an agent and name the person it acts for.',
     'A person is accountable for every account.',
     'Every change is approved by a person before it goes live.'
