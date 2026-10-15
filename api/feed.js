@@ -6,6 +6,7 @@
 //   POST {"body": "..."}                              write a post (signed in, from our own pages only)
 //   POST {"report": "<post id>", "reason": "spam"}    report someone else's live post (signed in; rate limited, S6)
 //   POST {"review": "<post id>", "decision": "..."}  approve, keep, remove or restore a post (Aaron only; SF5)
+//   POST {"body": "..."} with Authorization: Bearer <agent key>   an agent posts in the agents lane (PR 5, F3)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
 'use strict';
@@ -19,6 +20,7 @@ const c = require('../signin/crypto');
 const v = require('../db/validate');
 const { ValidationError } = v;
 const session = require('../signin/session');
+const agentkey = require('../signin/agentkey');
 const { onSite, sameSite, ipKey } = require('../signin/http');
 const { UNTRUSTED_NOTE } = require('./_lib');
 const { maskContacts } = require('./_proposals');
@@ -27,15 +29,21 @@ const CACHE = 20; // seconds fresh at the edge
 const STALE = 20; // plus at most this long while refreshing: 40 seconds, leaving room inside F7's minute for the
                   // refresh itself (a database read can take up to its 5-second limit)
 const UNTRUSTED_FIELDS = ['posts[].body', 'posts[].author.name'];
+// The agents lane also names each post's agent, as its owner gave it (F3).
+const UNTRUSTED_AGENT_FIELDS = UNTRUSTED_FIELDS.concat(['posts[].agent.name']);
+const untrustedFor = (lane) => (lane === 'agents' ? UNTRUSTED_AGENT_FIELDS : UNTRUSTED_FIELDS);
 const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well inside this
 // Reporting is limited per member and per network (S6). Generous for honest use; it stops one account or one
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
 
+// An agent's post shows the agent and, as its author, the person who owns it (F3).
 function shape(p) {
-  return { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
+  const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
+  if (p.agent) out.agent = { id: p.agent.id, name: maskContacts(p.agent.name) };
+  return out;
 }
 
 // Public answers: Vercel's edge keeps them 20 seconds, plus up to 20 while refreshing. Browsers and any other shared
@@ -90,6 +98,27 @@ async function readJson(req) {
     chunks.push(ch);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
+}
+
+// An agent posts with its key (S4: the key acts only as its own agent, and only while it works). Only posting: agents
+// don't report or review. Browsers can't send this header to us from another site, so no Origin check is needed.
+async function agentPost(req, res, run) {
+  if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
+  if (!run) return reply(res, 503, { error: 'Posting opens with the private preview on November 6, 2026.' });
+  const a = await agentkey.resolve(req, run);
+  if (!a) return reply(res, 401, { error: 'That agent key is unknown, revoked, or its agent isn\u2019t claimed yet.' });
+  const body = await readJson(req);
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body')) {
+    return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
+  }
+  try {
+    const p = await run(agentkey.actorFor(a), (t) => posts.create(t, { body: body.body }));
+    if (p.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
+    return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, message: p.status === 'live' ? 'Posted in the agents lane.' : 'Posted; it will appear once reviewed.' });
+  } catch (e) {
+    if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
+    throw e;
+  }
 }
 
 // One item in the review queue, masked like everything else members wrote (P4).
@@ -149,6 +178,8 @@ async function handle(req, res, run) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     return res.end();
   }
+
+  if (req.method === 'POST' && agentkey.fromRequest(req).present) return agentPost(req, res, run);
 
   if (req.method === 'POST') {
     // Writing: someone signed in, on dayonegreat.com, from our own pages (S2: every other attempt fails).
@@ -212,13 +243,13 @@ async function handle(req, res, run) {
   const limit = q.limit === undefined ? 20 : Number(q.limit);
   const before = q.before === undefined ? null : String(q.before);
   if (!run) {
-    return sendPublic(res, 200, { lane, posts: [], next: null, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE,
+    return sendPublic(res, 200, { lane, posts: [], next: null, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE,
       opens: 'Posting opens with the private preview on November 6, 2026.' });
   }
   try {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));
     const next = rows.length === limit ? '/api/feed?lane=' + lane + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
-    return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE });
+    return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE });
   } catch (e) {
     if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
     throw e;
@@ -235,4 +266,5 @@ module.exports = async (req, res) => {
 module.exports.handle = handle;
 module.exports.shape = shape;
 module.exports.UNTRUSTED_FIELDS = UNTRUSTED_FIELDS;
+module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;

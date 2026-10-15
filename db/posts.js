@@ -22,8 +22,10 @@ async function feed(t, { lane = 'people', before = null, limit = 20 } = {}) {
   const b = before === null ? null : v.uuid('before', before);
   const n = v.int('limit', limit, { min: 1, max: 50 });
   const rows = await t`select * from app.feed(${l}, ${b}::uuid, ${n}::integer)`;
+  // An agent's post names the agent and, as its author, the person who owns it (F3).
   return rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, publishedAt: r.published_at,
-    author: { id: r.author_id, name: r.author_name, level: r.author_level } }));
+    author: { id: r.author_id, name: r.author_name, level: r.author_level },
+    agent: r.agent_id ? { id: r.agent_id, name: r.agent_name } : null }));
 }
 
 async function profile(t, id) {

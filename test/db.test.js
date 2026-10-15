@@ -350,10 +350,15 @@ test('S7, G4: the audit log takes new rows, shows them only to Aaron, and refuse
   assert.strictEqual(still.action, 'test.member_did_something');
 });
 
-test('S3 groundwork: an agent acting for its owner can\'t read or change the owner\'s private row', async () => {
+// PR 5 decided what an agent sees (001 left it open): its own owner's row, read-only, because posting checks the
+// author's level and status. Nothing of any other member, and it can change nothing.
+test('S3: an agent acting for its owner reads only its owner\'s row and can\'t change it', async () => {
   const owner = await newMember('Agent owner');
+  const other = await newMember('Someone else');
   const agent = { actor: 'agent', memberId: owner.id, agentId: '018f3c2e-7b1a-7cde-9f00-0123456789ab' };
-  assert.strictEqual(await as(agent, (t) => members.get(t, owner.id)), null);
+  assert.strictEqual((await as(agent, (t) => members.get(t, owner.id))).display_name, 'Agent owner');
+  assert.strictEqual(await as(agent, (t) => members.get(t, other.id)), null);
+  assert.strictEqual((await as(agent, (t) => t`select id from app.members`)).length, 1);
   assert.strictEqual(await as(agent, (t) => members.rename(t, owner.id, 'Renamed by my agent')), false);
   assert.strictEqual((await as(member(owner.id), (t) => members.get(t, owner.id))).display_name, 'Agent owner');
   // An agent's audit rows name the agent, not the owner.

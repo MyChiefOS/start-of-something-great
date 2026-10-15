@@ -125,6 +125,10 @@
     {
       "source": "/auth/:path*",
       "destination": "/api/auth?route=:path*"
+    },
+    {
+      "source": "/api/agents/:path*",
+      "destination": "/api/agents?route=:path*"
     }
   ]
 }
