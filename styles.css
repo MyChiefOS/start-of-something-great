@@ -326,7 +326,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .math-block { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.25rem; padding: 0.25rem 0; }
 .math-block math { font-size: 1.15em; }
 .figure { margin: 2rem 0 2.25rem; }
-.figure svg.fig { display: block; width: 100%; height: auto; font-family: var(--display); }
+.fig-scroll { max-width: 100%; overflow-x: auto; }
+.fig-scroll:focus-visible, .math-block:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.figure svg.fig { display: block; width: 100%; min-width: 40rem; height: auto; font-family: var(--display); }
 .figure figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
 .table-wrap { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.5rem; }
 .table-wrap:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
@@ -356,8 +358,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .fig .fig-accent-soft { fill: var(--amber); fill-opacity: 0.4; }
 .fig .fig-mute { fill: var(--muted); fill-opacity: 0.75; }
 .fig .fig-mute-soft { fill: var(--muted); fill-opacity: 0.3; }
-.fig .fig-accent-range { stroke: var(--amber); stroke-opacity: 0.4; stroke-width: 6; }
-.fig .fig-mute-range { stroke: var(--muted); stroke-opacity: 0.3; stroke-width: 6; }
+.fig .fig-accent-range { stroke: var(--amber); stroke-opacity: 0.7; stroke-width: 6; }
+.fig .fig-mute-range { stroke: var(--muted); stroke-opacity: 0.7; stroke-width: 6; }
 .fig .fig-accent-line { fill: none; stroke: var(--amber); stroke-width: 2.25; }
 .fig .fig-mute-line { fill: none; stroke: var(--muted); stroke-width: 2.25; }
 .fig .fig-whisker { stroke: var(--text); stroke-width: 1.25; }

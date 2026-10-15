@@ -7,7 +7,11 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 const wp1 = (f) => JSON.parse(read(path.join('research', 'code', 'wp1', 'results', f)));
 const paper = () => read('research/decision-loop.html');
-const text = (html) => html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+// Prose only: scripts, figures and equations are removed, so a number must appear in the written text to count.
+const text = (html) => html.replace(/<(script|svg|math)\b[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+// The number as a whole token: 4.0 does not match inside 14.05.
+const has = (t, v) => new RegExp('(?<![\\d.])' + v.replace(/[.]/g, '\\.') + '(?![\\d])').test(t);
+const harm = () => { const m = read('research/code/wp1/results/review_harm.txt').match(/hurts\) ([\d.]+)\s+P\(game-changing review hurts\) ([\d.]+)/); return { routine: +m[1], gc: +m[2] }; };
 
 test('research pages are in the sitemap, the site search and llms.txt', () => {
   const sitemap = read('sitemap.xml');
@@ -20,7 +24,8 @@ test('research pages are in the sitemap, the site search and llms.txt', () => {
 });
 
 test('every page links to Research in its main navigation', () => {
-  const files = fs.readdirSync(root).filter((f) => f.endsWith('.html') && f !== '404.html').concat(['research/decision-loop.html']);
+  const files = fs.readdirSync(root).filter((f) => f.endsWith('.html') && f !== '404.html')
+    .concat(fs.readdirSync(path.join(root, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f));
   for (const f of files) {
     const nav = (read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/) || [''])[0];
     assert.ok(nav.includes('href="/research"'), f + ' has no Research link in its navigation');
@@ -65,7 +70,7 @@ test('the numbers in the abstract and results match the stored model results', (
   for (const v of [pct(r('Tiered loop (adopted)')), pct(r('Full loop on every decision')), pct(r('Light loop on every decision')),
     pct(sens['P(tiered reduces loss)']), pct(sens.red_tiered[2]), pct(sens.red_tiered[4]),
     pct(res['No loop'].severe_gc[0]), pct(res['Tiered loop (adopted)'].severe_gc[0])]) {
-    assert.ok(t.includes(v), v + ' not found in the paper');
+    assert.ok(has(t, v), v + ' not found in the paper text');
   }
   assert.ok(t.includes((100 * sens.red_tiered[0]).toFixed(1).replace('-', '−') + '%'), 'lower end of the 90% range');
   const share = r('Tiered loop (adopted)') / r('Full loop on every decision');
@@ -73,7 +78,9 @@ test('the numbers in the abstract and results match the stored model results', (
   const curve = fin.curve, cross = (k) => { const i = curve.findIndex((c) => c[k] < 0), a = curve[i - 1], b = curve[i]; return a.fa + a[k] / (a[k] - b[k]) * (b.fa - a.fa); };
   assert.ok(t.includes('about ' + Math.round(100 * cross('gc')) + '%'), 'game-changing review break-even');
   assert.ok(t.includes('about ' + Math.round(100 * cross('rt')) + '%'), 'routine review break-even');
-  for (const [step, [pts]] of Object.entries(fin.ablation)) assert.ok(t.includes(pts.toFixed(1)), step + ' step value ' + pts.toFixed(1));
+  for (const [step, [pts]] of Object.entries(fin.ablation)) assert.ok(has(t, pts.toFixed(1)), step + ' step value ' + pts.toFixed(1));
+  assert.ok(t.includes(Math.round(100 * harm().routine) + '% of them'), 'routine review hurts share');
+  assert.ok(has(t, (100 * harm().gc).toFixed(0) + '%'), 'game-changing review hurts share');
 });
 
 test('every percentage in the abstract comes from the stored model results', () => {
@@ -88,7 +95,7 @@ test('every percentage in the abstract comes from the stored model results', () 
     String(Math.round(100 * (H('Tiered loop (adopted)') - H('No loop')) / (H('Full loop on every decision') - H('No loop')))),
     (100 * sens.red_tiered[2]).toFixed(1), (100 * sens.red_tiered[0]).toFixed(1).replace('-', '−'), (100 * sens.red_tiered[4]).toFixed(1),
     (100 * sens['P(tiered reduces loss)']).toFixed(1), String(Math.round(100 * cross('gc'))),
-    String(Math.round(100 * (1 - 0.424))), // share of settings where review on game-changing decisions helps (review_harm.py prints 0.424)
+    String(Math.round(100 * (1 - harm().gc))), // share of settings where review on game-changing decisions helps (results/review_harm.txt)
     '90' // names the interval ("the middle 90%"), not a result
   ]);
   const found = [...abs.matchAll(/(−?\d+(?:\.\d+)?)%/g)].map((m) => m[1]);

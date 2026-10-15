@@ -140,7 +140,7 @@ test('R2: only /talk may load giscus, and every path gets exactly one Content-Se
   assert.match(talk, /frame-ancestors 'none'/);
   // The same regular expressions Vercel builds from these sources (path-to-regexp 6, checked Oct 15).
   const siteWide = /^(?:\/((?!talk\/?$).*))[\/#?]?$/i, talkOnly = /^\/talk[\/#?]?$/i;
-  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2']) {
+  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2', '/research', '/research/decision-loop']) {
     assert.ok(siteWide.test(p) !== talkOnly.test(p), p + ' gets ' + (siteWide.test(p) ? 'two policies' : 'no policy'));
   }
   for (const f of htmlPages().filter((x) => x !== 'talk.html')) {

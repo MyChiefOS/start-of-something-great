@@ -122,7 +122,7 @@ def breakeven():
             if a[k] > 0 >= b[k]:
                 return a['fa'] + a[k] / (a[k] - b[k]) * (b['fa'] - a['fa'])
     cg, cr = cross('gc'), cross('rt')
-    out = [t(24, 30, f'Review stops reducing loss once false alarms pass {round(100 * cg)}% on big calls, {round(100 * cr)}% on routine ones', size=15, weight=600),
+    out = [t(24, 30, f'Review stops reducing loss once false alarms change over {round(100 * cg)}% of big calls, {round(100 * cr)}% of routine ones', size=15, weight=600),
            t(24, 50, 'Loss avoided per decision by adding review, before counting its time; same-family reviewer (ρ = 0.77)', 'fig-quiet', size=11.5),
            t(24, 80, 'Loss avoided per decision', 'fig-quiet', size=11.5)]
     for i in range(8):
@@ -131,7 +131,7 @@ def breakeven():
     out.append(f'<line x1="96" x2="676" y1="{Y(0):.1f}" y2="{Y(0):.1f}" class="fig-zero"/>')
     for i in range(5):
         out.append(t(X(i * 0.1), 352, f'{i * 10}%', 'fig-quiet', 'middle', 11.5))
-    out.append(t(386, 378, 'Reviewer false-alarm rate', 'fig-quiet', 'middle', 11.5))
+    out.append(t(386, 378, 'Share of reviewed decisions a false alarm changes', 'fig-quiet', 'middle', 11.5))
     out.append(f'<line x1="{X(0.1):.1f}" x2="{X(0.1):.1f}" y1="96" y2="330" class="fig-ref"/>' + t(X(0.1) + 6, 110, 'Base assumption: 10%', 'fig-quiet', size=11.5))
     for k, cls in (('gc', 'fig-accent'), ('rt', 'fig-mute')):
         d = ''.join(f'{"M" if i == 0 else "L"}{X(r["fa"]):.1f} {Y(r[k]):.1f}' for i, r in enumerate(curve))
@@ -143,9 +143,9 @@ def breakeven():
                + t(X(cr) + 10, Y(0) + 48, f'breaks even at {round(100 * cr)}%', size=12))
     out.append('<line x1="450" x2="474" y1="106" y2="106" class="fig-accent-line"/>' + t(482, 110, 'Review on game-changing decisions', size=12))
     out.append('<line x1="450" x2="474" y1="126" y2="126" class="fig-mute-line"/>' + t(482, 130, 'Review on routine decisions', size=12))
-    desc = (f'Loss avoided by review falls as the reviewer false-alarm rate rises. On game-changing decisions it reaches zero at about {100 * cg:.0f}%; '
-            f'on routine decisions at about {100 * cr:.0f}%. At 0% false alarms review avoids {curve[0]["gc"]:.3f} units per game-changing decision '
-            f'and {curve[0]["rt"]:.3f} per routine one.')
+    desc = (f'Loss avoided by review falls as false alarms change more of the reviewed decisions. Review on game-changing decisions reaches zero '
+            f'at about {100 * cg:.0f}%; review on routine decisions at about {100 * cr:.0f}%. With no false alarms, averaged over all decisions, '
+            f'review on game-changing decisions avoids {curve[0]["gc"]:.3f} units of loss per decision and review on routine decisions {curve[0]["rt"]:.3f}.')
     return svg('fig-breakeven', 'Review break-even by false-alarm rate', desc, 760, 400, ''.join(out))
 
 
