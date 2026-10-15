@@ -19,32 +19,54 @@ const HEADINGS = {
   "if you're an agent, who are you acting for?": 'acting_for'
 };
 
-// A run of digits joined by up to 3 separators, e.g. (202) 555-0143 or +1 202 555 0143. A run with 10 or
+// A run of digits joined by up to 8 separators, e.g. (202) 555-0143 or +1 202 555 0143. A run with 10 or
 // more digits is hidden whole (so two numbers side by side are both hidden), unless it is only dates.
-const PHONE = /\+?\(?\d(?:[\s().\/_\u2010-\u2015-]{0,5}\d){9,60}/g;
-const DATES_ONLY = /^(?:\d{4}-\d{2}-\d{2}[\s,.]*)+$/;
-const isPhone = (m) => !DATES_ONLY.test(m.trim()) && m.replace(/\D/g, '').length >= 10;
+// Separators include dots, slashes, dashes of every width, middle dots, bullets, bars and invisible
+// characters. The separators never include digits, so matching stays linear on hostile input (no ReDoS).
+const PHONE = /\+?\(?\d(?:[\s().\/_|·•‐-―−\p{Cf}͏︀-️-]{0,8}\d){9,60}/gu;
+const DATES_ONLY = /^(?:(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))[\s,.]*)+$/;
+const isPhone = (m) => !DATES_ONLY.test(m.replace(/[\p{Cf}͏︀-️]/gu, '').trim()) && m.replace(/\D/g, '').length >= 10;
 
-// R3: fold look-alikes first (fullwidth @ and digits, etc.) so they can't slip past the patterns.
-// NFKC turns U+FF20 into @ and U+FF10-FF19 into 0-9. Invisible characters are removed, except the
-// zero-width joiner next to non-word characters, which builds emoji such as family emoji: it is only
-// removed where it sits inside a word, number or address.
-const norm = (t) => String(t == null ? '' : t).normalize('NFKC')
-  .replace(/[\u200B\u200C\u2060\uFEFF\u00AD]/g, '')
-  .replace(/\u200D(?=[A-Za-z0-9@.+%_-])|(?<=[A-Za-z0-9@.+%_-])\u200D/g, '');
-// P4: hide anything that looks like an email address in public text.
-function maskEmails(text) {
-  return norm(text).replace(EMAIL, '[email hidden]');
+// R3: look-alikes are folded before checking, so they can't slip past the patterns:
+// - NFKC turns full-width and other compatibility forms into plain ones (U+FF20 becomes @, U+FF10 becomes 0).
+// - Digits from any script (Arabic-Indic, Devanagari and so on) become 0 to 9.
+// - Invisible characters (zero-width, direction marks, tags, variation selectors) are removed where
+//   they touch an address or number. Elsewhere they are kept, because emoji are built from them.
+// Text with nothing to hide is returned exactly as written; only text that had contacts hidden is folded.
+const INVISIBLE_RUN = /(?<=[A-Za-z0-9@.+%_()-])[\p{Cf}͏]+|[\p{Cf}͏]+(?=[A-Za-z0-9@.+%_()-])/gu;
+const VARIATION_IN_TEXT = /(?<=[A-Za-z0-9@.])[︀-️](?!⃣)/gu; // keeps keycap emoji such as 1️⃣
+const MAX_SCAN = 70000; // GitHub caps issue and comment text at 65,536 characters
+function digitValue(ch) {
+  let cp = ch.codePointAt(0), k = 0; // Unicode decimal digits come in runs of ten starting at zero
+  while (k < 60 && /\p{Nd}/u.test(String.fromCodePoint(cp - 1))) { cp--; k++; }
+  return String(k % 10);
 }
+function fold(text) {
+  return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC')
+    .replace(/[^\x00-\x7F]/gu, (ch) => (/\p{Nd}/u.test(ch) ? digitValue(ch) : ch))
+    .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '');
+}
+const hasEmail = (t) => new RegExp(EMAIL.source).test(t);
+const hasPhone = (t) => (t.match(PHONE) || []).some(isPhone);
 
 function hasContactInfo(text) {
-  const t = norm(text);
-  if (new RegExp(EMAIL.source).test(t)) return true;
-  return (t.match(PHONE) || []).some(isPhone);
+  const t = fold(text);
+  return hasEmail(t) || hasPhone(t);
 }
 
+// P4: hide anything that looks like an email address in public text.
+function maskEmails(text) {
+  const raw = String(text == null ? '' : text);
+  const t = fold(raw);
+  return hasEmail(t) ? t.replace(EMAIL, '[email hidden]') : raw;
+}
+
+// P4: hide email addresses and phone numbers in public text.
 function maskContacts(text) {
-  return maskEmails(text).replace(PHONE, (m) => (isPhone(m) ? '[number hidden]' : m));
+  const raw = String(text == null ? '' : text);
+  const t = fold(raw);
+  if (!hasEmail(t) && !hasPhone(t)) return raw;
+  return t.replace(EMAIL, '[email hidden]').replace(PHONE, (m) => (isPhone(m) ? '[number hidden]' : m));
 }
 
 // Check C3: draft a proposal for an agent. Nothing is filed: the result is a pre-filled GitHub
@@ -123,12 +145,12 @@ function shapeIssue(issue) {
   const fields = parseBody(issue.body);
   // P7: an agent's claim is self-declared in Release 1, never presented as verified.
   const saysAgent = fields.filer === AGENT_CHOICE || labels.map((n) => n.toLowerCase()).includes(AGENT_LABEL);
-  const actingFor = clip(maskContacts(clip(fields.acting_for || '', 400)), 80);
+  const actingFor = clip(maskContacts(fields.acting_for || ''), 80);
   return {
     number: issue.number,
-    title: clip(maskContacts(clip(String(issue.title || '').replace(/^Proposal:\s*/i, ''), 600)), 140),
-    change: clip(maskContacts(clip(fields.change || issue.body || '', 2400)), 1200),
-    why: clip(maskContacts(clip(fields.why || '', 2400)), 1200),
+    title: clip(maskContacts(String(issue.title || '').replace(/^Proposal:\s*/i, '')), 140),
+    change: clip(maskContacts(fields.change || issue.body || ''), 1200),
+    why: clip(maskContacts(fields.why || ''), 1200),
     filed_by: {
       github_user: issue.user ? issue.user.login : null,
       says_agent: saysAgent,

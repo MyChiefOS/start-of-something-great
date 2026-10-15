@@ -137,3 +137,75 @@ test('R2: only /talk may load giscus, and the policy that allows it is the last 
     assert.ok(!/giscus\.app\/client/.test(fs.readFileSync(path.join(root, f), 'utf8')), f);
   }
 });
+
+test('R3: every kind of invisible character, odd separator and non-ASCII digit is caught (review, Oct 15)', () => {
+  const { maskContacts, hasContactInfo } = require(path.join(root, 'api', '_proposals.js'));
+  const attacks = ['jane‎@example.com', 'jane@exa⁣mple.com', 'ja͏ne@example.com', 'jane@example.‭com',
+    'jane\u{E0020}@example.com', '202‏555‏0143', '(202) ‍(555) 0143', '20️2 555 0143',
+    '202·555·0143', '202•555•0143', '202|555|0143', '202 ------ 555 ------ 0143',
+    '٢٠٢ ٥٥٥ ٠١٤٣', '२०२-५५५-०१४३'];
+  for (const a of attacks) {
+    assert.ok(hasContactInfo(a), 'not detected: ' + JSON.stringify(a));
+    const out = maskContacts(a);
+    assert.ok(!EMAIL.test(out) && (out.match(/\p{Nd}/gu) || []).length < 7, 'not masked: ' + JSON.stringify(a) + ' -> ' + out);
+  }
+});
+
+test('R3: text with nothing to hide comes back exactly as written', () => {
+  const { maskContacts } = require(path.join(root, 'api', '_proposals.js'));
+  for (const ok of ['x² + y²', 'Wait…', '½ done', '①②③', 'Day One Great™', '❤️ love it', '1️⃣ first', 'England 🏴󠁧󠁢󠁥󠁮󠁧󠁿 fans',
+    'Due 10/15/2026, then 10/16/2026', 'Due 10/15/2026 10/16/2026', 'mixed عربي text']) {
+    assert.strictEqual(maskContacts(ok), ok);
+  }
+});
+
+test('P4: masking happens before clipping, so a cut never leaves part of an address visible', () => {
+  const { shapeIssue } = require(path.join(root, 'api', '_proposals.js'));
+  const many = Array.from({ length: 60 }, (_, i) => 'reach.someone.number' + i + '@a-very-long-domain-name.example.com').join(' ');
+  const s = shapeIssue({ number: 9, title: 'Proposal: test', state: 'open', labels: [{ name: 'proposal' }], user: { login: 'u' },
+    created_at: '2026-10-15T00:00:00Z', updated_at: '2026-10-15T00:00:00Z', html_url: 'h', comments: 0,
+    body: '### What should change?\n\n' + many + '\n\n### Why?\n\n' + many });
+  for (const v of [s.change, s.why]) assert.ok(!/@|\.example\.com/.test(v), v.slice(-120));
+});
+
+test('P4: commit summaries and author names in the changes feed are masked (API and MCP)', async () => {
+  global.fetch = async () => ({ status: 200, ok: true, headers: { get: () => '5000' },
+    json: async () => [{ commit: { message: 'Fix typo, thanks jane.doe@example.com\n\nmore', author: { name: 'Call 202 555 0143', date: 'd' } }, html_url: 'u' }] });
+  const api = await call(fresh('changes.js'), 'GET', '/api/changes');
+  const m = await call(fresh('mcp.js'), 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_recent_changes', arguments: {} } });
+  for (const r of [api, m]) assert.ok(!EMAIL.test(r.text) && !/555 0143/.test(r.text), r.text);
+});
+
+test('R1: if GitHub hangs, the call gives up quickly and serves the last good answer', async () => {
+  let hang = false, calls = 0;
+  global.fetch = (url, opts) => {
+    calls++;
+    if (!hang) return Promise.resolve({ status: 200, ok: true, headers: { get: () => '5000' }, json: async () => [] });
+    return new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(new Error('timed out'))));
+  };
+  const lib = fresh('_lib.js');
+  lib._resetCache({ timeoutMs: 50 });
+  await lib.getProposals();
+  const realNow = Date.now;
+  Date.now = () => realNow() + 120000; // past the 60-second cache
+  try {
+    hang = true;
+    const t = realNow();
+    const again = await lib.getProposals();
+    assert.ok(Array.isArray(again.proposals));
+    assert.ok(realNow() - t < 1000, 'took ' + (realNow() - t) + ' ms');
+  } finally { Date.now = realNow; }
+});
+
+test('R1: while GitHub is failing, it is asked again at most once every 15 seconds', async () => {
+  let calls = 0;
+  global.fetch = async () => { calls++; return { status: 503, ok: false, headers: { get: () => null }, json: async () => ({}) }; };
+  const lib = fresh('_lib.js');
+  for (let i = 0; i < 10; i++) await lib.getProposals().catch(() => {});
+  assert.strictEqual(calls, 1, 'GitHub was called ' + calls + ' times');
+});
+
+test('Checks: runs on main are never cancelled; only older runs of the same pull request are', () => {
+  const y = fs.readFileSync(path.join(root, '.github', 'workflows', 'checks.yml'), 'utf8');
+  assert.match(y, /group: checks-\$\{\{ github\.event_name == 'pull_request' && github\.ref \|\| github\.run_id \}\}/);
+});

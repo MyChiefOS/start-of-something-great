@@ -111,7 +111,7 @@ function lastQueueDate(body) {
 // Titles are public text: hide contacts, strip markup, and break @mentions and #references so the
 // queue never pings anyone or links issues by accident.
 function safeTitle(t) {
-  return maskContacts(String(t || '').slice(0, 400).replace(/^proposal:\s*/i, '')).slice(0, 100)
+  return maskContacts(String(t || '').replace(/^proposal:\s*/i, '')).slice(0, 100)
     .replace(/[\[\]<>`*_|]/g, '').replace(/([@#])/g, '$1\u200b');
 }
 

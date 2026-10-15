@@ -9,10 +9,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same pull request replaces the older run. Runs on main are never cancelled.
+# A newer push to the same pull request replaces the older run. Runs on main each get their own group
+# (the run id), so they are never cancelled or replaced.
 concurrency:
-  group: checks-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   checks:
