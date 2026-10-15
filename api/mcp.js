@@ -18,6 +18,8 @@ let readPosts = async (a) => {
   if (!db.configured()) return null;
   return db.run({ actor: 'anon' }, (t) => require('../db/posts').feed(t, a));
 };
+// At most 30 seconds old, so a removed post is gone from agents' answers well within F7's minute.
+const POSTS_CACHE_MS = 30000;
 const postsCache = new Map();
 function setReadPosts(fn) { readPosts = fn; postsCache.clear(); }
 const { shapeShipped, draftProposal } = require('./_proposals');
@@ -141,7 +143,7 @@ const tools = [
       // Agents may poll; a 30-second memory keeps that from reaching the database every time.
       const key = lane + ':' + limit;
       const hit = postsCache.get(key);
-      const rows = hit && hit.at > Date.now() - 30000 ? hit.rows : await readPosts({ lane, limit });
+      const rows = hit && hit.at > Date.now() - POSTS_CACHE_MS ? hit.rows : await readPosts({ lane, limit });
       if (!hit || hit.rows !== rows) postsCache.set(key, { at: Date.now(), rows });
       if (rows === null) return { lane, posts: [], note: UNTRUSTED_NOTE, opens: 'Posting opens with the private preview on November 6, 2026.' };
       return { lane, posts: rows.map(require('./feed').shape), note: UNTRUSTED_NOTE };
@@ -364,3 +366,4 @@ module.exports = async (req, res) => {
   return send(res, r.status, r.body);
 };
 module.exports.setReadPosts = setReadPosts;
+module.exports.POSTS_CACHE_MS = POSTS_CACHE_MS;

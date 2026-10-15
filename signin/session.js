@@ -24,4 +24,8 @@ async function current(req, run) {
 // The database actor for a signed-in member.
 const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: who.memberId });
 
-module.exports = { SESSION, isToken, sessionHash, current, actorFor };
+// Who may use the review queue (PR 4). Today only Aaron. Adding reviewers means changing this, actorFor and
+// app.is_reviewer() in the database together (004_review.sql explains the pipeline).
+const canReview = (who) => Boolean(who && who.isAdmin === true);
+
+module.exports = { SESSION, isToken, sessionHash, current, actorFor, canReview };

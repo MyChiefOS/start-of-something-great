@@ -29,8 +29,57 @@
       meta.appendChild(t);
       art.appendChild(meta);
       p.body.split(/\n{2,}/).forEach(function (para) { art.appendChild(el('p', '', para)); });
+      art.appendChild(reportControl(p.id));
       posts.appendChild(art);
     });
+  }
+
+  // Report: a reason, an optional note, and Send (F7: the post is in the review queue as soon as it answers).
+  var REASONS = [['spam', 'Spam'], ['abuse', 'Abuse or harassment'], ['private_info', 'Shares private information'], ['illegal', 'Illegal'], ['other', 'Something else']];
+  function reportControl(id) {
+    var wrap = el('div', 'report');
+    var open = el('button', 'report-link', 'Report');
+    open.type = 'button';
+    var status = el('p', 'fine', '');
+    status.setAttribute('role', 'status');
+    open.addEventListener('click', function () {
+      open.hidden = true;
+      var f = el('div', 'report-form');
+      var label = el('label', '', 'Why are you reporting this post?');
+      var sel = el('select');
+      sel.id = 'reason-' + id;
+      label.htmlFor = sel.id;
+      REASONS.forEach(function (r) { var o = el('option', '', r[1]); o.value = r[0]; sel.appendChild(o); });
+      var note = el('input');
+      note.type = 'text';
+      note.maxLength = 500;
+      note.placeholder = 'Anything we should know? (optional)';
+      note.setAttribute('aria-label', 'Note for the reviewer (optional)');
+      var send = el('button', 'button', 'Send report');
+      send.type = 'button';
+      send.addEventListener('click', function () {
+        send.disabled = true;
+        status.textContent = 'Sending…';
+        fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ report: id, reason: sel.value, note: note.value }) })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
+          .then(function (x) {
+            if (x.ok) { f.remove(); status.textContent = x.d.message; return; }
+            send.disabled = false;
+            status.textContent = x.status === 401 ? 'Sign in to report posts.' : (x.d.error || 'That didn’t go through.');
+          })
+          .catch(function () { send.disabled = false; status.textContent = 'That didn’t go through. Please try again.'; });
+      });
+      f.appendChild(label);
+      f.appendChild(sel);
+      f.appendChild(note);
+      f.appendChild(send);
+      wrap.insertBefore(f, status);
+      sel.focus();
+    });
+    wrap.appendChild(open);
+    wrap.appendChild(status);
+    return wrap;
   }
 
   function load(append) {

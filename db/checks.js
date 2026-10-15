@@ -30,7 +30,8 @@ const DEFINERS = {
   'app.session_resolve(text, integer)': 'dog_signin',
   'app.session_end(text)': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
-  'app.profile(uuid)': 'dog_public'
+  'app.profile(uuid)': 'dog_public',
+  'app.reportable(uuid, uuid)': 'dog_public'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -235,7 +236,10 @@ async function problems(sql, { snapshot } = {}) {
   for (const [tbl, name, type, fn, what] of [
     ['audit_log', 'audit_log_no_change', 26, 'audit_log_append_only', 'every update and delete statement'],
     ['audit_log', 'audit_log_no_truncate', 34, 'audit_log_append_only', 'every truncate statement'],
-    ['members', 'members_guard', 19, 'members_guard', 'every updated member row']
+    ['members', 'members_guard', 19, 'members_guard', 'every updated member row'],
+    // PR 4: only a reviewer changes a post's status, along the allowed moves; flags close once, in the reviewer's name.
+    ['posts', 'posts_review_guard', 19, 'posts_review_guard', 'every updated post row'],
+    ['review_flags', 'review_flags_guard', 19, 'review_flags_guard', 'every updated flag row']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

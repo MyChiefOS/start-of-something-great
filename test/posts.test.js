@@ -104,7 +104,14 @@ async function member(level = 1, name = 'New member') {
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
 }
-const approve = (id) => q(`update app.posts set status = 'live', published_at = now() where id = '${id}'`);
+// Changing a post's status is a reviewer's decision (PR 4), even for the database superuser.
+// A reviewer always acts under their member ID, which closed flags record.
+const REVIEWER = crypto.randomUUID();
+const asReviewer = (sqlText) => su.begin(async (t) => {
+  await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${REVIEWER}, true)`;
+  await t.unsafe(sqlText);
+});
+const approve = (id) => asReviewer(`update app.posts set status = 'live' where id = '${id}'`);
 
 test('F6: level 0 and 1 posts wait until the author has 3 live posts; level 2 and Aaron go live at once', async () => {
   for (const level of [0, 1]) {
@@ -130,13 +137,15 @@ test('S2, S3: nobody sets a post\'s status, author or lane, posts for someone el
     (t) => t`insert into app.posts (body, status, published_at) values ('x', 'live', now())`,
     (t) => t`insert into app.posts (body, author_id) values ('x', ${b.id})`,
     (t) => t`insert into app.posts (body, lane) values ('x', 'agents')`,
-    (t) => t`update app.posts set status = 'live' where author_id = ${a.id}`,
     (t) => t`delete from app.posts where author_id = ${a.id}`
   ]) await assert.rejects(run(a.ctx, attempt), /permission denied/);
   await assert.rejects(run({ actor: 'anon' }, (t) => posts.create(t, { body: 'anonymous' })), /only active members can post/);
   // Waiting posts are private to their author.
   const waiting = await run(a.ctx, (t) => posts.create(t, { body: 'still waiting' }));
   assert.strictEqual(waiting.status, 'waiting');
+  // Only a reviewer changes a status (PR 4): the author's attempt matches no row and changes nothing.
+  assert.strictEqual((await run(a.ctx, (t) => t`update app.posts set status = 'live' where author_id = ${a.id}`)).count, 0);
+  assert.strictEqual((await run(a.ctx, (t) => posts.mine(t))).find((p) => p.id === waiting.id).status, 'waiting');
   assert.strictEqual((await run(b.ctx, (t) => t`select id from app.posts where id = ${waiting.id}`)).length, 0);
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select id from app.posts`)).length, 0, 'someone not signed in reads no table directly');
   assert.strictEqual((await run(a.ctx, (t) => posts.mine(t))).some((p) => p.id === waiting.id), true);
@@ -158,7 +167,7 @@ test('F7 groundwork: a removed post leaves the feed and the profile count; a pos
   const a = await member(2);
   const p1 = await run(a.ctx, (t) => posts.create(t, { body: 'stays' }));
   const p2 = await run(a.ctx, (t) => posts.create(t, { body: 'removed later' }));
-  await q(`update app.posts set status = 'removed', published_at = null where id = '${p2.id}'`);
+  await asReviewer(`update app.posts set status = 'removed' where id = '${p2.id}'`);
   const feed = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 50 }));
   assert.ok(feed.some((p) => p.id === p1.id) && !feed.some((p) => p.id === p2.id));
   assert.strictEqual((await run({ actor: 'anon' }, (t) => posts.profile(t, a.id))).livePosts, 1);
