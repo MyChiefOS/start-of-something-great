@@ -102,7 +102,7 @@ test('R2: every page gets a strict Content-Security-Policy and cannot be framed'
   const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const all = v.headers.find((h) => h.source === '/(.*)').headers;
   const get = (k) => (all.find((h) => h.key.toLowerCase() === k.toLowerCase()) || {}).value || '';
-  const csp = v.headers.find((h) => h.source === '/((?!talk/?$).*)').headers.find((h) => h.key === 'Content-Security-Policy').value;
+  const csp = v.headers.find((h) => h.source === '/((?!talk/?$|join/?$|auth/).*)').headers.find((h) => h.key === 'Content-Security-Policy').value;
   assert.match(csp, /default-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.match(csp, /script-src 'self'(;|$)/);
@@ -129,19 +129,24 @@ test('R2: every page works under that policy (no inline code, styles or outside 
   assert.ok(!/@import/.test(css));
 });
 
-test('R2: only /talk may load giscus, and every path gets exactly one Content-Security-Policy', () => {
+test('R2: only /talk may load giscus, only sign-in may post forms, and every path gets exactly one Content-Security-Policy', () => {
   const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const cspRules = v.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
-  assert.deepStrictEqual(cspRules.map((h) => h.source), ['/((?!talk/?$).*)', '/talk']);
+  assert.deepStrictEqual(cspRules.map((h) => h.source), ['/((?!talk/?$|join/?$|auth/).*)', '/talk', '/join', '/auth/(.*)']);
+  const value = (i) => cspRules[i].headers.find((h) => h.key === 'Content-Security-Policy').value;
+  // Sign-in's policy is the strict one with one change: forms may post to this site (PR 2, SF4).
+  for (const i of [2, 3]) assert.strictEqual(value(i), value(0).replace("form-action 'none'", "form-action 'self'"));
   const talk = cspRules[1].headers.find((h) => h.key === 'Content-Security-Policy').value;
   assert.match(talk, /script-src 'self' https:\/\/giscus\.app;/);
   assert.match(talk, /style-src 'self' https:\/\/giscus\.app;/);
   assert.match(talk, /frame-src https:\/\/giscus\.app/);
   assert.match(talk, /frame-ancestors 'none'/);
   // The same regular expressions Vercel builds from these sources (path-to-regexp 6, checked Oct 15).
-  const siteWide = /^(?:\/((?!talk\/?$).*))[\/#?]?$/i, talkOnly = /^\/talk[\/#?]?$/i;
-  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2', '/research', '/research/decision-loop']) {
-    assert.ok(siteWide.test(p) !== talkOnly.test(p), p + ' gets ' + (siteWide.test(p) ? 'two policies' : 'no policy'));
+  const rules = [/^(?:\/((?!talk\/?$|join\/?$|auth\/).*))[\/#?]?$/i, /^\/talk[\/#?]?$/i, /^\/join[\/#?]?$/i, /^\/auth(?:\/(.*))[\/#?]?$/i];
+  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2', '/research', '/research/decision-loop',
+    '/join', '/join/', '/JOIN', '/joins', '/join/x', '/auth/github/start', '/auth/email/continue', '/auth', '/authors']) {
+    const n = rules.filter((r) => r.test(p)).length;
+    assert.strictEqual(n, 1, p + ' gets ' + n + ' policies');
   }
   for (const f of htmlPages().filter((x) => x !== 'talk.html')) {
     assert.ok(!/giscus\.app\/client/.test(fs.readFileSync(path.join(root, f), 'utf8')), f);

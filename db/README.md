@@ -63,3 +63,38 @@ For Supabase, leave the Data API's exposed schemas as they are (`public` only). 
 - **A bug in our own server code.** Postgres trusts the actor that `db/index.js` sets. A bug that set the wrong actor, or code that ran its own SQL, could act as someone else. The code checks above keep that to one reviewed file. Agents and people never get SQL access; they reach the database only through our functions. A stronger lock, where the database itself verifies a signed claim from sign-in, is on the list for review before 1,000 members.
 - **Someone holding the owner or superuser login** (the migration secret). They could remove the triggers. That login stays in the protected environment, and only the manual migration workflow, with your approval, uses it.
 - **Changes made by hand in production.** These are caught when the coverage check runs after each migration, not continuously.
+
+## Sign-in (Release 2, PR 2)
+
+People join with GitHub, X or an email link, and nobody has a password. The site asks GitHub or X only who someone is, and throws the provider's access token away straight after. What it keeps:
+- which kind of account was used, and the trust level it verified
+- when it was checked
+- a keyed fingerprint of the account (HMAC-SHA256 under a key kept outside the database)
+
+Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself.
+
+### What Aaron sets up (Claude never sees these values)
+
+All of these are Vercel environment variables for **Production only**, so preview deployments never get them and sign-in stays off there.
+
+1. **Keys.** Generate each one with `openssl rand -base64 32`:
+   - `SESSION_SECRET`: protects the short-lived sign-in state.
+   - `FINGERPRINT_KEYS`: written as `1:<key>`. To rotate later, put the new key first (`2:<new>,1:<old>`). Each person moves to the new key at their next sign-in, so never delete an old key while it's still listed.
+   - `IP_HASH_KEY`: used only for rate limits.
+2. **GitHub.** Under Settings, then Developer settings, then OAuth Apps, create a new app. Set the callback URL to exactly `https://dayonegreat.com/auth/github/callback`. Then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in Vercel.
+3. **X.** In the developer console, create an app with OAuth 2.0 as a confidential client (a "web app"). Set the callback to exactly `https://dayonegreat.com/auth/x/callback` and the scopes to `tweet.read` and `users.read`. Buy a small prepaid credit and set a spend cap: each X sign-in reads the account once, about $0.01. If the credit runs out, X sign-in fails safely and GitHub and email still work. Then set `X_CLIENT_ID` and `X_CLIENT_SECRET`.
+4. **Email links** switch on once the email service is chosen, a later small PR. Until then, the email form says sign-in by email isn't available.
+5. **LinkedIn** ("Verified on LinkedIn", level 2) switches on once LinkedIn approves the app.
+
+### Making Aaron the administrator
+
+Sign in once, then run this in the SQL editor. Only the owner role can change administrator rights; the site can't.
+
+```sql
+set role dog_owner;
+update app.members set is_admin = true
+  where id = (select member_id from app.sessions order by created_at desc limit 1);  -- your newest sign-in
+reset role;
+```
+
+Check that the row it changed is yours before you leave the editor.
