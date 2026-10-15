@@ -149,6 +149,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Change log
 
+- v1.4 (2026-10-15, notes; no criteria changed): **P4 failed after release.** The Oct 14 red and blue team review found that the conversation feed (API and MCP) showed email addresses and phone numbers from Discussion replies unmasked, and that look-alike characters (such as a full-width @) could slip past masking. Both are fixed on Oct 15 and covered by tests in test/security.test.js. The same change adds a short GitHub cache (R1), a strict Content-Security-Policy with no framing (R2), and HTTPS required on every subdomain. **C4 is not met:** GitHub's scheduler ran the 15-minute uptime check only twice overnight on Oct 14 to 15. Next step, on the to-do list: an outside uptime service, with the GitHub monitor kept as a backup.
 - v1.4 (2026-10-14): adds C5 to C7 for MCP protocol version 2026-07-28, older clients and marking public text, from the landscape research Aaron requested. D4 now says open proposals only, after the first live run listed a closed test proposal.
 - v1.3 (2026-10-14, added): L3, no copyrighted material in what we publish, at Aaron's direction. Applies now, not only at Release 2.
 - v1.3 (2026-10-14): adds the Oct 19 checks: D1 to D5 for the daily sorting run (plan approved by Aaron) and C1 to C4 for Now/Next, Shipped, the draft_proposal tool and the uptime monitor.

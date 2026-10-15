@@ -75,12 +75,13 @@ const status = {
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Acceptance criteria v1.0', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
-      { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: '2026-10-14', result: 'done, 2 days early' },
+      { name: 'Release 1: proposals (checks P1 to P9 passing)', target: '2026-10-16', actual: '2026-10-14', result: 'done, 2 days early; P4 later found failing in the conversation feed (Oct 14 security review), fixed Oct 15' },
       { name: 'Decide on blocking EU, EEA, UK and Swiss traffic (Vercel firewall)', target: '2026-10-15', actual: '2026-10-14', result: 'done, 1 day early: block once the full production system is live' },
       { name: 'Daily sorting run and GitHub automations', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
       { name: 'Closing the loop: Now/Next, Shipped page, agent drafts, Connect page, uptime monitor', target: '2026-10-19', actual: '2026-10-14', result: 'done, 5 days early' },
       { name: 'Terms of service and privacy policy written', target: '2026-10-21', actual: '2026-10-14', result: 'done, 7 days early' },
       { name: 'MCP protocol 2026-07-28 support, public text marked, queue fix', target: '2026-10-14', actual: '2026-10-14', result: 'done, same day (added that day)' },
+      { name: 'Security fixes from the red and blue team review', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Block EU, EEA, UK and Swiss traffic at the Vercel firewall', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Release 2 public (full production system)' },
@@ -114,7 +115,28 @@ const status = {
 // if the token is missing, expired or revoked, falls back to anonymous access (about 60/hour)
 // instead of failing. The token value is never logged or returned.
 let lastLimit = null;
+// R1: one GitHub call per path per TTL per instance, shared by concurrent callers (single-flight).
+// Callers always ask for fixed page sizes, so query-string tricks cannot multiply calls.
+// If GitHub fails, the last good answer is served for up to STALE_MS (availability).
+const TTL_MS = 60000;
+const STALE_MS = 3600000;
+const cache = new Map();
 async function gh(path) {
+  const now = Date.now();
+  const hit = cache.get(path);
+  if (hit && hit.value !== undefined && now - hit.at < TTL_MS) return hit.value;
+  if (hit && hit.pending) return hit.pending;
+  const pending = ghFetch(path).then(
+    (value) => { cache.set(path, { at: Date.now(), value }); return value; },
+    (err) => {
+      if (hit && hit.value !== undefined && now - hit.at < STALE_MS) { cache.set(path, hit); return hit.value; }
+      cache.delete(path); throw err;
+    });
+  cache.set(path, Object.assign({}, hit, { pending }));
+  return pending;
+}
+function _resetCache() { cache.clear(); }
+async function ghFetch(path) {
   const base = { Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-api', 'X-GitHub-Api-Version': '2022-11-28' };
   const token = process.env.GITHUB_TOKEN;
   let r = await fetch(GH + path, { headers: token ? { ...base, Authorization: 'Bearer ' + token } : base });
@@ -136,7 +158,7 @@ function clip(s, n) {
 // Recent changes from public commits. Deliberately omits author email addresses.
 async function getChanges(limit) {
   const n = Math.max(1, Math.min(30, Number(limit) || 10));
-  const commits = await gh('/commits?per_page=' + n);
+  const commits = (await gh('/commits?per_page=30')).slice(0, n);
   return {
     source: 'https://github.com/' + REPO + '/commits/main',
     changes: commits.map((c) => ({
@@ -151,21 +173,23 @@ async function getChanges(limit) {
 // The public conversation (Discussion #1 and its replies).
 async function getConversation(limit) {
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
-  const [d, comments] = await Promise.all([gh('/discussions/1'), gh('/discussions/1/comments?per_page=' + n)]);
+  const [d, comments] = await Promise.all([gh('/discussions/1'), gh('/discussions/1/comments?per_page=50')]);
+  const { maskContacts } = require('./_proposals');
+  const pub = (v, max) => clip(maskContacts(clip(v, max * 2)), max); // P4: Discussion text is public text too
   return {
     note: UNTRUSTED_NOTE,
     thread: {
-      title: d.title,
+      title: pub(d.title, 300),
       url: d.html_url,
       started_by: d.user ? d.user.login : null,
       started_at: d.created_at,
-      body: clip(d.body, 4000),
+      body: pub(d.body, 4000),
       reply_count: d.comments
     },
-    replies: (comments || []).map((c) => ({
+    replies: (comments || []).slice(0, n).map((c) => ({
       by: c.user ? c.user.login : null,
       at: c.created_at,
-      body: clip(c.body, 2000),
+      body: pub(c.body, 2000),
       url: c.html_url
     }))
   };
@@ -216,4 +240,4 @@ function onlyGet(req, res) {
   return true;
 }
 
-module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE };
+module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };

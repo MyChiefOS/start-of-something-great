@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request replaces the older run. Runs on main are never cancelled.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: ubuntu-24.04

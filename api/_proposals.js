@@ -21,17 +21,24 @@ const HEADINGS = {
 
 // A run of digits joined by up to 3 separators, e.g. (202) 555-0143 or +1 202 555 0143. A run with 10 or
 // more digits is hidden whole (so two numbers side by side are both hidden), unless it is only dates.
-const PHONE = /\+?\(?\d(?:[\s().-]{0,3}\d){9,60}/g;
+const PHONE = /\+?\(?\d(?:[\s().\/_\u2010-\u2015-]{0,5}\d){9,60}/g;
 const DATES_ONLY = /^(?:\d{4}-\d{2}-\d{2}[\s,.]*)+$/;
 const isPhone = (m) => !DATES_ONLY.test(m.trim()) && m.replace(/\D/g, '').length >= 10;
 
+// R3: fold look-alikes first (fullwidth @ and digits, etc.) so they can't slip past the patterns.
+// NFKC turns U+FF20 into @ and U+FF10-FF19 into 0-9. Invisible characters are removed, except the
+// zero-width joiner next to non-word characters, which builds emoji such as family emoji: it is only
+// removed where it sits inside a word, number or address.
+const norm = (t) => String(t == null ? '' : t).normalize('NFKC')
+  .replace(/[\u200B\u200C\u2060\uFEFF\u00AD]/g, '')
+  .replace(/\u200D(?=[A-Za-z0-9@.+%_-])|(?<=[A-Za-z0-9@.+%_-])\u200D/g, '');
 // P4: hide anything that looks like an email address in public text.
 function maskEmails(text) {
-  return String(text == null ? '' : text).replace(EMAIL, '[email hidden]');
+  return norm(text).replace(EMAIL, '[email hidden]');
 }
 
 function hasContactInfo(text) {
-  const t = String(text || '');
+  const t = norm(text);
   if (new RegExp(EMAIL.source).test(t)) return true;
   return (t.match(PHONE) || []).some(isPhone);
 }

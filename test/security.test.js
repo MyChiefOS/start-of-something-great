@@ -1,0 +1,139 @@
+// Security checks from the Oct 14 red and blue team review (R1, R2, R3 and gap G1). Plain, repeatable, no network.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const { fresh, call } = require('./helpers');
+const root = path.join(__dirname, '..');
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+
+function countingGitHub(fail) {
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    await new Promise((r) => setTimeout(r, 5));
+    if (fail.now) return { status: 503, ok: false, headers: { get: () => null }, json: async () => ({}) };
+    const u = String(url);
+    const body = u.includes('/discussions/1/comments') ? [{ user: { login: 'x' }, created_at: 't', body: 'mail jane.doe@example.com or (202) 555-0143', html_url: 'h' }]
+      : u.includes('/discussions/1') ? { title: 'Hi', html_url: 'h', user: { login: 'a' }, body: 'b', comments: 1 }
+      : u.includes('/commits') ? Array.from({ length: 30 }, (_, i) => ({ commit: { message: 'c' + i, author: { name: 'n', date: 'd' } }, html_url: 'u' }))
+      : [];
+    return { status: 200, ok: true, headers: { get: () => '5000' }, json: async () => body };
+  };
+  return calls;
+}
+
+test('R1: 100 concurrent MCP calls and cache-busting REST calls cost one GitHub call per source', async () => {
+  const calls = countingGitHub({});
+  const mcp = fresh('mcp.js');
+  const changes = require(path.join(root, 'api', 'changes.js'));
+  const tool = (name, args) => call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+  const batch = Array.from({ length: 20 }, (_, i) => ({ jsonrpc: '2.0', id: i, method: 'tools/call', params: { name: 'list_proposals', arguments: {} } }));
+  await Promise.all([
+    ...Array.from({ length: 25 }, (_, i) => tool('get_recent_changes', { limit: (i % 30) + 1 })),
+    ...Array.from({ length: 25 }, (_, i) => tool('get_conversation', { limit: (i % 50) + 1 })),
+    ...Array.from({ length: 25 }, () => tool('list_shipped', {})),
+    ...Array.from({ length: 25 }, (_, i) => call(changes, 'GET', '/api/changes?limit=' + ((i % 9) + 1) + '&_=' + i)),
+    call(mcp, 'POST', '/api/mcp', batch)
+  ]);
+  assert.strictEqual(calls.length, 4, 'expected 4 GitHub calls (commits, issues, discussion, comments), got ' + calls.length + ':\n' + calls.join('\n'));
+  const r = await tool('get_recent_changes', { limit: 3 });
+  assert.strictEqual(r.json.result.structuredContent.changes.length, 3, 'limit still honoured after normalising');
+});
+
+test('R1: if GitHub fails, the last good answer is served instead of an error', async () => {
+  const fail = { now: false };
+  countingGitHub(fail);
+  const lib = fresh('_lib.js');
+  await lib.getProposals();
+  const realNow = Date.now;
+  Date.now = () => realNow() + 120000; // past the TTL
+  try {
+    fail.now = true;
+    const again = await lib.getProposals();
+    assert.ok(Array.isArray(again.proposals));
+  } finally { Date.now = realNow; }
+});
+
+test('G1/P4: the public conversation never exposes email addresses or phone numbers (API and MCP)', async () => {
+  countingGitHub({});
+  const api = await call(fresh('conversation.js'), 'GET', '/api/conversation');
+  assert.ok(!EMAIL.test(api.text) && !/555-0143/.test(api.text), api.text);
+  const m = await call(fresh('mcp.js'), 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_conversation', arguments: {} } });
+  assert.ok(!EMAIL.test(m.text) && !/555-0143/.test(m.text), m.text);
+});
+
+test('R3: look-alike characters and spaced-out numbers cannot slip contact details past masking', () => {
+  const { maskContacts, hasContactInfo } = require(path.join(root, 'api', '_proposals.js'));
+  const attacks = ['jane＠example.com', 'jane@example．com', 'ja​ne@exa​mple.com', '２０２ 555 0143 99',
+    '202 -- 555 -- 0143', '202 / 555 / 0143', '202–555–0143'];
+  for (const a of attacks) {
+    assert.ok(hasContactInfo(a), 'not detected: ' + JSON.stringify(a));
+    const out = maskContacts(a);
+    assert.ok(!EMAIL.test(out) && (out.match(/\d/g) || []).length < 7, 'not masked: ' + JSON.stringify(a) + ' -> ' + out);
+  }
+  for (const ok of ['Released 2026-10-14, 2026-10-15', 'version 1.2.0', 'ship in 3 - 5 days']) assert.strictEqual(maskContacts(ok), ok);
+});
+
+test('R3: emoji built with the zero-width joiner survive masking unchanged', () => {
+  const { maskContacts } = require(path.join(root, 'api', '_proposals.js'));
+  for (const ok of ['Family 👨‍👩‍👧 day', 'Team 🧑‍💻🧑‍🔬', '🏳️‍🌈 welcome']) assert.strictEqual(maskContacts(ok), ok);
+  assert.ok(!EMAIL.test(maskContacts('👨‍👩‍👧 ja‍ne@example.com')));
+});
+
+test('R2: HTTPS is required on the site and every subdomain', () => {
+  const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const hsts = v.headers.find((h) => h.source === '/(.*)').headers.find((h) => h.key === 'Strict-Transport-Security');
+  assert.ok(hsts && /max-age=(\d+)/.test(hsts.value) && Number(hsts.value.match(/max-age=(\d+)/)[1]) >= 31536000);
+  assert.match(hsts.value, /includeSubDomains/);
+});
+
+test('R3: masking stays fast on hostile input after the change (no ReDoS)', () => {
+  const { maskContacts } = require(path.join(root, 'api', '_proposals.js'));
+  for (const s of ['1 '.repeat(40000), '1-- '.repeat(20000), 'a@'.repeat(30000), '１'.repeat(60000)]) {
+    const t = Date.now(); maskContacts(s); assert.ok(Date.now() - t < 500, 'slow: ' + (Date.now() - t) + ' ms');
+  }
+});
+
+test('R2: every page gets a strict Content-Security-Policy and cannot be framed', () => {
+  const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const all = v.headers.find((h) => h.source === '/(.*)').headers;
+  const get = (k) => (all.find((h) => h.key.toLowerCase() === k.toLowerCase()) || {}).value || '';
+  const csp = get('Content-Security-Policy');
+  assert.match(csp, /default-src 'none'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /script-src 'self'(;|$)/);
+  assert.ok(!/unsafe-inline|unsafe-eval|\*|data:|http:/.test(csp), 'no unsafe sources: ' + csp);
+  assert.strictEqual(get('X-Frame-Options'), 'DENY');
+});
+
+test('R2: every page works under that policy (no inline code, styles or outside resources)', () => {
+  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html'))) {
+    const html = fs.readFileSync(path.join(root, f), 'utf8');
+    for (const tag of html.match(/<script\b[^>]*>/gi) || []) {
+      const giscus = f === 'talk.html' && /\bsrc="https:\/\/giscus\.app\/client\.js"/.test(tag); // allowed by the /talk policy only
+      assert.ok(giscus || /\bsrc="\/[^/]/.test(tag) || /type="application\/ld\+json"/.test(tag), f + ': inline or outside script ' + tag);
+    }
+    assert.ok(!/<style\b|\sstyle=|\son[a-z]+=|javascript:/i.test(html), f + ': inline style or handler');
+    for (const m of html.matchAll(/<(?:link|img|iframe|source|video|audio)\b[^>]*\b(?:src|href)="([^"]+)"/gi)) {
+      const tag = m[0];
+      if (/rel="(canonical|alternate)"/.test(tag)) continue; // links, not loaded resources
+      assert.ok(m[1].startsWith('/') && !m[1].startsWith('//'), f + ': loads an outside resource ' + m[1]);
+    }
+  }
+  const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
+  for (const m of css.matchAll(/url\(\s*["']?([^"')]+)/g)) assert.ok(m[1].startsWith('/'), 'styles.css loads ' + m[1]);
+  assert.ok(!/@import/.test(css));
+});
+
+test('R2: only /talk may load giscus, and the policy that allows it is the last one matching /talk', () => {
+  const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const talk = v.headers.filter((h) => h.source === '/talk').pop().headers.find((h) => h.key === 'Content-Security-Policy').value;
+  assert.match(talk, /script-src 'self' https:\/\/giscus\.app;/);
+  assert.match(talk, /frame-src https:\/\/giscus\.app/);
+  assert.match(talk, /frame-ancestors 'none'/);
+  assert.ok(v.headers.findIndex((h) => h.source === '/talk') > v.headers.findIndex((h) => h.source === '/(.*)'));
+  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'talk.html')) {
+    assert.ok(!/giscus\.app\/client/.test(fs.readFileSync(path.join(root, f), 'utf8')), f);
+  }
+});
