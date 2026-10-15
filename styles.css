@@ -375,3 +375,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 }
 .email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }
+
+/* Posts (/feed) */
+.lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }
+.lanes [role="tab"] { font: inherit; font-family: var(--display); font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.45rem 1rem; cursor: pointer; }
+.lanes [role="tab"][aria-selected="true"] { color: var(--text); border-color: var(--amber); }
+.lanes [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.compose { display: grid; gap: 0.6rem; margin-bottom: 2rem; }
+.compose label { font-family: var(--display); font-weight: 600; }
+.compose textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.7rem 0.8rem; resize: vertical; }
+.compose textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.compose-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.compose button.button { cursor: pointer; }
+.feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
+.feed .post p { margin: 0.4rem 0; white-space: pre-line; }

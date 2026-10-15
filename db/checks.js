@@ -15,13 +15,23 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public'];
+// Narrow roles that only act inside their own reviewed functions (below).
+const NARROW = ['dog_signin', 'dog_public'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by dog_signin,
 // fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
-const DEFINERS = ['app.rate_limit_hit(text, text, integer, integer)', 'app.email_token_issue(text, text, text, smallint)',
-  'app.email_token_redeem(text, text, boolean)', 'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid)',
-  'app.session_resolve(text, integer)', 'app.session_end(text)'];
+// Each is pinned to the one narrow role it must run as.
+const DEFINERS = {
+  'app.rate_limit_hit(text, text, integer, integer)': 'dog_signin',
+  'app.email_token_issue(text, text, text, smallint)': 'dog_signin',
+  'app.email_token_redeem(text, text, boolean)': 'dog_signin',
+  'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid)': 'dog_signin',
+  'app.session_resolve(text, integer)': 'dog_signin',
+  'app.session_end(text)': 'dog_signin',
+  'app.feed(text, uuid, integer)': 'dog_public',
+  'app.profile(uuid)': 'dog_public'
+};
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
 // The audit log's reviewed policies, compared with spaces and brackets removed so Postgres versions that print
@@ -101,8 +111,8 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin')`;
-  for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and dog_signin may hold rights (S1)');
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public')`;
+  for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
   // Anywhere outside app: the acting roles may not write, and nothing may be granted to them by name.
@@ -133,8 +143,8 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin') and a.privilege_type = 'USAGE')`;
-  for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; dog_app and dog_signin may only use it (S1)');
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public') and a.privilege_type = 'USAGE')`;
+  for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
   const [ar] = await sql`
@@ -163,19 +173,20 @@ async function problems(sql, { snapshot } = {}) {
     from pg_roles r`;
   const app = roles.find((r) => r.name === 'dog_app');
   const owner = roles.find((r) => r.name === 'dog_owner');
-  if (!app || !owner || !roles.find((r) => r.name === 'dog_signin')) add('the dog_app, dog_owner and dog_signin roles must all exist (S1)');
+  if (!app || !owner || NARROW.some((n) => !roles.find((r) => r.name === n))) add('the dog_app, dog_owner, ' + NARROW.join(', ') + ' roles must all exist (S1)');
   const powers = [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcreaterole', 'create roles'],
     ['rolcreatedb', 'create databases'], ['rolreplication', 'replication']];
   if (app) {
     for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (app[k]) add('dog_app can ' + label + '; it must not (S1, S7)');
     if (app.member_of.length) add('dog_app belongs to ' + app.member_of.join(', ') + '; it must belong to no role, or it gains that role\'s rights (S1, S7)');
   }
-  const signin = roles.find((r) => r.name === 'dog_signin');
-  if (signin) {
-    for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (signin[k]) add('dog_signin can ' + label + '; it must not (S1)');
-    if (signin.member_of.length) add('dog_signin belongs to ' + signin.member_of.join(', ') + '; it must belong to no role (S1)');
-    const holders = roles.filter((r) => r.member_of.includes('dog_signin') && r.name !== 'dog_owner').map((r) => r.name);
-    if (holders.length) add(holders.join(', ') + ' can act as dog_signin; only dog_owner may, to hand it the sign-in functions (S1)');
+  for (const name of NARROW) {
+    const r = roles.find((x) => x.name === name);
+    if (!r) continue;
+    for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (r[k]) add(name + ' can ' + label + '; it must not (S1)');
+    if (r.member_of.length) add(name + ' belongs to ' + r.member_of.join(', ') + '; it must belong to no role (S1)');
+    const holders = roles.filter((x) => x.member_of.includes(name) && x.name !== 'dog_owner').map((x) => x.name);
+    if (holders.length) add(holders.join(', ') + ' can act as ' + name + '; only dog_owner may, to hand it its functions (S1)');
   }
   if (owner) for (const [k, label] of [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcanlogin', 'sign in directly']]) {
     if (owner[k]) add('dog_owner can ' + label + '; it must not (S1)');
@@ -204,9 +215,9 @@ async function problems(sql, { snapshot } = {}) {
   for (const f of fns) {
     if (f.callers.includes('PUBLIC')) add(f.name + ' can be called by every role; grant it to dog_app only (S1)');
     if (f.definer) {
-      if (!DEFINERS.includes(f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
+      if (!Object.hasOwn(DEFINERS, f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
       else {
-        if (f.owner !== 'dog_signin') add(f.name + ' must be owned by dog_signin, not ' + f.owner + ' (S1)');
+        if (f.owner !== DEFINERS[f.signature]) add(f.name + ' must be owned by ' + DEFINERS[f.signature] + ', not ' + f.owner + ' (S1)');
         if (f.config !== 'search_path=pg_catalog') add(f.name + ' must fix its search path to pg_catalog (S1)');
         if (f.callers.join() !== 'dog_app') add(f.name + ' may be called only by dog_app, not ' + (f.callers.join(', ') || 'nobody') + ' (S1)');
       }
