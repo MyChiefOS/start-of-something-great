@@ -215,7 +215,7 @@ async function problems(sql, { snapshot } = {}) {
   for (const f of fns) {
     if (f.callers.includes('PUBLIC')) add(f.name + ' can be called by every role; grant it to dog_app only (S1)');
     if (f.definer) {
-      if (!DEFINERS[f.signature]) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
+      if (!Object.hasOwn(DEFINERS, f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
       else {
         if (f.owner !== DEFINERS[f.signature]) add(f.name + ' must be owned by ' + DEFINERS[f.signature] + ', not ' + f.owner + ' (S1)');
         if (f.config !== 'search_path=pg_catalog') add(f.name + ' must fix its search path to pg_catalog (S1)');

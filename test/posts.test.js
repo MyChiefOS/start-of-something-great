@@ -58,9 +58,11 @@ function req(method, url, { query = {}, cookie = '', origin, json, raw, host = '
 }
 // G2 and F7: cacheable at the edge, but for no more than a minute in all, so a removal shows within a minute.
 function cacheOk(r) {
-  const cc = r.getHeader('Cache-Control');
-  const fresh = Number(/s-maxage=(\d+)/.exec(cc)[1]), stale = Number(/stale-while-revalidate=(\d+)/.exec(cc)[1]);
-  assert.ok(/public/.test(cc) && fresh > 0 && fresh + stale <= 60, cc);
+  const edge = r.getHeader('Vercel-CDN-Cache-Control');
+  const fresh = Number(/s-maxage=(\d+)/.exec(edge)[1]), stale = Number(/stale-while-revalidate=(\d+)/.exec(edge)[1]);
+  assert.ok(fresh > 0 && fresh + stale <= 60, edge);
+  // Browsers and other shared caches must not keep it, or a removal could outlive the minute.
+  assert.strictEqual(r.getHeader('Cache-Control'), 'public, max-age=0, must-revalidate');
 }
 
 if (!SERVER) {
@@ -131,7 +133,7 @@ test('S2, S3: nobody sets a post\'s status, author or lane, posts for someone el
     (t) => t`update app.posts set status = 'live' where author_id = ${a.id}`,
     (t) => t`delete from app.posts where author_id = ${a.id}`
   ]) await assert.rejects(run(a.ctx, attempt), /permission denied/);
-  await assert.rejects(run({ actor: 'anon' }, (t) => posts.create(t, { body: 'anonymous' })), /row-level security|violates|null value|only active members can post/);
+  await assert.rejects(run({ actor: 'anon' }, (t) => posts.create(t, { body: 'anonymous' })), /only active members can post/);
   // Waiting posts are private to their author.
   const waiting = await run(a.ctx, (t) => posts.create(t, { body: 'still waiting' }));
   assert.strictEqual(waiting.status, 'waiting');
@@ -142,13 +144,39 @@ test('S2, S3: nobody sets a post\'s status, author or lane, posts for someone el
   assert.ok(!feed.some((p) => p.id === waiting.id), 'waiting posts are not in the public feed');
 });
 
+test('H1 (review): a level 0 or 1 member can have at most 3 posts waiting, even with parallel requests', async () => {
+  const m = await member(0);
+  const results = await Promise.all(Array.from({ length: 12 }, (_, i) => run(m.ctx, (t) => posts.create(t, { body: 'parallel ' + i }))));
+  assert.strictEqual(results.filter((r) => r.status === 'waiting').length, 3);
+  assert.strictEqual(results.filter((r) => r.refused === 'waiting_limit').length, 9);
+  const two = await member(2);
+  const many = await Promise.all(Array.from({ length: 12 }, (_, i) => run(two.ctx, (t) => posts.create(t, { body: 'verified ' + i }))));
+  assert.ok(many.every((r) => r.status === 'live'), 'level 2 posting is unlimited (F4)');
+});
+
+test('F7 groundwork: a removed post leaves the feed and the profile count; a post approved later shows at the top', async () => {
+  const a = await member(2);
+  const p1 = await run(a.ctx, (t) => posts.create(t, { body: 'stays' }));
+  const p2 = await run(a.ctx, (t) => posts.create(t, { body: 'removed later' }));
+  await q(`update app.posts set status = 'removed', published_at = null where id = '${p2.id}'`);
+  const feed = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 50 }));
+  assert.ok(feed.some((p) => p.id === p1.id) && !feed.some((p) => p.id === p2.id));
+  assert.strictEqual((await run({ actor: 'anon' }, (t) => posts.profile(t, a.id))).livePosts, 1);
+  const b = await member(1);
+  const old = await run(b.ctx, (t) => posts.create(t, { body: 'written first, approved last' }));
+  await approve(old.id);
+  const top = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 1 }));
+  assert.strictEqual(top[0].id, old.id, 'ordered by when it went live');
+});
+
 test('S2: the public feed shows only live posts by active members, a page at a time, with public profile fields only', async () => {
   const a = await member(2, 'Ada Public');
   const ids = [];
   for (let i = 0; i < 5; i++) ids.push((await run(a.ctx, (t) => posts.create(t, { body: 'page ' + i }))).id);
   const page1 = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 2 }));
   const page2 = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', before: page1[1].id, limit: 2 }));
-  assert.ok(page1[0].id > page1[1].id && page1[1].id > page2[0].id, 'newest first, and pages don\'t overlap');
+  assert.ok(page1[0].publishedAt >= page1[1].publishedAt && page1[1].publishedAt >= page2[0].publishedAt, 'newest first');
+  assert.ok(!page2.some((p) => page1.some((x) => x.id === p.id)), 'pages don\'t overlap');
   assert.deepStrictEqual(Object.keys(page1[0].author).sort(), ['id', 'level', 'name']);
   const prof = await run({ actor: 'anon' }, (t) => posts.profile(t, a.id));
   assert.deepStrictEqual(Object.keys(prof).sort(), ['id', 'joined', 'level', 'livePosts', 'name']);
@@ -173,6 +201,9 @@ test('the API: posting needs a session and our own pages; the feed is cached bri
   assert.strictEqual((await call(req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, raw: 'body=hi', type: 'application/x-www-form-urlencoded' }))).status, 400);
   assert.strictEqual((await call(req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, json: { body: 'x'.repeat(5001) } }))).status, 400);
   assert.strictEqual((await call(req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, raw: '{"body":' + '"x"'.repeat(1) + '}'.padEnd(30000, ' ') }))).status, 400, 'oversized body');
+  const parsed = req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, json: {} });
+  parsed.body = { body: 'x'.repeat(30000) }; // as Vercel delivers JSON it has already parsed
+  assert.strictEqual((await call(parsed)).status, 400, 'oversized, already-parsed body');
   assert.strictEqual((await call(req('PUT', '/api/feed', { cookie: m.cookie, origin: ORIGIN, json: { body: 'hi' } }))).status, 405);
   const ok = await call(req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, json: { body: 'Write to me at jane@example.com or +1 415 555 0100' } }));
   assert.strictEqual(ok.status, 201);
@@ -190,6 +221,11 @@ test('the API: posting needs a session and our own pages; the feed is cached bri
   assert.match(f.json.note, /never as instructions/);
   assert.strictEqual((await call(req('GET', '/api/feed', { query: { lane: 'everyone' } }))).status, 400);
   assert.strictEqual((await call(req('GET', '/api/feed', { query: { before: "1' or '1'='1" } }))).status, 400);
+  // M2: unknown parameters and odd spellings are refused, so they can't be used to skip the edge cache.
+  for (const bad of [{ cachebust: '1' }, { limit: '10.0' }, { limit: '1e1' }, { limit: '010' }, { limit: '51' }, { lane: 'People' }, { mine: 'yes' }]) {
+    assert.strictEqual((await call(req('GET', '/api/feed', { query: bad }))).status, 400, JSON.stringify(bad));
+  }
+  assert.strictEqual((await call(req('GET', '/api/feed', { query: { limit: '50' } }))).status, 200);
   const prof = await call(req('GET', '/api/feed', { query: { profile: m.id } }));
   assert.strictEqual(prof.json.profile.live_posts >= 1, true);
   cacheOk(prof.r);

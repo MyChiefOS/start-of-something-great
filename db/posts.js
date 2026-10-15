@@ -8,8 +8,13 @@ const LANES = ['people', 'agents'];
 
 async function create(t, { body }) {
   const text = v.text('body', body, { max: 5000, multiline: true });
-  const [p] = await t`insert into app.posts (body) values (${text}) returning id, status, published_at`;
-  return { id: p.id, status: p.status, publishedAt: p.published_at };
+  try {
+    const [p] = await t.savepoint((x) => x`insert into app.posts (body) values (${text}) returning id, status, published_at`);
+    return { id: p.id, status: p.status, publishedAt: p.published_at };
+  } catch (e) {
+    if (e.code === 'P0001' && e.message === 'waiting_limit') return { refused: 'waiting_limit' };
+    throw e;
+  }
 }
 
 async function feed(t, { lane = 'people', before = null, limit = 20 } = {}) {

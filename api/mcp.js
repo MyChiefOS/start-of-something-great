@@ -18,7 +18,8 @@ let readPosts = async (a) => {
   if (!db.configured()) return null;
   return db.run({ actor: 'anon' }, (t) => require('../db/posts').feed(t, a));
 };
-function setReadPosts(fn) { readPosts = fn; }
+const postsCache = new Map();
+function setReadPosts(fn) { readPosts = fn; postsCache.clear(); }
 const { shapeShipped, draftProposal } = require('./_proposals');
 
 const MODERN = ['2026-07-28'];
@@ -137,7 +138,11 @@ const tools = [
     run: async (a) => {
       const lane = a.lane === 'agents' ? 'agents' : 'people';
       const limit = Number.isInteger(a.limit) && a.limit >= 1 && a.limit <= 50 ? a.limit : 20;
-      const rows = await readPosts({ lane, limit });
+      // Agents may poll; a 30-second memory keeps that from reaching the database every time.
+      const key = lane + ':' + limit;
+      const hit = postsCache.get(key);
+      const rows = hit && hit.at > Date.now() - 30000 ? hit.rows : await readPosts({ lane, limit });
+      if (!hit || hit.rows !== rows) postsCache.set(key, { at: Date.now(), rows });
       if (rows === null) return { lane, posts: [], note: UNTRUSTED_NOTE, opens: 'Posting opens with the private preview on November 6, 2026.' };
       return { lane, posts: rows.map(require('./feed').shape), note: UNTRUSTED_NOTE };
     }

@@ -12,7 +12,7 @@ const posts = require('../db/posts');
 const { ValidationError } = require('../db/validate');
 const session = require('../signin/session');
 const { onSite, sameSite } = require('../signin/http');
-const { send, UNTRUSTED_NOTE } = require('./_lib');
+const { UNTRUSTED_NOTE } = require('./_lib');
 const { maskContacts } = require('./_proposals');
 
 const CACHE = 30; // seconds fresh at the edge
@@ -23,6 +23,30 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 function shape(p) {
   return { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
+}
+
+// Public answers: Vercel's edge keeps them 30 seconds, plus up to 30 while refreshing. Browsers and any other shared
+// cache are told not to keep them, so nothing downstream can hold a removed post longer than a minute (F7).
+function sendPublic(res, code, body) {
+  res.statusCode = code;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  res.setHeader('Vercel-CDN-Cache-Control', 's-maxage=' + CACHE + ', stale-while-revalidate=' + STALE);
+  res.end(JSON.stringify(body, null, 2));
+}
+
+// Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
+const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+function canonical(q) {
+  for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
+  if (q.lane !== undefined && !['people', 'agents'].includes(q.lane)) return false;
+  if (q.limit !== undefined && !/^(?:[1-9]|[1-4]\d|50)$/.test(q.limit)) return false;
+  if (q.before !== undefined && !UUID.test(q.before)) return false;
+  if (q.profile !== undefined && !UUID.test(q.profile)) return false;
+  if (q.mine !== undefined && q.mine !== '1') return false;
+  return true;
 }
 
 // Private answers: never cached, never readable by other sites.
@@ -73,6 +97,9 @@ async function handle(req, res, run) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
     try {
       const p = await run(session.actorFor(who), (t) => posts.create(t, { body: body.body }));
+      if (p.refused === 'waiting_limit') {
+        return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
+      }
       return reply(res, 201, { id: p.id, status: p.status,
         message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
     } catch (e) {
@@ -82,6 +109,9 @@ async function handle(req, res, run) {
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
+  if (!canonical(q)) {
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID) or mine=1.' });
+  }
 
   if (q.mine !== undefined) {
     if (!run) return reply(res, 200, { posts: [] });
@@ -92,14 +122,14 @@ async function handle(req, res, run) {
   }
 
   if (q.profile !== undefined) {
-    if (!run) return send(res, 404, { error: 'No such member.' });
+    if (!run) return sendPublic(res, 404, { error: 'No such member.' });
     try {
       const p = await run({ actor: 'anon' }, (t) => posts.profile(t, String(q.profile)));
-      if (!p) return send(res, 404, { error: 'No such member.' }, CACHE, STALE);
-      return send(res, 200, { profile: { id: p.id, name: maskContacts(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
-        untrusted_fields: ['profile.name'], note: UNTRUSTED_NOTE }, CACHE, STALE);
+      if (!p) return sendPublic(res, 404, { error: 'No such member.' });
+      return sendPublic(res, 200, { profile: { id: p.id, name: maskContacts(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
+        untrusted_fields: ['profile.name'], note: UNTRUSTED_NOTE });
     } catch (e) {
-      if (e instanceof ValidationError) return send(res, 400, { error: 'profile must be a member ID.' });
+      if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'profile must be a member ID.' });
       throw e;
     }
   }
@@ -108,15 +138,15 @@ async function handle(req, res, run) {
   const limit = q.limit === undefined ? 20 : Number(q.limit);
   const before = q.before === undefined ? null : String(q.before);
   if (!run) {
-    return send(res, 200, { lane, posts: [], next: null, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE,
-      opens: 'Posting opens with the private preview on November 6, 2026.' }, CACHE, STALE);
+    return sendPublic(res, 200, { lane, posts: [], next: null, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE,
+      opens: 'Posting opens with the private preview on November 6, 2026.' });
   }
   try {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));
     const next = rows.length === limit ? '/api/feed?lane=' + lane + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
-    return send(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE }, CACHE, STALE);
+    return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: UNTRUSTED_FIELDS, note: UNTRUSTED_NOTE });
   } catch (e) {
-    if (e instanceof ValidationError) return send(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
+    if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
     throw e;
   }
 }

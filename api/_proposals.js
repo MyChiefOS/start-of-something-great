@@ -2,7 +2,8 @@
 // Pure functions are exported separately so tests can check them without the network.
 
 // Bounded and anchored by a lookbehind so hostile input can't make it slow (ReDoS): ~1 ms on 65k chars.
-const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}/g;
+// Letters from any script count, so josé@example.com and jane@bücher.de are caught too (PR 3 review).
+const EMAIL = /(?<![\p{L}\p{M}\p{N}._%+-])[\p{L}\p{M}\p{N}._%+-]{1,64}@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63}){0,8}\.[\p{L}\p{M}]{2,24}/gu;
 const STATUS_ORDER = [
   ['status: shipped', 'shipped'],
   ['status: declined', 'declined'],
@@ -44,9 +45,11 @@ function digitValue(ch) {
 function fold(text) {
   return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC')
     .replace(/[^\x00-\x7F]/gu, (ch) => (/\p{Nd}/u.test(ch) ? digitValue(ch) : ch))
-    .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '');
+    .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '')
+    // Full stops from other scripts (。 ｡) count as dots in an address.
+    .replace(/[\u3002\uFF61]/g, '.');
 }
-const hasEmail = (t) => new RegExp(EMAIL.source).test(t);
+const hasEmail = (t) => new RegExp(EMAIL.source, 'u').test(t);
 const hasPhone = (t) => (t.match(PHONE) || []).some(isPhone);
 
 function hasContactInfo(text) {

@@ -31,7 +31,7 @@ create table app.posts (
   check ((lane = 'agents') = (agent_id is not null)),
   check ((status = 'live') = (published_at is not null))
 );
-create index posts_feed on app.posts (lane, id desc) where status = 'live';
+create index posts_feed on app.posts (lane, published_at desc, id desc) where status = 'live';
 create index posts_author on app.posts (author_id, status);
 alter table app.posts enable row level security;
 alter table app.posts force row level security;
@@ -47,7 +47,9 @@ grant insert (body) on app.posts to dog_app;
 
 -- Whether a new post waits for review is decided here, from the author's level, never by the request (F6).
 --   Level 2 or higher, or an administrator: live at once.
---   Level 0 or 1: waits until the author has 3 live posts.
+--   Level 0 or 1: waits until the author has 3 live posts, and at most 3 can be waiting at once (the first 3 are
+--   reviewed anyway; this keeps one cheap account from flooding the review queue or the database). Posting by
+--   members at level 2 stays unlimited, as F4 says; the emergency brake (F9, PR 6) is the control there.
 create function app.posts_decide() returns trigger
 language plpgsql
 as $$
@@ -61,6 +63,14 @@ begin
     raise exception 'only active members can post' using errcode = '42501';
   end if;
   select count(*) into live from app.posts p where p.author_id = new.author_id and p.status = 'live';
+  if not (admin or lvl >= 2 or live >= 3) then
+    -- Serialise this author's inserts, so parallel requests can't each see "fewer than 3 waiting".
+    perform pg_advisory_xact_lock(hashtext('dayonegreat.posts'), hashtext(new.author_id::text));
+    if (select count(*) from app.posts p where p.author_id = new.author_id and p.status = 'waiting') >= 3 then
+      raise exception 'waiting_limit' using errcode = 'P0001',
+        hint = 'Your first 3 posts are waiting for review; you can post again once they have been reviewed.';
+    end if;
+  end if;
   if admin or lvl >= 2 or live >= 3 then
     new.status := 'live';
     new.published_at := now();
@@ -95,8 +105,10 @@ begin
   return query
     select p.id, p.lane, p.body, p.published_at, m.id, m.display_name, m.trust_level
     from app.posts p join app.members m on m.id = p.author_id
-    where p.status = 'live' and p.lane = p_lane and (p_before is null or p.id < p_before)
-    order by p.id desc
+    where p.status = 'live' and p.lane = p_lane
+      -- Paged by when posts went live, so a post approved later shows at the top, not on an old page.
+      and (p_before is null or (p.published_at, p.id) < (select b.published_at, b.id from app.posts b where b.id = p_before and b.status = 'live'))
+    order by p.published_at desc, p.id desc
     limit p_limit;
 end
 $$;
