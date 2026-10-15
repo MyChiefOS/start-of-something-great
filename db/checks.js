@@ -24,9 +24,17 @@ const AUDIT_POLICIES = {
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
-async function problems(sql) {
+async function problems(sql, { snapshot } = {}) {
   const out = [];
   const add = (s) => out.push(s);
+
+  // ---- Everything security-relevant matches the reviewed snapshot (db/snapshot.txt) ----
+  if (snapshot) {
+    const now = await fingerprint(sql);
+    const want = new Set(snapshot), have = new Set(now);
+    for (const line of now) if (!want.has(line)) add('not in the reviewed snapshot: ' + line + ' (S1, S7)');
+    for (const line of snapshot) if (!have.has(line)) add('missing compared with the reviewed snapshot: ' + line + ' (S1, S7)');
+  }
 
   // ---- Tables, views and policies (S1) ----
   const rels = await sql`
@@ -90,7 +98,11 @@ async function problems(sql) {
       and c.relkind in ('r', 'p', 'v', 'm', 'f')
       and (has_table_privilege('dog_app', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')
            or has_any_column_privilege('dog_app', c.oid, 'INSERT, UPDATE')
-           or exists (select 1 from aclexplode(c.relacl) a where a.grantee = 'dog_app'::regrole))`;
+           or exists (select 1 from aclexplode(c.relacl) a where a.grantee = 'dog_app'::regrole)
+           -- Reading through PUBLIC counts too, where dog_app can use the schema; providers' own schemas that
+           -- every role may read (Supabase's "extensions") are left out.
+           or (has_schema_privilege('dog_app', n.oid, 'USAGE') and n.nspname not in ('extensions')
+               and has_any_column_privilege('dog_app', c.oid, 'SELECT')))`;
   for (const o of outside) add('dog_app can reach ' + o.name + ' outside the app schema, where no policy protects it (S1)');
 
   const schemas = await sql`
@@ -166,21 +178,26 @@ async function problems(sql) {
     if (f.owner !== 'dog_owner') add(f.name + ' is owned by ' + f.owner + '; everything in app belongs to dog_owner (S1)');
   }
 
-  // ---- The audit log's triggers (S7, G4) ----
-  // tgtype bits: 2 = before, 8 = delete, 16 = update, 32 = truncate; 1 would mean once per row. "A" = fires always.
+  // ---- The guard triggers (S3, S7, G4) ----
+  // tgtype bits: 1 = once per row, 2 = before, 8 = delete, 16 = update, 32 = truncate. "A" = fires always, even in
+  // replication mode. No WHEN condition, arguments or column list, which could hide an off-switch.
   const trig = await sql`
-    select t.tgname as name, t.tgtype as type, t.tgenabled as enabled, p.proname as fn, p.prosrc as src
-    from pg_trigger t join pg_proc p on p.oid = t.tgfoid
-    where t.tgrelid = to_regclass('app.audit_log') and not t.tgisinternal`;
-  for (const [name, type] of [['audit_log_no_change', 26], ['audit_log_no_truncate', 34]]) {
-    const t = trig.find((x) => x.name === name);
-    if (!t) { add('the audit log is missing its ' + name + ' trigger (S7)'); continue; }
-    if (t.enabled !== 'A') add('the audit log trigger ' + name + ' is not set to fire always (S7)');
-    if (t.type !== type) add('the audit log trigger ' + name + ' no longer runs before every ' + (type === 26 ? 'update and delete' : 'truncate') + ' statement (S7)');
-    if (t.fn !== 'audit_log_append_only' || !/raise\s+exception/i.test(t.src) || /\breturn\b/i.test(t.src)) add('the audit log trigger ' + name + ' no longer refuses the change (S7)');
+    select c.relname as tbl, t.tgname as name, t.tgtype as type, t.tgenabled as enabled, p.proname as fn, p.prosrc as src,
+           t.tgqual is null and t.tgnargs = 0 and coalesce(array_length(t.tgattr::int2[], 1), 0) = 0 as plain
+    from pg_trigger t join pg_proc p on p.oid = t.tgfoid join pg_class c on c.oid = t.tgrelid
+    where c.relnamespace = 'app'::regnamespace and not t.tgisinternal`;
+  for (const [tbl, name, type, fn, what] of [
+    ['audit_log', 'audit_log_no_change', 26, 'audit_log_append_only', 'every update and delete statement'],
+    ['audit_log', 'audit_log_no_truncate', 34, 'audit_log_append_only', 'every truncate statement'],
+    ['members', 'members_guard', 19, 'members_guard', 'every updated member row']
+  ]) {
+    const t = trig.find((x) => x.tbl === tbl && x.name === name);
+    const label = 'the app.' + tbl + ' trigger ' + name;
+    if (!t) { add('app.' + tbl + ' is missing its ' + name + ' trigger (S3, S7)'); continue; }
+    if (t.enabled !== 'A') add(label + ' is not set to fire always (S3, S7)');
+    if (t.type !== type || !t.plain) add(label + ' no longer runs before ' + what + ' without conditions (S3, S7)');
+    if (t.fn !== fn || !/raise\s+exception/i.test(t.src) || (fn === 'audit_log_append_only' && /\breturn\b/i.test(t.src))) add(label + ' no longer refuses the change (S3, S7)');
   }
-  const guard = await sql`select tgenabled as enabled from pg_trigger where tgrelid = to_regclass('app.members') and tgname = 'members_guard'`;
-  if (!guard.length || guard[0].enabled === 'D') add('app.members is missing its members_guard trigger, or it is switched off (S3)');
 
   // ---- Columns and keys (S8, S12, G3) ----
   const seqs = await sql`
@@ -217,19 +234,68 @@ async function problems(sql) {
   return out;
 }
 
-// A column is limited by varchar(n) or by a check constraint, with no OR in it, that caps its length at
-// MAX_LIMIT or less, or that restricts it to a fixed list of values.
+// A column is limited by varchar(n), or by a check constraint built only from AND, one of whose parts is exactly
+// a cap of MAX_LIMIT or less on the column's length, or a fixed list of values. OR, NOT, CASE, IS and the like
+// are refused, because they can make a cap that never binds.
+const ESCAPES = /\b(OR|NOT|CASE|IS|COALESCE|NULLIF|GREATEST|LEAST)\b|<>|!=|=\s*(true|false)\b/i;
 function limited(c) {
   const m = c.type.match(/^character varying\((\d+)\)$/);
   if (m && Number(m[1]) <= MAX_LIMIT) return true;
   const col = c.col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const cap = new RegExp('(char_length|octet_length)\\(+' + col + '\\)*(::text\\)*)?\\s*(<|<=|=)\\s*(\\d+)', 'g');
-  const list = new RegExp('\\b' + col + '\\)*\\s*=\\s*ANY\\s*\\(+ARRAY\\[');
+  const cap = new RegExp('^\\(*(char_length|octet_length)\\(+' + col + '\\)*(::text\\)*)?\\s*(<|<=|=)\\s*(\\d+)\\)*$');
+  const list = new RegExp('^\\(*' + col + '\\s*=\\s*ANY\\s*\\(+ARRAY\\[[^\\]]*\\]\\)*$');
   return c.checks.some((def) => {
-    if (/\bOR\b/i.test(def)) return false;
-    if (list.test(def)) return true;
-    return [...def.matchAll(cap)].some((x) => Number(x[4]) <= MAX_LIMIT);
+    const body = def.replace(/^CHECK\s*/i, '');
+    if (ESCAPES.test(body)) return false;
+    return body.split(/\s+AND\s+/i).map((part) => part.trim()).some((part) => {
+      if (list.test(part)) return true;
+      const x = part.match(cap);
+      return x !== null && Number(x[4]) <= MAX_LIMIT;
+    });
   });
 }
 
-module.exports = { problems, limited, MAX_LIMIT };
+// A plain-text record of every security-relevant setting in our schemas: policies, rights (table and column),
+// column defaults, check constraints, triggers (with their on/off state) and functions (their attributes and a
+// hash of their body). db/snapshot.txt holds the reviewed version, rebuilt from the migrations with
+// `npm run db:snapshot`; a pull request that changes it shows exactly what changed, line by line.
+async function fingerprint(sql) {
+  const rows = await sql`
+    with ours as (
+      select c.oid, n.nspname || '.' || c.relname as tbl from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and c.relkind in ('r', 'p', 'v', 'm', 'f')
+    )
+    select 'policy ' || o.tbl || ' ' || p.polname || ' cmd=' || p.polcmd::text || ' permissive=' || p.polpermissive::text
+           || ' to=' || coalesce((select string_agg(case when r = 0 then 'PUBLIC' else pg_get_userbyid(r) end, ',' order by 1) from unnest(p.polroles) r), '')
+           || ' using=' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' check=' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') as line
+    from pg_policy p join ours o on o.oid = p.polrelid
+    union all
+    select 'grant ' || o.tbl || ' ' || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type
+    from ours o join pg_class c on c.oid = o.oid cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    union all
+    select 'grant ' || o.tbl || '.' || at.attname || ' ' || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type
+    from ours o join pg_attribute at on at.attrelid = o.oid cross join lateral aclexplode(at.attacl) a
+    where at.attnum > 0 and not at.attisdropped and at.attacl is not null
+    union all
+    select 'default ' || o.tbl || '.' || at.attname || ' = ' || pg_get_expr(d.adbin, d.adrelid)
+    from ours o join pg_attribute at on at.attrelid = o.oid join pg_attrdef d on d.adrelid = at.attrelid and d.adnum = at.attnum
+    union all
+    select 'constraint ' || o.tbl || ' ' || k.conname || ' ' || pg_get_constraintdef(k.oid)
+    from ours o join pg_constraint k on k.conrelid = o.oid
+    union all
+    select 'trigger ' || o.tbl || ' enabled=' || t.tgenabled::text || ' ' || pg_get_triggerdef(t.oid)
+    from ours o join pg_trigger t on t.tgrelid = o.oid where not t.tgisinternal
+    union all
+    select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ') owner='
+           || pg_get_userbyid(p.proowner) || ' execute=' || coalesce((select string_agg(case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end, ',' order by 1)
+             from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.privilege_type = 'EXECUTE'), '')
+           || ' language=' || l.lanname || ' volatile=' || p.provolatile::text || ' definer=' || p.prosecdef::text
+           || ' config=' || coalesce(array_to_string(p.proconfig, ';'), '') || ' returns=' || pg_get_function_result(p.oid)
+           || ' body_md5=' || md5(p.prosrc)
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_language l on l.oid = p.prolang
+    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and p.prokind in ('f', 'p')`;
+  // One space between words, so the same definition reads the same on every Postgres version.
+  return [...new Set(rows.map((r) => r.line.replace(/\s+/g, ' ').trim()))].sort();
+}
+
+module.exports = { problems, fingerprint, limited, MAX_LIMIT };

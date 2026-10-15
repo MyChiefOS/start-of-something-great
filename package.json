@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "db:snapshot": "node scripts/db-snapshot.js"
   },
   "dependencies": {
     "postgres": "3.4.9"

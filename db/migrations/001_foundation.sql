@@ -29,6 +29,10 @@ grant usage on schema app to dog_app;
 do $temp$
 begin
   execute format('revoke temporary on database %I from public', current_database());
+  -- A revoke by someone who doesn't own the database only warns; stop instead of carrying on unprotected.
+  if has_database_privilege('dog_app', current_database(), 'TEMP') then
+    raise exception 'could not switch off temporary tables: run this migration as the database owner';
+  end if;
 end
 $temp$;
 
@@ -132,6 +136,7 @@ end
 $$;
 create trigger members_guard before update on app.members
   for each row execute function app.members_guard();
+alter table app.members enable always trigger members_guard;
 
 -- The audit log (S7, G4). Rows can be added and Aaron can read them; nobody can change or remove one.
 -- No foreign keys: the record of what happened has to outlive a deleted account.

@@ -10,7 +10,7 @@ Nothing here is tied to one provider: it runs the same on Supabase or Neon.
   - `dog_owner` owns everything, and only migrations act as it.
   - `dog_app` is what the site acts as for every request. It can't bypass row-level security, owns nothing, and can't create objects, so it can't switch off a policy or a trigger.
 - **The site's login role** (`dog_web`) has no rights of its own. Inside each transaction it switches to `dog_app` and states who is acting: someone not signed in, a member, an agent, Aaron, or the site itself. The policies decide what that actor may see or change. When the transaction ends, all of this ends with it, so nothing carries over to the next request on a pooled connection. Temporary tables are switched off for the same reason.
-- **Who is acting is set in one place**: `db/index.js`, from what sign-in has verified. The database trusts it, so a code check (`.semgrep/database.yml`, repeated in `test/db.test.js`) fails the build if any other file sets it or changes the session.
+- **Who is acting is set in one place**: `db/index.js`, from what sign-in has verified. The database trusts it, so a code check (`.semgrep/database.yml`, repeated in `test/db.test.js`) fails the build if any other file sets it or changes the session. That catches mistakes. Code written to hide such a change could get past it, which is why every pull request is also reviewed. Each transaction also starts by closing leftover cursors, releasing session locks and fixing the search path.
 - **Queries** go through `db/index.js` as tagged templates, so every value is sent as a parameter (S8). The code check `.semgrep/database.yml` bans raw SQL outside `scripts/migrate.js`.
 - **IDs** are UUIDv7 from `app.uuid_v7()`: ordered by time and unique across databases (G3).
 - **The audit log** accepts new rows and only Aaron can read them. Its ID, time and actor always come from the database, so a row can't be backdated or written in another actor's name. Nobody can edit, delete or truncate a row: the site's role has no right to, and triggers that fire always stop every attempt, including by the owner, a superuser, or replication mode. Only someone holding the owner's login could remove the triggers, and the coverage check would then fail (S7, G4).
@@ -22,7 +22,8 @@ Nothing here is tied to one provider: it runs the same on Supabase or Neon.
   - size limits on every text and JSON column
   - UUIDv7 keys
 
-  It also fails for any column that looks like it stores ID documents or passwords. Every build runs it on a fresh database built from the migrations (`test/db.test.js`), and the migration workflow runs it on production afterwards.
+  It also fails for any column that looks like it stores ID documents or passwords.
+- **The reviewed snapshot** (`db/snapshot.txt`) lists every policy, right, default, constraint, trigger and function in plain text, built from the migrations. Every build checks the database against it, and so does the migration workflow on production, so any change made outside a reviewed migration fails. After writing a migration, run `TEST_DATABASE_URL=... npm run db:snapshot` and commit the result; the pull request shows exactly what changed.
 
 ## Setting it up (Aaron; Claude never sees these values)
 
@@ -55,6 +56,7 @@ For Supabase, leave the Data API's exposed schemas as they are (`public` only). 
 - Add a new file `db/migrations/NNN_name.sql`, numbered after the last one, starting with `set local role dog_owner;`.
 - Never edit a file that has shipped: the runner refuses to continue if an applied file has changed.
 - Every new table needs `enable` and `force row level security`, one policy per action, and size limits on its text columns. Otherwise the coverage check fails the build.
+- Rebuild the snapshot (`npm run db:snapshot`) and commit it with the migration.
 
 ## What this does not protect against
 

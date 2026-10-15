@@ -31,7 +31,9 @@ function pooledUrl(url) {
 // usual public roots; Supabase's are signed by Supabase's own root, whose certificate (public, not a secret) goes
 // in DATABASE_CA. Plain 'require' would encrypt without checking who answers, so it is never used.
 function tls(ca) {
-  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+  // A given certificate is added to Node's usual roots rather than replacing them, so a publicly signed
+  // certificate still verifies.
+  return ca ? { rejectUnauthorized: true, ca: [...require('tls').rootCertificates, ca] } : { rejectUnauthorized: true };
 }
 
 // Pooler-friendly settings: no named prepared statements (transaction poolers can't keep them), a few connections
@@ -86,11 +88,16 @@ function context(ctx) {
 async function tx(sql, ctx, fn) {
   const c = context(ctx);
   return sql.begin(async (t) => {
+    // Clear anything an earlier request on this pooled connection could have left behind: open cursors and
+    // session-level locks. The search path is fixed so no other schema's functions can stand in for Postgres's own.
+    await t`close all`;
     await t`set local role dog_app`;
     await t`select set_config('app.actor', ${c.actor}, true),
                    set_config('app.member_id', ${c.memberId}, true),
                    set_config('app.agent_id', ${c.agentId}, true),
-                   set_config('statement_timeout', '5s', true)`;
+                   set_config('search_path', 'pg_catalog', true),
+                   set_config('statement_timeout', '5s', true),
+                   pg_advisory_unlock_all()`;
     return fn(t);
   });
 }

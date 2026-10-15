@@ -20,6 +20,7 @@ const { problems } = require('../db/checks');
 const { migrate } = require('../scripts/migrate');
 
 const root = path.join(__dirname, '..');
+const SNAPSHOT = fs.readFileSync(path.join(root, 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
 const SERVER = process.env.TEST_DATABASE_URL;
 
 // ---- Tests that need no database -------------------------------------------------------------------------------
@@ -116,6 +117,19 @@ test('migration files are numbered without gaps and never edited after they ship
   files.forEach((f, i) => assert.match(f, new RegExp('^' + String(i + 1).padStart(3, '0') + '_[a-z0-9_]+\\.sql$')));
 });
 
+test('S8: a size limit counts only if it actually binds', () => {
+  const { limited } = require('../db/checks');
+  const ok = (def, col = 'note') => limited({ col, type: 'text', checks: [def] });
+  assert.ok(ok('CHECK ((char_length(note) <= 80))'));
+  assert.ok(ok('CHECK (((char_length(note) >= 1) AND (char_length(note) <= 80)))'));
+  assert.ok(ok("CHECK (((jsonb_typeof(note) = 'object'::text) AND (octet_length((note)::text) <= 4096)))"));
+  assert.ok(ok("CHECK ((note = ANY (ARRAY['a'::text, 'b'::text])))"));
+  for (const def of ['CHECK ((NOT (char_length(note) <= 10)))', 'CHECK (CASE WHEN true THEN true ELSE (char_length(note) <= 10) END)',
+    'CHECK (((char_length(note) <= 80) OR true))', 'CHECK ((char_length(note) <= 999999999))', 'CHECK (((char_length(note) <= 10) = false))',
+    'CHECK ((char_length(note) >= 1))', 'CHECK (((char_length(note) <= 10) IS NOT FALSE))', 'CHECK ((char_length(other) <= 10))',
+    'CHECK ((COALESCE(char_length(note), 0) <= 10))']) assert.ok(!ok(def), def);
+});
+
 // ---- Tests against a real database -----------------------------------------------------------------------------
 
 if (!SERVER) {
@@ -178,8 +192,8 @@ const AARON = (id) => ({ actor: 'admin', memberId: id });
 async function newMember(name) { return as(SYSTEM, (t) => members.create(t, { displayName: name })); }
 async function fails(promise, re) { await assert.rejects(promise, (e) => re.test(e.message) || re.test(e.code || '')); }
 
-test('S1: the coverage check passes on the database the migrations build', async () => {
-  assert.deepStrictEqual(await problems(admin), []);
+test('S1: the coverage check passes on the database the migrations build, which matches the reviewed snapshot', async () => {
+  assert.deepStrictEqual(await problems(admin, { snapshot: SNAPSHOT }), [], 'if a migration changed on purpose, run npm run db:snapshot and review the diff');
 });
 
 test('S1: the coverage check fails the build for a table without forced row-level security, and for each other gap', async () => {
@@ -223,12 +237,20 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['set local role dog_owner; create table app.k3 (id uuid primary key default app.uuid_v7(), m int, n int unique); alter table app.k3 add foreign key (m) references app.k3 (n); alter table app.k3 enable row level security; alter table app.k3 force row level security', /k3\.m points at another record/],
     ['set local role dog_owner; create function app.f2() returns int language sql as $$ select 1 $$; grant execute on function app.f2() to public', /app\.f2 can be called by every role/],
     ['create function app.f3() returns int language sql as $$ select 1 $$', /app\.f3 (can be called by every role|is owned by postgres)/],
-    [`grant temporary on database ${NAME} to public`, /temporary tables/]
+    [`grant temporary on database ${NAME} to public`, /temporary tables/],
+    // Found by the second review round, Oct 15.
+    ['alter table app.members enable replica trigger members_guard', /members_guard is not set to fire always/],
+    ['set local role dog_owner; drop trigger audit_log_no_change on app.audit_log; create trigger audit_log_no_change before update or delete on app.audit_log for each statement when (current_setting(\'x.go\', true) is distinct from \'yes\') execute function app.audit_log_append_only(); alter table app.audit_log enable always trigger audit_log_no_change', /audit_log_no_change no longer runs .* without conditions/],
+    ['set local role dog_owner; alter policy members_select on app.members using (true)', /not in the reviewed snapshot: policy app\.members members_select/],
+    ['set local role dog_owner; alter policy members_insert on app.members with check (true)', /not in the reviewed snapshot: policy app\.members members_insert/],
+    ["set local role dog_owner; alter table app.audit_log alter column at set default '2001-01-01'", /not in the reviewed snapshot: default app\.audit_log\.at/],
+    ['set local role dog_owner; create or replace function app.members_guard() returns trigger language plpgsql as $$ begin return new; end $$', /no longer refuses the change|not in the reviewed snapshot: function app\.members_guard/],
+    ['create schema side3; create table side3.t (n int); grant usage on schema side3 to public; grant select on side3.t to public', /dog_app can reach side3\.t/]
   ];
   for (const [ddl, expect] of cases) {
     const found = await su.begin(async (t) => {
       await t.unsafe(ddl);
-      const p = await problems(t);
+      const p = await problems(t, { snapshot: SNAPSHOT });
       throw Object.assign(new Error('rollback'), { found: p });
     }).catch((e) => { if (!e.found) throw e; return e.found; });
     assert.ok(found.some((p) => expect.test(p)), ddl + '\n  expected a problem matching ' + expect + '\n  got: ' + JSON.stringify(found));
@@ -324,7 +346,14 @@ test('S3 groundwork: an agent acting for its owner can\'t read or change the own
 
 test('S1: nothing a request makes outlives its transaction on a pooled connection', async () => {
   await fails(as(SYSTEM, (t) => t`create temp table leak as select * from app.members`, one), /permission denied/);
+  // A cursor kept open past its transaction, or a session lock, is cleared before the next request starts.
+  const aaron = await newMember('Aaron, cursors');
+  await as(AARON(aaron.id), async (t) => { await t`declare leak cursor with hold for select id, display_name from app.members`; await t`select pg_advisory_lock(42)`; }, one);
+  await fails(as(ANON, (t) => t`fetch all from leak`, one), /cursor "leak" does not exist/);
+  const [{ held }] = await as(ANON, (t) => t`select count(*)::int as held from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()`, one);
+  assert.strictEqual(held, 0);
 });
+
 
 test('S7: nobody can write an audit row in someone else\'s name', async () => {
   const a = await newMember('Member E');
