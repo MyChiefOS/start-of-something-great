@@ -40,7 +40,7 @@ const tools = [
   {
     name: 'get_handshake',
     title: 'Read the handshake',
-    description: 'The agreement every person and agent at Day One Great works under: four principles and the rules for agents.',
+    description: 'The agreement every person and agent at Day One Great works under: five principles and the rules for agents.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: RO,
     run: async () => handshake
