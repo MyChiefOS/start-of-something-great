@@ -17,11 +17,10 @@ const { ORIGIN, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES } = require('./config');
 const store = require('../db/signin');
 const v = require('../db/validate');
 
-const SESSION = '__Host-dog_session';
+const session = require('./session');
+const { SESSION, isToken } = session;
 const EMAIL_BROWSER = '__Host-dog_email';
 const NEW_NAME = 'New member'; // names from GitHub or X are not kept (S12); members choose their own later
-// Every token we hand out is 32 random bytes in base64url: exactly 43 of these characters.
-const isToken = (s) => typeof s === 'string' && s.length === 43 && Buffer.from(s, 'base64url').toString('base64url') === s;
 const stateCookie = (p) => '__Host-dog_oauth_' + p;
 const ANON = { actor: 'anon' };
 
@@ -41,14 +40,8 @@ function make(deps) {
   const keys = config.fingerprintKeys;
 
   const limited = async (bucket, keyHash) => !(await run(ANON, (t) => store.rateLimitHit(t, { bucket, keyHash, ...LIMITS[bucket] })));
-  const sessionHash = (req) => {
-    const tok = h.cookies(req)[SESSION];
-    return isToken(tok) ? c.sha256hex(tok) : null;
-  };
-  async function current(req) {
-    const hash = sessionHash(req);
-    return hash ? run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS)) : null;
-  }
+  const sessionHash = session.sessionHash;
+  const current = (req) => session.current(req, run);
 
   // Signs in and sets a fresh session cookie. Returns the outcome so the caller can redirect.
   async function finish(res, ctx, args) {

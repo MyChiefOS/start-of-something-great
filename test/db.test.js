@@ -163,7 +163,7 @@ test.before(async () => {
   await server.unsafe(`create database ${NAME} owner ${OWNER}`);
   // On a server where an earlier run already made the roles, the migration login is given the admin right over
   // them that it would have had as their creator. On a fresh server (CI) it creates them itself.
-  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
+  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
