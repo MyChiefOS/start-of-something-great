@@ -197,6 +197,8 @@ test('reports: only someone else\'s live post, once per member; reporting can\'t
   assert.strictEqual((await inQueue(live.id)).reports, 1, 'reporting again changes nothing');
   await assert.rejects(run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'boring' })), /reason/);
   await assert.rejects(run(other.ctx, (t) => review.report(t, { post: live.id, reason: 'spam', note: 'x'.repeat(501) })), /note/);
+  // Even Aaron, who can see every post, can report only a live one.
+  assert.deepStrictEqual(await run(aaron.ctx, (t) => review.report(t, { post: waiting.id, reason: 'spam' })), refused, 'Aaron, waiting post');
   // Someone not signed in can't report, even straight to the table.
   await assert.rejects(run({ actor: 'anon' }, (t) => t`insert into app.review_flags (post_id, source, reason) values (${live.id}, 'report', 'spam')`), /row-level security|violates/);
   // Nobody reports in someone else's name.
@@ -224,6 +226,17 @@ test('only a reviewer decides: members can\'t approve, remove, close flags or re
   await assert.rejects(run(aaron.ctx, (t) => t`update app.review_flags set decision = 'remove' where post_id = ${p.id}`), /already closed/);
   const [flag] = await q(`select resolved_by, decision from app.review_flags where post_id = '${p.id}'`);
   assert.deepStrictEqual(flag, { resolved_by: aaron.id, decision: 'approve' });
+  // The second locks hold even for a role that skips the row rules (the database superuser here):
+  // no status change without a reviewer, and a closed flag names whoever really closed it.
+  const w = await run(m.ctx, (t) => posts.create(t, { body: 'second lock' }));
+  await assert.rejects(q(`update app.posts set status = 'live' where id = '${w.id}'`), /only a reviewer can change a post/);
+  const someone = crypto.randomUUID();
+  await su.begin(async (t) => {
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t.unsafe(`update app.review_flags set decision = 'remove', resolved_by = '${someone}', resolved_at = now() - interval '1 day' where post_id = '${w.id}'`);
+  });
+  const [closed] = await q(`select resolved_by, resolved_at > now() - interval '1 minute' as fresh from app.review_flags where post_id = '${w.id}'`);
+  assert.deepStrictEqual(closed, { resolved_by: aaron.id, fresh: true });
   // Decisions that don't fit the post's state are refused, not guessed at.
   for (const d of ['approve', 'restore']) assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: d })), { refused: 'stale' });
   assert.deepStrictEqual(await run(aaron.ctx, (t) => review.decide(t, { post: crypto.randomUUID(), decision: 'remove' })), { refused: 'not_found' });
