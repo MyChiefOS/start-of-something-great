@@ -520,6 +520,23 @@ test('a lapsed X business badge drops back to level 1 when the member next signs
   assert.strictEqual((await me(env, g.browser)).trust_level, 1);
 });
 
+test('a level Aaron sets by hand survives the member\'s next sign-in and long sessions', async () => {
+  const env = setup({ accounts: { 'github:9401': { accountId: '9401', level: 1, recheckAfter: null }, 'github:9402': { accountId: '9402', level: 1, recheckAfter: null } } });
+  const members = require('../db/members');
+  const adminAct = (fn) => db.tx(web, { actor: 'admin', memberId: '018f3c2e-7b1a-7cde-8f00-0123456789ab' }, fn);
+  const slow = await oauth(env, 'github', '9401');
+  const slowId = (await me(env, slow.browser)).member_id;
+  await adminAct((t) => members.setTrustLevel(t, slowId, 0));
+  const again = await oauth(env, 'github', '9401');
+  assert.strictEqual((await me(env, again.browser)).trust_level, 0, 'a demotion holds after signing in again');
+  const trusted = await oauth(env, 'github', '9402');
+  const trustedId = (await me(env, trusted.browser)).member_id;
+  await adminAct((t) => members.setTrustLevel(t, trustedId, 2));
+  await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${trustedId}'`);
+  assert.strictEqual((await me(env, trusted.browser)).trust_level, 2, 'a promotion holds through a long session');
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: trustedId }, (t) => t`update app.members set level_set_by_admin = 3 where id = ${trustedId}`), /permission denied/);
+});
+
 test('the README\'s administrator steps work exactly as written, and change only the one member', async () => {
   const env = setup({ accounts: { 'github:9301': { accountId: '9301', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9301');

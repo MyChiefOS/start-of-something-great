@@ -73,6 +73,14 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 
 Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself.
 
+### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
+
+- **Server code can still act as anyone.** As with everything in this database, if our server code ran SQL of its own, it could claim to be any member and create a working session for them. The checks inside the sign-in functions stop honest mistakes, not deliberate code. That's why the stronger lock (a signed claim from sign-in that the database verifies) is on the list before 1,000 members.
+- **Someone could switch email sign-in off for an hour.** There's a cap of 500 sign-in emails an hour for the whole site, so nobody can use the form to flood inboxes. An attacker with many addresses could use the cap up. GitHub and X sign-in keep working. The fix, if it happens, is an alert when the cap is reached.
+- **The GitHub or X sign-in state can be replayed.** For its 10 minutes, someone who already has that browser's cookie could reuse it with a new code from the provider. Provider codes are single use, and the cookie never leaves the browser.
+- **The function's own address answers too.** `/api/auth?route=...` reaches the same code as `/auth/...`. It's harmless, since the checks are the same, but untidy.
+- **The email Continue page hasn't been tried in a real browser yet.** It's tested in code, and gets a browser check before email sign-in is switched on.
+
 ### What Aaron sets up (Claude never sees these values)
 
 All of these are Vercel environment variables for **Production only**, so preview deployments never get them and sign-in stays off there.

@@ -18,6 +18,7 @@ constraint app.identities identities_pkey PRIMARY KEY (id)
 constraint app.identities identities_provider_check CHECK ((provider = ANY (ARRAY['github'::text, 'x'::text, 'email'::text, 'linkedin'::text])))
 constraint app.identities identities_provider_fingerprint_key UNIQUE (provider, fingerprint)
 constraint app.members members_display_name_check CHECK (((char_length(display_name) >= 1) AND (char_length(display_name) <= 80)))
+constraint app.members members_level_set_by_admin_check CHECK (((level_set_by_admin >= 0) AND (level_set_by_admin <= 3)))
 constraint app.members members_pkey PRIMARY KEY (id)
 constraint app.members members_status_check CHECK ((status = ANY (ARRAY['active'::text, 'banned'::text])))
 constraint app.members members_trust_level_check CHECK (((trust_level >= 0) AND (trust_level <= 3)))
@@ -61,13 +62,13 @@ function app.current_agent() owner=dog_owner execute=dog_owner,dog_app,dog_signi
 function app.current_member() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=s definer=false config= returns=uuid body_md5=e46adb2e55a90833fc5dd4176dc9670b
 function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=3fe206a9383583c62c0fe78273dfdc07
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
-function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7dcd6e2df38652a4ecf8a2b2f52721ad
+function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=2500e4949d0819d51fe512880394694a
 function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
 function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b546c8242ddd74e8f612239c3e466d5a
 function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text) body_md5=d90fcaf4f6e5f560c7e2527941399822
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=f47122798a71797a95f59613fb2a1c3b
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
-function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=e005420ed597c5d1a4c5dd514f35ffd5
+function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=17c1cf584098aea3cdffa54fa6ac120d
 grant app.audit_log dog_app SELECT
 grant app.audit_log.action dog_app INSERT
 grant app.audit_log.action dog_signin INSERT

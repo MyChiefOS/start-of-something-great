@@ -21,6 +21,9 @@ grant usage on schema app to dog_signin;
 
 -- Aaron is the only administrator, and only the database owner can make someone one (db/README.md says how).
 alter table app.members add column is_admin boolean not null default false;
+-- A level Aaron sets by hand (to slow down or trust someone) is kept here and always wins over what sign-in
+-- verifies, until he clears it. Only the member guard below writes it; no role has a grant on it.
+alter table app.members add column level_set_by_admin smallint check (level_set_by_admin between 0 and 3);
 create policy members_owner_select on app.members for select to dog_owner using (true);
 create policy members_owner_update on app.members for update to dog_owner using (true) with check (true);
 
@@ -139,7 +142,8 @@ create policy sessions_delete on app.sessions for delete to dog_app
   using (app.actor_kind() = 'member' and member_id = app.current_member());
 grant select (id, member_id, created_at, last_seen_at, expires_at), delete on app.sessions to dog_app;
 
--- The member guard also lets the sign-in role raise a level it has just verified.
+-- The member guard also lets the sign-in role set the level it has just verified, and records a level Aaron
+-- sets by hand so sign-in never undoes it.
 create or replace function app.members_guard() returns trigger
 language plpgsql
 as $$
@@ -147,6 +151,11 @@ begin
   if (new.trust_level is distinct from old.trust_level or new.status is distinct from old.status)
      and app.actor_kind() not in ('admin', 'system') and current_user <> 'dog_signin' then
     raise exception 'only an administrator can change trust level or status' using errcode = '42501';
+  end if;
+  if new.trust_level is distinct from old.trust_level and current_user <> 'dog_signin' then
+    new.level_set_by_admin := new.trust_level;
+  elsif new.level_set_by_admin is distinct from old.level_set_by_admin and current_user <> 'dog_owner' then
+    raise exception 'the hand-set level changes only through the trust level' using errcode = '42501';
   end if;
   if new.is_admin is distinct from old.is_admin and current_user <> 'dog_owner' then
     raise exception 'only the database owner can change administrator rights' using errcode = '42501';
@@ -227,14 +236,16 @@ begin
 end
 $$;
 
--- A member's trust level is the highest level any of their sign-in methods currently verifies. A level 2 whose
--- recheck date has passed counts as level 1 until it is verified again (an X business badge can lapse).
+-- A member's trust level is the level Aaron set by hand, if any; otherwise the highest level any of their sign-in
+-- methods currently verifies. A level 2 whose recheck date has passed counts as level 1 until it is verified again
+-- (an X business badge can lapse).
 create function app.verified_level(p_member uuid)
 returns smallint
 language sql stable
 as $$
-  select coalesce(max(case when i.recheck_after is not null and i.recheck_after <= now() then least(i.level, 1) else i.level end), 0)::smallint
-  from app.identities i where i.member_id = p_member
+  select coalesce((select m.level_set_by_admin from app.members m where m.id = p_member),
+    (select coalesce(max(case when i.recheck_after is not null and i.recheck_after <= now() then least(i.level, 1) else i.level end), 0)
+     from app.identities i where i.member_id = p_member))::smallint
 $$;
 revoke execute on function app.verified_level(uuid) from public;
 grant execute on function app.verified_level(uuid) to dog_signin;
