@@ -1,0 +1,18 @@
+rules:
+# Our own rules for S8 (every database query uses parameters). Written for this repository; MIT like the code.
+- id: dayonegreat.db.no-raw-sql
+  message: Raw SQL (unsafe) can put values into a query as text instead of parameters. Use a tagged template
+    (t`... ${value}`) through db/index.js. Only scripts/migrate.js may run raw SQL, and only from migration files.
+  languages: [javascript]
+  severity: ERROR
+  paths:
+    exclude: [scripts/migrate.js, test/]
+  pattern: $X.unsafe(...)
+- id: dayonegreat.db.driver-only-in-db
+  message: Load the database through db/index.js, which enforces the pooler (G1), parameters (S8) and
+    per-transaction identity (S1).
+  languages: [javascript]
+  severity: ERROR
+  paths:
+    exclude: [db/index.js, scripts/migrate.js, test/]
+  pattern: require('postgres')

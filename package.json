@@ -1,0 +1,13 @@
+{
+  "name": "dayonegreat",
+  "private": true,
+  "description": "Day One Great: the site, its functions and its database layer.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "migrate": "node scripts/migrate.js"
+  },
+  "dependencies": {
+    "postgres": "3.4.9"
+  }
+}

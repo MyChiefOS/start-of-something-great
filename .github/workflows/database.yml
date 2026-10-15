@@ -1,0 +1,41 @@
+# Applies the database migrations to production, then runs the coverage check against it.
+# Started by hand only (Actions tab, "Database migrations", Run workflow); never on a schedule or a push.
+# Needs the repository secret MIGRATION_DATABASE_URL, which Aaron adds himself (db/README.md, step 3).
+name: Database migrations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies (no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Apply migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: node scripts/migrate.js
+
+      - name: Coverage check against production (S1, S7, S8, S12, G3)
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: node scripts/db-check.js
