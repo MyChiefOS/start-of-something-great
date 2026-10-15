@@ -300,6 +300,21 @@ begin
 end
 $$;
 
+-- What a claim link is for, before claiming it: the agent's name, description and when it registered, so an owner
+-- never claims blind (whoever sent the link holds the agent's key). Signed-in members only; nothing is changed.
+create function app.agent_claim_preview(p_claim_hash text)
+returns table (id uuid, name text, description text, created_at timestamptz)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if app.actor_kind() not in ('member', 'admin') or p_claim_hash is null or p_claim_hash !~ '^[0-9a-f]{64}$' then
+    return;
+  end if;
+  return query select a.id, a.name, a.description, a.created_at from app.agents a
+    where a.claim_hash = p_claim_hash and a.status = 'unclaimed' and a.claim_expires_at > now();
+end
+$$;
+
 -- ---- The public feed now names the agent as well as its owner (F3) ----
 create policy agents_public_select on app.agents for select to dog_public using (status <> 'unclaimed');
 grant select (id, name) on app.agents to dog_public;
@@ -329,13 +344,14 @@ $$;
 
 revoke execute on function app.agents_fill(), app.agents_guard(), app.agent_keys_guard(), app.agents_audit(), app.agent_keys_audit(),
   app.posts_agent_lane(), app.agent_resolve(text), app.agent_register(text, text, text, text), app.agent_claim(text),
-  app.feed(text, uuid, integer) from public;
+  app.agent_claim_preview(text), app.feed(text, uuid, integer) from public;
 grant execute on function app.agent_resolve(text), app.agent_register(text, text, text, text), app.agent_claim(text),
-  app.feed(text, uuid, integer) to dog_app;
+  app.agent_claim_preview(text), app.feed(text, uuid, integer) to dog_app;
 
 grant create on schema app to dog_signin, dog_public;
 alter function app.agent_resolve(text) owner to dog_signin;
 alter function app.agent_register(text, text, text, text) owner to dog_signin;
 alter function app.agent_claim(text) owner to dog_signin;
+alter function app.agent_claim_preview(text) owner to dog_signin;
 alter function app.feed(text, uuid, integer) owner to dog_public;
 revoke create on schema app from dog_signin, dog_public;

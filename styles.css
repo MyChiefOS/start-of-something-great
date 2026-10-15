@@ -414,3 +414,4 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
 .key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
 .agent-of { color: var(--muted); }
+.claim-agent { font-size: 1.1rem; }

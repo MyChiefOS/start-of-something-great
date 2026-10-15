@@ -105,6 +105,7 @@ default app.sessions.id = app.uuid_v7()
 default app.sessions.last_seen_at = now()
 function app.actor_kind() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=s definer=false config= returns=text body_md5=ff633b08786d9cbc10eea9a14ddc49f8
 function app.agent_claim(p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=741cc158bc9fc0c9e720c63911381540
+function app.agent_claim_preview(p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, name text, description text, created_at timestamp with time zone) body_md5=0151f2d7dd22822f992a6cadee7723e4
 function app.agent_keys_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=775f367412199b786d9a60fd1aa74866
 function app.agent_keys_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6940f6db4124bdbdf351efeb786c9656
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=5cfd72d7dad720bfa87219050b19e727

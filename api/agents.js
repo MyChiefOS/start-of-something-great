@@ -1,7 +1,8 @@
 // Agents (Release 2, PR 5): /api/agents[/<route>], rewritten here by vercel.json.
 //   POST /api/agents/register   {"name", "description"?}  an agent registers itself (no sign-in; rate limited, S6).
 //                               Returns its key (once) and a claim link for its owner; the key works once claimed.
-//   POST /api/agents/claim      {"code"}                  the signed-in owner (level 2) claims it (from /agents)
+//   POST /api/agents/claim      {"code", "preview"?}      the signed-in owner (level 2) claims it (from /agents); with
+//                                                         "preview": true, only says which agent it is
 //   GET  /api/agents                                      the signed-in owner's agents, with key details (never keys)
 //   POST /api/agents            {"name", "description"?}  the signed-in owner creates an agent; returns its key once
 //   POST /api/agents/revoke     {"agent"}                 revoke an agent: every key stops at once (S4)
@@ -17,7 +18,7 @@ const config = require('../signin/config');
 const c = require('../signin/crypto');
 const session = require('../signin/session');
 const agentkey = require('../signin/agentkey');
-const { onSite, sameSite, ipKey } = require('../signin/http');
+const { onSite, sameSite, ipKey, netKey } = require('../signin/http');
 const v = require('../db/validate');
 const { ValidationError } = v;
 const { ORIGIN } = require('../signin/config');
@@ -25,7 +26,9 @@ const { maskContacts } = require('./_proposals');
 
 const MAX_BODY_BYTES = 4096;
 // Self-registration is a sign-up, so it is rate limited (S6): per network, and a ceiling for everyone.
-const REGISTER_LIMITS = { agent_register_ip: { windowSeconds: 3600, max: 10 }, agent_register_all: { windowSeconds: 3600, max: 500 } };
+// Per address, per network (/48 or /24, so a provider's block can't spread itself thin) and for everyone.
+const REGISTER_LIMITS = { agent_register_ip: { windowSeconds: 3600, max: 10 }, agent_register_net: { windowSeconds: 3600, max: 20 },
+  agent_register_all: { windowSeconds: 3600, max: 500 } };
 const ALL = '0'.repeat(64);
 
 function reply(res, code, body) {
@@ -66,13 +69,13 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
-    const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
+    const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const code = c.token(32);
     const out = await run({ actor: 'anon' }, async (t) => {
       // Inputs first, so a malformed request doesn't use up the allowance.
       const args = { name: body.name, description: body.description, keyHash: k.hash, claimHash: c.sha256hex(code) };
-      v.text('name', args.name, { max: 80 });
+      agents.checkName(args.name);
       for (const [bucket, keyHash] of limits) {
         if (!(await store.rateLimitHit(t, { bucket, keyHash, ...REGISTER_LIMITS[bucket] }))) return { refused: 'slow' };
       }
@@ -92,6 +95,13 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const code = typeof body.code === 'string' && /^[A-Za-z0-9_-]{43}$/.test(body.code) ? body.code : null;
+    // A look first: which agent this is, so nobody claims blind (whoever sent the link holds the agent's key).
+    if (body.preview === true) {
+      const p = code ? await run(session.actorFor(who), (t) => agents.preview(t, c.sha256hex(code))) : null;
+      if (!p) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
+      return reply(res, 200, { agent: { id: p.id, name: maskContacts(p.name), description: p.description ? maskContacts(p.description) : null, registered_at: p.createdAt },
+        can_own: who.trustLevel >= 2 || who.isAdmin === true, untrusted_fields: ['agent.name', 'agent.description'] });
+    }
     const out = code ? await run(session.actorFor(who), (t) => agents.claim(t, c.sha256hex(code))) : { refused: 'not_found' };
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });

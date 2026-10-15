@@ -26,6 +26,8 @@ const postsCache = new Map();
 // create_post (PR 5): the same path as POST /api/feed with an agent key. The key is resolved afresh on every call,
 // so a revoked key stops at once (S4). The posting source can be swapped in tests.
 let postAs = async (headers, body) => {
+  // Only the real site posts: a preview deployment never receives or uses a real key (as /api/feed and /api/agents).
+  if (!require('../signin/http').onSite({ headers })) return { status: 403, error: 'Post through https://dayonegreat.com/api/mcp.' };
   const db = require('../db');
   if (!db.configured()) return { status: 503, error: 'Posting opens with the private preview on November 6, 2026.' };
   const agentkey = require('../signin/agentkey');
@@ -37,6 +39,7 @@ let postAs = async (headers, body) => {
 function setPostAs(fn) { postAs = fn; }
 function toolError(message) { const e = new Error(message); e.publicMessage = message; return e; }
 async function postAsAgent(a, ctx) {
+  if (ctx.batch) throw toolError('create_post isn\u2019t available in JSON-RPC batches: send it as a single request with your key.');
   if (typeof a.body !== 'string' || a.body.length < 1 || Array.from(a.body).length > 5000) throw toolError('body must be 1 to 5,000 characters.');
   let out;
   try { out = await postAs(ctx.headers || {}, a.body); } catch (e) {
@@ -253,7 +256,11 @@ async function runTool(msg, p, headers) {
   }
   try {
     // Only the request's own Authorization header reaches a tool (create_post); nothing else of the request does.
-    let data = await tool.run(p.arguments || {}, { headers: headers && headers.authorization ? { authorization: headers.authorization } : {} });
+    // (and its Host, so create_post can refuse anything but the real site).
+    const pass = {};
+    if (headers && headers.authorization) pass.authorization = headers.authorization;
+    if (headers && headers.host) pass.host = headers.host;
+    let data = await tool.run(p.arguments || {}, { headers: pass, batch: Boolean(headers && headers.__batch) });
     if (PUBLIC_FIELDS[tool.name] && data && typeof data === 'object' && !Array.isArray(data)) {
       data = Object.assign({ untrusted_fields: PUBLIC_FIELDS[tool.name] }, data);
     }
@@ -401,7 +408,7 @@ module.exports = async (req, res) => {
     const hv = headers['mcp-protocol-version'];
     if (badVersion(hv)) return send(res, 400, unsupported(null, hv).body);
     if (MODERN.includes(hv)) return send(res, 400, failure(null, -32600, 'Batches are not part of protocol version ' + MODERN[0]));
-    const only = hv === undefined ? {} : { 'mcp-protocol-version': hv };
+    const only = hv === undefined ? { __batch: true } : { 'mcp-protocol-version': hv, __batch: true };
     const replies = (await Promise.all(body.slice(0, 20).map((m) => safeHandle(m, only)))).map((r) => r.body).filter(Boolean);
     return replies.length ? send(res, 200, replies) : send(res, 202, null);
   }

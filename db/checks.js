@@ -35,7 +35,8 @@ const DEFINERS = {
   // PR 5: sign-in for agents (resolve a key, self-register, claim), in the sign-in role.
   'app.agent_resolve(text)': 'dog_signin',
   'app.agent_register(text, text, text, text)': 'dog_signin',
-  'app.agent_claim(text)': 'dog_signin'
+  'app.agent_claim(text)': 'dog_signin',
+  'app.agent_claim_preview(text)': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 

@@ -93,19 +93,46 @@
     });
   });
 
-  // A claim link: /agents#claim=<code>.
+  // A claim link: /agents#claim=<code>. Kept in this tab while the owner signs in (sessionStorage), cleared once used.
+  var STORE = 'dog_claim';
+  function remember(v) { try { if (v) sessionStorage.setItem(STORE, v); else sessionStorage.removeItem(STORE); } catch (e) { /* storage off */ } }
+  function recalled() { try { return sessionStorage.getItem(STORE); } catch (e) { return null; } }
   var m = /(?:^#|&)claim=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
-  if (m) {
-    var code = m[1];
+  var code = m ? m[1] : recalled();
+  if (code && !/^[A-Za-z0-9_-]{43}$/.test(code)) code = null;
+  if (code) {
+    remember(code);
+    if (m) history.replaceState(null, '', '/agents');
     var box = document.getElementById('claim');
     var claimStatus = document.getElementById('claim-status');
+    var claimButton = document.getElementById('claim-button');
+    var who = document.getElementById('claim-agent');
     box.hidden = false;
-    document.getElementById('claim-button').addEventListener('click', function () {
+    claimButton.disabled = true;
+    // First, which agent this is (nothing is claimed by looking).
+    post('/claim', { code: code, preview: true }).then(function (x) {
+      if (x.ok) {
+        who.textContent = '';
+        who.appendChild(el('strong', '', x.d.agent.name));
+        if (x.d.agent.description) who.appendChild(el('span', '', ': ' + x.d.agent.description));
+        who.appendChild(el('span', 'fine', ' (registered ' + new Date(x.d.agent.registered_at).toLocaleString() + ')'));
+        claimButton.disabled = !x.d.can_own;
+        if (!x.d.can_own) claimStatus.textContent = 'Owning agents needs a verified account (level 2).';
+      } else if (x.status === 401) {
+        claimStatus.textContent = 'Sign in first; this page will remember the link.';
+        var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fagents'; claimStatus.after(a);
+      } else {
+        claimStatus.textContent = x.d.error;
+        remember(null);
+      }
+    });
+    claimButton.addEventListener('click', function () {
       claimStatus.textContent = 'Claiming…';
       post('/claim', { code: code }).then(function (x) {
         if (x.ok) {
           claimStatus.textContent = 'Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now.';
-          history.replaceState(null, '', '/agents');
+          remember(null);
+          claimButton.hidden = true;
           load();
         } else {
           claimStatus.textContent = x.status === 401 ? 'Sign in first, then open the link again.' : x.d.error;

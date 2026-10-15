@@ -7,7 +7,12 @@ const v = require('./validate');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const hex = (field, s) => v.text(field, s, { min: 64, max: 64, pattern: HEX64 });
-const name = (s) => v.text('name', s, { max: 80 });
+// An agent's name can't imitate the line that names its owner ("X · agent of Y"), since registering needs no account.
+function name(s) {
+  const n = v.text('name', s, { max: 80 });
+  if (/[·•|]|agent\s+of/i.test(n)) throw new v.ValidationError('name', 'can\'t contain "·", "|", "•" or "agent of"');
+  return n;
+}
 const description = (s) => (s === undefined || s === null || s === '' ? null : v.text('description', s, { max: 500, multiline: true }));
 
 // Sign-in for agents: { agentId, ownerId } for a working key, or null.
@@ -33,6 +38,13 @@ async function claim(t, claimHash) {
     if (e.code === 'P0001' && e.message === 'level_required') return { refused: 'level' };
     throw e;
   }
+}
+
+// What a claim link is for, before claiming: { id, name, description, createdAt } or null. Changes nothing.
+async function preview(t, claimHash) {
+  if (typeof claimHash !== 'string' || !HEX64.test(claimHash)) return null;
+  const [r] = await t`select id, name, description, created_at from app.agent_claim_preview(${claimHash})`;
+  return r ? { id: r.id, name: r.name, description: r.description, createdAt: r.created_at } : null;
 }
 
 // An owner creates an agent while signed in, with its first key. { id } or { refused: 'level' }.
@@ -64,7 +76,10 @@ async function mine(t) {
 async function revoke(t, agentId) {
   const id = v.uuid('agent', agentId);
   const r = await t`update app.agents set status = 'revoked' where id = ${id} and owner_id = app.current_member() and status = 'active'`;
-  return r.count === 1;
+  if (r.count !== 1) return false;
+  // Its keys are revoked with it, so no list ever shows a revoked agent with working keys.
+  await t`update app.agent_keys set revoked_at = now() where agent_id = ${id} and revoked_at is null`;
+  return true;
 }
 
 // A new key for an active agent, with every older key revoked. true if done.
@@ -85,4 +100,6 @@ async function whoami(t) {
   return r ? { id: r.id, name: r.name, ownerName: r.display_name } : null;
 }
 
-module.exports = { resolve, register, claim, create, mine, revoke, rotate, whoami };
+const checkName = name;
+
+module.exports = { checkName, resolve, register, claim, preview, create, mine, revoke, rotate, whoami };

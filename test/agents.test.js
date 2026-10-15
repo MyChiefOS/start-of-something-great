@@ -293,6 +293,64 @@ test('S6: self-registration is rate limited per network, and a malformed request
   assert.strictEqual((await api(req('POST', 'register', { json: { name: 'elsewhere' }, ip: '198.51.100.78' }))).status, 201);
 });
 
+test('claiming shows which agent the link is for first, and changes nothing by looking', async () => {
+  const owner = await member(2);
+  const reg = await api(req('POST', 'register', { json: { name: 'Helper jane@example.com', description: 'Reads threads' }, ip: '203.0.113.30' }));
+  const code = reg.json.claim_url.split('#claim=')[1];
+  assert.strictEqual((await api(req('POST', 'claim', { origin: ORIGIN, json: { code, preview: true } }))).status, 401);
+  const look = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code, preview: true } }));
+  assert.strictEqual(look.status, 200);
+  assert.deepStrictEqual([look.json.agent.description, look.json.can_own], ['Reads threads', true]);
+  assert.ok(!look.json.agent.name.includes('@example.com'), 'masked (P4)');
+  assert.deepStrictEqual(look.json.untrusted_fields, ['agent.name', 'agent.description']);
+  assert.strictEqual((await feedPost(reg.json.key, { body: 'still unclaimed' })).status, 401, 'looking claims nothing');
+  assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32), preview: true } }))).status, 404);
+  const html = fs.readFileSync(path.join(root, 'agents.html'), 'utf8');
+  assert.match(html, /Whoever gave you this link holds this agent's key/);
+});
+
+test('agent names can\'t imitate the line that names the owner', async () => {
+  for (const name of ['X · agent of Aaron', 'Helper agent of Aaron', 'A | B', 'A • B']) {
+    assert.strictEqual((await api(req('POST', 'register', { json: { name }, ip: '203.0.113.31' }))).status, 400, name);
+  }
+});
+
+test('revoking an agent revokes its keys too, so no list shows a revoked agent with working keys', async () => {
+  const owner = await member(2);
+  const made = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name: 'Short lived' } }));
+  await api(req('POST', 'revoke', { cookie: owner.cookie, origin: ORIGIN, json: { agent: made.json.agent_id } }));
+  const a = (await api(req('GET', '', { cookie: owner.cookie }))).json.agents.find((x) => x.id === made.json.agent_id);
+  assert.strictEqual(a.status, 'revoked');
+  assert.ok(a.keys.every((k) => k.revoked_at), 'every key revoked');
+});
+
+test('S6: one provider\'s IPv6 block can\'t spread itself over many /64s to dodge the registration limit', async () => {
+  const max = require('../api/agents.js').REGISTER_LIMITS.agent_register_net.max;
+  let created = 0, limited = 0;
+  for (let i = 0; i < max + 3; i++) {
+    const s = (await api(req('POST', 'register', { json: { name: 'v6 bot ' + i }, ip: '2001:db8:77:' + i.toString(16) + '::1' }))).status;
+    if (s === 201) created++; else if (s === 429) limited++;
+  }
+  assert.deepStrictEqual([created, limited], [max, 3]);
+  const { netRange } = require('../signin/http');
+  assert.strictEqual(netRange({ headers: { 'x-vercel-forwarded-for': '2001:db8:77:5::1' } }), '2001:db8:77::/48');
+  assert.strictEqual(netRange({ headers: { 'x-vercel-forwarded-for': '198.51.100.7' } }), '198.51.100.0/24');
+});
+
+test('MCP create_post refuses anything but the real site, and says plainly that it doesn\'t run in batches', async () => {
+  const mcp = require('../api/mcp.js');
+  mcp.setPostAs(null);
+  delete require.cache[require.resolve('../api/mcp.js')];
+  const fresh = require('../api/mcp.js');
+  const callTool = async (headers, body) => { const out = res(); await fresh({ method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body }, out); return JSON.parse(out.body); };
+  const one = await callTool({ host: 'preview-abc.vercel.app', authorization: 'Bearer ' + agentkey.newKey().key },
+    { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_post', arguments: { body: 'x' } } });
+  assert.match(one.result.content[0].text, /dayonegreat\.com/);
+  const batch = await callTool({ host: 'dayonegreat.com', authorization: 'Bearer ' + agentkey.newKey().key },
+    [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_post', arguments: { body: 'x' } } }]);
+  assert.match(batch[0].result.content[0].text, /batches/);
+});
+
 test('MCP: create_post posts as the agent with its key, and nothing without one; list_posts names agents as untrusted', async () => {
   const owner = await member(2, 'Mallory jane@example.com');
   const made = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name: 'Mcp bot mail@example.com' } }));
