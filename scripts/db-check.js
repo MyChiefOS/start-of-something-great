@@ -9,7 +9,7 @@ const { problems } = require('../db/checks');
 
 const url = process.env.MIGRATION_DATABASE_URL;
 if (!url) { console.error('MIGRATION_DATABASE_URL is not set'); process.exit(1); }
-const sql = db.connect(url, { max: 1, ssl: process.env.MIGRATION_SSL === 'off' ? false : 'require' });
+const sql = db.connect(url, { max: 1, ssl: process.env.MIGRATION_SSL === 'off' ? false : db.tls(process.env.MIGRATION_DATABASE_CA) });
 problems(sql)
   .then(async (p) => {
     await sql.end();

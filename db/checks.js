@@ -1,103 +1,235 @@
 // The database coverage check. It reads Postgres's own catalog, so it judges the database as it really is, not
 // as the migration files describe it. Every build runs it against a fresh database built from the migrations
-// (test/db.test.js); it can also be run against production to catch drift.
-//   S1  every table has row-level security on and forced; nothing sits in "public"; views can't skip policies
-//   S7  the site's role owns nothing and can't bypass security, so it can't remove the audit log's locks
-//   S8  every text and JSON column has an upper size limit (or a fixed list of values) in the database
+// (test/db.test.js), and the migration workflow runs it against production afterwards (scripts/db-check.js).
+//   S1  every table has row-level security on and forced, with at most one permissive policy per action; nothing
+//       in "public"; no view, function or right that lets a request around the policies; no temporary tables
+//   S7  the site's role owns nothing, belongs to no other role, and holds exactly the audit-log rights it needs;
+//       the audit log's policies and triggers are exactly the reviewed ones and fire always
+//   S8  every variable-length column (numbers aside) has an upper size limit (or a fixed list of values) in the database
 //   S12 no column for ID documents, ID numbers, face images or passwords
-//   G3  no counters: IDs are UUIDv7 from app.uuid_v7()
-// Returns a list of problems in plain words; an empty list means it passes.
+//   G3  no counters: primary keys are UUIDv7 from app.uuid_v7(), and keys that point at them are uuid
+// Returns a list of problems in plain words; an empty list means it passes. Queries are tagged templates like
+// every other query (S8), so the "our schemas" condition is written out in each one.
 'use strict';
 
-// Schemas we check: our own (app), "public", and any other schema our owner role owns. The queries are tagged
-// templates like every other query (S8), so this condition is written out in each one.
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
+const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
+const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
+
+// The audit log's reviewed policies, compared with spaces and brackets removed so Postgres versions that print
+// them slightly differently still match.
+const AUDIT_POLICIES = {
+  audit_insert: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
+  audit_select: { cmd: 'r', using: "app.actor_kind()='admin'::text", check: '' }
+};
+const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
 async function problems(sql) {
   const out = [];
+  const add = (s) => out.push(s);
 
-  const tables = await sql`
+  // ---- Tables, views and policies (S1) ----
+  const rels = await sql`
     select n.nspname as schema, c.relname as name, c.relkind as kind, c.relrowsecurity as rls,
-           c.relforcerowsecurity as forced, c.reloptions as options
+           c.relforcerowsecurity as forced, c.reloptions as options, pg_get_userbyid(c.relowner) as owner
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and c.relkind in ('r', 'p', 'v', 'm', 'f')`;
-  for (const t of tables) {
+    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
+      and c.relkind in ('r', 'p', 'v', 'm', 'f')`;
+  for (const t of rels) {
     const name = t.schema + '.' + t.name;
-    if (t.schema === 'public') out.push(name + ' is in the public schema; our tables belong in app (S1)');
+    if (t.schema === 'public') add(name + ' is in the public schema; our tables belong in app (S1)');
+    if (t.owner !== 'dog_owner') add(name + ' is owned by ' + t.owner + '; everything in app belongs to dog_owner (S1)');
     if (t.kind === 'r' || t.kind === 'p') {
-      if (!t.rls) out.push(name + ' does not have row-level security on (S1)');
-      if (!t.forced) out.push(name + ' does not have row-level security forced (S1)');
+      if (!t.rls) add(name + ' does not have row-level security on (S1)');
+      if (!t.forced) add(name + ' does not have row-level security forced (S1)');
     }
-    if (t.kind === 'v' && !(t.options || []).includes('security_invoker=true')) out.push(name + ' is a view without security_invoker, so it would skip row-level security (S1)');
-    if (t.kind === 'm') out.push(name + ' is a materialized view, which row-level security cannot cover (S1)');
-    if (t.kind === 'f') out.push(name + ' is a foreign table, which row-level security cannot cover (S1)');
+    if (t.kind === 'v' && !(t.options || []).includes('security_invoker=true')) add(name + ' is a view without security_invoker, so it would skip row-level security (S1)');
+    if (t.kind === 'm') add(name + ' is a materialized view, which row-level security cannot cover (S1)');
+    if (t.kind === 'f') add(name + ' is a foreign table, which row-level security cannot cover (S1)');
   }
 
-  // Only our two roles may hold rights on our tables, and nobody may hold rights through PUBLIC.
+  // One permissive policy per action (a policy "for all" counts for every action): a second one would widen the
+  // first without anyone editing it.
+  const pol = await sql`
+    select n.nspname || '.' || c.relname as tbl, p.polname as name, p.polcmd as cmd, p.polpermissive as permissive,
+           pg_get_expr(p.polqual, p.polrelid) as using, pg_get_expr(p.polwithcheck, p.polrelid) as check
+    from pg_policy p join pg_class c on c.oid = p.polrelid join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner'`;
+  const perms = {};
+  for (const p of pol.filter((x) => x.permissive)) {
+    for (const cmd of p.cmd === '*' ? ['r', 'a', 'w', 'd'] : [p.cmd]) (perms[p.tbl + ' ' + cmd] = perms[p.tbl + ' ' + cmd] || []).push(p.name);
+  }
+  for (const [k, names] of Object.entries(perms)) if (names.length > 1) add(k.split(' ')[0] + ' has ' + names.length + ' permissive policies for one action (' + names.join(', ') + '); combine them into one (S1)');
+
+  const audit = pol.filter((p) => p.tbl === 'app.audit_log');
+  const auditNames = audit.map((p) => p.name).sort();
+  if (auditNames.join() !== Object.keys(AUDIT_POLICIES).sort().join()) add('the audit log has policies ' + (auditNames.join(', ') || 'none') + '; it must have exactly audit_insert and audit_select (S7)');
+  for (const p of audit) {
+    const want = AUDIT_POLICIES[p.name];
+    if (want && (p.cmd !== want.cmd || !p.permissive || squash(p.using) !== squash(want.using) || squash(p.check) !== squash(want.check))) {
+      add('the audit log policy ' + p.name + ' differs from the reviewed one (S7)');
+    }
+  }
+
+  // ---- Rights (S1, S7) ----
   const grants = await sql`
     select n.nspname || '.' || c.relname as name, coalesce(r.rolname, 'PUBLIC') as grantee, a.privilege_type as privilege
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
     left join pg_roles r on r.oid = a.grantee
-    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and c.relkind in ('r', 'p', 'v')
+    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
+      and c.relkind in ('r', 'p', 'v')
       and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app')`;
-  for (const g of grants) out.push(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner and dog_app may hold rights (S1)');
+  for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner and dog_app may hold rights (S1)');
 
-  const schemaRights = await sql`
+  // Anywhere outside app: the site's role may not write, and nothing may be granted to it by name.
+  const outside = await sql`
+    select n.nspname || '.' || c.relname as name
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname not in ('app', 'pg_catalog', 'information_schema') and n.nspname !~ '^pg_toast'
+      and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and (has_table_privilege('dog_app', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')
+           or has_any_column_privilege('dog_app', c.oid, 'INSERT, UPDATE')
+           or exists (select 1 from aclexplode(c.relacl) a where a.grantee = 'dog_app'::regrole))`;
+  for (const o of outside) add('dog_app can reach ' + o.name + ' outside the app schema, where no policy protects it (S1)');
+
+  const schemas = await sql`
+    select n.nspname as name from pg_namespace n
+    where has_schema_privilege('dog_app', n.oid, 'CREATE')`;
+  for (const n of schemas) add('dog_app can create objects in schema ' + n.name + '; it must not (S1, S7)');
+  const appSchema = await sql`
     select coalesce(r.rolname, 'PUBLIC') as grantee, a.privilege_type as privilege
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
-    where n.nspname = 'app' and not (coalesce(r.rolname, '') = 'dog_owner')
+    where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
       and not (coalesce(r.rolname, '') = 'dog_app' and a.privilege_type = 'USAGE')`;
-  for (const g of schemaRights) out.push('schema app grants ' + g.privilege + ' to ' + g.grantee + '; dog_app may only use it (S1)');
+  for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; dog_app may only use it (S1)');
 
-  const [app] = await sql`select rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication from pg_roles where rolname = 'dog_app'`;
-  if (!app) out.push('the dog_app role does not exist');
-  else {
-    for (const [k, label] of [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcreaterole', 'create roles'],
-      ['rolcreatedb', 'create databases'], ['rolcanlogin', 'sign in directly'], ['rolreplication', 'replication']]) {
-      if (app[k]) out.push('dog_app can ' + label + '; it must not (S1, S7)');
-    }
+  const [temp] = await sql`select has_database_privilege('dog_app', current_database(), 'TEMP') as yes`;
+  if (temp.yes) add('dog_app can make temporary tables, which outlive a transaction on a pooled connection (S1)');
+
+  // The audit log: read the table, write only the four content columns.
+  const [ar] = await sql`
+    select has_table_privilege('dog_app', 'app.audit_log', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') as table_write,
+           has_any_column_privilege('dog_app', 'app.audit_log', 'UPDATE') as column_update,
+           (select array_agg(a.attname::text order by a.attname) from pg_attribute a
+            where a.attrelid = 'app.audit_log'::regclass and a.attnum > 0 and not a.attisdropped
+              and has_column_privilege('dog_app', 'app.audit_log', a.attnum, 'INSERT')) as insertable`;
+  if (ar.table_write || ar.column_update) add('dog_app holds more rights on the audit log than reading and adding rows (S7)');
+  if ((ar.insertable || []).join() !== 'action,detail,subject_id,subject_kind') add('dog_app can set audit log columns ' + (ar.insertable || []).join(', ') + '; only action, subject_kind, subject_id and detail (S7)');
+
+  // ---- Roles (S1, S7) ----
+  // Memberships that pass on rights. From Postgres 16, whoever creates a role is given an admin-only membership in
+  // it that passes on nothing (no SET, no INHERIT), so those are left out; Postgres 15 has no such memberships.
+  const [{ v }] = await sql`select current_setting('server_version_num')::int as v`;
+  const roles = v >= 160000 ? await sql`
+    with m as (select roleid, member from pg_auth_members where set_option or inherit_option)
+    select r.rolname as name, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb, r.rolcanlogin, r.rolreplication,
+           coalesce((select array_agg(distinct g.rolname::text) from m join pg_roles g on g.oid = m.roleid where m.member = r.oid), '{}') as member_of,
+           r.oid in (select m.member from m where m.roleid = (select oid from pg_roles where rolname = 'dog_app')) as uses_app
+    from pg_roles r` : await sql`
+    with m as (select roleid, member from pg_auth_members)
+    select r.rolname as name, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb, r.rolcanlogin, r.rolreplication,
+           coalesce((select array_agg(distinct g.rolname::text) from m join pg_roles g on g.oid = m.roleid where m.member = r.oid), '{}') as member_of,
+           r.oid in (select m.member from m where m.roleid = (select oid from pg_roles where rolname = 'dog_app')) as uses_app
+    from pg_roles r`;
+  const app = roles.find((r) => r.name === 'dog_app');
+  const owner = roles.find((r) => r.name === 'dog_owner');
+  if (!app || !owner) add('the dog_app and dog_owner roles must both exist (S1)');
+  const powers = [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcreaterole', 'create roles'],
+    ['rolcreatedb', 'create databases'], ['rolreplication', 'replication']];
+  if (app) {
+    for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (app[k]) add('dog_app can ' + label + '; it must not (S1, S7)');
+    if (app.member_of.length) add('dog_app belongs to ' + app.member_of.join(', ') + '; it must belong to no role, or it gains that role\'s rights (S1, S7)');
+  }
+  if (owner) for (const [k, label] of [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcanlogin', 'sign in directly']]) {
+    if (owner[k]) add('dog_owner can ' + label + '; it must not (S1)');
+  }
+  // The login the site uses: switching to dog_app is the only thing it can do.
+  for (const r of roles.filter((x) => x.uses_app)) {
+    for (const [k, label] of powers) if (r[k]) add(r.name + ' (which the site signs in as) can ' + label + '; it must not (S1)');
+    const other = r.member_of.filter((g) => g !== 'dog_app');
+    if (other.length) add(r.name + ' (which the site signs in as) also belongs to ' + other.join(', ') + '; it may belong only to dog_app (S1, S7)');
   }
   const owned = await sql`select count(*)::int as n from pg_class where relowner = (select oid from pg_roles where rolname = 'dog_app')`;
-  if (owned[0].n) out.push('dog_app owns ' + owned[0].n + ' objects; an owner can switch off policies and triggers (S7)');
+  if (owned[0].n) add('dog_app owns ' + owned[0].n + ' objects; an owner can switch off policies and triggers (S7)');
 
-  const definers = await sql`
-    select n.nspname || '.' || p.proname as name from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and p.prosecdef`;
-  for (const f of definers) out.push(f.name + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
-
-  const auditTriggers = await sql`
-    select t.tgname from pg_trigger t where t.tgrelid = to_regclass('app.audit_log') and t.tgenabled = 'O'`;
-  const names = auditTriggers.map((t) => t.tgname);
-  for (const need of ['audit_log_no_change', 'audit_log_no_truncate']) {
-    if (!names.includes(need)) out.push('the audit log is missing its ' + need + ' trigger, or it is switched off (S7)');
+  // ---- Functions (S1) ----
+  const fns = await sql`
+    select n.nspname || '.' || p.proname as name, p.prosecdef as definer, pg_get_userbyid(p.proowner) as owner,
+           exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0) as public_execute
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner'`;
+  for (const f of fns) {
+    if (f.definer) add(f.name + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
+    if (f.public_execute) add(f.name + ' can be called by every role; grant it to dog_app only (S1)');
+    if (f.owner !== 'dog_owner') add(f.name + ' is owned by ' + f.owner + '; everything in app belongs to dog_owner (S1)');
   }
 
-  const sequences = await sql`
+  // ---- The audit log's triggers (S7, G4) ----
+  // tgtype bits: 2 = before, 8 = delete, 16 = update, 32 = truncate; 1 would mean once per row. "A" = fires always.
+  const trig = await sql`
+    select t.tgname as name, t.tgtype as type, t.tgenabled as enabled, p.proname as fn, p.prosrc as src
+    from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+    where t.tgrelid = to_regclass('app.audit_log') and not t.tgisinternal`;
+  for (const [name, type] of [['audit_log_no_change', 26], ['audit_log_no_truncate', 34]]) {
+    const t = trig.find((x) => x.name === name);
+    if (!t) { add('the audit log is missing its ' + name + ' trigger (S7)'); continue; }
+    if (t.enabled !== 'A') add('the audit log trigger ' + name + ' is not set to fire always (S7)');
+    if (t.type !== type) add('the audit log trigger ' + name + ' no longer runs before every ' + (type === 26 ? 'update and delete' : 'truncate') + ' statement (S7)');
+    if (t.fn !== 'audit_log_append_only' || !/raise\s+exception/i.test(t.src) || /\breturn\b/i.test(t.src)) add('the audit log trigger ' + name + ' no longer refuses the change (S7)');
+  }
+  const guard = await sql`select tgenabled as enabled from pg_trigger where tgrelid = to_regclass('app.members') and tgname = 'members_guard'`;
+  if (!guard.length || guard[0].enabled === 'D') add('app.members is missing its members_guard trigger, or it is switched off (S3)');
+
+  // ---- Columns and keys (S8, S12, G3) ----
+  const seqs = await sql`
     select n.nspname || '.' || c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and c.relkind = 'S'`;
-  for (const s of sequences) out.push(s.name + ' is a counter; IDs must be UUIDv7 (G3)');
+  for (const s of seqs) add(s.name + ' is a counter; IDs must be UUIDv7 (G3)');
 
-  const columns = await sql`
+  const cols = await sql`
     select n.nspname || '.' || c.relname as tbl, a.attname as col, format_type(a.atttypid, a.atttypmod) as type,
-           pg_get_expr(d.adbin, d.adrelid) as def, a.attidentity as identity,
-           exists (select 1 from pg_constraint k where k.conrelid = c.oid and k.contype = 'c'
-                   and a.attnum = any (k.conkey)
-                   and pg_get_constraintdef(k.oid) ~ ('(char_length|octet_length)\\(+' || quote_ident(a.attname) || '\\)*(::text\\)*)? (<|<=|=) [0-9]|'
-                                                   || quote_ident(a.attname) || ' = ANY')) as limited
+           t.typlen as len, t.typcategory as category, a.atttypmod as typmod, a.attidentity as identity,
+           pg_get_expr(d.adbin, d.adrelid) as def,
+           exists (select 1 from pg_constraint k where k.conrelid = c.oid and k.contype = 'p' and a.attnum = any (k.conkey)) as pk,
+           exists (select 1 from pg_constraint k where k.conrelid = c.oid and k.contype = 'f' and a.attnum = any (k.conkey)) as fk,
+           coalesce((select array_agg(pg_get_constraintdef(k.oid)) from pg_constraint k
+                     where k.conrelid = c.oid and k.contype = 'c' and a.attnum = any (k.conkey)), '{}') as checks
     from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace
+    join pg_type t on t.oid = a.atttypid
     left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner') and c.relkind in ('r', 'p') and a.attnum > 0 and not a.attisdropped`;
-  for (const c of columns) {
+    where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
+      and c.relkind in ('r', 'p') and a.attnum > 0 and not a.attisdropped`;
+  for (const c of cols) {
     const name = c.tbl + '.' + c.col;
-    if (/^(text|character varying|jsonb|json|bytea)$/.test(c.type) && !c.limited) out.push(name + ' has no size limit (S8)');
-    if (c.identity) out.push(name + ' is an identity counter; IDs must be UUIDv7 (G3)');
-    if (c.col === 'id' && (c.type !== 'uuid' || c.def !== 'app.uuid_v7()')) out.push(name + ' must be a uuid with default app.uuid_v7() (G3)');
-    if (FORBIDDEN_COLUMN.test(c.col)) out.push(name + ' looks like it stores an ID document, ID number, face image or password (S5, S12)');
+    if (c.category === 'A') add(name + ' is an array; use a table so each item has its own size limit (S8)');
+    else if (c.len === -1 && c.category !== 'N' && !limited(c)) add(name + ' has no size limit (S8)');
+    if (c.identity) add(name + ' is an identity counter; IDs must be UUIDv7 (G3)');
+    if (c.def && /nextval\(/.test(c.def)) add(name + ' takes its value from a counter; IDs must be UUIDv7 (G3)');
+    if ((c.pk && !NO_UUID_PK.includes(c.tbl)) || c.col === 'id') {
+      if (c.type !== 'uuid' || c.def !== 'app.uuid_v7()') add(name + ' is a key and must be a uuid with default app.uuid_v7() (G3)');
+    }
+    if (c.fk && c.type !== 'uuid') add(name + ' points at another record and must be a uuid (G3)');
+    if (FORBIDDEN_COLUMN.test(c.col)) add(name + ' looks like it stores an ID document, ID number, face image or password (S5, S12)');
   }
 
   return out;
 }
 
-module.exports = { problems };
+// A column is limited by varchar(n) or by a check constraint, with no OR in it, that caps its length at
+// MAX_LIMIT or less, or that restricts it to a fixed list of values.
+function limited(c) {
+  const m = c.type.match(/^character varying\((\d+)\)$/);
+  if (m && Number(m[1]) <= MAX_LIMIT) return true;
+  const col = c.col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cap = new RegExp('(char_length|octet_length)\\(+' + col + '\\)*(::text\\)*)?\\s*(<|<=|=)\\s*(\\d+)', 'g');
+  const list = new RegExp('\\b' + col + '\\)*\\s*=\\s*ANY\\s*\\(+ARRAY\\[');
+  return c.checks.some((def) => {
+    if (/\bOR\b/i.test(def)) return false;
+    if (list.test(def)) return true;
+    return [...def.matchAll(cap)].some((x) => Number(x[4]) <= MAX_LIMIT);
+  });
+}
+
+module.exports = { problems, limited, MAX_LIMIT };

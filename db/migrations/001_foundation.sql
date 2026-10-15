@@ -24,7 +24,18 @@ create schema app authorization dog_owner;
 revoke all on schema app from public;
 grant usage on schema app to dog_app;
 
+-- No temporary tables for anyone but their owner: a temporary table outlives the transaction on a pooled
+-- connection, so a copy of private rows made in one request could be read by the next.
+do $temp$
+begin
+  execute format('revoke temporary on database %I from public', current_database());
+end
+$temp$;
+
 set local role dog_owner;
+
+-- Functions created later are not callable by everyone unless a migration grants it.
+alter default privileges for role dog_owner in schema app revoke execute on functions from public;
 
 -- Time-ordered unique IDs (UUIDv7, RFC 9562): 48 bits of milliseconds then random bits. They sort by creation
 -- time and never collide across databases, so tables can be split later (G3). Postgres 18 has uuidv7() built in;
@@ -92,15 +103,18 @@ alter table app.members force row level security;
 
 -- One policy per action, each with its whole rule, so adding a policy later can't quietly widen another.
 -- A member sees and edits only their own row; Aaron sees and edits all; only the site itself creates members.
+-- Agents act for their owner but don't get the owner's private row: what agents may see arrives with PR 5.
 create policy members_select on app.members for select to dog_app
-  using (id = app.current_member() or app.actor_kind() in ('admin', 'system'));
+  using ((app.actor_kind() = 'member' and id = app.current_member()) or app.actor_kind() in ('admin', 'system'));
 create policy members_insert on app.members for insert to dog_app
   with check (app.actor_kind() = 'system');
 create policy members_update on app.members for update to dog_app
-  using (id = app.current_member() or app.actor_kind() = 'admin')
-  with check (id = app.current_member() or app.actor_kind() = 'admin');
+  using ((app.actor_kind() = 'member' and id = app.current_member()) or app.actor_kind() = 'admin')
+  with check ((app.actor_kind() = 'member' and id = app.current_member()) or app.actor_kind() = 'admin');
 
-grant select, insert on app.members to dog_app;
+-- Column by column, so nobody can choose a member's ID, creation time, level or status when creating one.
+grant select on app.members to dog_app;
+grant insert (display_name) on app.members to dog_app;
 grant update (display_name, trust_level, status) on app.members to dog_app;
 -- No delete yet: deleting an account (F8) arrives with its own rules in PR 7.
 
@@ -142,11 +156,15 @@ create policy audit_insert on app.audit_log for insert to dog_app
 create policy audit_select on app.audit_log for select to dog_app
   using (app.actor_kind() = 'admin');
 
-grant select, insert on app.audit_log to dog_app;
+-- Only these four columns can be written. The ID, the time and who acted always come from the database,
+-- so a row can't be backdated or given a chosen ID.
+grant select on app.audit_log to dog_app;
+grant insert (action, subject_kind, subject_id, detail) on app.audit_log to dog_app;
 
--- The second lock: even a role holding update or delete rights, a superuser included, is stopped by these
--- triggers. They run once per statement, so an attempt fails even when it matches no rows. Only the owner could
--- remove them, and the site never acts as the owner.
+-- The second lock: these triggers stop any role that holds update, delete or truncate rights, the owner and a
+-- superuser included. They run once per statement, so an attempt fails even when it matches no rows, and they
+-- are set to fire always, so the replication setting that switches ordinary triggers off doesn't switch these off.
+-- Only someone with the owner's login could remove them; the site never acts as the owner.
 create function app.audit_log_append_only() returns trigger
 language plpgsql
 as $$
@@ -158,6 +176,8 @@ create trigger audit_log_no_change before update or delete on app.audit_log
   for each statement execute function app.audit_log_append_only();
 create trigger audit_log_no_truncate before truncate on app.audit_log
   for each statement execute function app.audit_log_append_only();
+alter table app.audit_log enable always trigger audit_log_no_change;
+alter table app.audit_log enable always trigger audit_log_no_truncate;
 
 -- Functions: only the site's role may call them (they are also unreachable without the schema's usage right).
 revoke execute on all functions in schema app from public;

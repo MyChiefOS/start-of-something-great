@@ -1,7 +1,7 @@
 // The only way the site talks to the database.
 //   G1: production connections must go through a connection pooler; a direct address is refused.
 //   S8: queries are tagged templates, so every value travels to Postgres as a parameter, never as SQL text.
-//       Raw SQL (sql.unsafe) is banned outside scripts/migrate.js by a code check (.semgrep/database.yml).
+//       Raw SQL is banned outside scripts/migrate.js by a code check (.semgrep/database.yml).
 //   S1/S3: every request runs in one transaction as the dog_app role, with who is acting set for that
 //       transaction only, so row-level security decides what each request can see and nothing carries over
 //       to the next request on a pooled connection.
@@ -10,11 +10,11 @@
 const postgres = require('postgres');
 const v = require('./validate');
 
-// Connection poolers we accept, by host name and port. Supabase: its shared pooler (Supavisor) or its dedicated
-// pooler (PgBouncer), both in transaction mode on port 6543. Neon: the "-pooler" address of an endpoint.
+// Connection poolers we accept, by host name and port. Supabase: its shared pooler (Supavisor) in transaction
+// mode on port 6543. (Its dedicated pooler, db.<ref>.supabase.co, is reachable only over IPv6, which Vercel's
+// functions don't have.) Neon: the "-pooler" address of an endpoint.
 const POOLERS = [
   { host: /^[a-z0-9-]+\.pooler\.supabase\.com$/, ports: ['6543'] },
-  { host: /^db\.[a-z0-9]+\.supabase\.co$/, ports: ['6543'] },
   { host: /^ep-[a-z0-9-]+-pooler\.[a-z0-9.-]+\.neon\.tech$/, ports: ['', '5432'] }
 ];
 
@@ -27,10 +27,21 @@ function pooledUrl(url) {
   return url;
 }
 
+// Encrypted, with the server's certificate checked against trusted roots: Neon's certificates verify against the
+// usual public roots; Supabase's are signed by Supabase's own root, whose certificate (public, not a secret) goes
+// in DATABASE_CA. Plain 'require' would encrypt without checking who answers, so it is never used.
+function tls(ca) {
+  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
 // Pooler-friendly settings: no named prepared statements (transaction poolers can't keep them), a few connections
-// per function instance, and short timeouts so a slow database can't hang a request.
-function connect(url, { ssl = 'require', max = 3 } = {}) {
-  return postgres(url, {
+// per function instance, and short timeouts so a slow database can't hang a request. Settings written into the
+// address itself (such as sslmode or channel_binding) are dropped: the driver would send them to Postgres as
+// session settings, and the options below are the ones that count.
+function connect(url, { ssl = tls(process.env.DATABASE_CA), max = 3 } = {}) {
+  const u = new URL(url);
+  u.search = '';
+  return postgres(u.toString(), {
     prepare: false,
     max,
     ssl,
@@ -41,6 +52,8 @@ function connect(url, { ssl = 'require', max = 3 } = {}) {
   });
 }
 
+// The site's one shared connection pool, made on first use. It stays inside this file: the rest of the site
+// reaches the database only through run(), so every query has an actor and a transaction.
 let shared;
 function fromEnv() {
   if (!shared) {
@@ -49,6 +62,9 @@ function fromEnv() {
   }
   return shared;
 }
+
+// What the site's functions call: db.run({ actor: 'member', memberId }, (t) => members.get(t, id)).
+const run = async (ctx, fn) => tx(fromEnv(), ctx, fn);
 
 const ACTORS = ['anon', 'member', 'agent', 'admin', 'system'];
 
@@ -79,4 +95,4 @@ async function tx(sql, ctx, fn) {
   });
 }
 
-module.exports = { pooledUrl, connect, fromEnv, tx, ACTORS };
+module.exports = { pooledUrl, connect, tls, tx, run, ACTORS };

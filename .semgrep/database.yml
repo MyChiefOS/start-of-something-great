@@ -1,5 +1,6 @@
 rules:
-# Our own rules for S8 (every database query uses parameters). Written for this repository; MIT like the code.
+# Our own rules for S8 (every database query uses parameters) and S1 (who is acting is set in one place).
+# Written for this repository; MIT like the code. test/db.test.js checks the same things without Semgrep.
 - id: dayonegreat.db.no-raw-sql
   message: Raw SQL (unsafe) can put values into a query as text instead of parameters. Use a tagged template
     (t`... ${value}`) through db/index.js. Only scripts/migrate.js may run raw SQL, and only from migration files.
@@ -7,12 +8,30 @@ rules:
   severity: ERROR
   paths:
     exclude: [scripts/migrate.js, test/]
-  pattern: $X.unsafe(...)
+  pattern-either:
+  - pattern: $X.unsafe(...)
+  - pattern: $X['unsafe'](...)
+  - pattern: $X["unsafe"](...)
 - id: dayonegreat.db.driver-only-in-db
   message: Load the database through db/index.js, which enforces the pooler (G1), parameters (S8) and
     per-transaction identity (S1).
   languages: [javascript]
   severity: ERROR
   paths:
+    exclude: [db/index.js, test/]
+  pattern-either:
+  - pattern: require('postgres')
+  - pattern: import $X from 'postgres'
+  - pattern: import * as $X from 'postgres'
+  - pattern: import { ... } from 'postgres'
+  - pattern: import('postgres')
+- id: dayonegreat.db.identity-only-in-db
+  message: Who is acting is set only by db/index.js at the start of each transaction. Changing it elsewhere, or
+    keeping state past a transaction (session settings, roles, cursors WITH HOLD, temporary tables), could let one
+    request act as another on a pooled connection.
+  languages: [generic]
+  severity: ERROR
+  paths:
+    include: ['*.js']
     exclude: [db/index.js, scripts/migrate.js, test/]
-  pattern: require('postgres')
+  pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id)\b|\bset\s+(session|local\s+role|role)\b|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)

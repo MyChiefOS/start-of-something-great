@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const postgres = require('postgres');
+const db = require('../db');
 
 const DIR = path.join(__dirname, '..', 'db', 'migrations');
 const NAME = /^(\d{3})_[a-z0-9_]+\.sql$/;
@@ -37,7 +37,12 @@ async function applied(t) {
 // Returns the versions it applied. Safe to run again: applied migrations are checked and skipped.
 async function migrate(sql, { dir = DIR, log = () => {} } = {}) {
   const done = [];
-  for (const m of migrations(dir)) {
+  const files = migrations(dir);
+  // A migration that ran but whose file is gone means the repository no longer describes the database.
+  const known = new Set(files.map((m) => m.version));
+  const missing = [...(await sql.begin(applied)).keys()].filter((ver) => !known.has(ver));
+  if (missing.length) throw new Error('applied migrations missing from the repository: ' + missing.join(', '));
+  for (const m of files) {
     const ran = await sql.begin(async (t) => {
       // One runner at a time, even if two deploys start together.
       await t`select pg_advisory_xact_lock(hashtext('dayonegreat.migrate'))`;
@@ -59,7 +64,8 @@ async function migrate(sql, { dir = DIR, log = () => {} } = {}) {
 if (require.main === module) {
   const url = process.env.MIGRATION_DATABASE_URL;
   if (!url) { console.error('MIGRATION_DATABASE_URL is not set'); process.exit(1); }
-  const sql = postgres(url, { max: 1, ssl: process.env.MIGRATION_SSL === 'off' ? false : 'require', onnotice: () => {} });
+  const ssl = process.env.MIGRATION_SSL === 'off' ? false : db.tls(process.env.MIGRATION_DATABASE_CA);
+  const sql = db.connect(url, { max: 1, ssl });
   migrate(sql, { log: console.log })
     .then((done) => { console.log(done.length ? 'done' : 'already up to date'); return sql.end(); })
     .catch((e) => { console.error('migration failed: ' + e.message); return sql.end().then(() => process.exit(1)); });
