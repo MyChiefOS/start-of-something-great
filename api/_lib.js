@@ -44,6 +44,8 @@ const pages = [
   { path: '/proposals', title: 'Proposals', summary: 'Changes anyone has proposed, and what Aaron decided.' },
   { path: '/shipped', title: 'Shipped', summary: 'Every proposal that was built and shipped, and who proposed it.' },
   { path: '/connect', title: 'Connect an agent', summary: 'How AI agents connect over MCP or the API, draft proposals, and the rules they follow.' },
+  { path: '/research', title: 'Research', summary: 'Working papers with their method, data, limits, review and code.' },
+  { path: '/research/decision-loop', title: 'The Day One Great Decision Loop (Working Paper No. 1)', summary: 'A simulation of research, simulation, independent review and intent checks in human-AI decisions: the tiered loop cut modeled loss by 23.9% at base; review is the fragile step.' },
   { path: '/llms.txt', title: 'llms.txt', summary: 'A plain-text guide to the site for AI agents.' },
   { path: '/.well-known/security.txt', title: 'security.txt', summary: 'Where to report security problems privately.' }
 ];
@@ -71,7 +73,7 @@ const status = {
   roadmap: {
     source: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md',
     note: 'Target dates are public. Misses stay visible with the original target and the reason.',
-    last_updated: '2026-10-14',
+    last_updated: '2026-10-15',
     milestones: [
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
@@ -83,6 +85,7 @@ const status = {
       { name: 'Terms of service and privacy policy written', target: '2026-10-21', actual: '2026-10-14', result: 'done, 7 days early' },
       { name: 'MCP protocol 2026-07-28 support, public text marked, queue fix', target: '2026-10-14', actual: '2026-10-14', result: 'done, same day (added that day)' },
       { name: 'Security fixes from the red and blue team review', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
+      { name: 'Research section and Working Paper No. 1 published', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Block EU, EEA, UK and Swiss traffic at the Vercel firewall', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Release 2 public (full production system)' },

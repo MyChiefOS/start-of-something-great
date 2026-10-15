@@ -305,3 +305,62 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .status-declined, .status-closed { color: var(--muted); }
 .flag { font-family: var(--display); font-size: 0.92rem; color: var(--amber); }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .status-shipped { color: #ffffff; } }
+
+/* Research: working papers */
+.kicker { font-family: var(--display); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 1rem; }
+.kicker a { color: var(--amber); text-decoration: none; }
+.kicker a:hover { text-decoration: underline; }
+.story h1.paper-title { max-width: 20ch; }
+.paper-subtitle { font-family: var(--display); font-size: 1.25rem; line-height: 1.35; letter-spacing: -0.01em; color: var(--text); margin: 1rem 0 0; max-width: 34rem; }
+.byline, .review-status { color: var(--muted); font-size: 0.95rem; margin: 0.75rem 0 0; max-width: var(--measure); }
+.review-status { padding: 0.6rem 0.9rem; border: 1px solid var(--rule); border-left: 2px solid var(--amber); border-radius: 6px; margin-top: 1.25rem; }
+.toc { margin: 2.5rem 0 1rem; padding: 1rem 1.25rem; border: 1px solid var(--rule); border-radius: 10px; max-width: var(--measure); }
+.story .toc h2.toc-title { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.5rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; font-family: var(--display); font-size: 0.95rem; }
+.toc li { margin: 0 0 0.35rem; break-inside: avoid; }
+.toc a { text-decoration: none; color: var(--text); }
+.toc a:hover { color: var(--amber); }
+@media (max-width: 34rem) { .toc ol { columns: 1; } }
+.paper ol, .paper ul { max-width: var(--measure); padding-left: 1.4rem; }
+.paper h2 { scroll-margin-top: 1rem; }
+.math-block { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.25rem; padding: 0.25rem 0; }
+.math-block math { font-size: 1.15em; }
+.figure { margin: 2rem 0 2.25rem; }
+.fig-scroll { max-width: 100%; overflow-x: auto; }
+.fig-scroll:focus-visible, .math-block:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.figure svg.fig { display: block; width: 100%; min-width: 40rem; height: auto; font-family: var(--display); }
+.figure figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+.table-wrap { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.5rem; }
+.table-wrap:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.paper table { border-collapse: collapse; font-size: 0.9rem; line-height: 1.45; min-width: 36rem; }
+.paper th, .paper td { text-align: left; vertical-align: top; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid var(--rule); }
+.paper th { font-family: var(--display); font-weight: 600; color: var(--muted); border-bottom-color: var(--amber); }
+.cite { padding: 0.85rem 1rem; border: 1px solid var(--rule); border-radius: 8px; font-size: 0.95rem; }
+.paper-list { list-style: none; margin: 1.5rem 0 0; padding: 0; max-width: calc(var(--measure) + 3rem); }
+.paper-list li { border: 1px solid var(--rule); border-top: 2px solid var(--amber); border-radius: 10px; padding: 1.25rem 1.5rem 0.75rem; }
+.paper-list h3 { font-size: 1.4rem; margin: 0.35rem 0 0.5rem; }
+.paper-list h3 a { text-decoration: none; }
+.paper-list h3 a:hover { color: var(--amber); }
+.paper-list .post-meta { font-size: 0.9rem; }
+
+/* Figures: drawn as inline SVG, coloured from the theme */
+.fig .fig-text { fill: var(--text); }
+.fig .fig-quiet { fill: var(--muted); }
+.fig .fig-grid { stroke: var(--rule); stroke-width: 1; }
+.fig .fig-zero { stroke: var(--muted); stroke-width: 1.25; }
+.fig .fig-ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.fig .fig-line path { fill: none; stroke: var(--muted); stroke-width: 1.25; }
+.fig .fig-axis-fill { fill: var(--muted); }
+.fig .fig-box { fill: none; stroke: var(--muted); stroke-width: 1.25; }
+.fig .fig-box-accent { fill: var(--glow); stroke: var(--amber); stroke-width: 2; }
+.fig .fig-band { fill: var(--glow); stroke: var(--rule); stroke-width: 1; }
+.fig .fig-accent { fill: var(--amber); }
+.fig .fig-accent-soft { fill: var(--amber); fill-opacity: 0.4; }
+.fig .fig-mute { fill: var(--muted); fill-opacity: 0.75; }
+.fig .fig-mute-soft { fill: var(--muted); fill-opacity: 0.3; }
+.fig .fig-accent-range { stroke: var(--amber); stroke-opacity: 0.85; stroke-width: 6; }
+.fig .fig-mute-range { stroke: var(--muted); stroke-opacity: 0.7; stroke-width: 6; }
+.fig .fig-accent-line { fill: none; stroke: var(--amber); stroke-width: 2.25; }
+.fig .fig-mute-line { fill: none; stroke: var(--muted); stroke-width: 2.25; }
+.fig .fig-whisker { stroke: var(--text); stroke-width: 1.25; }
+.fig .fig-whisker-quiet { stroke: var(--muted); stroke-width: 1; }

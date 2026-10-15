@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { fresh, call } = require('./helpers');
 const root = path.join(__dirname, '..');
+// Every HTML page the site serves, including pages in research/.
+const htmlPages = () => fs.readdirSync(root).filter((x) => x.endsWith('.html'))
+  .concat(fs.readdirSync(path.join(root, 'research')).filter((x) => x.endsWith('.html')).map((x) => 'research/' + x));
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
 
 function countingGitHub(fail) {
@@ -108,7 +111,7 @@ test('R2: every page gets a strict Content-Security-Policy and cannot be framed'
 });
 
 test('R2: every page works under that policy (no inline code, styles or outside resources)', () => {
-  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html'))) {
+  for (const f of htmlPages()) {
     const html = fs.readFileSync(path.join(root, f), 'utf8');
     for (const tag of html.match(/<script\b[^>]*>/gi) || []) {
       const giscus = f === 'talk.html' && /\bsrc="https:\/\/giscus\.app\/client\.js"/.test(tag); // allowed by the /talk policy only
@@ -137,10 +140,10 @@ test('R2: only /talk may load giscus, and every path gets exactly one Content-Se
   assert.match(talk, /frame-ancestors 'none'/);
   // The same regular expressions Vercel builds from these sources (path-to-regexp 6, checked Oct 15).
   const siteWide = /^(?:\/((?!talk\/?$).*))[\/#?]?$/i, talkOnly = /^\/talk[\/#?]?$/i;
-  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2']) {
+  for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2', '/research', '/research/decision-loop']) {
     assert.ok(siteWide.test(p) !== talkOnly.test(p), p + ' gets ' + (siteWide.test(p) ? 'two policies' : 'no policy'));
   }
-  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'talk.html')) {
+  for (const f of htmlPages().filter((x) => x !== 'talk.html')) {
     assert.ok(!/giscus\.app\/client/.test(fs.readFileSync(path.join(root, f), 'utf8')), f);
   }
 });
