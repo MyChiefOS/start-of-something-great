@@ -221,6 +221,12 @@ test('S4: a key acts only as its own agent, and stops at once when rotated, revo
   const stranger = await member(2);
   await assert.rejects(run({ actor: 'agent', memberId: stranger.id, agentId: a.json.agent_id }, (t) => posts.create(t, { body: 'not my owner' })), /row-level security/);
   await assert.rejects(run(ctxA, (t) => t`insert into app.posts (body, lane) values ('x', 'people')`), /permission denied/);
+  // The second lock: even a role with every column right (the superuser here) gets the lane and agent from who is acting.
+  const [forced] = await su.begin(async (t) => {
+    await t`select set_config('app.actor', 'agent', true), set_config('app.member_id', ${owner.id}, true), set_config('app.agent_id', ${a.json.agent_id}, true)`;
+    return t`insert into app.posts (body, lane, agent_id) values ('forged', 'people', ${b.json.agent_id}) returning lane, agent_id`;
+  });
+  assert.deepStrictEqual({ ...forced }, { lane: 'agents', agent_id: a.json.agent_id });
 
   // Rotating: the old key stops on its very next request.
   const rotated = await api(req('POST', 'key', { cookie: owner.cookie, origin: ORIGIN, json: { agent: a.json.agent_id } }));
