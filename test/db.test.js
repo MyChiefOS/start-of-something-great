@@ -259,6 +259,8 @@ test('S1: the coverage check fails the build for a table without forced row-leve
   // Settings that should be allowed: the trigger set to fire always, and a limit written as varchar(n).
   const ok = await su.begin(async (t) => {
     await t.unsafe('set local role dog_owner; create table app.ok1 (id uuid primary key default app.uuid_v7(), code varchar(12), n numeric(10, 2), other uuid references app.members (id)); alter table app.ok1 enable row level security; alter table app.ok1 force row level security');
+    // Found while building PR 2: a function created later is not callable by everyone, with no grant needed.
+    await t.unsafe('set local role dog_owner; create function app.ok_f() returns int language sql as $$ select 1 $$');
     throw Object.assign(new Error('rollback'), { found: await problems(t) });
   }).catch((e) => { if (!e.found) throw e; return e.found; });
   assert.deepStrictEqual(ok, [], 'a well-formed table passes');

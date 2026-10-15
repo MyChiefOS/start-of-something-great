@@ -38,8 +38,9 @@ $temp$;
 
 set local role dog_owner;
 
--- Functions created later are not callable by everyone unless a migration grants it.
-alter default privileges for role dog_owner in schema app revoke execute on functions from public;
+-- Functions created later are not callable by everyone unless a migration grants it. (This has to be set for the
+-- role as a whole: Postgres lets a per-schema default add rights but never take this one away.)
+alter default privileges for role dog_owner revoke execute on functions from public;
 
 -- Time-ordered unique IDs (UUIDv7, RFC 9562): 48 bits of milliseconds then random bits. They sort by creation
 -- time and never collide across databases, so tables can be split later (G3). Postgres 18 has uuidv7() built in;
