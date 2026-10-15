@@ -19,6 +19,16 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # A throwaway Postgres 17 (the version Supabase runs) for the database tests: S1, S3, S7, S8, G3, G4.
+    # It only accepts connections from this job and is deleted with it, so it needs no password.
+    services:
+      postgres:
+        image: postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -29,7 +39,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Tests (acceptance criteria)
+      - name: Install locked dependencies (no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Tests (acceptance criteria, including the database coverage check)
+        env:
+          TEST_DATABASE_URL: postgres://postgres@localhost:5432/postgres
         run: node --test test/*.test.js
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
@@ -39,7 +54,7 @@ jobs:
       - name: Code scan (Semgrep 1.95.0, rules saved in .semgrep/)
         run: |
           python -m pip install --quiet "semgrep==1.95.0" "setuptools==75.6.0"
-          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ proposals.js shipped.js
+          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ proposals.js shipped.js
 
       - name: Secret scan (gitleaks 8.21.2, checksum verified)
         run: |

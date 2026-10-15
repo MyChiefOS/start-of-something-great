@@ -1,0 +1,49 @@
+# Reviewed database snapshot. Rebuild with: npm run db:snapshot
+constraint app.audit_log audit_log_action_check CHECK (((char_length(action) <= 64) AND (action ~ '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$'::text)))
+constraint app.audit_log audit_log_actor_kind_check CHECK ((actor_kind = ANY (ARRAY['anon'::text, 'member'::text, 'agent'::text, 'admin'::text, 'system'::text])))
+constraint app.audit_log audit_log_detail_check CHECK (((jsonb_typeof(detail) = 'object'::text) AND (octet_length((detail)::text) <= 4096)))
+constraint app.audit_log audit_log_pkey PRIMARY KEY (id)
+constraint app.audit_log audit_log_subject_kind_check CHECK (((char_length(subject_kind) <= 32) AND (subject_kind ~ '^[a-z][a-z_]*$'::text)))
+constraint app.members members_display_name_check CHECK (((char_length(display_name) >= 1) AND (char_length(display_name) <= 80)))
+constraint app.members members_pkey PRIMARY KEY (id)
+constraint app.members members_status_check CHECK ((status = ANY (ARRAY['active'::text, 'banned'::text])))
+constraint app.members members_trust_level_check CHECK (((trust_level >= 0) AND (trust_level <= 3)))
+constraint app.schema_migrations schema_migrations_pkey PRIMARY KEY (version)
+constraint app.schema_migrations schema_migrations_sha256_check CHECK ((char_length(sha256) = 64))
+constraint app.schema_migrations schema_migrations_version_check CHECK ((char_length(version) <= 64))
+default app.audit_log.actor_id = app.current_actor_id()
+default app.audit_log.actor_kind = app.actor_kind()
+default app.audit_log.at = now()
+default app.audit_log.detail = '{}'::jsonb
+default app.audit_log.id = app.uuid_v7()
+default app.members.created_at = now()
+default app.members.id = app.uuid_v7()
+default app.members.status = 'active'::text
+default app.members.trust_level = 0
+default app.schema_migrations.applied_at = now()
+function app.actor_kind() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=text body_md5=ff633b08786d9cbc10eea9a14ddc49f8
+function app.audit_log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d9ae51d115dd87e702077c0fef83ccc2
+function app.current_actor_id() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=uuid body_md5=78082b715a972b0254a50e6555af6789
+function app.current_agent() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=uuid body_md5=739668a7732ef5a425a1d1bda0c3edd5
+function app.current_member() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=uuid body_md5=e46adb2e55a90833fc5dd4176dc9670b
+function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=cc4b715f4ec30cf2ba9a84b4e9eedd78
+function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
+grant app.audit_log dog_app SELECT
+grant app.audit_log.action dog_app INSERT
+grant app.audit_log.detail dog_app INSERT
+grant app.audit_log.subject_id dog_app INSERT
+grant app.audit_log.subject_kind dog_app INSERT
+grant app.members dog_app SELECT
+grant app.members.display_name dog_app INSERT
+grant app.members.display_name dog_app UPDATE
+grant app.members.status dog_app UPDATE
+grant app.members.trust_level dog_app UPDATE
+policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
+policy app.audit_log audit_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.members members_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'system'::text)
+policy app.members members_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.members members_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text))
+policy app.schema_migrations migrations_owner_only cmd=* permissive=true to=dog_owner using=true check=true
+trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_change BEFORE DELETE OR UPDATE ON app.audit_log FOR EACH STATEMENT EXECUTE FUNCTION app.audit_log_append_only()
+trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON app.audit_log FOR EACH STATEMENT EXECUTE FUNCTION app.audit_log_append_only()
+trigger app.members enabled=A CREATE TRIGGER members_guard BEFORE UPDATE ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_guard()

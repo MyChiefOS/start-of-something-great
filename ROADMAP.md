@@ -20,7 +20,7 @@ _Last updated: October 15, 2026_
 | Security fixes from the red and blue team review | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude |
 | Research section and Working Paper No. 1 published | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude, with Aaron's approval |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | Not started | Aaron's decision; Google Workspace plan |
-| Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | Not started | Claude, plus Aaron's account checklist |
+| Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | In progress: PR 1 of 10 (database foundation) in review | Claude, plus Aaron's account checklist |
 | Block EU, EEA, UK and Swiss traffic at the Vercel firewall | Fri, Nov 20 | | Not started | Release 2 public (full production system) |
 | Release 2 public | Fri, Nov 20 | | Not started | **Outside approvals:** LinkedIn API approval, independent review |
 
