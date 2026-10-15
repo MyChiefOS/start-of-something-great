@@ -4,7 +4,8 @@ constraint app.audit_log audit_log_actor_kind_check CHECK ((actor_kind = ANY (AR
 constraint app.audit_log audit_log_detail_check CHECK (((jsonb_typeof(detail) = 'object'::text) AND (octet_length((detail)::text) <= 4096)))
 constraint app.audit_log audit_log_pkey PRIMARY KEY (id)
 constraint app.audit_log audit_log_subject_kind_check CHECK (((char_length(subject_kind) <= 32) AND (subject_kind ~ '^[a-z][a-z_]*$'::text)))
-constraint app.email_tokens email_tokens_email_fingerprint_check CHECK (((char_length(email_fingerprint) = 64) AND (email_fingerprint ~ '^[0-9a-f]+$'::text)))
+constraint app.email_tokens email_tokens_browser_hash_check CHECK (((char_length(browser_hash) = 64) AND (browser_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.email_tokens email_tokens_email_fingerprints_check CHECK (((char_length(email_fingerprints) <= 329) AND (email_fingerprints ~ '^[0-9a-f]{64}(,[0-9a-f]{64}){0,4}$'::text)))
 constraint app.email_tokens email_tokens_key_version_check CHECK (((key_version >= 1) AND (key_version <= 999)))
 constraint app.email_tokens email_tokens_pkey PRIMARY KEY (id)
 constraint app.email_tokens email_tokens_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
@@ -58,14 +59,15 @@ function app.audit_log_append_only() owner=dog_owner execute=dog_owner language=
 function app.current_actor_id() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=s definer=false config= returns=uuid body_md5=78082b715a972b0254a50e6555af6789
 function app.current_agent() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=s definer=false config= returns=uuid body_md5=739668a7732ef5a425a1d1bda0c3edd5
 function app.current_member() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=s definer=false config= returns=uuid body_md5=e46adb2e55a90833fc5dd4176dc9670b
-function app.email_token_issue(p_token_hash text, p_email_fingerprint text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=22be30bd5014f71ca3fe71e67ca8bca0
-function app.email_token_redeem(p_token_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(email_fingerprint text, key_version smallint) body_md5=5720652e03bb82e5a80c4c6163fd9154
+function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=3fe206a9383583c62c0fe78273dfdc07
+function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7dcd6e2df38652a4ecf8a2b2f52721ad
-function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=888ae93a436fe328023faeb3f2cd5378
+function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
 function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b546c8242ddd74e8f612239c3e466d5a
-function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text) body_md5=9f8375fe47106aadaf0694e82b64dc3e
-function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=2da6408bcd9a0fecbc118f4a657a9434
+function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text) body_md5=d90fcaf4f6e5f560c7e2527941399822
+function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=f47122798a71797a95f59613fb2a1c3b
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
+function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=e005420ed597c5d1a4c5dd514f35ffd5
 grant app.audit_log dog_app SELECT
 grant app.audit_log.action dog_app INSERT
 grant app.audit_log.action dog_signin INSERT
@@ -77,7 +79,8 @@ grant app.audit_log.subject_kind dog_app INSERT
 grant app.audit_log.subject_kind dog_signin INSERT
 grant app.email_tokens dog_signin DELETE
 grant app.email_tokens dog_signin SELECT
-grant app.email_tokens.email_fingerprint dog_signin INSERT
+grant app.email_tokens.browser_hash dog_signin INSERT
+grant app.email_tokens.email_fingerprints dog_signin INSERT
 grant app.email_tokens.expires_at dog_signin INSERT
 grant app.email_tokens.key_version dog_signin INSERT
 grant app.email_tokens.token_hash dog_signin INSERT

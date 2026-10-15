@@ -13,15 +13,22 @@ async function rateLimitHit(t, { bucket, keyHash, windowSeconds, max }) {
   return r.allowed === true;
 }
 
-async function emailTokenIssue(t, { tokenHash, emailFingerprint, keyVersion }) {
-  await t`select app.email_token_issue(${hex('tokenHash', tokenHash)}, ${hex('emailFingerprint', emailFingerprint)},
+// emailFingerprints: the address's fingerprint under each key still in use, current key first.
+async function emailTokenIssue(t, { tokenHash, emailFingerprints, browserHash, keyVersion }) {
+  const fps = emailFingerprints.map((f) => hex('emailFingerprint', f));
+  if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('emailFingerprints', 'must have 1 to 5 entries');
+  await t`select app.email_token_issue(${hex('tokenHash', tokenHash)}, ${fps.join(',')}, ${hex('browserHash', browserHash)},
           ${v.int('keyVersion', keyVersion, { min: 1, max: 999 })}::smallint)`;
 }
 
-async function emailTokenRedeem(t, tokenHash) {
+// Returns { status: 'ok', emailFingerprints, keyVersion }, { status: 'confirm' } (opened in another browser, not
+// yet confirmed; nothing used up), or null (unknown, used or expired).
+async function emailTokenRedeem(t, { tokenHash, browserHash, confirmed }) {
   if (typeof tokenHash !== 'string' || !HEX64.test(tokenHash)) return null;
-  const [r] = await t`select email_fingerprint, key_version from app.email_token_redeem(${tokenHash})`;
-  return r ? { emailFingerprint: r.email_fingerprint, keyVersion: r.key_version } : null;
+  const b = typeof browserHash === 'string' && HEX64.test(browserHash) ? browserHash : null;
+  const [r] = await t`select status, email_fingerprints, key_version from app.email_token_redeem(${tokenHash}, ${b}, ${confirmed === true})`;
+  if (!r) return null;
+  return r.status === 'ok' ? { status: 'ok', emailFingerprints: r.email_fingerprints.split(','), keyVersion: r.key_version } : { status: 'confirm' };
 }
 
 // Returns { memberId, isNew, trustLevel, isAdmin }, or { refused: 'banned' | 'taken' }.
@@ -38,14 +45,18 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
     recheck: recheckAfter === null ? null : new Date(recheckAfter),
     link: linkMember === null ? null : v.uuid('linkMember', linkMember)
   };
-  try {
-    // A savepoint, so a refusal leaves the surrounding transaction usable.
-    const [r] = await t.savepoint((s) => s`select * from app.sign_in(${args.provider}, ${s.array(fps)}::text[], ${args.keyVersion}::smallint,
-      ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, ${args.link}::uuid)`);
-    return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
-  } catch (e) {
-    if (e.code === 'P0001' && (e.message === 'banned' || e.message === 'taken')) return { refused: e.message };
-    throw e;
+  // Two first sign-ins of the same account at the same moment: one wins, the other tries once more and finds it.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // A savepoint, so a refusal or a lost race leaves the surrounding transaction usable.
+      const [r] = await t.savepoint((s) => s`select * from app.sign_in(${args.provider}, ${s.array(fps)}::text[], ${args.keyVersion}::smallint,
+        ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, ${args.link}::uuid)`);
+      return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
+    } catch (e) {
+      if (e.code === 'P0001' && (e.message === 'banned' || e.message === 'taken')) return { refused: e.message };
+      if (e.code === '23505' && attempt === 0) continue;
+      throw e;
+    }
   }
 }
 

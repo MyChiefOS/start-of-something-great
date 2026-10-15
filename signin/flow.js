@@ -2,9 +2,11 @@
 //   GitHub and X: /auth/<provider>/start sends the visitor to the provider with a fresh state and PKCE challenge,
 //   kept in a sealed, 10-minute, single-use cookie; /auth/<provider>/callback checks both, asks the provider who the
 //   person is, and signs them in.
-//   Email: /auth/email/start (POST) sends a 15-minute, single-use link. Opening it shows a Continue button
+//   Email: /auth/email/start (POST) sends a 15-minute, single-use link. Its token is after the "#", so it never
+//   reaches our server or its logs by opening the page. Opening it shows a Continue button
 //   (/auth/email/continue); only pressing it (/auth/email/finish, POST) signs in, so mail scanners that open links
-//   can't use them up or sign anyone in.
+//   can't use them up or sign anyone in. A link opened in another browser than the one that asked for it asks
+//   first, so nobody can quietly sign someone else into the asker's account.
 //   Sessions: a fresh random token at every sign-in, kept by the browser in a __Host- cookie and by us only as a
 //   SHA-256. /auth/logout and /auth/logout-all are POSTs; /auth/me says who is signed in.
 'use strict';
@@ -16,6 +18,8 @@ const store = require('../db/signin');
 const v = require('../db/validate');
 
 const SESSION = '__Host-dog_session';
+const EMAIL_BROWSER = '__Host-dog_email';
+const NEW_NAME = 'New member'; // names from GitHub or X are not kept (S12); members choose their own later
 // Every token we hand out is 32 random bytes in base64url: exactly 43 of these characters.
 const isToken = (s) => typeof s === 'string' && s.length === 43 && Buffer.from(s, 'base64url').toString('base64url') === s;
 const stateCookie = (p) => '__Host-dog_oauth_' + p;
@@ -25,8 +29,11 @@ const ANON = { actor: 'anon' };
 const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
   email_ip: { windowSeconds: 3600, max: 10 },
-  email_addr: { windowSeconds: 3600, max: 5 }
+  email_addr: { windowSeconds: 3600, max: 5 },
+  // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
+  email_all: { windowSeconds: 3600, max: 500 }
 };
+const ALL = '0'.repeat(64);
 
 function make(deps) {
   const { config, run, providers, sendEmail } = deps;
@@ -50,10 +57,6 @@ function make(deps) {
     if (!out.refused) h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
     return out;
   }
-
-  const display = (name) => {
-    try { return v.text('displayName', String(name || ''), { max: 80 }); } catch { return 'New member'; }
-  };
 
   return {
     async start(req, res, provider) {
@@ -104,7 +107,7 @@ function make(deps) {
         ctx = { actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId };
       }
       const out = await finish(res, ctx, { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
-        level: who.level, displayName: display(who.name), recheckAfter: who.recheckAfter, linkMember: saved.l || null });
+        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter, linkMember: saved.l || null });
       if (out.refused === 'banned') return h.redirect(res, '/join?error=unavailable');
       if (out.refused === 'taken') return h.redirect(res, '/join?error=taken');
       // A fresh session replaces any older one in this browser.
@@ -115,39 +118,38 @@ function make(deps) {
 
     async emailStart(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
-      if (!sendEmail) return h.redirect(res, '/join?error=unavailable');
+      if (!sendEmail) return h.redirect(res, '/join?error=email_off');
       const body = await h.form(req);
       let email;
       try {
         email = v.text('email', body && body.email, { max: 254, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }).toLowerCase();
       } catch { return h.redirect(res, '/join?error=email'); }
-      const emailFp = c.fingerprints(keys, 'email', email);
-      if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFp[0])) {
+      const emailFps = c.fingerprints(keys, 'email', email);
+      if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFps[0]) || await limited('email_all', ALL)) {
         return h.redirect(res, '/join?error=slow');
       }
+      // Remembers this browser, so the link can tell whether it is opened where it was asked for.
+      let nonce = h.cookies(req)[EMAIL_BROWSER];
+      if (!isToken(nonce)) nonce = c.token(32);
+      h.addCookie(res, h.cookie(EMAIL_BROWSER, nonce, { maxAge: 20 * 60 }));
       const token = c.token(32);
-      await run(ANON, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprint: emailFp[0], keyVersion: keys[0].version }));
+      await run(ANON, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps,
+        browserHash: c.sha256hex(nonce), keyVersion: keys[0].version }));
       // The link is always built from our own address, never from the request.
-      const link = ORIGIN + '/auth/email/continue?t=' + token;
+      const link = ORIGIN + '/auth/email/continue#t=' + token;
       try { await sendEmail(email, link); } catch { /* the reply is the same either way */ }
       // The same answer whether or not the address has an account (no enumeration).
       return h.redirect(res, '/join?sent=1');
     },
 
-    // Shows a button; changes nothing. Opening the link (as mail scanners do) uses nothing up.
+    // Shows a button; changes nothing. The token stays in the address after "#", which browsers never send, and a
+    // small script (/signin.js) copies it into the form.
     async emailContinue(req, res) {
-      const t = new URL(req.url, ORIGIN).searchParams.get('t');
-      const ok = isToken(t);
-      res.statusCode = ok ? 200 : 400;
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Referrer-Policy', 'no-referrer');
-      res.setHeader('X-Robots-Tag', 'noindex');
-      res.end(page(ok
-        ? '<h1>Continue signing in</h1><p>Press the button to finish signing in to Day One Great.</p>'
-          + '<form method="post" action="/auth/email/finish"><input type="hidden" name="t" value="' + t + '">'
-          + '<button type="submit" class="button">Continue</button></form>'
-        : '<h1>This link doesn’t work</h1><p><a href="/join">Ask for a new one</a>.</p>'));
+      htmlPage(res, 200, '<h1>Continue signing in</h1><p>Press the button to finish signing in to Day One Great.</p>'
+        + '<form id="finish" method="post" action="/auth/email/finish"><input type="hidden" name="t" value="">'
+        + '<button type="submit" class="button">Continue</button></form>'
+        + '<noscript><p>This page needs JavaScript to read your link. Please turn it on, or ask for a new link from a browser that has it.</p></noscript>'
+        + '<script src="/signin.js"></script>');
     },
 
     async emailFinish(req, res) {
@@ -155,10 +157,19 @@ function make(deps) {
       const body = await h.form(req);
       const t = body && body.t;
       if (!isToken(t)) return h.redirect(res, '/join?error=expired');
-      const used = await run(ANON, (x) => store.emailTokenRedeem(x, c.sha256hex(t)));
+      const nonce = h.cookies(req)[EMAIL_BROWSER];
+      const used = await run(ANON, (x) => store.emailTokenRedeem(x, { tokenHash: c.sha256hex(t),
+        browserHash: isToken(nonce) ? c.sha256hex(nonce) : null, confirmed: body.confirm === '1' }));
       if (!used) return h.redirect(res, '/join?error=expired');
-      const out = await finish(res, ANON, { provider: 'email', fingerprints: [used.emailFingerprint], keyVersion: used.keyVersion,
-        level: 0, displayName: 'New member' });
+      if (used.status === 'confirm') {
+        return htmlPage(res, 200, '<h1>Was this you?</h1><p>This link was asked for in a different browser or on another device. '
+          + 'If you asked for it, continue. If you didn\u2019t, close this page: someone may be trying to sign you in to their account.</p>'
+          + '<form method="post" action="/auth/email/finish"><input type="hidden" name="t" value="' + t + '"><input type="hidden" name="confirm" value="1">'
+          + '<button type="submit" class="button">Yes, I asked for it</button></form>');
+      }
+      const out = await finish(res, ANON, { provider: 'email', fingerprints: used.emailFingerprints, keyVersion: used.keyVersion,
+        level: 0, displayName: NEW_NAME });
+      h.addCookie(res, h.clear(EMAIL_BROWSER));
       if (out.refused) return h.redirect(res, '/join?error=unavailable');
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
@@ -184,14 +195,25 @@ function make(deps) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
-      res.end(JSON.stringify(who ? { signed_in: true, display_name: who.displayName, trust_level: who.trustLevel } : { signed_in: false }));
+      // Your own member ID is shown to you (Aaron needs it once, to make himself the administrator).
+      res.end(JSON.stringify(who ? { signed_in: true, member_id: who.memberId, display_name: who.displayName, trust_level: who.trustLevel } : { signed_in: false }));
     },
 
     current
   };
 }
 
-// The one page sign-in draws itself; everything else is on /join.
+function htmlPage(res, status, inner) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  // Same-origin: our own form posts carry an Origin header (sameSite() needs it); nothing goes to other sites.
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.end(page(inner));
+}
+
+// The pages sign-in draws itself; everything else is on /join.
 function page(inner) {
   return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
     + '<meta name="robots" content="noindex"><title>Sign in · Day One Great</title><link rel="stylesheet" href="/styles.css"></head>'

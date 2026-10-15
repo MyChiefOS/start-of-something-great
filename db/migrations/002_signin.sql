@@ -55,11 +55,14 @@ create index sessions_member on app.sessions (member_id);
 alter table app.sessions enable row level security;
 alter table app.sessions force row level security;
 
--- Email sign-in links: single use, 15 minutes. The address itself is never stored, only its fingerprint.
+-- Email sign-in links: single use, 15 minutes. The address itself is never stored, only its fingerprint under each
+-- key still in use (comma-separated, current key first), so a key rotation can't split or unban an account. The
+-- browser that asked for the link is remembered by a hash, so a link opened elsewhere asks before signing in.
 create table app.email_tokens (
   id uuid primary key default app.uuid_v7(),
   token_hash text not null unique check (char_length(token_hash) = 64 and token_hash ~ '^[0-9a-f]+$'),
-  email_fingerprint text not null check (char_length(email_fingerprint) = 64 and email_fingerprint ~ '^[0-9a-f]+$'),
+  email_fingerprints text not null check (char_length(email_fingerprints) <= 329 and email_fingerprints ~ '^[0-9a-f]{64}(,[0-9a-f]{64}){0,4}$'),
+  browser_hash text not null check (char_length(browser_hash) = 64 and browser_hash ~ '^[0-9a-f]+$'),
   key_version smallint not null check (key_version between 1 and 999),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
@@ -108,7 +111,7 @@ create policy email_tokens_signin_insert on app.email_tokens for insert to dog_s
 create policy email_tokens_signin_update on app.email_tokens for update to dog_signin using (true) with check (true);
 create policy email_tokens_signin_delete on app.email_tokens for delete to dog_signin using (true);
 grant select, delete on app.email_tokens to dog_signin;
-grant insert (token_hash, email_fingerprint, key_version, expires_at) on app.email_tokens to dog_signin;
+grant insert (token_hash, email_fingerprints, browser_hash, key_version, expires_at) on app.email_tokens to dog_signin;
 grant update (used_at) on app.email_tokens to dog_signin;
 
 create policy rate_limits_signin_select on app.rate_limits for select to dog_signin using (true);
@@ -162,8 +165,8 @@ declare
   w timestamptz;
   n integer;
 begin
-  if p_bucket !~ '^[a-z_]{1,32}$' or p_key_hash !~ '^[0-9a-f]{64}$' or p_window_seconds not between 1 and 86400
-     or p_max not between 1 and 100000 then
+  if p_bucket is null or p_bucket !~ '^[a-z_]{1,32}$' or p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$'
+     or p_window_seconds is null or p_window_seconds not between 1 and 86400 or p_max is null or p_max not between 1 and 100000 then
     raise exception 'bad rate limit request' using errcode = '22023';
   end if;
   w := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
@@ -178,41 +181,68 @@ begin
 end
 $$;
 
-create function app.email_token_issue(p_token_hash text, p_email_fingerprint text, p_key_version smallint)
+create function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint)
 returns void
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
-  if p_token_hash !~ '^[0-9a-f]{64}$' or p_email_fingerprint !~ '^[0-9a-f]{64}$' then
+  if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' or p_email_fingerprints is null
+     or p_email_fingerprints !~ '^[0-9a-f]{64}(,[0-9a-f]{64}){0,4}$' or p_browser_hash is null
+     or p_browser_hash !~ '^[0-9a-f]{64}$' or p_key_version is null or p_key_version not between 1 and 999 then
     raise exception 'bad email link request' using errcode = '22023';
   end if;
-  insert into app.email_tokens (token_hash, email_fingerprint, key_version, expires_at)
-    values (p_token_hash, p_email_fingerprint, p_key_version, now() + interval '15 minutes');
+  insert into app.email_tokens (token_hash, email_fingerprints, browser_hash, key_version, expires_at)
+    values (p_token_hash, p_email_fingerprints, p_browser_hash, p_key_version, now() + interval '15 minutes');
   if random() < 0.05 then
     delete from app.email_tokens where expires_at < now() - interval '1 day';
   end if;
 end
 $$;
 
--- Uses up a link and says which email fingerprint it was for, or nothing if it's unknown, used or expired.
-create function app.email_token_redeem(p_token_hash text)
-returns table (email_fingerprint text, key_version smallint)
+-- Uses up a link and says which email fingerprints it was for. Returns nothing if the link is unknown, used or
+-- expired. If it is opened in a different browser from the one that asked for it, and the person hasn't yet
+-- confirmed, it returns status 'confirm' and uses nothing up, so someone can't quietly sign a victim into the
+-- attacker's own account.
+create function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean)
+returns table (status text, email_fingerprints text, key_version smallint)
 language plpgsql security definer set search_path = pg_catalog
 as $$
+declare
+  t app.email_tokens%rowtype;
 begin
-  if p_token_hash !~ '^[0-9a-f]{64}$' then
+  if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then
     return;
   end if;
-  return query
-    update app.email_tokens t set used_at = now()
-    where t.token_hash = p_token_hash and t.used_at is null and t.expires_at > now()
-    returning t.email_fingerprint, t.key_version;
+  select * into t from app.email_tokens x
+    where x.token_hash = p_token_hash and x.used_at is null and x.expires_at > now() for update;
+  if not found then
+    return;
+  end if;
+  if (p_browser_hash is distinct from t.browser_hash) and not coalesce(p_confirmed, false) then
+    return query select 'confirm'::text, null::text, null::smallint;
+    return;
+  end if;
+  update app.email_tokens x set used_at = now() where x.id = t.id;
+  return query select 'ok'::text, t.email_fingerprints, t.key_version;
 end
 $$;
+
+-- A member's trust level is the highest level any of their sign-in methods currently verifies. A level 2 whose
+-- recheck date has passed counts as level 1 until it is verified again (an X business badge can lapse).
+create function app.verified_level(p_member uuid)
+returns smallint
+language sql stable
+as $$
+  select coalesce(max(case when i.recheck_after is not null and i.recheck_after <= now() then least(i.level, 1) else i.level end), 0)::smallint
+  from app.identities i where i.member_id = p_member
+$$;
+revoke execute on function app.verified_level(uuid) from public;
+grant execute on function app.verified_level(uuid) to dog_signin;
 
 -- Signs someone in with a verified identity and records a new session.
 --   p_fingerprints: this account's fingerprint under each key still in use, current key first.
 --   p_link_member: set only when a signed-in member is adding another sign-in method; never set from an email match.
+--     It must be the member the transaction acts as, so this function can't attach a method to anyone else.
 -- Returns the member, or raises 'banned' or 'taken' (the identity already belongs to someone else).
 create function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint,
                             p_display_name text, p_session_hash text, p_session_days integer,
@@ -227,9 +257,16 @@ declare
 begin
   if p_provider is null or not (p_provider = any (array['github', 'x', 'email', 'linkedin']))
      or p_fingerprints is null or cardinality(p_fingerprints) not between 1 and 5
-     or exists (select 1 from unnest(p_fingerprints) f where f !~ '^[0-9a-f]{64}$')
-     or p_level not between 0 and 2 or p_session_hash !~ '^[0-9a-f]{64}$' or p_session_days not between 1 and 30
+     or exists (select 1 from unnest(p_fingerprints) f where f is null or f !~ '^[0-9a-f]{64}$')
+     or p_key_version is null or p_key_version not between 1 and 999
+     or p_level is null or p_level not between 0 and 2 or p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$'
+     or p_session_days is null or p_session_days not between 1 and 30
      or p_display_name is null or char_length(p_display_name) not between 1 and 80 then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+  -- Signing in is for someone not signed in; linking is only for the member who is signed in.
+  if (p_link_member is null and app.actor_kind() <> 'anon')
+     or (p_link_member is not null and (app.actor_kind() not in ('member', 'admin') or p_link_member is distinct from app.current_member())) then
     raise exception 'bad sign-in request' using errcode = '22023';
   end if;
 
@@ -265,13 +302,14 @@ begin
     raise exception 'banned' using errcode = 'P0001';
   end if;
 
-  -- The member's level is the highest any of their sign-in methods has verified. It never drops on its own here;
-  -- a lapsed level 2 is handled when it is rechecked.
-  if p_level > mem.trust_level then
-    update app.members m set trust_level = p_level where m.id = mem.id;
-    mem.trust_level := p_level;
+  -- The member's level follows what their sign-in methods currently verify: up when one verifies more, down when a
+  -- level 2 lapses.
+  if app.verified_level(mem.id) is distinct from mem.trust_level then
     insert into app.audit_log (action, subject_kind, subject_id, detail)
-      values ('member.level_raised', 'member', mem.id, jsonb_build_object('provider', p_provider, 'level', p_level));
+      values ('member.level_changed', 'member', mem.id,
+              jsonb_build_object('provider', p_provider, 'from', mem.trust_level, 'to', app.verified_level(mem.id)));
+    update app.members m set trust_level = app.verified_level(mem.id) where m.id = mem.id;
+    mem.trust_level := app.verified_level(mem.id);
   end if;
 
   insert into app.sessions (member_id, token_hash, expires_at)
@@ -293,16 +331,23 @@ as $$
 declare
   s app.sessions%rowtype;
 begin
-  if p_session_hash !~ '^[0-9a-f]{64}$' or p_idle_days not between 1 and 30 then
+  if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or p_idle_days is null or p_idle_days not between 1 and 30 then
     return;
   end if;
   select * into s from app.sessions x where x.token_hash = p_session_hash;
   if not found or s.expires_at <= now() or s.last_seen_at <= now() - make_interval(days => p_idle_days) then
     return;
   end if;
-  -- Written at most once an hour, so reading pages doesn't turn into a write on every request.
+  -- Written at most once an hour, so reading pages doesn't turn into a write on every request. At the same time a
+  -- lapsed level 2 drops back, so a long session can't keep a level its badge no longer supports.
   if s.last_seen_at < now() - interval '1 hour' then
     update app.sessions x set last_seen_at = now() where x.id = s.id;
+    if exists (select 1 from app.members m where m.id = s.member_id and m.trust_level > app.verified_level(m.id)) then
+      insert into app.audit_log (action, subject_kind, subject_id, detail)
+        select 'member.level_changed', 'member', m.id, jsonb_build_object('reason', 'recheck_lapsed', 'from', m.trust_level, 'to', app.verified_level(m.id))
+        from app.members m where m.id = s.member_id;
+      update app.members m set trust_level = app.verified_level(m.id) where m.id = s.member_id;
+    end if;
   end if;
   return query select m.id, m.trust_level, m.is_admin, m.display_name
     from app.members m where m.id = s.member_id and m.status = 'active';
@@ -321,19 +366,19 @@ end
 $$;
 
 -- Only the site's role may call them; set before handing them over, while dog_owner can still grant.
-revoke execute on function app.rate_limit_hit(text, text, integer, integer), app.email_token_issue(text, text, smallint),
-  app.email_token_redeem(text), app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid),
+revoke execute on function app.rate_limit_hit(text, text, integer, integer), app.email_token_issue(text, text, text, smallint),
+  app.email_token_redeem(text, text, boolean), app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid),
   app.session_resolve(text, integer), app.session_end(text) from public;
-grant execute on function app.rate_limit_hit(text, text, integer, integer), app.email_token_issue(text, text, smallint),
-  app.email_token_redeem(text), app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid),
+grant execute on function app.rate_limit_hit(text, text, integer, integer), app.email_token_issue(text, text, text, smallint),
+  app.email_token_redeem(text, text, boolean), app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid),
   app.session_resolve(text, integer), app.session_end(text) to dog_app;
 
 -- Hands the functions to dog_signin, so they run with its narrow rights rather than the owner's. Postgres only
 -- hands a function to a role that may create objects in its schema, so dog_signin has that right for these lines only.
 grant create on schema app to dog_signin;
 alter function app.rate_limit_hit(text, text, integer, integer) owner to dog_signin;
-alter function app.email_token_issue(text, text, smallint) owner to dog_signin;
-alter function app.email_token_redeem(text) owner to dog_signin;
+alter function app.email_token_issue(text, text, text, smallint) owner to dog_signin;
+alter function app.email_token_redeem(text, text, boolean) owner to dog_signin;
 alter function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid) owner to dog_signin;
 alter function app.session_resolve(text, integer) owner to dog_signin;
 alter function app.session_end(text) owner to dog_signin;

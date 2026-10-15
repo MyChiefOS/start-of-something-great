@@ -71,7 +71,10 @@ function returnPath(p) {
 // IPv4 is used whole; IPv6 is grouped by /64, the block one household or phone usually gets.
 // On Vercel, x-vercel-forwarded-for is set by Vercel itself and can't be supplied by the visitor.
 function ipRange(req) {
-  const raw = String(req.headers['x-vercel-forwarded-for'] || '').split(',')[0].trim();
+  let raw = String(req.headers['x-vercel-forwarded-for'] || '').split(',')[0].trim();
+  // An IPv4 address written the IPv6 way (::ffff:1.2.3.4) is the IPv4 address.
+  const mapped = raw.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (mapped) raw = mapped[1];
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(raw)) return raw;
   if (raw.includes(':')) {
     const parts = expand6(raw);

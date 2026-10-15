@@ -217,6 +217,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create table app.t6 (id uuid primary key default app.uuid_v7(), note text check (char_length(note) >= 1)); alter table app.t6 enable row level security; alter table app.t6 force row level security', /app\.t6\.note has no size limit/],
     ['create table app.t7 (id uuid primary key default app.uuid_v7(), passport_number text check (char_length(passport_number) <= 9)); alter table app.t7 enable row level security; alter table app.t7 force row level security', /ID document/],
     ['create function app.f1() returns int language sql security definer as $$ select 1 $$', /security definer/],
+    ['set local role dog_owner; grant create on schema app to dog_signin; set local role dog_signin; create function app.session_end(p integer) returns void language sql security definer set search_path = pg_catalog as $$ select $$', /app\.session_end\(integer\) runs with its owner's rights/],
     // Found by the independent review of Oct 15: each of these passed the first version of the check.
     ['grant dog_owner to dog_app', /dog_app belongs to dog_owner/],
     ['grant pg_write_all_data to dog_app', /dog_app belongs to pg_write_all_data/],
@@ -258,7 +259,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['alter role dog_signin login', /dog_signin can sign in directly/],
     ['grant execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid) to public', /app\.sign_in can be called by every role/],
     ['alter function app.session_resolve(text, integer) reset search_path', /app\.session_resolve must fix its search path/],
-    ['set local role dog_owner; create function app.f4() returns int language sql security definer set search_path = pg_catalog as $$ select 1 $$', /app\.f4 runs with its owner's rights/],
+    ['set local role dog_owner; create function app.f4() returns int language sql security definer set search_path = pg_catalog as $$ select 1 $$', /app\.f4\(\) runs with its owner's rights/],
     ['set local role dog_owner; create policy members_public on app.members for select to public using (false)', /members_public applies to every role/],
     ['grant select on app.sessions to dog_app', /not in the reviewed snapshot: grant app\.sessions dog_app SELECT/],
     ['grant update (is_admin) on app.members to dog_signin', /not in the reviewed snapshot: grant app\.members\.is_admin dog_signin UPDATE/]

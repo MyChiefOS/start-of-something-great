@@ -18,7 +18,10 @@ const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't
 const ACTING = ['dog_app', 'dog_signin'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by dog_signin,
 // fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
-const DEFINERS = ['app.rate_limit_hit', 'app.email_token_issue', 'app.email_token_redeem', 'app.sign_in', 'app.session_resolve', 'app.session_end'];
+// Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
+const DEFINERS = ['app.rate_limit_hit(text, text, integer, integer)', 'app.email_token_issue(text, text, text, smallint)',
+  'app.email_token_redeem(text, text, boolean)', 'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid)',
+  'app.session_resolve(text, integer)', 'app.session_end(text)'];
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
 // The audit log's reviewed policies, compared with spaces and brackets removed so Postgres versions that print
@@ -160,7 +163,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_roles r`;
   const app = roles.find((r) => r.name === 'dog_app');
   const owner = roles.find((r) => r.name === 'dog_owner');
-  if (!app || !owner) add('the dog_app and dog_owner roles must both exist (S1)');
+  if (!app || !owner || !roles.find((r) => r.name === 'dog_signin')) add('the dog_app, dog_owner and dog_signin roles must all exist (S1)');
   const powers = [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcreaterole', 'create roles'],
     ['rolcreatedb', 'create databases'], ['rolreplication', 'replication']];
   if (app) {
@@ -190,7 +193,8 @@ async function problems(sql, { snapshot } = {}) {
 
   // ---- Functions (S1) ----
   const fns = await sql`
-    select n.nspname || '.' || p.proname as name, p.prosecdef as definer, pg_get_userbyid(p.proowner) as owner,
+    select n.nspname || '.' || p.proname as name, n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' as signature,
+           p.prosecdef as definer, pg_get_userbyid(p.proowner) as owner,
            coalesce(array_to_string(p.proconfig, ';'), '') as config,
            coalesce((select array_agg(case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end order by 1)
                      from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
@@ -200,7 +204,7 @@ async function problems(sql, { snapshot } = {}) {
   for (const f of fns) {
     if (f.callers.includes('PUBLIC')) add(f.name + ' can be called by every role; grant it to dog_app only (S1)');
     if (f.definer) {
-      if (!DEFINERS.includes(f.name)) add(f.name + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
+      if (!DEFINERS.includes(f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
       else {
         if (f.owner !== 'dog_signin') add(f.name + ' must be owned by dog_signin, not ' + f.owner + ' (S1)');
         if (f.config !== 'search_path=pg_catalog') add(f.name + ' must fix its search path to pg_catalog (S1)');

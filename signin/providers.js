@@ -5,9 +5,9 @@
 const { ORIGIN } = require('./config');
 
 const TIMEOUT_MS = 5000;
-async function call(url, init = {}) {
+async function call(url, init = {}, ms = TIMEOUT_MS) {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), ms);
   try {
     const r = await fetch(url, { ...init, signal: ctl.signal, redirect: 'error' });
     const text = await r.text();
@@ -43,13 +43,15 @@ const PROVIDERS = {
           headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin', 'X-GitHub-Api-Version': '2022-11-28' }
         });
         if (!u.ok || !u.json || !Number.isSafeInteger(u.json.id)) return null;
-        return { accountId: String(u.json.id), name: u.json.name || u.json.login || '', level: 1, recheckAfter: null };
+        // Only the account's number is used (for the fingerprint). Names and usernames are not kept (S12).
+        return { accountId: String(u.json.id), level: 1, recheckAfter: null };
       } finally {
-        // Best effort: tell GitHub to forget the token too.
-        call('https://api.github.com/applications/' + encodeURIComponent(c.clientId) + '/token', {
+        // Best effort, and finished before we answer (a function can be frozen once it has replied): tell GitHub
+        // to forget the token too.
+        await call('https://api.github.com/applications/' + encodeURIComponent(c.clientId) + '/token', {
           method: 'DELETE', headers: { Authorization: basic(c), Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin' },
           body: JSON.stringify({ access_token: accessToken })
-        }).catch(() => {});
+        }, 2000).catch(() => {});
       }
     }
   },
@@ -76,13 +78,13 @@ const PROVIDERS = {
         // Level 2 only for an X account verified as a business or government. Badges can lapse, so it is rechecked
         // at the next sign-in after 30 days.
         const two = d.verified_type === 'business' || d.verified_type === 'government';
-        return { accountId: d.id, name: d.name || d.username || '', level: two ? 2 : 1,
+        return { accountId: d.id, level: two ? 2 : 1,
           recheckAfter: two ? new Date(Date.now() + 30 * 86400000).toISOString() : null };
       } finally {
-        call('https://api.x.com/2/oauth2/revoke', {
+        await call('https://api.x.com/2/oauth2/revoke', {
           method: 'POST', headers: { Authorization: basic(c), 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ token: accessToken, token_type_hint: 'access_token' })
-        }).catch(() => {});
+        }, 2000).catch(() => {});
       }
     }
   }

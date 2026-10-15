@@ -10,7 +10,8 @@
     taken: 'That account is already linked to a different member.',
     slow: 'Too many tries in a short time. Please wait a few minutes.',
     email: 'That doesn’t look like an email address.',
-    signin: 'Please sign in first.'
+    signin: 'Please sign in first.',
+    email_off: 'Sign-in by email isn\u2019t switched on yet. Please use GitHub or X for now.'
   };
   var key = q.get('sent') === '1' ? 'sent' : q.get('error');
   var el = document.getElementById('message');

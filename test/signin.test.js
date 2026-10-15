@@ -92,6 +92,7 @@ test('S6: rate limits use Vercel\'s own IP header, IPv6 grouped by /64, hashed w
   assert.strictEqual(h.ipRange(r('2001:db8:1:2:aaaa::1')), '2001:db8:1:2::/64');
   assert.strictEqual(h.ipRange(r('2001:db8:1:2:aaaa::1')), h.ipRange(r('2001:0db8:0001:0002:ffff:1:2:3')));
   assert.strictEqual(h.ipRange({ headers: { 'x-forwarded-for': '1.2.3.4' } }), 'unknown', 'a header the visitor can set is ignored');
+  assert.strictEqual(h.ipRange(r('::ffff:203.0.113.7')), '203.0.113.7', 'an IPv4 address written the IPv6 way');
   assert.notStrictEqual(h.ipKey(r('203.0.113.7'), k, '2026-10-15'), h.ipKey(r('203.0.113.7'), k, '2026-10-16'), 'the key changes daily');
   assert.match(h.ipKey(r('203.0.113.7'), k), /^[0-9a-f]{64}$/);
 });
@@ -164,6 +165,16 @@ test('the router sends each address to the right step, with the right provider a
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')), ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all'],
     'only these change anything, and all are POSTs');
+});
+
+test('form bodies: read the same whether Vercel has already parsed them or not, and refused when too big', async () => {
+  const typed = { 'content-type': 'application/x-www-form-urlencoded' };
+  assert.deepStrictEqual(await h.form({ headers: typed, body: { t: 'abc' } }), { t: 'abc' });
+  assert.deepStrictEqual(await h.form({ headers: typed, body: 't=abc&confirm=1' }), { t: 'abc', confirm: '1' });
+  assert.deepStrictEqual(await h.form({ headers: typed, body: undefined, [Symbol.asyncIterator]: async function* () { yield Buffer.from('t=abc'); } }), { t: 'abc' });
+  assert.strictEqual(await h.form({ headers: typed, body: 't=' + 'x'.repeat(3000) }), null);
+  assert.strictEqual(await h.form({ headers: typed, body: { t: 'x'.repeat(3000) } }), null);
+  assert.strictEqual(await h.form({ headers: { 'content-type': 'application/json' }, body: { t: 'abc' } }), null);
 });
 
 test('SF4, S5: the join page has one field and no password, and posts only to our own sign-in', () => {
@@ -241,7 +252,10 @@ test('F1: joining with GitHub takes one round trip and lands at level 1, back wh
   assert.strictEqual(r.getHeader('Location'), '/proposals');
   assert.ok(browser.get(SESSION), 'a session cookie is set');
   assert.ok(!browser.get('__Host-dog_oauth_github'), 'the state cookie is gone');
-  assert.deepStrictEqual(await me(env, browser), { signed_in: true, display_name: 'Grace H', trust_level: 1 });
+  const who = await me(env, browser);
+  assert.deepStrictEqual({ ...who, member_id: undefined }, { signed_in: true, member_id: undefined, display_name: 'New member', trust_level: 1 },
+    'names and usernames from GitHub are not kept (S12)');
+  assert.match(who.member_id, /^[0-9a-f-]{36}$/, 'you can see your own member ID');
 });
 
 test('open redirects: a sign-in started with an outside return address comes back home', async () => {
@@ -255,8 +269,9 @@ test('open redirects: a sign-in started with an outside return address comes bac
 test('S12, S5: we keep a fingerprint and the level, never the account ID, and only a hash of the session', async () => {
   const env = setup({ accounts: { 'github:777000123': { accountId: '777000123', name: 'Kept Private', level: 1, recheckAfter: null } } });
   const { browser } = await oauth(env, 'github', '777000123');
-  const dump = JSON.stringify(await q(`select * from app.identities`)) + JSON.stringify(await q(`select * from app.sessions`));
+  const dump = JSON.stringify(await q(`select * from app.identities`)) + JSON.stringify(await q(`select * from app.sessions`)) + JSON.stringify(await q(`select * from app.members`));
   assert.ok(!dump.includes('777000123'), 'the provider account ID is not stored');
+  assert.ok(!dump.includes('Kept Private'), 'the provider\'s name for the person is not stored');
   assert.ok(!dump.includes(browser.get(SESSION)), 'the session token is not stored');
   assert.ok(dump.includes(c.sha256hex(browser.get(SESSION))));
   const cols = (await q(`select table_name || '.' || column_name as c from information_schema.columns where table_schema = 'app'`)).map((r) => r.c);
@@ -328,35 +343,53 @@ test('email links: same answer for every address, a Continue page that changes n
   const noOrigin = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email: 'a@example.com' } }), noOrigin);
   assert.strictEqual(noOrigin.getHeader('Location'), '/join?error=expired', 'a post without our Origin is refused');
   assert.strictEqual(env.mail.length, 0);
-  const r1 = await post('/auth/email/start', { email: '  Ada@Example.com ' });
+  const asker = jar();
+  const r1 = await post('/auth/email/start', { email: '  Ada@Example.com ' }, { browser: asker });
   assert.strictEqual(r1.getHeader('Location'), '/join?sent=1');
   assert.strictEqual(env.mail.length, 1);
   assert.strictEqual(env.mail[0].to, 'ada@example.com');
   const link = new URL(env.mail[0].link);
   assert.strictEqual(link.origin, ORIGIN, 'the link is built from our address, not the request\'s');
-  const t = link.searchParams.get('t');
-  // Opening the link (as a mail scanner would) only shows a button.
-  const page = res(); await env.flow.emailContinue(req('GET', link.pathname + link.search), page);
+  assert.strictEqual(link.search, '', 'the token is not in the part of the address browsers send');
+  const t = new URLSearchParams(link.hash.slice(1)).get('t');
+  assert.match(t, /^[A-Za-z0-9_-]{43}$/);
+  // Opening the link (as a mail scanner would) only shows a button; the server never sees the token.
+  const page = res(); await env.flow.emailContinue(req('GET', link.pathname), page);
   assert.strictEqual(page.statusCode, 200);
-  assert.match(page.body, /<form method="post" action="\/auth\/email\/finish">/);
-  assert.strictEqual(page.getHeader('Referrer-Policy'), 'no-referrer');
+  assert.match(page.body, /<form id="finish" method="post" action="\/auth\/email\/finish">/);
+  assert.match(page.body, /<script src="\/signin\.js"><\/script>/);
+  assert.strictEqual(page.getHeader('Referrer-Policy'), 'same-origin', 'our own form post must carry an Origin header');
   assert.strictEqual((await q(`select count(*)::int as n from app.email_tokens where used_at is not null`))[0].n, 0, 'nothing used up');
+  // Opened in another browser: it asks first, and uses nothing up until the person confirms.
+  const elsewhere = await post('/auth/email/finish', { t });
+  assert.strictEqual(elsewhere.statusCode, 200);
+  assert.match(elsewhere.body, /Was this you\?/);
+  assert.match(elsewhere.body, /name="confirm" value="1"/);
+  assert.strictEqual((await q(`select count(*)::int as n from app.email_tokens where used_at is not null`))[0].n, 0, 'still nothing used up');
   // A cross-site post (or one with no Origin) can't use the link, and leaves it usable.
   const forged = res(); await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t } }), forged);
   assert.strictEqual(forged.getHeader('Location'), '/join?error=expired');
   const forged2 = res(); await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t }, origin: 'https://evil.com' }), forged2);
   assert.strictEqual(forged2.getHeader('Location'), '/join?error=expired');
   assert.ok(!forged.getHeader('Set-Cookie') && !forged2.getHeader('Set-Cookie'));
-  const browser = jar();
-  const done = await post('/auth/email/finish', { t }, { browser });
-  assert.strictEqual(done.getHeader('Location'), '/');
-  assert.deepStrictEqual(await me(env, browser), { signed_in: true, display_name: 'New member', trust_level: 0 });
+  const done = await post('/auth/email/finish', { t }, { browser: asker });
+  assert.strictEqual(done.getHeader('Location'), '/', 'in the browser that asked, it signs straight in');
+  assert.strictEqual((await me(env, asker)).trust_level, 0);
+  assert.ok(!asker.get('__Host-dog_email'), 'the browser marker is cleared');
   const again = await post('/auth/email/finish', { t });
   assert.strictEqual(again.getHeader('Location'), '/join?error=expired', 'single use');
+  // Confirming in another browser works too, once.
+  const other = jar();
+  await post('/auth/email/start', { email: 'two@example.com' }, { browser: jar() });
+  const t2 = new URLSearchParams(new URL(env.mail[1].link).hash.slice(1)).get('t');
+  const confirmed = await post('/auth/email/finish', { t: t2, confirm: '1' }, { browser: other });
+  assert.strictEqual(confirmed.getHeader('Location'), '/');
+  assert.strictEqual((await me(env, other)).signed_in, true);
   // Expired after 15 minutes.
-  await post('/auth/email/start', { email: 'late@example.com' });
+  const lateBrowser = jar();
+  await post('/auth/email/start', { email: 'late@example.com' }, { browser: lateBrowser });
   await q(`update app.email_tokens set expires_at = now() - interval '1 second' where used_at is null`);
-  const late = await post('/auth/email/finish', { t: new URL(env.mail[1].link).searchParams.get('t') });
+  const late = await post('/auth/email/finish', { t: new URLSearchParams(new URL(env.mail[2].link).hash.slice(1)).get('t') }, { browser: lateBrowser });
   assert.strictEqual(late.getHeader('Location'), '/join?error=expired');
   assert.ok(!JSON.stringify(await q(`select * from app.email_tokens`)).includes('example.com'), 'the address is never stored');
   const bad = await post('/auth/email/start', { email: 'not an email' });
@@ -423,6 +456,83 @@ test('S12: a new fingerprint key takes over at each person\'s next sign-in', asy
   assert.strictEqual(row.fingerprint, c.fingerprints([k2], 'github', '7001')[0]);
   assert.strictEqual((await q(`select count(*)::int as n from app.identities where fingerprint = '${c.fingerprints([k1], 'github', '7001')[0]}'`))[0].n, 0);
   assert.strictEqual(memberBefore.signed_in, true);
+});
+
+test('F10, S12: after a fingerprint key rotation, email members keep their account and a banned one stays out', async () => {
+  const k1 = { version: 1, key: crypto.randomBytes(32) }, k2 = { version: 2, key: crypto.randomBytes(32) };
+  const viaEmail = async (keys, email) => {
+    const env = setup({ keys });
+    const b = jar();
+    const r1 = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email }, origin: ORIGIN, cookie: b.header() }), r1); b.take(r1);
+    const t = new URLSearchParams(new URL(env.mail[0].link).hash.slice(1)).get('t');
+    const r2 = res(); await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t }, origin: ORIGIN, cookie: b.header() }), r2); b.take(r2);
+    return { b, env, location: r2.getHeader('Location') };
+  };
+  const first = await viaEmail([k1], 'keep@example.com');
+  const id = (await me(first.env, first.b)).member_id;
+  const later = await viaEmail([k2, k1], 'keep@example.com');
+  assert.strictEqual((await me(later.env, later.b)).member_id, id, 'the same account after the rotation');
+  const banned = await viaEmail([k1], 'gone@example.com');
+  const bannedId = (await me(banned.env, banned.b)).member_id;
+  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
+  const back = await viaEmail([k2, k1], 'gone@example.com');
+  assert.strictEqual(back.location, '/join?error=unavailable', 'still banned after the rotation');
+});
+
+test('the sign-in function can\'t attach a method to someone else, or sign in while acting as a member', async () => {
+  const env = setup({ accounts: { 'github:9101': { accountId: '9101', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', '9101');
+  const victim = (await me(env, a.browser)).member_id;
+  const call = (ctx, link) => db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([c.sha256hex('attacker' + Math.random())])}::text[], 1::smallint, 2::smallint,
+    'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${link}::uuid)`);
+  await assert.rejects(call({ actor: 'anon' }, victim), /bad sign-in request/, 'someone not signed in naming a member to link to');
+  const other = await oauth(setup({ accounts: { 'github:9102': { accountId: '9102', level: 1, recheckAfter: null } } }), 'github', '9102');
+  const otherId = (await me(env, other.browser)).member_id;
+  await assert.rejects(call({ actor: 'member', memberId: otherId }, victim), /bad sign-in request/, 'one member linking to another');
+  await assert.rejects(call({ actor: 'member', memberId: otherId }, null), /bad sign-in request/, 'a plain sign-in while acting as a member');
+  const [lvl] = await q(`select trust_level from app.members where id = '${victim}'`);
+  assert.strictEqual(lvl.trust_level, 1, 'the victim was not raised to level 2');
+});
+
+test('a lapsed X business badge drops back to level 1 at the next sign-in, and during a long session', async () => {
+  const env = setup({ accounts: { 'x:9201': { accountId: '9201', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() },
+    'github:9202': { accountId: '9202', level: 1, recheckAfter: null } } });
+  const x = await oauth(env, 'x', '9201');
+  const id = (await me(env, x.browser)).member_id;
+  assert.strictEqual((await me(env, x.browser)).trust_level, 2);
+  await oauth(env, 'github', '9202', { browser: x.browser, query: '?link=1' });
+  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
+  await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${id}'`);
+  assert.strictEqual((await me(env, x.browser)).trust_level, 1, 'the long session sees the lapse');
+  const audit = await q(`select count(*)::int as n from app.audit_log where subject_id = '${id}' and action = 'member.level_changed'`);
+  assert.ok(audit[0].n >= 1);
+});
+
+test('a lapsed X business badge drops back to level 1 when the member next signs in another way', async () => {
+  const env = setup({ accounts: { 'x:9211': { accountId: '9211', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() },
+    'github:9212': { accountId: '9212', level: 1, recheckAfter: null } } });
+  const x = await oauth(env, 'x', '9211');
+  const id = (await me(env, x.browser)).member_id;
+  await oauth(env, 'github', '9212', { browser: x.browser, query: '?link=1' });
+  assert.strictEqual((await me(env, x.browser)).trust_level, 2, 'still level 2 while the badge is current');
+  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
+  const g = await oauth(env, 'github', '9212');
+  assert.strictEqual((await me(env, g.browser)).trust_level, 1);
+});
+
+test('the README\'s administrator steps work exactly as written, and change only the one member', async () => {
+  const env = setup({ accounts: { 'github:9301': { accountId: '9301', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', '9301');
+  const id = (await me(env, a.browser)).member_id;
+  const readme = fs.readFileSync(path.join(root, 'db', 'README.md'), 'utf8');
+  const block = readme.slice(readme.indexOf('### Making Aaron the administrator')).match(/```sql\n([\s\S]*?)```/)[1];
+  assert.match(block, /PASTE-YOUR-MEMBER-ID/);
+  // Run on one connection, as the SQL editor does.
+  const editor = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: () => {} });
+  try { await editor.unsafe(block.replace('PASTE-YOUR-MEMBER-ID', id)); } finally { await editor.end({ timeout: 5 }); }
+  const admins = await q(`select id from app.members where is_admin`);
+  assert.deepStrictEqual(admins.map((r) => r.id), [id]);
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${id}'`); });
 });
 
 test('the site\'s own role can\'t read session hashes, email links or fingerprints, or make anyone an administrator', async () => {
