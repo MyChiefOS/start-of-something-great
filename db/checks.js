@@ -272,6 +272,8 @@ async function fingerprint(sql) {
     union all
     select 'grant ' || o.tbl || ' ' || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type
     from ours o join pg_class c on c.oid = o.oid cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    -- The owner's own rights are left out: an owner always holds all of them, and the list differs by version.
+    where a.grantee <> c.relowner
     union all
     select 'grant ' || o.tbl || '.' || at.attname || ' ' || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type
     from ours o join pg_attribute at on at.attrelid = o.oid cross join lateral aclexplode(at.attacl) a

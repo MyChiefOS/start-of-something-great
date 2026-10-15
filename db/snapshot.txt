@@ -29,36 +29,15 @@ function app.current_member() owner=dog_owner execute=dog_owner,dog_app language
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=cc4b715f4ec30cf2ba9a84b4e9eedd78
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 grant app.audit_log dog_app SELECT
-grant app.audit_log dog_owner DELETE
-grant app.audit_log dog_owner INSERT
-grant app.audit_log dog_owner REFERENCES
-grant app.audit_log dog_owner SELECT
-grant app.audit_log dog_owner TRIGGER
-grant app.audit_log dog_owner TRUNCATE
-grant app.audit_log dog_owner UPDATE
 grant app.audit_log.action dog_app INSERT
 grant app.audit_log.detail dog_app INSERT
 grant app.audit_log.subject_id dog_app INSERT
 grant app.audit_log.subject_kind dog_app INSERT
 grant app.members dog_app SELECT
-grant app.members dog_owner DELETE
-grant app.members dog_owner INSERT
-grant app.members dog_owner REFERENCES
-grant app.members dog_owner SELECT
-grant app.members dog_owner TRIGGER
-grant app.members dog_owner TRUNCATE
-grant app.members dog_owner UPDATE
 grant app.members.display_name dog_app INSERT
 grant app.members.display_name dog_app UPDATE
 grant app.members.status dog_app UPDATE
 grant app.members.trust_level dog_app UPDATE
-grant app.schema_migrations dog_owner DELETE
-grant app.schema_migrations dog_owner INSERT
-grant app.schema_migrations dog_owner REFERENCES
-grant app.schema_migrations dog_owner SELECT
-grant app.schema_migrations dog_owner TRIGGER
-grant app.schema_migrations dog_owner TRUNCATE
-grant app.schema_migrations dog_owner UPDATE
 policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
 policy app.audit_log audit_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
 policy app.members members_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'system'::text)
