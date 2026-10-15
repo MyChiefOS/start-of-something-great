@@ -4,7 +4,7 @@
 
 The story of Day One Great is ours. The written content and media in this repository and on dayonegreat.com are owned by ChiefOS, Inc. and are **not** covered by the MIT License. This includes:
 
-- the stories and page text, including the handshake, the naming story and the home page
+- the stories and page text, including the handshake, the naming story, the home page and the research papers
 - `HOW-WE-NAMED-IT.md`, `ACCEPTANCE.md`, `ROADMAP.md` and other written documents
 - images and brand assets, including `og.jpg` and `favicon.svg`
 - the Day One Great™ name, logo and branding
@@ -13,7 +13,7 @@ You're welcome to quote short passages with a link back to dayonegreat.com. For 
 
 ## What the MIT License covers
 
-The [MIT License](LICENSE) covers the source code only: the `api/`, `scripts/`, `test/` and `.github/` folders, `proposals.js`, `shipped.js`, `styles.css`, `vercel.json`, and the HTML markup and scripts that make up the site, as distinct from the written content in them.
+The [MIT License](LICENSE) covers the source code only: the `api/`, `scripts/`, `test/`, `research/code/` and `.github/` folders, `proposals.js`, `shipped.js`, `styles.css`, `vercel.json`, and the HTML markup and scripts that make up the site, as distinct from the written content in them.
 
 ## Other people's work
 
@@ -38,6 +38,7 @@ These apply to everyone who writes for Day One Great: Aaron, Claude and any othe
 |---|---|---|
 | `og.jpg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `favicon.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
+| `research/og-decision-loop.jpg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `fonts/bricolage-grotesque.woff2` | Bricolage Grotesque, The Bricolage Grotesque Project Authors | SIL Open Font License 1.1 (`fonts/OFL-bricolage-grotesque.txt`) |
 | `fonts/source-serif-4.woff2` | Source Serif 4, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
 | `fonts/source-serif-4-italic.woff2` | Source Serif 4 Italic, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
