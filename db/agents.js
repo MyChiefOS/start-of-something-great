@@ -201,6 +201,9 @@ async function createSub(t, { keyHash, callerKeyHash, draftOnly = false, ...inpu
       chain: x.chain || [] };
   } catch (e) {
     if (e.code === 'P0001' && ['depth', 'rate_parent', 'rate_owner', 'ttl', 'above_parent', 'brake'].includes(e.message)) return { refused: e.message, message: e.hint };
+    // Lock order is fixed (member, agent, key) so this shouldn't happen; if Postgres still finds a deadlock with some
+    // other change, nothing was made, and the agent is told to try again rather than given an error.
+    if (e.code === '40P01') return { refused: 'busy', message: 'Something else changed this agent or its owner at the same moment; nothing was made. Please try again.' };
     // The parent (or its owner) stopped while this was under way: nothing was made.
     if (e.code === '42501' && ['parent_not_active', 'owner_not_active', 'not_agent'].includes(e.message)) return { refused: 'not_active' };
     throw e;

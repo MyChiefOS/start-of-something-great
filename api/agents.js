@@ -359,7 +359,7 @@ const ROUTES = {
       return reply(res, 403, { error: 'This sub-agent is held for review: our automatic checks (JEVs) found it high risk or couldn\u2019t finish. '
         + 'Aaron will look at it; try again later.' });
     }
-    const refusals = { depth: 403, above_parent: 403, rate_parent: 429, rate_owner: 429, brake: 429, ttl: 400 };
+    const refusals = { depth: 403, above_parent: 403, rate_parent: 429, rate_owner: 429, brake: 429, ttl: 400, busy: 409 };
     if (out.refused === 'not_active') return reply(res, 401, { error: 'This agent can\u2019t make sub-agents right now: it, or its owner, is no longer active.' });
     if (out.refused) return reply(res, refusals[out.refused] || 403, { error: out.message || 'This sub-agent can\u2019t be made.', refused: out.refused });
     return reply(res, 201, {
