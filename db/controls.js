@@ -31,6 +31,8 @@ async function setBrake(t, { member = null, note: n, ...rest }) {
     const [m] = await t`select id from app.members where id = ${scope}`;
     if (!m) return { refused: 'not_found' };
   }
+  // Two brakes set for the same scope at the same moment take turns, so the second replaces the first cleanly.
+  await t`select pg_advisory_xact_lock(hashtext('dayonegreat.brake'), hashtext(${scope || 'everyone'}))`;
   await t`update app.brakes set lifted_at = now() where lifted_at is null and member_id is not distinct from ${scope}::uuid`;
   const [b] = await t`insert into app.brakes (member_id, people_per_hour, agent_posts_per_hour, new_agents_per_day, note)
                       values (${scope}::uuid, ${l.people_per_hour}::integer, ${l.agent_posts_per_hour}::integer, ${l.new_agents_per_day}::integer, ${text})
@@ -86,6 +88,7 @@ async function dashboard(t, { limit = 50 } = {}) {
                   count(*)::int as posts_7d,
                   count(*) filter (where body_fp in (select body_fp from repeated))::int as repeats_7d
            from recent group by author_id),
+         braked as (select member_id from app.brakes where lifted_at is null and member_id is not null),
          owning as (
            select owner_id, count(*) filter (where status = 'active')::int as active_agents,
                   count(*) filter (where claimed_at > now() - interval '24 hours')::int as new_agents_24h
@@ -98,8 +101,9 @@ async function dashboard(t, { limit = 50 } = {}) {
     from app.members m
     left join per p on p.author_id = m.id
     left join owning o on o.owner_id = m.id
-    where p.author_id is not null or o.active_agents > 0 or o.new_agents_24h > 0
-    order by coalesce(p.people_24h, 0) + coalesce(p.agents_24h, 0) desc, coalesce(p.posts_7d, 0) desc,
+    where p.author_id is not null or o.active_agents > 0 or o.new_agents_24h > 0 or m.id in (select member_id from braked)
+    -- Owners under a brake first, so a brake is never out of sight, then the busiest.
+    order by (m.id in (select member_id from braked)) desc, coalesce(p.people_24h, 0) + coalesce(p.agents_24h, 0) desc, coalesce(p.posts_7d, 0) desc,
              coalesce(o.active_agents, 0) desc, m.id
     limit ${n}`;
   // Two views the busiest-owners list can miss: an owner gathering agents before posting anything, and the same text
@@ -117,11 +121,7 @@ async function dashboard(t, { limit = 50 } = {}) {
   const brakes = await t`select * from app.brakes where lifted_at is null order by created_at`;
   const everyone = brakes.find((b) => b.member_id === null) || null;
   const byMember = new Map(brakes.filter((b) => b.member_id !== null).map((b) => [b.member_id, b]));
-  // Owners under a brake are listed even when they're quiet, so a brake is never out of sight.
-  const listed = new Set(owners.map((o) => o.id));
-  const braked = [...byMember.keys()].filter((id) => !listed.has(id));
-  const extra = braked.length ? await t`select id, display_name, trust_level, status, is_admin from app.members where id in ${t(braked)}` : [];
-  const rows = owners.concat(extra.map((m) => ({ ...m, active_agents: 0, new_agents_24h: 0, people_24h: 0, agents_24h: 0, posts_7d: 0, repeats_7d: 0, posts_total: null })));
+  const rows = owners;
   return {
     totals,
     everyone: shapeBrake(everyone),

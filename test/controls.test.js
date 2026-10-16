@@ -323,6 +323,56 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.deepStrictEqual((await audit(owner.id)).filter((r) => r.action === 'member.unban').map((r) => r.detail), [{ note: 'appeal upheld' }]);
 });
 
+test('F10: a ban racing a new key or a sign-in still wins: nothing made during the ban works after the unban', async () => {
+  const owner = await member(2, 'Racing the ban');
+  const a = await newAgent(owner, 'Racer agent');
+  // A new key that started before the ban committed: the ban waits for it, then revokes it.
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const keying = run(owner.ctx, async (t) => {
+    const k = require('../signin/agentkey').newKey();
+    const ok = await require('../db/agents').rotate(t, { agent: a.id, keyHash: k.hash });
+    await gate;
+    return ok ? k.key : null;
+  });
+  await new Promise((r) => setTimeout(r, 200));
+  const banning = control({ ban: owner.id });
+  await new Promise((r) => setTimeout(r, 200));
+  release();
+  const newKey = await keying;
+  assert.strictEqual((await banning).status, 200);
+  assert.ok(newKey, 'the key was issued before the ban landed');
+  // A key requested after the ban committed is refused outright.
+  assert.strictEqual(await run(owner.ctx, (t) => require('../db/agents').rotate(t, { agent: a.id, keyHash: c.sha256hex('late') })), false);
+  // A sign-in that started before the ban: the ban waits, then ends that session too.
+  const back = await member(2, 'Signing in during the ban');
+  let open;
+  const held = new Promise((r) => { open = r; });
+  const signing = run({ actor: 'anon' }, async (t) => {
+    const out = await store.signIn(t, { provider: 'github', fingerprints: [back.fp], keyVersion: 1, level: 2, displayName: 'x',
+      sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
+    await held;
+    return out;
+  });
+  await new Promise((r) => setTimeout(r, 200));
+  const banning2 = control({ ban: back.id });
+  await new Promise((r) => setTimeout(r, 200));
+  open();
+  await signing;
+  assert.strictEqual((await banning2).status, 200);
+  await control({ unban: owner.id });
+  await control({ unban: back.id });
+  assert.strictEqual((await agentSay({ key: newKey }, 'a key made while being banned')).status, 401);
+  assert.strictEqual(Number((await q(`select count(*) as n from app.sessions where member_id = '${back.id}'`))[0].n), 0);
+  // The database refuses a key for a banned owner even past the site's own check.
+  await control({ ban: owner.id });
+  await assert.rejects(su.begin(async (t) => {
+    await t`select set_config('app.actor', 'member', true), set_config('app.member_id', ${owner.id}, true)`;
+    await t`insert into app.agent_keys (agent_id, key_hash) values (${a.id}, ${c.sha256hex('direct')})`;
+  }), /owner_not_active/);
+  await control({ unban: owner.id });
+});
+
 test('F10: Aaron can\'t be banned, members can\'t ban, and bans need a real member', async () => {
   const m = await member(2, 'Would-be banner');
   assert.strictEqual((await control({ ban: aaron.id })).status, 409);
@@ -387,7 +437,15 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     assert.deepStrictEqual(pick(byName.Ann), [2, 2, 3, 4, 7, 6, 7]);
     assert.deepStrictEqual(pick(byName.Ben), [0, 0, 1, 0, 1, 1, 2]);
     assert.strictEqual(byName.Quiet.brake.people_per_hour, 0);
-    assert.strictEqual(d.owners[0].name, 'Ann', 'busiest first');
+    assert.deepStrictEqual(d.owners.map((o) => o.name), ['Quiet', 'Ann', 'Ben'], 'owners under a brake first, then the busiest');
+    // A braked owner past the cut-off still shows, with their real numbers.
+    await r2(bossCtx, (t) => controls.setBrake(t, { member: ben.id, people_per_hour: 5 }));
+    const top = await r2(bossCtx, (t) => controls.dashboard(t, { limit: 2 }));
+    assert.deepStrictEqual(top.owners.map((o) => [o.name, o.posts_total]), [['Ben', 2], ['Quiet', 0]]);
+    // Two lists the busiest-owners list can miss.
+    assert.deepStrictEqual(d.most_agents.map((o) => [o.name, o.agents]), [['Ann', 2]]);
+    assert.deepStrictEqual(d.repeated_texts.map((r) => [r.posts, r.authors]), [[2, 2], [3, 1], [2, 1]]);
+    assert.strictEqual(d.repeated_texts[0].sample, 'something else');
     assert.strictEqual(d.everyone, null);
     // Members see none of it: run as one, the same queries count only what that member may see anyway.
     const own = await r2(ann.ctx, (t) => controls.dashboard(t, {}));

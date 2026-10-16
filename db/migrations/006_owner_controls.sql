@@ -268,8 +268,48 @@ $$;
 create trigger members_ban_cleanup after update on app.members for each row execute function app.members_ban_cleanup();
 alter table app.members enable always trigger members_ban_cleanup;
 
+-- A ban racing an agent being created, claimed or given a key: each of those locks the owner's member row and checks
+-- the owner is still active, in the same transaction. A ban that commits first is seen, and the write is refused; a ban
+-- that comes second waits for the write to finish, and then its clean-up revokes the new key. (Signing in already
+-- locks the member row, so a session can't slip past a ban the same way.)
+create function app.agents_owner_active() returns trigger
+language plpgsql
+as $$
+begin
+  if new.status = 'active' and new.owner_id is not null and (tg_op = 'INSERT' or old.status <> 'active') then
+    perform 1 from app.members m where m.id = new.owner_id and m.status = 'active' for share;
+    if not found then
+      raise exception 'owner_not_active' using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end
+$$;
+-- Named to fire after agents_fill and agents_guard, which settle the owner.
+create trigger agents_owner_active before insert or update on app.agents for each row execute function app.agents_owner_active();
+alter table app.agents enable always trigger agents_owner_active;
+
+create function app.agent_keys_owner_active() returns trigger
+language plpgsql
+as $$
+declare
+  owner uuid;
+begin
+  select a.owner_id into owner from app.agents a where a.id = new.agent_id;
+  if owner is not null then
+    perform 1 from app.members m where m.id = owner and m.status = 'active' for share;
+    if not found then
+      raise exception 'owner_not_active' using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end
+$$;
+create trigger agent_keys_owner_active before insert on app.agent_keys for each row execute function app.agent_keys_owner_active();
+alter table app.agent_keys enable always trigger agent_keys_owner_active;
+
 revoke execute on function app.brakes_fill(), app.brakes_guard(), app.brakes_audit(), app.posts_limit(), app.agents_limit(),
-  app.members_audit(), app.members_ban_cleanup() from public;
+  app.members_audit(), app.members_ban_cleanup(), app.agents_owner_active(), app.agent_keys_owner_active() from public;
 -- The checks are trigger functions (they can't be called directly); the coverage check asks that every function
 -- running with its owner's rights be callable by the site's role alone.
 grant execute on function app.posts_limit(), app.agents_limit(), app.members_ban_cleanup() to dog_app;

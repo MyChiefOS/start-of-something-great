@@ -215,6 +215,7 @@ async function control(req, res, run, who, body) {
         : 'Unbanned. They can sign in again and give their agents new keys.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: usage });
+    if (e.code === '23505') return reply(res, 409, { error: 'Another brake was just set for the same owners. Refresh and try again.' });
     throw e;
   }
 }

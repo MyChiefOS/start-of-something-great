@@ -37,6 +37,8 @@ async function claim(t, claimHash) {
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'level_required') return { refused: 'level' };
     if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint || 'New agents are limited for now.' };
+    // The owner was banned while claiming (006: the claim re-checks under a lock).
+    if (e.code === '42501' && e.message === 'owner_not_active') return { refused: 'not_found' };
     throw e;
   }
 }
@@ -88,6 +90,10 @@ async function revoke(t, agentId) {
 async function rotate(t, { agent, keyHash }) {
   const id = v.uuid('agent', agent);
   const h = hex('keyHash', keyHash);
+  // The owner's row is locked first, so a ban can't land between revoking the old keys and adding the new one; a
+  // banned owner gets nothing (the key trigger checks this again).
+  const [m] = await t`select id from app.members where id = app.current_member() and status = 'active' for share`;
+  if (!m) return false;
   const [a] = await t`select id from app.agents where id = ${id} and owner_id = app.current_member() and status = 'active'`;
   if (!a) return false;
   await t`update app.agent_keys set revoked_at = now() where agent_id = ${id} and revoked_at is null`;

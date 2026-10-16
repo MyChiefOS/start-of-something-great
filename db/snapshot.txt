@@ -121,12 +121,14 @@ function app.agent_claim(p_claim_hash text) owner=dog_signin execute=dog_signin,
 function app.agent_claim_preview(p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, name text, description text, created_at timestamp with time zone) body_md5=0151f2d7dd22822f992a6cadee7723e4
 function app.agent_keys_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=775f367412199b786d9a60fd1aa74866
 function app.agent_keys_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6940f6db4124bdbdf351efeb786c9656
+function app.agent_keys_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4b0b142d82b31d4a8b8b4e405d23ede0
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=5cfd72d7dad720bfa87219050b19e727
 function app.agent_resolve(p_key_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, owner_id uuid) body_md5=1b27a066a3c8132d0a2fd0bbc6a022aa
 function app.agents_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=37fe3740314c754c06bec19ab0b39861
 function app.agents_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d9acd00384084d0b9257f99ff70a1098
 function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=67ece97c99cf465e794617e4c01da410
 function app.agents_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=d49b0b63509bfd48464899074cdad145
+function app.agents_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c5dd087de8df28ca0356ff2667dcf059
 function app.audit_log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d9ae51d115dd87e702077c0fef83ccc2
 function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=23e9c24a67e7adf1e85c6c59d5aab830
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
@@ -361,10 +363,12 @@ policy app.sessions sessions_signin_select cmd=r permissive=true to=dog_signin u
 policy app.sessions sessions_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_audit AFTER INSERT OR UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_audit()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_guard BEFORE UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_guard()
+trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_owner_active BEFORE INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_owner_active()
 trigger app.agents enabled=A CREATE TRIGGER agents_audit AFTER INSERT OR UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_audit()
 trigger app.agents enabled=A CREATE TRIGGER agents_fill BEFORE INSERT ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_fill()
 trigger app.agents enabled=A CREATE TRIGGER agents_guard BEFORE UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_guard()
 trigger app.agents enabled=A CREATE TRIGGER agents_limit BEFORE INSERT OR UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_limit()
+trigger app.agents enabled=A CREATE TRIGGER agents_owner_active BEFORE INSERT OR UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_owner_active()
 trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_change BEFORE DELETE OR UPDATE ON app.audit_log FOR EACH STATEMENT EXECUTE FUNCTION app.audit_log_append_only()
 trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON app.audit_log FOR EACH STATEMENT EXECUTE FUNCTION app.audit_log_append_only()
 trigger app.brakes enabled=A CREATE TRIGGER brakes_audit AFTER INSERT OR UPDATE ON app.brakes FOR EACH ROW EXECUTE FUNCTION app.brakes_audit()
