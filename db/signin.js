@@ -63,7 +63,9 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
 async function sessionResolve(t, sessionHash, idleDays) {
   if (typeof sessionHash !== 'string' || !HEX64.test(sessionHash)) return null;
   const [r] = await t`select * from app.session_resolve(${sessionHash}, ${v.int('idleDays', idleDays, { min: 1, max: 30 })}::integer)`;
-  return r ? { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, displayName: r.display_name } : null;
+  // fresh: this session began in the last 10 minutes, by the database's clock (PR 7: letting an agent do more on its
+  // own needs a fresh sign-in).
+  return r ? { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, displayName: r.display_name, fresh: r.fresh === true } : null;
 }
 
 async function sessionEnd(t, sessionHash) {

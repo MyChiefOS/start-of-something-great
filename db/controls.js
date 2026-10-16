@@ -56,7 +56,7 @@ async function setStatus(t, { member, status }) {
     const r = await t.savepoint((s) => s`update app.members set status = ${to} where id = ${id} and status <> ${to} returning status`);
     if (r.length === 1) return { status: r[0].status };
   } catch (e) {
-    if (e.code === '42501') return { refused: 'admin' };
+    if (e.code === '42501' && /administrator can't be banned/.test(e.message)) return { refused: 'admin' };
     throw e;
   }
   const [m] = await t`select status from app.members where id = ${id}`;

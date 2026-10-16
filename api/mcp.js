@@ -179,7 +179,7 @@ const PUBLIC_FIELDS = {
   list_proposals: ['proposals[].title', 'proposals[].change', 'proposals[].why', 'proposals[].filed_by.github_user', 'proposals[].filed_by.acting_for', 'proposals[].filed_by.label'],
   list_shipped: ['shipped[].title', 'shipped[].change', 'shipped[].proposed_by.github_user', 'shipped[].proposed_by.label'],
   get_recent_changes: ['changes[].summary', 'changes[].author'], // merged pull requests can carry outside contributors' wording
-  list_posts: ['posts[].body', 'posts[].author.name']
+  list_posts: ['posts[].body', 'posts[].author.name', 'posts[].agent.name', 'posts[].delegation.label']
 };
 
 const CAPABILITIES = { tools: { listChanged: false } };

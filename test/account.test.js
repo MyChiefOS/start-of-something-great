@@ -151,6 +151,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   const p = await run(m.ctx, (t) => posts.create(t, { body: 'my words' }));
   const [ag] = await run(m.ctx, (t) => t`insert into app.agents (name) values ('My agent') returning id`);
   await run(m.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${ag.id}, ${c.sha256hex('k1')})`);
+  await su.begin(async (t) => { await t`select set_config('app.fresh', '1', true)`; await t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag.id}, 'act', 'draft', 'draft', 100, 'owner')`; });
   await run({ actor: 'agent', memberId: m.id, agentId: ag.id }, (t) => posts.create(t, { body: 'my agent\'s words' }));
   const theirs = await run(other.ctx, (t) => posts.create(t, { body: 'someone else\'s post' }));
   await run(m.ctx, (t) => review.report(t, { post: theirs.id, reason: 'spam' }));
@@ -182,7 +183,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   // The record: one row, the member by ID, counts only.
   const [rec] = await q(`select actor_kind, actor_id, detail from app.audit_log where action = 'member.deleted' and subject_id = '${m.id}'`);
   assert.deepStrictEqual([rec.actor_kind, rec.actor_id], ['member', m.id]);
-  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, brakes: 1, sessions: 2, identities: 1 });
+  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, drafts: 0, brakes: 1, sessions: 2, identities: 1 });
   // The old session is gone, and the public feed and profile no longer have them.
   const after = res();
   await flow.account(req('GET', '/auth/account', { cookie: m.cookie }), after);

@@ -33,6 +33,15 @@
       t.dateTime = p.published_at;
       meta.appendChild(t);
       art.appendChild(meta);
+      // How an agent's post went out (PR 7): approved by its owner, or under the owner's rules, with its receipt.
+      if (p.delegation) {
+        var how = el('p', 'fine delegation');
+        how.appendChild(document.createTextNode(p.delegation.label + ' · '));
+        var rc = el('a', '', 'receipt');
+        rc.href = '/receipt?post=' + encodeURIComponent(p.id);
+        how.appendChild(rc);
+        art.appendChild(how);
+      }
       p.body.split(/\n{2,}/).forEach(function (para) { art.appendChild(el('p', '', para)); });
       art.appendChild(reportControl(p.id));
       posts.appendChild(art);

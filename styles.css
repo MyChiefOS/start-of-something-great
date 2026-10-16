@@ -430,3 +430,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .account-form label { display: grid; gap: 0.25rem; }
 .account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .account-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* Agents acting for their owners (PR 7): the inbox, rules and receipts */
+.feed .post p.draft-body { white-space: pre-wrap; border-left: 2px solid var(--amber); padding-left: 0.75rem; }
+.rules-form { display: grid; gap: 0.5rem; max-width: 30rem; margin: 0.75rem 0; }
+.rules-form label { display: grid; gap: 0.25rem; }
+.rules-form select, .rules-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.delegation { margin: 0.25rem 0; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
