@@ -68,31 +68,47 @@ function shape(p) {
   const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
   if (p.agent) {
-    const chain = p.agent.chain || [];
+    const chain = shownChain(p.agent.chain, p.author.name);
     out.agent = { id: p.agent.id, name: maskContacts(p.agent.name), chain_label: chainLabel(chain, p.author.name) };
     if (chain.length) {
-      out.agent.sub_agent_of = { id: chain[0].id, name: maskContacts(chain[0].name) };
-      out.agent.chain = chain.map((x) => ({ id: x.id, name: maskContacts(x.name) }));
+      out.agent.sub_agent_of = { id: chain[0].id, name: chain[0].name };
+      out.agent.chain = chain;
     }
     out.act = act(p.author.id, p.agent.id, chain);
   }
   // How an agent's post went out, as words for people and fields for machines (PR 7, A3, A4).
-  if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id, p.agent.chain);
+  if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id, out.agent.chain);
   return out;
 }
-// "agent of Ada", or "sub-agent of Planner, sub-agent of Lead — owned by Ada" (nearest first).
+// The chain as shown in public: an agent above that is still active by name (masked), one that has stopped as "an
+// agent of <owner>", with no ID or name (Aaron, the review of PR 16, F5), so a name chosen for a private purpose leaves
+// with its agent. [{ id, name, active }], nearest first.
+function shownChain(chain, ownerName) {
+  return (chain || []).map((x) => (x.active === false || !x.name
+    ? { id: null, name: 'an agent of ' + maskContacts(ownerName), active: false }
+    : { id: x.id, name: maskContacts(x.name), active: true }));
+}
+// "agent of Ada", or "sub-agent of Planner, sub-agent of Lead — owned by Ada" (nearest first). When the agent at the top
+// is no longer shown, the line already names the owner: "sub-agent of Planner, sub-agent of an agent of Ada".
 function chainLabel(chain, ownerName) {
   if (!chain || !chain.length) return 'agent of ' + maskContacts(ownerName);
-  return 'sub-agent of ' + chain.map((x) => maskContacts(x.name)).join(', sub-agent of ') + ' \u2014 owned by ' + maskContacts(ownerName);
+  // Stopped agents next to each other read as one "an agent of <owner>".
+  const names = chain.filter((x, i) => !(x.active === false && i > 0 && chain[i - 1].active === false)).map((x) => x.name);
+  const line = 'sub-agent of ' + names.join(', sub-agent of ');
+  return chain[chain.length - 1].active === false ? line : line + ' \u2014 owned by ' + maskContacts(ownerName);
 }
-// { sub: "member:<owner>", act: { sub: "agent:<agent>", act: { sub: "agent:<parent>", ... } } }
+// { sub: "member:<owner>", act: { sub: "agent:<agent>", act: { sub: "agent:<parent>", ... } } }; an agent above that
+// has stopped is "agent:inactive", with no ID.
 function act(ownerId, agentId, chain) {
   let inner;
-  for (const x of [...(chain || [])].reverse()) inner = inner ? { sub: 'agent:' + x.id, act: inner } : { sub: 'agent:' + x.id };
+  for (const x of [...(chain || [])].reverse()) {
+    const sub = x.active === false ? 'agent:inactive' : 'agent:' + x.id;
+    inner = inner ? { sub, act: inner } : { sub };
+  }
   return { sub: 'member:' + ownerId, act: inner ? { sub: 'agent:' + agentId, act: inner } : { sub: 'agent:' + agentId } };
 }
 function label(kind, agentName, ownerName, rulesVersion, postId, chain) {
-  const sub = chain && chain.length ? ' (sub-agent of ' + maskContacts(chain[0].name) + ')' : '';
+  const sub = chain && chain.length ? ' (sub-agent of ' + chain[0].name + ')' : '';
   return { kind, approved_by_owner: kind === 'approved', rules_version: rulesVersion, receipt: '/receipt?post=' + postId,
     label: kind === 'approved' ? 'Approved by ' + maskContacts(ownerName) : 'Posted by ' + maskContacts(agentName) + sub + ' under ' + maskContacts(ownerName) + '\u2019s rules' };
 }
@@ -460,11 +476,11 @@ async function handle(req, res, run) {
     if (!run) return sendPublic(res, 404, { error: 'No receipt for that post.' });
     const r = await run({ actor: 'anon' }, (t) => delegation.receipt(t, String(q.receipt)));
     if (!r) return sendPublic(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
+    r.agent.chain = shownChain(r.agent.chain, r.owner.name);
     return sendPublic(res, 200, { receipt: {
       post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
       agent: { id: r.agent.id, name: maskContacts(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
-        ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: maskContacts(r.agent.chain[0].name) },
-          chain: r.agent.chain.map((x) => ({ id: x.id, name: maskContacts(x.name) })) } : {}) },
+        ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: r.agent.chain[0].name }, chain: r.agent.chain } : {}) },
       act: act(r.owner.id, r.agent.id, r.agent.chain),
       owner: { id: r.owner.id, name: maskContacts(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
       delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id, r.agent.chain),

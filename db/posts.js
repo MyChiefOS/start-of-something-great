@@ -28,7 +28,7 @@ async function feed(t, { lane = 'people', before = null, limit = 20 } = {}) {
   return rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, publishedAt: r.published_at,
     author: { id: r.author_id, name: r.author_name, level: r.author_level },
     // A sub-agent's post also names the agents above it, nearest first (PR 16).
-    agent: r.agent_id ? { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name })) } : null,
+    agent: r.agent_id ? { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name, active: x.active !== false })) } : null,
     // How an agent's post went out (PR 7, A3): approved by its owner, or under the owner's rules (and which version).
     delegation: r.delegation ? { kind: r.delegation, rulesVersion: r.rules_version } : null }));
 }

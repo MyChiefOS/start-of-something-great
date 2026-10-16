@@ -99,9 +99,12 @@ create policy agents_signin_insert on app.agents for insert to dog_signin
   with check ((status = 'unclaimed' and owner_id is null and parent_id is null)
               or (status = 'active' and parent_id is not null and app.actor_kind() = 'agent' and parent_id = app.current_agent()
                   and owner_id = app.current_member()));
+-- Active agents too, because locking a parent's row while its sub-agent is made (app.subagent_create, FOR SHARE) needs
+-- this policy to pass as well; app.agents_guard still lets the sign-in role change nothing about an agent that isn't
+-- unclaimed or a sub-agent whose parent has stopped or whose time is up.
 drop policy agents_signin_update on app.agents;
 create policy agents_signin_update on app.agents for update to dog_signin
-  using (status = 'unclaimed' or (status = 'active' and parent_id is not null)) with check (true);
+  using (status = any (array['unclaimed', 'active'])) with check (true);
 grant insert (expires_at) on app.agents to dog_signin;
 
 -- ---- Rules versions: who set them, and why ----
@@ -125,8 +128,9 @@ create policy agent_drafts_limits_select on app.agent_drafts for select to dog_l
 grant select (agent_id, created_at) on app.agent_drafts to dog_limits;
 -- dog_jevs scores where a new sub-agent would sit (J15).
 grant select (parent_id, depth, root_id) on app.agents to dog_jevs;
--- dog_public names the agents above a sub-agent on its posts and receipts.
-grant select (parent_id) on app.agents to dog_public;
+-- dog_public names the agents above a sub-agent on its posts and receipts, only while they are active (it reads whether
+-- they are, inside app.feed and app.receipt only).
+grant select (parent_id, status, expires_at) on app.agents to dog_public;
 
 -- ---- Making an agent: who it belongs to, and where it sits ----
 -- Same as 005 for owners and self-registration. A sub-agent (013) is made by the acting agent, as the sign-in role,
@@ -531,11 +535,15 @@ alter table app.agent_drafts enable always trigger agent_drafts_tree_cap;
 -- what it asks for (default: draft, or lower if its parent is lower), never above its parent's. With p_draft_only (JEVs
 -- found the creation medium risk, in enforce mode) every "act" becomes "draft", so its owner approves what it does.
 -- The emergency brake's new-agents limit counts it toward the owner (app.agents_limit). Keys arrive hashed, as ever.
+-- p_caller_key: the SHA-256 of the key the request came with. The parent's row and that key's row are locked (in that
+-- order, the order revoking and a new key take them) and checked again here, in the transaction that makes the
+-- sub-agent, so a revoke or a new key that is under way or has just committed always wins (the review of PR 16,
+-- F1 and F2): the request is refused, never left with a sub-agent made by a stopped agent or a stopped key.
 -- Returns the new agent, and the chain above it (the IDs of its parent and every agent above, nearest first), which the
 -- acting agent can't read for itself. Refusals (P0001 unless noted): depth, rate_parent, rate_owner, ttl, above_parent;
 -- parent_not_active (42501); brake; bad requests (22023).
 create function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text,
-                                    p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean)
+                                    p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text)
 returns table (agent_id uuid, depth smallint, expires_at timestamptz, rules_version integer, post_mode text, reply_mode text,
                report_mode text, daily_cap integer, chain jsonb)
 language plpgsql security definer set search_path = pg_catalog
@@ -561,13 +569,17 @@ begin
      or (p_post is not null and p_post not in ('off', 'draft', 'act')) or (p_reply is not null and p_reply not in ('off', 'draft', 'act'))
      or (p_report is not null and p_report not in ('off', 'draft', 'act'))
      or (p_daily_cap is not null and p_daily_cap not between 1 and 1000) or (p_ttl_hours is not null and p_ttl_hours not between 1 and 720)
-     or p_draft_only is null then
+     or p_draft_only is null or p_caller_key is null or p_caller_key !~ '^[0-9a-f]{64}$' or p_caller_key = p_key_hash then
     raise exception 'bad sub-agent request' using errcode = '22023';
   end if;
   -- One owner's tree grows one sub-agent at a time, so the rates can't be raced.
   perform pg_advisory_xact_lock(hashtext('dayonegreat.subagents'), hashtext(me::text));
   select * into s from app.subagent_settings limit 1;
-  select a.status, a.depth, a.expires_at, a.owner_id into p_status, p_depth, p_expires, p_owner from app.agents a where a.id = par;
+  select a.status, a.depth, a.expires_at, a.owner_id into p_status, p_depth, p_expires, p_owner from app.agents a where a.id = par for share;
+  perform 1 from app.agent_keys k where k.key_hash = p_caller_key and k.agent_id = par and k.revoked_at is null for share;
+  if not found then
+    raise exception 'parent_not_active' using errcode = '42501';
+  end if;
   if p_status is distinct from 'active' or p_owner is distinct from me or (p_expires is not null and p_expires <= now())
      or not exists (select 1 from app.members m where m.id = me and m.status = 'active' and (m.trust_level >= 2 or m.is_admin)
                     and not app.deletion_overdue(m.id)) then
@@ -639,13 +651,19 @@ language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
   n integer;
+  m integer;
 begin
   if app.actor_kind() not in ('system', 'admin') then
     raise exception 'not_system' using errcode = '42501';
   end if;
   update app.agents a set status = 'expired' where a.status = 'active' and a.parent_id is not null and a.expires_at <= now();
   get diagnostics n = row_count;
-  return n;
+  -- Defence in depth (the review of PR 16, F1): a sub-agent left active under a parent that has stopped, however that
+  -- happened, is revoked now (and everything under it with it, by the cascade).
+  update app.agents a set status = 'revoked' where a.status = 'active' and a.parent_id is not null
+    and exists (select 1 from app.agents p where p.id = a.parent_id and p.status <> 'active');
+  get diagnostics m = row_count;
+  return n + m;
 end
 $$;
 
@@ -1129,9 +1147,10 @@ set local role dog_owner;
 revoke create on schema app from dog_jevs;
 
 -- ---- Sign-in for agents: an expired sub-agent stops at once ----
--- Same as 010, and one condition more: a sub-agent past its expiry resolves to nothing from that moment, whenever the
--- timer next runs. Revoked parents need no check here: revoking cascades in the same transaction (agents_cascade),
--- and a sub-agent never outlives its parent's expiry.
+-- Same as 010, and two conditions more: a sub-agent past its expiry resolves to nothing from that moment, whenever the
+-- timer next runs; and so does one with any agent above it (at most 10 levels) not active or past its expiry. Revoking
+-- already cascades in the same transaction (agents_cascade) and a sub-agent never outlives its parent; the second
+-- condition is defence in depth (the review of PR 16, F1).
 grant create on schema app to dog_signin;
 set local role dog_signin;
 create or replace function app.agent_resolve(p_key_hash text)
@@ -1146,14 +1165,22 @@ begin
     select a.id, m.id
     from app.agent_keys k join app.agents a on a.id = k.agent_id join app.members m on m.id = a.owner_id
     where k.key_hash = p_key_hash and k.revoked_at is null and a.status = 'active' and (a.expires_at is null or a.expires_at > now())
-      and m.status = 'active' and (m.trust_level >= 2 or m.is_admin) and not app.deletion_overdue(m.id);
+      and m.status = 'active' and (m.trust_level >= 2 or m.is_admin) and not app.deletion_overdue(m.id)
+      and not exists (
+        with recursive up (id, lvl) as (
+          select a.parent_id, 1 where a.parent_id is not null
+          union all
+          select p.parent_id, up.lvl + 1 from app.agents p join up on p.id = up.id where p.parent_id is not null and up.lvl < 11)
+        select 1 from up join app.agents x on x.id = up.id where x.status <> 'active' or (x.expires_at is not null and x.expires_at <= now()));
 end
 $$;
 set local role dog_owner;
 revoke create on schema app from dog_signin;
 
 -- ---- Every post and receipt by a sub-agent shows its chain (after RFC 8693's "act" claim) ----
--- agent_chain: the agents above the one that acted, nearest first ([{id, name}], empty for an agent its owner made).
+-- agent_chain: the agents above the one that acted, nearest first ([{id, name, active}], empty for an agent its owner
+-- made). An agent above that has stopped (revoked or expired) is not named: its id and name are null, and the site says
+-- "an agent of <owner>" (Aaron, the review of PR 16, F5), so a name chosen for a private purpose leaves with its agent.
 -- The site shows "<agent> · sub-agent of <parent> — owned by <owner>" and, for machines, the chain as nested "act"
 -- claims. A sub-agent's post whose chain can't be shown is still shown with its agent and owner (F3).
 drop function app.feed(text, uuid, integer);
@@ -1172,11 +1199,12 @@ begin
     from app.posts p join app.members m on m.id = p.author_id
     left join app.agents a on a.id = p.agent_id
     left join lateral (
-      with recursive up (id, name, parent_id, lvl) as (
-        select g.id, g.name, g.parent_id, 1 from app.agents g where g.id = a.parent_id
+      with recursive up (id, name, parent_id, lvl, live) as (
+        select g.id, g.name, g.parent_id, 1, g.status = 'active' and (g.expires_at is null or g.expires_at > now()) from app.agents g where g.id = a.parent_id
         union all
-        select g.id, g.name, g.parent_id, up.lvl + 1 from app.agents g join up on g.id = up.parent_id where up.lvl < 11)
-      select jsonb_agg(jsonb_build_object('id', up.id, 'name', up.name) order by up.lvl) as chain from up) ch on true
+        select g.id, g.name, g.parent_id, up.lvl + 1, g.status = 'active' and (g.expires_at is null or g.expires_at > now()) from app.agents g join up on g.id = up.parent_id where up.lvl < 11)
+      select jsonb_agg(jsonb_build_object('id', case when up.live then up.id end, 'name', case when up.live then up.name end, 'active', up.live)
+                       order by up.lvl) as chain from up) ch on true
     where p.status = 'live' and p.lane = p_lane
       and (p.agent_id is null or a.id is not null)
       and (p_before is null or (p.published_at, p.id) < (select b.published_at, b.id from app.posts b where b.id = p_before and b.status = 'live'))
@@ -1204,11 +1232,12 @@ begin
     left join app.agent_rules r on r.agent_id = p.agent_id and r.version = p.rules_version
     left join app.agent_drafts d on d.id = p.draft_id
     left join lateral (
-      with recursive up (id, name, parent_id, lvl) as (
-        select g.id, g.name, g.parent_id, 1 from app.agents g where g.id = a.parent_id
+      with recursive up (id, name, parent_id, lvl, live) as (
+        select g.id, g.name, g.parent_id, 1, g.status = 'active' and (g.expires_at is null or g.expires_at > now()) from app.agents g where g.id = a.parent_id
         union all
-        select g.id, g.name, g.parent_id, up.lvl + 1 from app.agents g join up on g.id = up.parent_id where up.lvl < 11)
-      select jsonb_agg(jsonb_build_object('id', up.id, 'name', up.name) order by up.lvl) as chain from up) ch on true
+        select g.id, g.name, g.parent_id, up.lvl + 1, g.status = 'active' and (g.expires_at is null or g.expires_at > now()) from app.agents g join up on g.id = up.parent_id where up.lvl < 11)
+      select jsonb_agg(jsonb_build_object('id', case when up.live then up.id end, 'name', case when up.live then up.name end, 'active', up.live)
+                       order by up.lvl) as chain from up) ch on true
     where p.id = p_post and p.status = 'live' and p.lane = 'agents';
 end
 $$;
@@ -1216,17 +1245,17 @@ $$;
 -- ---- Who may call what ----
 revoke execute on function app.agent_keys_fresh_start() from public;
 revoke execute on function app.agents_cascade(), app.agent_rules_cascade(), app.agent_tree_cap(),
-  app.subagent_create(text, text, text, text, text, text, integer, integer, boolean), app.subagents_expire(),
+  app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text), app.subagents_expire(),
   app.feed(text, uuid, integer), app.receipt(uuid) from public;
 -- The trigger functions can't be called directly; the coverage check asks that every function running with its
 -- owner's rights be callable by the site's role alone.
 grant execute on function app.agents_cascade(), app.agent_rules_cascade(), app.agent_tree_cap(),
-  app.subagent_create(text, text, text, text, text, text, integer, integer, boolean), app.subagents_expire(),
+  app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text), app.subagents_expire(),
   app.feed(text, uuid, integer), app.receipt(uuid) to dog_app;
 grant create on schema app to dog_signin, dog_limits, dog_public;
 alter function app.agents_cascade() owner to dog_signin;
 alter function app.agent_rules_cascade() owner to dog_signin;
-alter function app.subagent_create(text, text, text, text, text, text, integer, integer, boolean) owner to dog_signin;
+alter function app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text) owner to dog_signin;
 alter function app.subagents_expire() owner to dog_signin;
 alter function app.agent_tree_cap() owner to dog_limits;
 alter function app.feed(text, uuid, integer) owner to dog_public;

@@ -305,7 +305,7 @@ function app.agent_keys_fresh_start() owner=dog_owner execute=dog_owner language
 function app.agent_keys_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6940f6db4124bdbdf351efeb786c9656
 function app.agent_keys_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4b0b142d82b31d4a8b8b4e405d23ede0
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=5cfd72d7dad720bfa87219050b19e727
-function app.agent_resolve(p_key_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, owner_id uuid) body_md5=d5ec25abc735b8b7969236f271661e52
+function app.agent_resolve(p_key_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, owner_id uuid) body_md5=f484fa14dc59537557cb26c819c5fd06
 function app.agent_rules_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b8046815cb85df3ac268e969accdef70
 function app.agent_rules_cascade() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=0d3bd76ef276691e09228c38953b4da4
 function app.agent_rules_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=68c1f24169ea5b8f8adbeacd46c22480
@@ -343,7 +343,7 @@ function app.drafts_expire_job() owner=dog_owner execute=dog_owner,dog_app langu
 function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=3fe206a9383583c62c0fe78273dfdc07
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
-function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=b39e02ba14885b37f3f552f50f16f6b4
+function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=535ea91b8aa8e22fe80658bba6d9f9e2
 function app.is_reviewer() owner=dog_owner execute=dog_owner,dog_app,dog_jevs language=sql volatile=s definer=false config= returns=boolean body_md5=7d420a3147ea7f058784ef85d6f5aaab
 function app.jevs_account_scores(s jsonb) owner=dog_owner execute=dog_owner,dog_jevs language=plpgsql volatile=i definer=false config= returns=jsonb body_md5=51202474b69e19e226f909bfa3ee4d4e
 function app.jevs_answer(p_challenge uuid, p_answer text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d1fc310d6d99d1a10a226d05181f87cc
@@ -377,7 +377,7 @@ function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plp
 function app.posts_scored() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=e36af3ace5db4a59ef379b215ae76e48
 function app.profile(p_member uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, display_name text, trust_level smallint, joined timestamp with time zone, live_posts bigint) body_md5=339d442d5da6afdad550b54b384f7fe5
 function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
-function app.receipt(p_post uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, published_at timestamp with time zone, agent_id uuid, agent_name text, owner_id uuid, owner_name text, delegation text, rules_version integer, post_mode text, daily_cap integer, minutes_to_approve integer, agent_chain jsonb) body_md5=f154203e1cea903564e5e7f7ff815f2e
+function app.receipt(p_post uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, published_at timestamp with time zone, agent_id uuid, agent_name text, owner_id uuid, owner_name text, delegation text, rules_version integer, post_mode text, daily_cap integer, minutes_to_approve integer, agent_chain jsonb) body_md5=2acc10f3873b33308e65ce90bf215cd6
 function app.region_decline(p_country text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=c214580d77f76256cd5f8f9af6d195d1
 function app.reportable(p_post uuid, p_reporter uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=225915e52162bf0f89f7f9083ca5d1ee
 function app.require_system() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=void body_md5=ee489c3949f3999a444a9251363fe00d
@@ -392,8 +392,8 @@ function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signi
 function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text, fresh boolean) body_md5=a23559705f040381b47995a6a7cdf778
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=1641a3553f4645181fdc6fde96b26d1e
 function app.sign_in_known(p_provider text, p_fingerprints text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=682aa6ef67fe945f0e1b08fa2a1567d1
-function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=5ffe6e91acde5c80ef170c6c705827ea
-function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=4c48ea76e0b3fa96313bffd94c388f5a
+function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=4ff6ecf83fbac6f4f029558343804d60
+function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
@@ -496,6 +496,7 @@ grant app.agents.description dog_app SELECT
 grant app.agents.description dog_app UPDATE
 grant app.agents.description dog_signin INSERT
 grant app.agents.expires_at dog_app SELECT
+grant app.agents.expires_at dog_public SELECT
 grant app.agents.expires_at dog_signin INSERT
 grant app.agents.id dog_app SELECT
 grant app.agents.id dog_delegate SELECT
@@ -525,6 +526,7 @@ grant app.agents.status dog_app SELECT
 grant app.agents.status dog_app UPDATE
 grant app.agents.status dog_delegate SELECT
 grant app.agents.status dog_jevs SELECT
+grant app.agents.status dog_public SELECT
 grant app.agents.status dog_signin UPDATE
 grant app.audit_log dog_app SELECT
 grant app.audit_log.action dog_app INSERT
@@ -873,7 +875,7 @@ policy app.agents agents_select cmd=r permissive=true to=dog_app using=(((app.ac
 policy app.agents agents_signin_delete cmd=d permissive=true to=dog_signin using=((status = 'unclaimed'::text) AND (claim_expires_at < now())) check=
 policy app.agents agents_signin_insert cmd=a permissive=true to=dog_signin using= check=(((status = 'unclaimed'::text) AND (owner_id IS NULL) AND (parent_id IS NULL)) OR ((status = 'active'::text) AND (parent_id IS NOT NULL) AND (app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent()) AND (owner_id = app.current_member())))
 policy app.agents agents_signin_select cmd=r permissive=true to=dog_signin using=true check=
-policy app.agents agents_signin_update cmd=w permissive=true to=dog_signin using=((status = 'unclaimed'::text) OR ((status = 'active'::text) AND (parent_id IS NOT NULL))) check=true
+policy app.agents agents_signin_update cmd=w permissive=true to=dog_signin using=(status = ANY (ARRAY['unclaimed'::text, 'active'::text])) check=true
 policy app.agents agents_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR (app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent()))) check=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR (app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent())))
 policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
 policy app.audit_log audit_insert_delegate cmd=a permissive=true to=dog_delegate using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))

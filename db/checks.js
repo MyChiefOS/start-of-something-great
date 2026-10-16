@@ -74,7 +74,7 @@ const DEFINERS = {
   // PR 16 (Aaron, Oct 16, 2026): agents make sub-agents. Making one, stopping a tree when an agent above stops or its
   // time is up, and lowering sub-agents with their parent, in the role that registers, claims and resolves agents; and
   // a parent's daily cap counting its whole subtree, in the role that counts for the brake.
-  'app.subagent_create(text, text, text, text, text, text, integer, integer, boolean)': 'dog_signin',
+  'app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text)': 'dog_signin',
   'app.agents_cascade()': 'dog_signin',
   'app.agent_rules_cascade()': 'dog_signin',
   'app.subagents_expire()': 'dog_signin',

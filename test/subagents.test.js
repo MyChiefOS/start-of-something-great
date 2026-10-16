@@ -458,9 +458,11 @@ test('SA10: every post and receipt by a sub-agent shows the chain, "sub-agent of
   const rc = (await receipt(p.json.id)).receipt;
   assert.deepStrictEqual([rc.agent.chain_label, rc.agent.sub_agent_of.id, rc.act.act.act.sub, rc.owner.id], [item.agent.chain_label, planner.id, 'agent:' + planner.id, owner.id]);
   assert.ok((await receipt(p.json.id)).untrusted_fields.includes('receipt.agent.chain[].name'));
-  // It stays true after the tree is revoked: the post keeps its chain while it is live.
+  // Once the tree is revoked, the post stays (it was posted under the rules then in force), but the agents above it
+  // are no longer named (Aaron, the review's F5): "an agent of" its owner instead.
   await api(req('POST', 'revoke', { cookie: owner.cookie, json: { agent: lead.id } }));
-  assert.strictEqual((await receipt(p.json.id)).receipt.agent.chain_label, item.agent.chain_label);
+  const gone = (await receipt(p.json.id)).receipt;
+  assert.deepStrictEqual([gone.agent.chain_label, gone.agent.name, gone.act.act.act.sub], ['sub-agent of an agent of Nia', 'Worker', 'agent:inactive']);
 });
 
 test('SA11: JEVs scores every sub-agent made: shadow mode records; enforce holds high risk for Aaron and makes medium risk draft everything', async () => {
@@ -522,8 +524,8 @@ test('SA12: a sub-agent can\'t claim agents, make agents for anyone else, or use
   // call the sub-agent function at all.
   await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: w.id }, (t) => t`insert into app.agents (name) values ('direct')`), /only a signed-in owner creates an agent here|row-level security/);
   const forged = { actor: 'agent', memberId: stranger.id, agentId: w.id };
-  await assert.rejects(run(forged, (t) => t`select * from app.subagent_create('For someone else', null, ${c.sha256hex('k1')}, null, null, null, null, null, false)`), /parent_not_active/);
-  await assert.rejects(run(owner.ctx, (t) => t`select * from app.subagent_create('From a member', null, ${c.sha256hex('k2')}, null, null, null, null, null, false)`), /not_agent/);
+  await assert.rejects(run(forged, (t) => t`select * from app.subagent_create('For someone else', null, ${c.sha256hex('k1')}, null, null, null, null, null, false, ${c.sha256hex(w.key)})`), /parent_not_active/);
+  await assert.rejects(run(owner.ctx, (t) => t`select * from app.subagent_create('From a member', null, ${c.sha256hex('k2')}, null, null, null, null, null, false, ${c.sha256hex(w.key)})`), /not_agent/);
   assert.strictEqual((await q(`select count(*)::int as n from app.agents where owner_id = '${stranger.id}'`))[0].n, 0);
   // A sub-agent can make its own sub-agents, which stay its owner's.
   const ww = await spawn(w, { name: 'Grandchild' });
@@ -579,4 +581,188 @@ test('deleting an account deletes its whole tree; the owner can revoke any one n
   const out = await run({ ...owner.ctx, fresh: true }, (t) => t`select * from app.delete_account()`);
   assert.strictEqual(out[0].agents, 3);
   assert.strictEqual((await q(`select count(*)::int as n from app.agents where id in ('${lead.id}', '${a.id}', '${b.id}')`))[0].n, 0);
+});
+
+// ---- The independent review of PR 16 (F1 to F6): each test failed before its fix ----
+const agentsDb = require('../db/agents');
+const gate = () => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const activeChildren = async (id) => (await q(`select count(*)::int as n from app.agents where parent_id = '${id}' and status = 'active'`))[0].n;
+const decisionsBy = async (id) => (await q(`select count(*)::int as n from app.jevs_decisions where action = 'agent.subagent' and agent_id = '${id}'`))[0].n;
+
+test('review F1: a revoke racing a sub-agent\'s creation never leaves an active sub-agent under a revoked parent', async () => {
+  const owner = await member(2, 'Race one');
+  const lead = await newAgent(owner);
+  const hold = gate(); const locked = gate();
+  // The owner's revoke takes the parent's row and waits, uncommitted, while the agent asks for a sub-agent.
+  const revoking = run(owner.ctx, async (t) => { await t`update app.agents set status = 'revoked' where id = ${lead.id}`; locked.open(); await hold.p; });
+  await locked.p;
+  const asking = spawnRaw(lead, { name: 'Racer' });
+  await sleep(500);
+  hold.open();
+  await revoking;
+  const r = await asking;
+  assert.strictEqual(r.status, 401, JSON.stringify(r.json));
+  assert.strictEqual(await activeChildren(lead.id), 0);
+});
+
+test('review F1 (defence in depth): an agent under any stopped ancestor resolves to nothing, and the timer stops it', async () => {
+  const owner = await member(2, 'Orphan maker');
+  const lead = await newAgent(owner);
+  const kid = await spawn(lead, { name: 'Kid' });
+  const grand = await spawn(kid, { name: 'Grand' });
+  // An orphan as a missed cascade would leave one (tests only: the cascade is switched off for this one change).
+  await rewrite('agents', 'agents_tree_cascade', `update app.agents set status = 'revoked' where id = '${lead.id}'`);
+  assert.deepStrictEqual([await statusOf(kid.id), await statusOf(grand.id)], ['active', 'active']);
+  for (const a of [kid, grand]) assert.strictEqual((await me(a)).status, 401, 'refused at once, before any timer');
+  await timers();
+  assert.deepStrictEqual([await statusOf(kid.id), await statusOf(grand.id)], ['revoked', 'revoked']);
+});
+
+test('review F2: a key rotation racing a creation with the old key never leaves a sub-agent made with that key', async () => {
+  const owner = await member(2, 'Race two');
+  const lead = await newAgent(owner);
+  const hold = gate(); const locked = gate();
+  const rotating = run(owner.ctx, async (t) => {
+    await agentsDb.rotate(t, { agent: lead.id, keyHash: c.sha256hex('new key ' + crypto.randomUUID()) }); locked.open(); await hold.p;
+  });
+  await locked.p;
+  const asking = spawnRaw(lead, { name: 'Racer' });
+  await sleep(500);
+  hold.open();
+  await rotating;
+  const r = await asking;
+  assert.strictEqual(r.status, 401, JSON.stringify(r.json));
+  assert.strictEqual(await activeChildren(lead.id), 0);
+});
+
+test('review F2: after a rotation commits, a request that resolved the old key earlier can\'t make a sub-agent with it', async () => {
+  const owner = await member(2, 'Late request');
+  const lead = await newAgent(owner);
+  const resolved = { actor: 'agent', memberId: owner.id, agentId: lead.id }; // what the request resolved before the rotation
+  await run(owner.ctx, (t) => agentsDb.rotate(t, { agent: lead.id, keyHash: c.sha256hex('rotated ' + crypto.randomUUID()) }));
+  const out = await run(resolved, (t) => agentsDb.createSub(t, { name: 'Late', keyHash: c.sha256hex('k ' + crypto.randomUUID()), callerKeyHash: c.sha256hex(lead.key) }));
+  assert.deepStrictEqual(out, { refused: 'not_active' });
+  assert.strictEqual(await activeChildren(lead.id), 0);
+});
+
+test('review F3: a busy tree never pushes the agents the owner made off /agents', async () => {
+  await asOwner('update app.subagent_settings set per_parent_per_hour = 100000, per_owner_per_hour = 1000000');
+  try {
+    const owner = await member(2, 'Busy tree');
+    const lead = await newAgent(owner, 'Lead');
+    const quiet = await newAgent(owner, 'Quiet');
+    const ctx = { actor: 'agent', memberId: owner.id, agentId: lead.id };
+    await run(ctx, async (t) => {
+      for (let i = 0; i < 520; i++) {
+        const k = 'dogk_' + crypto.randomBytes(32).toString('base64url').slice(0, 43);
+        await agentsDb.createSub(t, { name: 'W' + i, keyHash: c.sha256hex(k), callerKeyHash: c.sha256hex(lead.key) });
+      }
+    });
+    const mine = await api(req('GET', '', { cookie: owner.cookie }));
+    assert.ok(mine.json.agents.some((a) => a.id === lead.id) && mine.json.agents.some((a) => a.id === quiet.id), 'both top-level agents listed');
+    assert.deepStrictEqual(mine.json.agents.slice(0, 2).map((a) => a.parent_id), [null, null], 'top-level agents first');
+    const tree = mine.json.trees.find((x) => x.root_id === lead.id);
+    assert.strictEqual(tree.active_subagents, 520);
+    assert.ok(tree.listed < 520 && mine.json.subagents_truncated === true);
+    const act = await api(req('GET', 'activity', { cookie: owner.cookie }));
+    assert.ok(act.json.agents.some((a) => a.id === lead.id && a.rules) && act.json.agents.some((a) => a.id === quiet.id), 'rules for the kill switch too');
+  } finally {
+    await asOwner(DEFAULT_LIMITS);
+  }
+});
+
+test('review F4: lookalike and hidden characters can\'t smuggle "owned by" or "agent of" into a name', async () => {
+  const bad = ['Helper ― owned by Ada', 'Helper ‒ owned by Ada', 'Helper − owned by Ada', 'Helper ﹘ owned by Ada', 'Helper - own­ed by Ada',
+    'Worker - sub-аgent оf Lead ― оwned by Aaron', 'Helper оwned by Ada', 'Worker ∙ sub-agent of Lead', 'Worker ・ Lead', 'Worker ·agent­of Ada',
+    'Helper own‌ed by Ada', 'Helper ‍', 'A͏B', 'A᠎B', 'ㅤ', 'AﾠB', 'AᅟB', 'AᅠB', 'Helper ｏwned by Ada', 'Helper 0wned by Ada',
+    'Helper οwned by Ada', 'Helper - ᴏwned by Ada', 'Agent of Ada'];
+  for (const n of bad) assert.throws(() => agentsDb.checkName(n), /can't contain/, JSON.stringify(n));
+  for (const n of ['Café helper', 'Planner, Inc.', 'Research bot 2', 'Ågot’s assistant', 'Reader of news']) assert.strictEqual(agentsDb.checkName(n), n, n);
+});
+
+test('review F5: a post or receipt names an ancestor only while it is active; otherwise "an agent of <owner>"', async () => {
+  const owner = await member(2, 'Eve');
+  const lead = await newAgent(owner, 'Confidential client Acme merger');
+  await rules(owner, lead, { post: 'act', daily_cap: 50 });
+  const mid = await spawn(lead, { name: 'Planner', rules: { post: 'act' } });
+  const w = await spawn(mid, { name: 'Worker', rules: { post: 'act' } });
+  const p = await say(w.key, 'Hello from a worker sub-agent ' + crypto.randomUUID());
+  const shown = async () => (await agentPosts()).posts.find((x) => x.id === p.json.id);
+  assert.strictEqual((await shown()).agent.chain_label, 'sub-agent of Planner, sub-agent of Confidential client Acme merger — owned by Eve');
+  // The top agent stops (tests only: without its cascade, so the post stays from an active agent): its name leaves.
+  await rewrite('agents', 'agents_tree_cascade', `update app.agents set status = 'revoked' where id = '${lead.id}'`);
+  const after = await shown();
+  assert.strictEqual(after.agent.chain_label, 'sub-agent of Planner, sub-agent of an agent of Eve');
+  assert.deepStrictEqual(after.agent.chain[1], { id: null, name: 'an agent of Eve', active: false });
+  const rc = await receipt(p.json.id);
+  assert.ok(!JSON.stringify(rc).includes('Acme') && !JSON.stringify(after).includes('Acme') && !JSON.stringify(after).includes(lead.id));
+  assert.match(fs.readFileSync(path.join(root, 'agents.html'), 'utf8'), /names of your agents that have sub-agents appear on their sub-agents’ public posts/);
+});
+
+test('review F6: refusals that need no scoring don\'t reach JEVs, and each agent\'s requests are limited', async () => {
+  const owner = await member(2, 'Flooder');
+  let a = await newAgent(owner);
+  for (let d = 1; d <= 3; d++) a = await spawn(a, { name: 'Level ' + d });
+  const before = await decisionsBy(a.id);
+  for (let i = 0; i < 3; i++) assert.strictEqual((await spawnRaw(a, { name: 'Too deep' })).json.refused, 'depth');
+  assert.strictEqual(await decisionsBy(a.id), before, 'the depth refusal is decided before JEVs');
+  await asOwner('update app.subagent_settings set per_parent_per_hour = 1');
+  try {
+    const other = await newAgent(owner, 'Rate');
+    await spawn(other);
+    const b2 = await decisionsBy(other.id);
+    assert.strictEqual((await spawnRaw(other, { name: 'Over' })).json.refused, 'rate_parent');
+    assert.strictEqual(await decisionsBy(other.id), b2, 'so is the per-parent rate');
+  } finally {
+    await asOwner(DEFAULT_LIMITS);
+  }
+  // A request limit per agent, like registration's: past it, nothing reaches the database's checks or JEVs.
+  const noisy = await newAgent(owner, 'Noisy');
+  const { SUBAGENT_LIMITS } = require('../api/agents.js');
+  const max = SUBAGENT_LIMITS.subagent_agent.max;
+  await asOwner('update app.subagent_settings set per_parent_per_hour = 100000, per_owner_per_hour = 1000000');
+  try {
+    // A malformed request doesn't use up the allowance (as registration's), so only well-formed ones are counted.
+    assert.strictEqual((await spawnRaw(noisy, { name: 'Bad mode', rules: { post: 'always' } })).status, 400);
+    for (let i = 0; i < max; i++) assert.strictEqual((await spawnRaw(noisy, { name: 'Ok ' + i })).status, 201);
+    const b3 = await decisionsBy(noisy.id);
+    const r = await spawnRaw(noisy, { name: 'One more' });
+    assert.deepStrictEqual([r.status, await decisionsBy(noisy.id)], [429, b3]);
+  } finally {
+    await asOwner(DEFAULT_LIMITS);
+  }
+});
+
+test('review: a tree of a few thousand sub-agents posting keeps a post under 500 ms (the subtree count)', async () => {
+  await asOwner('update app.subagent_settings set per_parent_per_hour = 100000, per_owner_per_hour = 1000000');
+  try {
+    const owner = await member(2, 'Big tree');
+    const lead = await newAgent(owner, 'Lead');
+    await rules(owner, lead, { post: 'act', daily_cap: 1000 });
+    const kids = [];
+    await run({ actor: 'agent', memberId: owner.id, agentId: lead.id }, async (t) => {
+      for (let i = 0; i < 3000; i++) {
+        const k = 'dogk_' + crypto.randomBytes(32).toString('base64url').slice(0, 43);
+        const r = await agentsDb.createSub(t, { name: 'W' + i, keyHash: c.sha256hex(k), callerKeyHash: c.sha256hex(lead.key), rules: { post: 'act', daily_cap: 1000 } });
+        kids.push({ id: r.id, ctx: { actor: 'agent', memberId: owner.id, agentId: r.id } });
+      }
+    });
+    const delegation = require('../db/delegation');
+    const times = [];
+    for (let i = 0; i < 990; i++) {
+      const k = kids[i % kids.length];
+      const t0 = process.hrtime.bigint();
+      const out = await run(k.ctx, (t) => delegation.submit(t, { body: 'tree post ' + i + ' ' + crypto.randomUUID() }));
+      times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      assert.ok(out.posted, JSON.stringify(out));
+    }
+    times.sort((x, y) => x - y);
+    const p95 = times[Math.floor(times.length * 0.95)];
+    const worst = times[times.length - 1];
+    console.log('# tree-cap timing: 3000 sub-agents, 990 posts: median ' + times[495].toFixed(1) + ' ms, p95 ' + p95.toFixed(1) + ' ms, worst ' + worst.toFixed(1) + ' ms');
+    assert.ok(p95 < 500, 'p95 ' + p95 + ' ms');
+  } finally {
+    await asOwner(DEFAULT_LIMITS);
+  }
 });
