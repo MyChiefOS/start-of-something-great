@@ -349,7 +349,7 @@ test('deleting an account also deletes its agents\' rules and drafts', async () 
   await say(a.key, 'a waiting draft');
   const d = await say(a.key, 'an approved draft');
   await approve(owner, d.json.draft_id, 'an approved draft');
-  const out = await run(owner.ctx, (t) => store.deleteAccount(t));
+  const out = await run({ ...owner.ctx, fresh: true }, (t) => store.deleteAccount(t));
   assert.ok(!out.refused);
   assert.strictEqual(Number((await q(`select count(*) as n from app.agent_rules where agent_id = '${a.id}'`))[0].n), 0);
   assert.strictEqual(Number((await q(`select count(*) as n from app.agent_drafts where agent_id = '${a.id}'`))[0].n), 0);
