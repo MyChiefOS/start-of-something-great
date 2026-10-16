@@ -104,6 +104,7 @@ const ROUTES = {
     }
     const out = code ? await run(session.actorFor(who), (t) => agents.claim(t, c.sha256hex(code))) : { refused: 'not_found' };
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
+    if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     const a = list.find((x) => x.id === out.id);
@@ -122,6 +123,7 @@ const ROUTES = {
     if (!who) return;
     const k = agentkey.newKey();
     const out = await run(session.actorFor(who), (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }));
+    if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE });
   },

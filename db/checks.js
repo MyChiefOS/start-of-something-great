@@ -15,9 +15,10 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public'];
-// Narrow roles that only act inside their own reviewed functions (below).
-const NARROW = ['dog_signin', 'dog_public'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits'];
+// Narrow roles that only act inside their own reviewed functions (below). dog_limits (PR 6) only counts, inside the
+// two emergency-brake checks.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by dog_signin,
 // fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -36,7 +37,12 @@ const DEFINERS = {
   'app.agent_resolve(text)': 'dog_signin',
   'app.agent_register(text, text, text, text)': 'dog_signin',
   'app.agent_claim(text)': 'dog_signin',
-  'app.agent_claim_preview(text)': 'dog_signin'
+  'app.agent_claim_preview(text)': 'dog_signin',
+  // PR 6: the emergency brake's checks (trigger functions; they count what the acting member or agent can't see).
+  'app.posts_limit()': 'dog_limits',
+  'app.agents_limit()': 'dog_limits',
+  // PR 6: a ban ends the member's sessions and revokes their agents' keys, in the role that manages sessions and keys.
+  'app.members_ban_cleanup()': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -117,7 +123,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -149,7 +155,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
@@ -247,7 +253,11 @@ async function problems(sql, { snapshot } = {}) {
     ['review_flags', 'review_flags_guard', 19, 'review_flags_guard', 'every updated flag row'],
     // PR 5: an agent's owner never changes and revoking is final; keys only get revoked.
     ['agents', 'agents_guard', 19, 'agents_guard', 'every updated agent row'],
-    ['agent_keys', 'agent_keys_guard', 19, 'agent_keys_guard', 'every updated key row']
+    ['agent_keys', 'agent_keys_guard', 19, 'agent_keys_guard', 'every updated key row'],
+    // PR 6: a brake is only ever switched off, once; the brake checks run before every new post and new agent.
+    ['brakes', 'brakes_guard', 19, 'brakes_guard', 'every updated brake row'],
+    ['posts', 'posts_limit', 7, 'posts_limit', 'every new post'],
+    ['agents', 'agents_limit', 23, 'agents_limit', 'every new or updated agent row']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

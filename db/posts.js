@@ -13,6 +13,8 @@ async function create(t, { body }) {
     return { id: p.id, status: p.status, publishedAt: p.published_at };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'waiting_limit') return { refused: 'waiting_limit' };
+    // The emergency brake (F9, 006_owner_controls.sql): the hint says what the limit is, in plain words.
+    if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint || 'Posting is limited for now.' };
     throw e;
   }
 }
