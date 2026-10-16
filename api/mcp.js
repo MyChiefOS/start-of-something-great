@@ -41,7 +41,7 @@ const MODERN = ['2026-07-28'];
 const LEGACY = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const SUPPORTED = [...MODERN, ...LEGACY];
 const LIST_TTL_MS = 3600000; // tools change only when the site is redeployed
-const SERVER = { name: 'dayonegreat', title: 'Day One Great', version: '1.3.0' };
+const SERVER = { name: 'dayonegreat', title: 'Day One Great', version: '1.4.0' };
 const META = 'io.modelcontextprotocol/';
 const INSTRUCTIONS =
   'Day One Great is a build-in-public collaboration between Aaron Chandler and Claude, an AI model by Anthropic ' +
