@@ -20,7 +20,8 @@ const path = require('path');
 const crypto = require('crypto');
 const v = require('./validate');
 const region = require('../signin/region');
-const { netKey } = require('../signin/http');
+const { netKey, cookies } = require('../signin/http');
+const { sessionHash } = require('../signin/session');
 const { maskContacts } = require('../api/_proposals');
 
 const sha256hex = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
@@ -88,29 +89,30 @@ const QUESTIONS = [
       const r = lastHour / usual;
       return r <= 1 ? 0 : r <= 2 ? 20 : r <= 4 ? 45 : 70;
     } },
-  { id: 'J05', title: 'Clusters', description: 'Other accounts that signed up from the same network in the last day (2 or more scores 25, 5 or more 50, 10 or more 80), with the same uncommon email domain in the last week (3 or more 30, 10 or more 60), sign-ups from this network in the last hour (5 or more 25, 20 or more 50), and a site-wide burst of sign-ups (20). The highest counts.',
+  { id: 'J05', title: 'Clusters', description: 'For an account made in the last week: other new accounts that signed up from the same network in the last day (2 or more scores 25, 5 or more 50, 10 or more 80), or with the same uncommon email domain in the last week (3 or more 30, 10 or more 60), sign-ups from this network in the last hour (5 or more 25, 20 or more 50), and a site-wide burst of sign-ups (20). The highest counts. An account older than a week scores 0.',
     score: (s) => {
+      if (s.established) return 0;
       const site = num(s.site_signups_1h) > Math.max(50, 10 * (num(s.site_signups_7d) / 168)) ? 20 : 0;
       return Math.max(band(num(s.net_members_24h), [[10, 80], [5, 50], [2, 25]]), band(num(s.domain_members_7d), [[10, 60], [3, 30]]),
         band(num(s.net_signups_1h), [[20, 50], [5, 25]]), site);
     } },
   { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours, or agents registered from one network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
     score: (s) => Math.max(band(num(s.owner_agents_24h), [[25, 70], [10, 50], [4, 25]]), band(num(s.net_agents_24h), [[25, 70], [10, 50], [4, 25]])) },
-  { id: 'J07', title: 'Links and new domains', description: 'Links in the text: 25 for each site nobody here has linked to in a low-risk post before, and 10 for each link after the third. At most 100.',
+  { id: 'J07', title: 'Links and new domains', description: 'Links in the text: 25 for each site not linked to by a low-risk post that has stayed up here for at least a day, and 10 for each link after the third. At most 100.',
     score: (s) => Math.min(100, 25 * num(s.new_domains) + 10 * Math.max(0, num(s.links) - 3)) },
   { id: 'J08', title: 'Contact details', description: 'Email addresses and phone numbers that masking had to hide: one scores 30, two 50, three or more 80.',
     score: (s) => band(num(s.mask_hits), [[3, 80], [2, 50], [1, 30]]) },
-  { id: 'J09', title: 'Copies of other members’ words', description: 'Other members who posted the same or nearly the same text in the last week (the same words ignoring case and punctuation, or, for 8 words or more, word prints within 10 of 64 bits): one scores 30, two 60, five or more 90.',
+  { id: 'J09', title: 'Copies of other members’ words', description: 'Other members whose live post, earlier in the last week, has the same or nearly the same text (the same words ignoring case and punctuation, or word prints within 10 of 64 bits): one scores 30, two 60, five or more 90. Whoever posted first is never the one scored, and text under 8 words or 40 characters is never counted as a copy.',
     score: (s) => band(num(s.copies), [[5, 90], [2, 60], [1, 30]]) },
-  { id: 'J10', title: 'Track record', description: 'Reports upheld against the account in the last 90 days (one 30, two 60, three or more 90), an emergency brake on it now (40), or a network or email domain shared with a banned member in the last 30 days (60). The highest counts.',
-    score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0, num(s.banned_links) >= 1 ? 60 : 0) },
+  { id: 'J10', title: 'Track record', description: 'Reports upheld against the account in the last 90 days (one 30, two 60, three or more 90) or an emergency brake on it now (40). The highest counts.',
+    score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0) },
   { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key 20, a new or claimed or registered agent 10.',
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
   { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
-  { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0.',
-    score: (s, ctx) => (ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
-  { id: 'J14', title: 'Credible reports', description: 'Members at level 1 or more, whose accounts aren’t new, with an open report on this post: 35 each, at most 100.',
+  { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session.',
+    score: (s, ctx) => (ctx.confirmed ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
+  { id: 'J14', title: 'Credible reports', description: 'Members at level 2, whose accounts are more than a week old, with an open report on this post: 35 each, at most 100. Reporters who signed up from the same network or share an uncommon email domain count as one.',
     score: (s) => Math.min(100, 35 * num(s.credible_reports)) }
 ];
 const BY_ID = Object.fromEntries(QUESTIONS.map((q) => [q.id, q]));
@@ -124,8 +126,8 @@ const ASKS = {
   'post.create': POST,
   'post.approved': POST,
   'draft.create': POST,
-  // The reporter's region says nothing about the post; the post's own credible reports do.
-  'post.reported': [...ACCOUNT.filter((q) => q !== 'J13'), 'J07', 'J08', 'J09', 'J14'],
+  // A report re-scores the post's own questions only, never its author's whole account (the JEVs review, F1).
+  'post.reported': ['J07', 'J08', 'J09', 'J14'],
   // No account yet: only the network, the action and the region.
   'agent.register': ['J05', 'J06', 'J11', 'J13']
 };
@@ -134,7 +136,7 @@ for (const a of ['agent.create', 'agent.claim', 'agent.key', 'agent.rules', 'acc
 // The scores for one action: { J01: 25, ... }, every question it asks, in order.
 function score(action, signals, ctx = {}) {
   if (!ASKS[action]) throw new Error('JEVs has no questions for ' + action);
-  const c = { action, country: ctx.country === undefined ? null : ctx.country };
+  const c = { action, country: ctx.country === undefined ? null : ctx.country, confirmed: ctx.confirmed === true };
   const out = {};
   for (const id of ASKS[action]) {
     const s = Math.round(BY_ID[id].score(signals || {}, c));
@@ -170,12 +172,15 @@ function maskHits(body) {
 // synthetic posts of 10 to 120 words drawn from a 5,000-word vocabulary (400 texts each): with a tenth of the words
 // changed, 75 to 86% stayed within 10 bits; no two unrelated texts came closer than 15 bits (most 20 or more). Word
 // triples did far worse on short posts (a one-word change in 30 words stayed within 8 bits only 53% of the time).
-// Texts under 8 words get no print: too short to compare fairly, and exact copies are caught anyway. Returned as a
-// signed 64-bit integer in text, as Postgres stores it. NEAR_BITS is written into app.jevs_signals too (010).
+// Texts under 8 words or 40 characters (the words, lower case, one space apart) get no print, and then aren't compared
+// at all, exact copies included: "thank you" from six members isn't spam (the JEVs review, F2). Returned as a signed
+// 64-bit integer in text, as Postgres stores it. NEAR_BITS is written into app.jevs_signals too (010).
 const NEAR_BITS = 10;
+const MIN_WORDS = 8;
+const MIN_CHARS = 40;
 function simhash(body) {
   const words = String(body).normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-  if (words.length < 8) return null;
+  if (words.length < MIN_WORDS || words.join(' ').length < MIN_CHARS) return null;
   const weights = new Array(64).fill(0);
   for (const w of words) {
     const h = crypto.createHash('sha256').update(w, 'utf8').digest().readBigUInt64BE(0);
@@ -194,9 +199,22 @@ function analyze(body) {
 }
 
 // ---- From the request ----
-// The network's keyed daily hash (the one rate limits already use) and the country Vercel reports. Nothing else.
+// A session whose member confirmed, when signing in from a declined region, that they live outside it carries a tag
+// in its own cookie: a keyed hash of that session, so it can't be moved to another session or forged. Nothing is
+// stored for it; it goes with the session.
+const RESIDENT = '__Host-dog_resident';
+const residentTag = (ipKey, hash) => crypto.createHmac('sha256', ipKey).update('resident ' + hash, 'utf8').digest('hex');
+function resident(req, ipKey) {
+  const hash = sessionHash(req);
+  const tag = cookies(req)[RESIDENT];
+  if (!hash || typeof tag !== 'string' || tag.length !== 64) return false;
+  return crypto.timingSafeEqual(Buffer.from(tag), Buffer.from(residentTag(ipKey, hash)));
+}
+// The network's keyed daily hash (the one rate limits already use), the country Vercel reports, and whether the
+// session's member confirmed where they live. Nothing else.
 function facts(req, ipKey) {
-  return { netHash: req && ipKey ? netKey(req, ipKey) : null, country: req ? region.country(req) : null };
+  return { netHash: req && ipKey ? netKey(req, ipKey) : null, country: req ? region.country(req) : null,
+    confirmed: Boolean(req && req.headers && ipKey && resident(req, ipKey)) };
 }
 
 // ---- Sign-up marks (J03, J05) ----
@@ -234,7 +252,7 @@ async function claimMarks(t, token) {
 // effect: none | challenge | hold | hide | promote | queue; applied: whether it was carried out (shadow mode carries
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
-async function check(t, { action, subject = null, body = null, netHash = null, country = null }) {
+async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false }) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error('JEVs has no action ' + action);
   const sub = subject === null ? null : v.uuid('subject', subject);
@@ -245,7 +263,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     text = body === null || body === undefined ? null : analyze(body);
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
-    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0 }, { country });
+    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0 }, { country, confirmed });
   } catch (e) {
     error = true;
     scores = {};
@@ -253,7 +271,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
   }
   try {
     const [d] = await t.savepoint((x) => x`select * from app.jevs_decide(${action}, ${sub}::uuid, ${x.json(scores)}, ${spec.impact}, ${error},
-      ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint)`);
+      ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint, ${netHash})`);
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,
       challengeStatus: d.challenge_status, scores, error };
   } catch (e) {
@@ -266,7 +284,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     if (spec.impact === 'high') throw e;
     logFailure('recording ' + action, e);
     try {
-      const [d] = await t.savepoint((x) => x`select * from app.jevs_decide(${action}, ${sub}::uuid, ${x.json({})}, ${spec.impact}, true, null::text[], null::bigint)`);
+      const [d] = await t.savepoint((x) => x`select * from app.jevs_decide(${action}, ${sub}::uuid, ${x.json({})}, ${spec.impact}, true, null::text[], null::bigint, ${netHash})`);
       return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: null, challengeStatus: null, scores, error: true };
     } catch (again) {
       logFailure('recording the error for ' + action, again);
@@ -280,7 +298,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
 const blocks = (d) => Boolean(d && d.applied && (d.effect === 'hold' || (d.effect === 'challenge' && d.challengeStatus !== 'confirmed')));
 
 // ---- Challenges: the owner's side ----
-// { status: 'confirmed' | 'declined' } or { refused: 'not_found' | 'stale' | 'expired' }.
+// { status: 'confirmed' | 'declined' } or { refused: 'not_found' | 'stale' | 'expired' | 'fresh' } ('fresh': a sensitive
+// action is confirmed only by signing in again; the owner signs in and repeats it).
 async function answer(t, { challenge, answer: a }) {
   const id = v.uuid('challenge', challenge);
   const ans = v.oneOf('answer', a, ['confirm', 'decline']);
@@ -289,7 +308,7 @@ async function answer(t, { challenge, answer: a }) {
     return { status: r.status };
   } catch (e) {
     if (e.code === 'P0002') return { refused: 'not_found' };
-    if (e.code === 'P0001' && (e.message === 'stale' || e.message === 'expired')) return { refused: e.message };
+    if (e.code === 'P0001' && ['stale', 'expired', 'fresh'].includes(e.message)) return { refused: e.message };
     throw e;
   }
 }
@@ -315,6 +334,12 @@ async function appeal(t, postId) {
     if (e.code === '42501' || e.code === '23503') return { refused: 'not_found' };
     throw e;
   }
+}
+
+// ---- The scheduled sweep: marks kept no longer than promised (the system actor) ----
+async function sweep(t) {
+  const [r] = await t`select app.jevs_sweep() as n`;
+  return r.n;
 }
 
 // ---- The regional gate's count ----
@@ -346,5 +371,5 @@ async function summary(t) {
 // The public list: what each question looks at, without any threshold.
 const publicQuestions = () => QUESTIONS.map((q) => ({ id: q.id, title: q.title, description: q.description }));
 
-module.exports = { logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, facts, emailDomain, emailMarks,
+module.exports = { RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, emailDomain, emailMarks,
   onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, regionDecline, summary, publicQuestions };

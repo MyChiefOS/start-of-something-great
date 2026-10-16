@@ -79,6 +79,11 @@ test.before(async () => {
                     values ('${p.jevs.decision}', '${A.id}', 'post.create', 'post', '${p.id}', now() + interval '1 day')`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
+  // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`insert into app.deletion_reviews (member_id, decision_id) values ('${A.id}', '${p.jevs.decision}')`);
+  });
   const other = await signIn(2, 'Other');
   const op = await run(other.ctx, (t) => posts.create(t, { body: 'other post' }));
   await run(A.ctx, (t) => review.report(t, { post: op.id, reason: 'spam', note: 'A reports' }));

@@ -2,8 +2,10 @@
 -- Aaron's decisions (Oct 16, 2026): every account and every action is scored against a standard set of risk questions
 -- written in code; low risk passes, medium risk is challenged (confirmation goes to the human owner, never the agent),
 -- high risk is held or hidden and goes to Aaron. Members are trusted by default. No trust level is promoted by hand:
--- JEVs promotes to level 2 automatically when every standard question passes. Sign-up from the EU, EEA, UK and
--- Switzerland is declined before any personal data is collected; only daily counts by country are kept.
+-- JEVs promotes to level 2 automatically when every standard question passes, with no wait. Sign-up from the EU, EEA,
+-- UK and Switzerland is declined before anything is stored; only daily counts by country are kept. Members who live
+-- elsewhere can sign in while travelling there after confirming it (Oct 16, 2026). A high-risk account deletion goes
+-- to Aaron for review, and an account he hasn't decided on within 24 hours is disabled, never deleted (Oct 16, 2026).
 -- Criteria: F6 (every post is checked by JEVs; first-post review only until JEVs leaves shadow mode), trust levels
 -- (level 2 automatic), S1/S7/S8/G3 as for every table.
 --
@@ -34,7 +36,7 @@ grant usage on schema app to dog_jevs;
 create table app.jevs_settings (
   id uuid primary key default app.uuid_v7(),
   key text not null unique check (key = any (array['mode', 'medium_any', 'high_any', 'medium_total', 'high_total', 'pass_max',
-    'promote_min_age_hours', 'challenge_hours', 'credible_reporter_age_hours'])),
+    'challenge_hours', 'credible_reporter_age_hours'])),
   value text not null check (char_length(value) between 1 and 16),
   updated_at timestamptz not null default now()
 );
@@ -77,13 +79,14 @@ alter table app.jevs_settings enable always trigger jevs_settings_check;
 -- The seeds: conservative, public, and meant to be tuned. Scores per question run 0 to 100 (db/jevs.js).
 --   medium_any / high_any: one question scoring this much makes the action medium / high.
 --   medium_total / high_total: the questions' scores added up reaching this makes it medium / high.
---   pass_max: a question "passes" for automatic level 2 at this score or lower.
---   promote_min_age_hours: no automatic level 2 before an account is this old (14 days).
+--   pass_max: a question "passes" for automatic level 2 at this score or lower. There is no minimum age (Aaron,
+--   Oct 16, 2026: "No wait at all"): J01, the account's age, is asked and counts towards the risk level, but it
+--   doesn't have to pass for level 2.
 --   challenge_hours: how long an owner has to confirm a challenged action.
 --   credible_reporter_age_hours: a report counts as credible (for hiding at once) only from an account this old.
 insert into app.jevs_settings (key, value) values
   ('mode', 'shadow'), ('medium_any', '40'), ('high_any', '80'), ('medium_total', '70'), ('high_total', '140'),
-  ('pass_max', '10'), ('promote_min_age_hours', '336'), ('challenge_hours', '48'), ('credible_reporter_age_hours', '168');
+  ('pass_max', '10'), ('challenge_hours', '48'), ('credible_reporter_age_hours', '168');
 
 -- Whether JEVs enforces (one switch). Read as the caller.
 create function app.jevs_enforcing() returns boolean
@@ -242,21 +245,23 @@ create policy jevs_prints_jevs_select on app.jevs_prints for select to dog_jevs 
 create policy jevs_prints_jevs_insert on app.jevs_prints for insert to dog_jevs with check (true);
 grant select, insert on app.jevs_prints to dog_jevs;
 
--- ---- Link domains seen in low-risk posts (a SHA-256 of the domain; domains in public posts are public) ----
-create table app.jevs_domains (
+-- ---- Link domains in low-risk posts (a SHA-256 of the domain; domains in public posts are public) ----
+-- One row per post and domain. A domain counts as "seen" (J07) only through a post that has stayed live for 24 hours,
+-- so a post Aaron removes stops vouching for its links, and a spammer can't launder a domain with one quick harmless
+-- post (the JEVs review, F6). Deleted with the post's author.
+create table app.jevs_post_domains (
   id uuid primary key default app.uuid_v7(),
-  domain_hash text not null unique check (char_length(domain_hash) = 64 and domain_hash ~ '^[0-9a-f]+$'),
-  first_seen_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now(),
-  posts integer not null default 1 check (posts >= 0)
+  post_id uuid not null references app.posts (id),
+  domain_hash text not null check (char_length(domain_hash) = 64 and domain_hash ~ '^[0-9a-f]+$'),
+  created_at timestamptz not null default now(),
+  unique (post_id, domain_hash)
 );
-alter table app.jevs_domains enable row level security;
-alter table app.jevs_domains force row level security;
-create policy jevs_domains_jevs_select on app.jevs_domains for select to dog_jevs using (true);
-create policy jevs_domains_jevs_insert on app.jevs_domains for insert to dog_jevs with check (true);
-create policy jevs_domains_jevs_update on app.jevs_domains for update to dog_jevs using (true) with check (true);
-grant select, insert on app.jevs_domains to dog_jevs;
-grant update (last_seen_at, posts) on app.jevs_domains to dog_jevs;
+create index jevs_post_domains_domain on app.jevs_post_domains (domain_hash);
+alter table app.jevs_post_domains enable row level security;
+alter table app.jevs_post_domains force row level security;
+create policy jevs_post_domains_jevs_select on app.jevs_post_domains for select to dog_jevs using (true);
+create policy jevs_post_domains_jevs_insert on app.jevs_post_domains for insert to dog_jevs with check (true);
+grant select, insert on app.jevs_post_domains to dog_jevs;
 
 -- ---- The regional gate's only record: how many visitors we declined, per country, per day ----
 create table app.region_declines (
@@ -314,12 +319,22 @@ begin
   if new.status = 'banned' and old.status <> 'banned' and old.is_admin then
     raise exception 'an administrator can''t be banned' using errcode = '42501';
   end if;
+  -- Disabling an account and restoring it belong to a deletion review alone (dog_erase, below), and only between
+  -- active and disabled. Aaron is never disabled.
+  if new.status is distinct from old.status and (current_user = 'dog_erase' or 'disabled' in (new.status, old.status)) then
+    if current_user <> 'dog_erase' or not ((old.status = 'active' and new.status = 'disabled') or (old.status = 'disabled' and new.status = 'active')) then
+      raise exception 'only a deletion review disables or restores an account' using errcode = '42501';
+    end if;
+    if old.is_admin then
+      raise exception 'an administrator can''t be disabled' using errcode = '42501';
+    end if;
+  end if;
   if new.trust_level is distinct from old.trust_level and current_user not in ('dog_signin', 'dog_jevs') then
     new.level_set_by_admin := new.trust_level;
   elsif new.level_set_by_admin is distinct from old.level_set_by_admin and current_user <> 'dog_owner' then
     raise exception 'the hand-set level changes only through the trust level' using errcode = '42501';
   end if;
-  if new.jevs_level2_at is distinct from old.jevs_level2_at and current_user not in ('dog_jevs', 'dog_owner') then
+  if new.jevs_level2_at is distinct from old.jevs_level2_at and current_user <> 'dog_jevs' then
     raise exception 'only JEVs records its own promotion' using errcode = '42501';
   end if;
   if new.is_admin is distinct from old.is_admin and current_user <> 'dog_owner' then
@@ -339,13 +354,15 @@ declare
   nid uuid;
 begin
   if new.status is distinct from old.status then
-    act := case when new.status = 'banned' then 'member.ban' else 'member.unban' end;
+    act := case when new.status = 'banned' then 'member.ban' when new.status = 'disabled' then 'member.disable'
+                when old.status = 'disabled' then 'member.restore' else 'member.unban' end;
   elsif new.trust_level is distinct from old.trust_level and current_user not in ('dog_signin', 'dog_jevs') then
     act := 'member.level_set';
   else
     return null;
   end if;
-  if note is not null then
+  -- Aaron's notes go with bans and levels; a deletion review records its own reasons.
+  if note is not null and act in ('member.ban', 'member.unban', 'member.level_set') then
     insert into app.admin_notes (member_id, action, note) values (new.id, act, note) returning id into nid;
   end if;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
@@ -519,6 +536,83 @@ create policy review_flags_insert on app.review_flags for insert to dog_app
     or (source = 'appeal' and reporter_id is null and reason is null and app.jevs_appealable(post_id))
   );
 
+-- ---- Deletion reviews (Aaron, Oct 16, 2026) ----
+-- "JEVs scores and provide deletion as high risk. The member should be informed their account was flagged as high
+-- risk. A review will be provided to me and I will make a decision on account status. If I have not responded to a
+-- high risk account in 24 hours the account should be disabled but not deleted until I make a decision based on the
+-- data provided."
+-- A review points at the JEVs decision that held the deletion (its question IDs and scores, append-only: the data
+-- Aaron decides on). It is open until Aaron decides: delete (the account and the review go), keep disabled, or
+-- restore. An open review older than 24 hours disables the account: every session ends, sign-in is refused with a
+-- plain message, the owner's agents are switched off and their keys revoked, and nothing is deleted.
+alter table app.members drop constraint members_status_check;
+alter table app.members add constraint members_status_check check (status = any (array['active', 'banned', 'disabled']));
+
+create table app.deletion_reviews (
+  id uuid primary key default app.uuid_v7(),
+  member_id uuid not null references app.members (id),
+  decision_id uuid not null references app.jevs_decisions (id),
+  created_at timestamptz not null default now(),
+  disabled_at timestamptz,
+  decided_at timestamptz,
+  decision text check (decision = any (array['keep_disabled', 'restore'])),
+  check ((decision is null) = (decided_at is null))
+);
+-- One review a member at a time: open, or kept disabled (Aaron can still delete or restore later).
+create unique index deletion_reviews_one on app.deletion_reviews (member_id) where decision is null or decision = 'keep_disabled';
+create index deletion_reviews_due on app.deletion_reviews (created_at) where decision is null and disabled_at is null;
+alter table app.deletion_reviews enable row level security;
+alter table app.deletion_reviews force row level security;
+-- Aaron sees every review; a member sees their own (when it started, whether it disabled them, what was decided).
+create policy deletion_reviews_select on app.deletion_reviews for select to dog_app
+  using (app.actor_kind() = 'admin' or (app.actor_kind() = 'member' and member_id = app.current_member()));
+grant select on app.deletion_reviews to dog_app;
+-- JEVs opens them (app.jevs_decide); the review functions (dog_erase) decide, disable and delete them; sign-in
+-- (dog_signin) reads whether one is overdue.
+create policy deletion_reviews_jevs_select on app.deletion_reviews for select to dog_jevs using (true);
+create policy deletion_reviews_jevs_insert on app.deletion_reviews for insert to dog_jevs with check (true);
+grant select (id, member_id, decision), insert (member_id, decision_id) on app.deletion_reviews to dog_jevs;
+create policy deletion_reviews_signin_select on app.deletion_reviews for select to dog_signin using (true);
+grant select (member_id, created_at, disabled_at, decision) on app.deletion_reviews to dog_signin;
+create policy deletion_reviews_erase_select on app.deletion_reviews for select to dog_erase using (true);
+create policy deletion_reviews_erase_update on app.deletion_reviews for update to dog_erase using (true) with check (true);
+create policy deletion_reviews_erase_delete on app.deletion_reviews for delete to dog_erase using (true);
+grant select, delete on app.deletion_reviews to dog_erase;
+grant update (disabled_at, decided_at, decision) on app.deletion_reviews to dog_erase;
+
+-- What a review is about never changes; it is disabled once and decided (only from open or kept disabled), by the
+-- review functions alone; it is deleted only with the account.
+create function app.deletion_reviews_guard() returns trigger
+language plpgsql
+as $$
+begin
+  if current_user <> 'dog_erase' then
+    raise exception 'only Aaron''s decision or the 24-hour timer changes a deletion review' using errcode = '42501';
+  end if;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  if (new.id, new.member_id, new.decision_id, new.created_at) is distinct from (old.id, old.member_id, old.decision_id, old.created_at)
+     or (old.disabled_at is not null and new.disabled_at is distinct from old.disabled_at)
+     or old.decision = 'restore' or (old.decision is not null and new.decision is null) then
+    raise exception 'a deletion review''s record never changes' using errcode = '42501';
+  end if;
+  return new;
+end
+$$;
+create trigger deletion_reviews_guard before update or delete on app.deletion_reviews for each row execute function app.deletion_reviews_guard();
+alter table app.deletion_reviews enable always trigger deletion_reviews_guard;
+
+-- Whether a member's open review is past its 24 hours without a decision. Sign-in, sessions and agent keys treat
+-- such an account as disabled straight away, whenever the timer (app.deletion_reviews_expire) next runs.
+create function app.deletion_overdue(p_member uuid)
+returns boolean
+language sql stable
+as $$
+  select exists (select 1 from app.deletion_reviews r where r.member_id = p_member and r.decision is null and r.disabled_at is null
+                 and r.created_at <= now() - interval '24 hours')
+$$;
+
 -- ---- What dog_jevs may read and do (inside its functions below only) ----
 create policy members_jevs_select on app.members for select to dog_jevs using (true);
 create policy members_jevs_update on app.members for update to dog_jevs using (true) with check (true);
@@ -563,6 +657,7 @@ declare
   judged uuid;
   m_created timestamptz; m_level smallint; m_admin boolean; m_status text; m_hand smallint; m_jevs timestamptz;
   fp text;
+  subject_at timestamptz := now();
   credible_hours integer;
   res jsonb := '{}'::jsonb;
 begin
@@ -573,7 +668,7 @@ begin
   end if;
   judged := me;
   if p_action in ('post.create', 'post.approved', 'post.reported') then
-    select p.author_id, p.body_fp into judged, fp from app.posts p where p.id = p_subject;
+    select p.author_id, p.body_fp, p.created_at into judged, fp, subject_at from app.posts p where p.id = p_subject;
     if not found then
       raise exception 'bad JEVs request' using errcode = '22023';
     end if;
@@ -600,27 +695,28 @@ begin
       'email_only', not exists (select 1 from app.identities i where i.member_id = judged and i.provider <> 'email')
                     and exists (select 1 from app.identities i where i.member_id = judged),
       'disposable', exists (select 1 from app.jevs_marks k where k.member_id = judged and k.kind = 'disposable'),
-      -- J05: other accounts that signed up from the same network in the last 24 hours, or with the same uncommon email
-      -- domain in the last 7 days.
+      -- J05: an account made in the last 7 days is "new"; an established one is never judged by its neighbours (the
+      -- JEVs review, F3). Network marks are left at sign-up only (signin/flow.js). Counted: other new accounts that
+      -- signed up from the same network in the last 24 hours, or with the same uncommon email domain in the last 7 days.
+      'established', m_created <= now() - interval '7 days',
       'net_members_24h', (select count(distinct k2.member_id) from app.jevs_marks k1 join app.jevs_marks k2
                             on k2.kind = 'net' and k2.key_hash = k1.key_hash and k2.member_id is not null and k2.member_id <> judged
                             and k2.created_at > now() - interval '24 hours'
+                            join app.members n on n.id = k2.member_id and n.created_at > now() - interval '7 days'
                           where k1.member_id = judged and k1.kind = 'net' and k1.created_at > now() - interval '24 hours'),
       'domain_members_7d', (select count(distinct k2.member_id) from app.jevs_marks k1 join app.jevs_marks k2
                               on k2.kind = 'email_domain' and k2.key_hash = k1.key_hash and k2.member_id is not null and k2.member_id <> judged
                               and k2.created_at > now() - interval '7 days'
+                              join app.members n on n.id = k2.member_id and n.created_at > now() - interval '7 days'
                             where k1.member_id = judged and k1.kind = 'email_domain'),
       -- J06: agents this owner created or claimed in the last 24 hours.
       'owner_agents_24h', (select count(*) from app.agents a where a.owner_id = judged and a.claimed_at > now() - interval '24 hours'),
-      -- J10: upheld reports on their posts (90 days), a brake on them now, and banned members who share a network or
-      -- email-domain mark with them (30 days).
+      -- J10: upheld reports on their posts (90 days) and a brake on them now. Nothing about neighbours: a banned member
+      -- on the same network or email domain says nothing about this one (the JEVs review, F4), and a banned person's
+      -- own sign-in methods are refused at sign-in already (F10).
       'upheld_90d', (select count(*) from app.review_flags f join app.posts p on p.id = f.post_id
                      where p.author_id = judged and f.source = 'report' and f.decision = 'remove' and f.resolved_at > now() - interval '90 days'),
-      'braked', exists (select 1 from app.brakes b where b.member_id = judged and b.lifted_at is null),
-      'banned_links', (select count(distinct k2.member_id) from app.jevs_marks k1
-                         join app.jevs_marks k2 on k2.kind = k1.kind and k2.key_hash = k1.key_hash and k2.member_id is not null and k2.member_id <> judged
-                         join app.members b on b.id = k2.member_id and b.status = 'banned'
-                       where k1.member_id = judged and k1.kind in ('net', 'email_domain') and k1.created_at > now() - interval '30 days')
+      'braked', exists (select 1 from app.brakes b where b.member_id = judged and b.lifted_at is null)
     );
     -- J04: the acting agent's own posting rate, or the member's people posts, against its own last two weeks.
     if ag is not null and p_action <> 'post.reported' then
@@ -647,36 +743,110 @@ begin
     'site_signups_7d', (select count(*) from app.members x where x.created_at > now() - interval '7 days'));
 
   -- J07 and J09: what a post links to, and how many other members wrote the same or nearly the same words this week.
+  -- A domain counts as seen once a low-risk post linking it has stayed live for 24 hours; removing that post unsees
+  -- it (the JEVs review, F6). A copy is an earlier live post by another member, so whoever wrote it first is never
+  -- the one judged, and held or removed copies count for nothing; text too short to compare fairly (under 8 words
+  -- or 40 characters, when db/jevs.js gives no print) is never counted as copied (the JEVs review, F1 and F2).
   if p_action in ('post.create', 'post.approved', 'post.reported', 'draft.create') then
     res := res || jsonb_build_object(
       'new_domains', case when p_domains is null then 0 else
-                       (select count(distinct x) from unnest(p_domains) x where not exists (select 1 from app.jevs_domains d where d.domain_hash = x)) end,
-      'copies', (select count(distinct a) from (
+                       (select count(distinct x) from unnest(p_domains) x where not exists (
+                          select 1 from app.jevs_post_domains d join app.posts p on p.id = d.post_id
+                          where d.domain_hash = x and p.status = 'live' and p.created_at <= now() - interval '24 hours')) end,
+      'copies', case when p_simhash is null then 0 else (select count(distinct a) from (
                    select p.author_id as a from app.posts p
-                   where fp is not null and p.body_fp = fp and p.author_id is distinct from judged and p.created_at > now() - interval '7 days'
+                   where fp is not null and p.body_fp = fp and p.author_id is distinct from judged and p.status = 'live'
+                     and p.created_at < subject_at and p.created_at > now() - interval '7 days'
                    union
-                   select r.author_id from app.jevs_prints r
-                   where p_simhash is not null and r.author_id is distinct from judged and r.created_at > now() - interval '7 days'
-                     and bit_count(int8send(r.simhash # p_simhash)) <= 10) c));
+                   select p.author_id from app.jevs_prints r join app.posts p on p.id = r.post_id
+                   where p.author_id is distinct from judged and p.status = 'live' and p.created_at < subject_at
+                     and r.created_at > now() - interval '7 days' and bit_count(int8send(r.simhash # p_simhash)) <= 10) c) end);
   end if;
 
-  -- J14: credible members with an open report on this post (accounts at level 1 or more, old enough).
+  -- J14: credible members with an open report on this post: level 2, not made in the last credible_reporter_age_hours
+  -- (7 days as seeded), and independent of each other: a reporter who shares a sign-up network or an uncommon email
+  -- domain with an earlier credible reporter counts with them as one (the JEVs review, F1).
   if p_action = 'post.reported' then
     select s.value::integer into credible_hours from app.jevs_settings s where s.key = 'credible_reporter_age_hours';
     res := res || jsonb_build_object('credible_reports', (
-      select count(distinct f.reporter_id) from app.review_flags f join app.members r on r.id = f.reporter_id
-      where f.post_id = p_subject and f.source = 'report' and f.resolved_at is null
-        and r.status = 'active' and r.trust_level >= 1 and r.created_at <= now() - make_interval(hours => coalesce(credible_hours, 168))));
+      with cr as (
+        select f.reporter_id as rid, min(f.created_at) as at from app.review_flags f join app.members r on r.id = f.reporter_id
+        where f.post_id = p_subject and f.source = 'report' and f.resolved_at is null
+          and r.status = 'active' and r.trust_level >= 2 and r.created_at <= now() - make_interval(hours => coalesce(credible_hours, 168))
+        group by f.reporter_id)
+      select count(*) from cr a
+      where not exists (select 1 from cr b join app.jevs_marks kb on kb.member_id = b.rid
+                        join app.jevs_marks ka on ka.member_id = a.rid and ka.kind = kb.kind and ka.key_hash = kb.key_hash
+                        where (b.at, b.rid) < (a.at, a.rid) and ka.kind in ('net', 'email_domain'))));
   end if;
   return res;
 end
 $$;
 
+-- ---- The account questions, worked out by the database itself (the JEVs review, F5) ----
+-- The same scores db/jevs.js gives J01 to J06 and J10, from app.jevs_signals' counts (a test keeps the two the same
+-- over thousands of cases). For sign-up and account checks, which can promote an account, the database uses these and
+-- not the site's numbers; only J13 (the request's country) comes from the site, as the actor does.
+create function app.jevs_account_scores(s jsonb)
+returns jsonb
+language plpgsql immutable
+as $$
+declare
+  n numeric;
+  usual numeric;
+  r numeric;
+  best integer := coalesce((s ->> 'best_identity')::integer, -1);
+  j04 integer;
+  j05 integer;
+begin
+  n := coalesce((s ->> 'posts_1h')::numeric, 0);
+  if n >= 60 then
+    j04 := 85;
+  else
+    usual := greatest(3, 3 * (coalesce((s ->> 'posts_before')::numeric, 0) / (14 * 24)));
+    r := n / usual;
+    j04 := case when r <= 1 then 0 when r <= 2 then 20 when r <= 4 then 45 else 70 end;
+  end if;
+  if coalesce((s ->> 'established')::boolean, false) then
+    j05 := 0;
+  else
+    j05 := greatest(
+      case when (s ->> 'net_members_24h')::numeric >= 10 then 80 when (s ->> 'net_members_24h')::numeric >= 5 then 50
+           when (s ->> 'net_members_24h')::numeric >= 2 then 25 else 0 end,
+      case when (s ->> 'domain_members_7d')::numeric >= 10 then 60 when (s ->> 'domain_members_7d')::numeric >= 3 then 30 else 0 end,
+      case when (s ->> 'net_signups_1h')::numeric >= 20 then 50 when (s ->> 'net_signups_1h')::numeric >= 5 then 25 else 0 end,
+      case when coalesce((s ->> 'site_signups_1h')::numeric, 0) > greatest(50, 10 * (coalesce((s ->> 'site_signups_7d')::numeric, 0) / 168)) then 20 else 0 end);
+  end if;
+  return jsonb_build_object(
+    'J01', case when coalesce((s ->> 'age_hours')::numeric, 0) < 1 then 25 when (s ->> 'age_hours')::numeric < 24 then 15
+                when (s ->> 'age_hours')::numeric < 168 then 10 else 0 end,
+    'J02', case when coalesce((s ->> 'admin')::boolean, false) then 0 when best >= 2 then 0
+                when best = 1 then case when coalesce((s ->> 'providers')::integer, 0) >= 2 then 0 else 10 end
+                when best = 0 then 30 else 40 end,
+    'J03', case when coalesce((s ->> 'disposable')::boolean, false) then 60 else 0 end,
+    'J04', j04,
+    'J05', j05,
+    'J06', greatest(
+      case when (s ->> 'owner_agents_24h')::numeric >= 25 then 70 when (s ->> 'owner_agents_24h')::numeric >= 10 then 50
+           when (s ->> 'owner_agents_24h')::numeric >= 4 then 25 else 0 end,
+      case when (s ->> 'net_agents_24h')::numeric >= 25 then 70 when (s ->> 'net_agents_24h')::numeric >= 10 then 50
+           when (s ->> 'net_agents_24h')::numeric >= 4 then 25 else 0 end),
+    'J10', greatest(
+      case when (s ->> 'upheld_90d')::numeric >= 3 then 90 when (s ->> 'upheld_90d')::numeric >= 2 then 60
+           when (s ->> 'upheld_90d')::numeric >= 1 then 30 else 0 end,
+      case when coalesce((s ->> 'braked')::boolean, false) then 40 else 0 end));
+end
+$$;
+revoke execute on function app.jevs_account_scores(jsonb) from public;
+grant execute on function app.jevs_account_scores(jsonb) to dog_jevs;
+
 -- ---- The decision ----
 -- p_scores: question ID -> score (0 to 100), computed by the site from the signals and the public questions.
 -- p_impact: 'high' for sensitive actions (held if scoring failed), 'low' for the rest (they go ahead if it failed).
--- p_error: scoring failed (p_scores is then empty). Returns what JEVs decided and whether it was carried out.
-create function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint)
+-- p_error: scoring failed (p_scores is then empty). p_net: the request's network hash, as for app.jevs_signals.
+-- Returns what JEVs decided and whether it was carried out.
+create function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint,
+                                 p_net text)
 returns table (decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text)
 language plpgsql security definer set search_path = pg_catalog
 as $$
@@ -685,12 +855,12 @@ declare
   ag uuid := app.current_agent();
   kind text := app.actor_kind();
   s_mode text; s_medium_any integer; s_high_any integer; s_medium_total integer; s_high_total integer; s_pass integer;
-  s_age integer; s_challenge integer;
+  s_challenge integer;
   subj_kind text;
   judged uuid;
   agent uuid;
   v_post uuid; post_author uuid; post_agent uuid; post_status text; post_created timestamptz;
-  mem_level smallint; mem_status text; mem_admin boolean; mem_hand smallint; mem_jevs timestamptz; mem_created timestamptz;
+  mem_level smallint; mem_status text; mem_admin boolean; mem_hand smallint; mem_jevs timestamptz;
   total integer := 0;
   top integer := 0;
   lvl text;
@@ -698,6 +868,7 @@ declare
   did uuid;
   cid uuid;
   cstatus text;
+  rid uuid;
   questions text[];
   ok boolean;
 begin
@@ -705,7 +876,8 @@ begin
      or jsonb_typeof(p_scores) <> 'object' or (select count(*) from jsonb_object_keys(p_scores)) > 20
      or exists (select 1 from jsonb_each(p_scores) e where e.key !~ '^J[0-9]{2}$' or jsonb_typeof(e.value) <> 'number'
                 or (e.value)::numeric <> floor((e.value)::numeric) or (e.value)::numeric not between 0 and 100)
-     or (p_domains is not null and (cardinality(p_domains) > 50 or exists (select 1 from unnest(p_domains) x where x is null or x !~ '^[0-9a-f]{64}$'))) then
+     or (p_domains is not null and (cardinality(p_domains) > 50 or exists (select 1 from unnest(p_domains) x where x is null or x !~ '^[0-9a-f]{64}$')))
+     or (p_net is not null and p_net !~ '^[0-9a-f]{64}$') then
     raise exception 'bad JEVs request' using errcode = '22023';
   end if;
 
@@ -758,11 +930,16 @@ begin
   select max(case when s.key = 'mode' then s.value end),
          max(case when s.key = 'medium_any' then s.value end)::integer, max(case when s.key = 'high_any' then s.value end)::integer,
          max(case when s.key = 'medium_total' then s.value end)::integer, max(case when s.key = 'high_total' then s.value end)::integer,
-         max(case when s.key = 'pass_max' then s.value end)::integer, max(case when s.key = 'promote_min_age_hours' then s.value end)::integer,
-         max(case when s.key = 'challenge_hours' then s.value end)::integer
-    into s_mode, s_medium_any, s_high_any, s_medium_total, s_high_total, s_pass, s_age, s_challenge
+         max(case when s.key = 'pass_max' then s.value end)::integer, max(case when s.key = 'challenge_hours' then s.value end)::integer
+    into s_mode, s_medium_any, s_high_any, s_medium_total, s_high_total, s_pass, s_challenge
     from app.jevs_settings s;
 
+  -- Sign-up and account checks can promote: the database works out their account questions itself (all but J13, the
+  -- request's country), whatever the site sent.
+  if p_action in ('signup', 'account.check') and not p_error then
+    p_scores := (p_scores - array['J01', 'J02', 'J03', 'J04', 'J05', 'J06', 'J10'])
+                || app.jevs_account_scores(app.jevs_signals(p_action, null, p_net, null, null));
+  end if;
   select coalesce(sum((e.value)::integer), 0), coalesce(max((e.value)::integer), 0) into total, top from jsonb_each(p_scores) e;
   questions := array(select k from jsonb_object_keys(p_scores) k order by k);
 
@@ -797,12 +974,13 @@ begin
     if lvl = 'high' then
       eff := 'queue';
     elsif lvl = 'low' then
-      -- Automatic level 2: every standard account question was asked and passed, and the account is old enough.
-      select x.trust_level, x.status, x.is_admin, x.level_set_by_admin, x.jevs_level2_at, x.created_at
-        into mem_level, mem_status, mem_admin, mem_hand, mem_jevs, mem_created from app.members x where x.id = judged;
-      ok := p_scores ?& array['J01', 'J02', 'J03', 'J04', 'J05', 'J06', 'J10', 'J13'] and top <= s_pass
-            and mem_status = 'active' and not mem_admin and mem_level < 2 and mem_hand is null
-            and mem_jevs is null and mem_created <= now() - make_interval(hours => s_age);
+      -- Automatic level 2, with no wait (Aaron, Oct 16, 2026): every standard account question was asked, and every
+      -- one but the account's age (J01) passed. J01 still counts towards the level above.
+      select x.trust_level, x.status, x.is_admin, x.level_set_by_admin, x.jevs_level2_at
+        into mem_level, mem_status, mem_admin, mem_hand, mem_jevs from app.members x where x.id = judged;
+      ok := p_scores ?& array['J01', 'J02', 'J03', 'J04', 'J05', 'J06', 'J10', 'J13']
+            and (select coalesce(max((e.value)::integer), 0) from jsonb_each(p_scores) e where e.key <> 'J01') <= s_pass
+            and mem_status = 'active' and not mem_admin and mem_level < 2 and mem_hand is null and mem_jevs is null;
       if ok then
         eff := 'promote';
       end if;
@@ -841,6 +1019,22 @@ begin
         values (did, judged, p_action, subj_kind, coalesce(p_subject, judged), cstatus, now() + make_interval(hours => s_challenge),
                 case when cstatus = 'confirmed' then now() end)
         returning id into cid;
+      -- A fresh sign-in that confirms this action also answers the owner's earlier requests to confirm the same action,
+      -- so nothing is left waiting for an answer that has already been given.
+      if cstatus = 'confirmed' then
+        update app.jevs_challenges c set status = 'confirmed'
+          where c.owner_id = judged and c.action = p_action and c.subject_id is not distinct from coalesce(p_subject, judged)
+            and c.status = 'pending' and c.id <> cid;
+      end if;
+    end if;
+    -- A held account deletion goes to Aaron as a deletion review (Oct 16, 2026): nothing is deleted, the member is told,
+    -- and the account is disabled (never deleted) if he hasn't decided within 24 hours. Only from a fresh sign-in, so
+    -- a stolen session cookie can't start the clock on someone else's account; one open review per member.
+    if p_action = 'account.delete' and eff = 'hold' and coalesce(current_setting('app.fresh', true), '') = '1'
+       and not exists (select 1 from app.deletion_reviews r where r.member_id = judged and (r.decision is null or r.decision = 'keep_disabled')) then
+      insert into app.deletion_reviews (member_id, decision_id) values (judged, did) returning id into rid;
+      insert into app.audit_log (action, subject_kind, subject_id, detail)
+        values ('deletion_review.opened', 'member', judged, jsonb_build_object('review', rid, 'decision', did, 'error', p_error));
     end if;
     if eff = 'promote' then
       update app.members x set jevs_level2_at = now(), trust_level = 2 where x.id = judged;
@@ -848,9 +1042,9 @@ begin
         values ('member.level_changed', 'member', judged, jsonb_build_object('reason', 'jevs', 'from', mem_level, 'to', 2,
                 'decision', did, 'questions', to_jsonb(questions)));
     elsif subj_kind is distinct from 'post' and eff in ('hold', 'challenge', 'queue') then
+      -- The effect only: which questions scored stay in the decision row, deleted with the account (the JEVs review, F10).
       insert into app.audit_log (action, subject_kind, subject_id, detail)
-        values ('jevs.' || eff, coalesce(subj_kind, 'member'), coalesce(p_subject, judged), jsonb_build_object('action', p_action, 'decision', did, 'level', lvl,
-                'questions', to_jsonb(array(select k from jsonb_each(p_scores) e(k, v) where (v)::integer > 0 order by k))));
+        values ('jevs.' || eff, coalesce(subj_kind, 'member'), coalesce(p_subject, judged), jsonb_build_object('action', p_action, 'decision', did, 'level', lvl));
     end if;
   end if;
 
@@ -860,19 +1054,30 @@ begin
       insert into app.jevs_prints (post_id, author_id, simhash) values (v_post, post_author, p_simhash) on conflict (post_id) do nothing;
     end if;
     if lvl = 'low' and not p_error and p_domains is not null then
-      insert into app.jevs_domains (domain_hash) select distinct x from unnest(p_domains) x
-        on conflict (domain_hash) do update set last_seen_at = now(), posts = app.jevs_domains.posts + 1;
+      insert into app.jevs_post_domains (post_id, domain_hash) select v_post, x from unnest(p_domains) x on conflict do nothing;
     end if;
-  end if;
-
-  -- Marks are kept 30 days; links not used within a day are dropped.
-  if random() < 0.01 then
-    delete from app.jevs_marks k where k.created_at < now() - interval '30 days' or (k.token_hash is not null and k.created_at < now() - interval '1 day');
   end if;
 
   return query select did, lvl, eff, eff <> 'none' and (eff in ('promote', 'queue') or s_mode = 'enforce'), s_mode, cid, cstatus;
 end
 $$;
+
+-- ---- In enforce mode, no post goes live unscored (the JEVs review, F5) ----
+-- Enforce mode turns first-post review off, so JEVs must have decided about every new post in the same transaction:
+-- checked at commit, a post with no JEVs decision is refused. A path that forgot jevs.check can't publish around it.
+create function app.posts_scored() returns trigger
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if app.jevs_enforcing() and not exists (select 1 from app.jevs_decisions d where d.subject_id = new.id and d.subject_kind = 'post') then
+    raise exception 'unscored' using errcode = 'P0001', hint = 'Every post is checked by JEVs before it can be published.';
+  end if;
+  return null;
+end
+$$;
+create constraint trigger posts_scored after insert on app.posts deferrable initially deferred
+  for each row execute function app.posts_scored();
+alter table app.posts enable always trigger posts_scored;
 
 -- ---- The owner answers a challenge (never an agent) ----
 -- Returns 'confirmed' or 'declined'. Refusals: not_found (P0002: unknown, or not yours), stale (already answered),
@@ -898,6 +1103,11 @@ begin
   end if;
   if c.expires_at <= now() then
     raise exception 'expired' using errcode = 'P0001';
+  end if;
+  -- A sensitive action is confirmed only by signing in again: a session cookie alone, which could be stolen, can
+  -- decline but never confirm one. With a fresh sign-in, repeating the action goes ahead (app.jevs_decide).
+  if p_answer = 'confirm' and c.subject_kind is distinct from 'post' and coalesce(current_setting('app.fresh', true), '') <> '1' then
+    raise exception 'fresh' using errcode = 'P0001';
   end if;
   st := case when p_answer = 'confirm' then 'confirmed' else 'declined' end;
   update app.jevs_challenges x set status = st where x.id = c.id;
@@ -967,6 +1177,25 @@ begin
 end
 $$;
 
+-- ---- Keeping marks no longer than promised ----
+-- Marks are kept 30 days, and an email link's marks a day if the link isn't used. The site's scheduled job (the
+-- system actor) runs this, so the promise holds however quiet the site is. Returns how many marks went.
+create function app.jevs_sweep()
+returns integer
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  n integer;
+begin
+  if app.actor_kind() not in ('system', 'admin') then
+    raise exception 'not_system' using errcode = '42501';
+  end if;
+  delete from app.jevs_marks k where k.created_at < now() - interval '30 days' or (k.token_hash is not null and k.created_at < now() - interval '1 day');
+  get diagnostics n = row_count;
+  return n;
+end
+$$;
+
 -- ---- The regional gate's count ----
 create function app.region_decline(p_country text)
 returns void
@@ -996,7 +1225,259 @@ $$;
 create trigger jevs_settings_audit after update on app.jevs_settings for each row execute function app.jevs_settings_audit();
 alter table app.jevs_settings enable always trigger jevs_settings_audit;
 
+-- ---- A disabled account: refused at sign-in, its sessions and keys stop, its agents are switched off ----
+-- The ban clean-up (006, 008) now runs for a disabled account too. A ban lowers agents that act alone to draft; a
+-- disabled account's agents are switched off altogether (every action "off"), with the reason recorded.
+alter table app.agent_rules drop constraint agent_rules_reason_check;
+alter table app.agent_rules add constraint agent_rules_reason_check check (reason = any (array['created', 'owner', 'report_upheld', 'ban', 'disabled']));
+alter policy agent_rules_signin_insert on app.agent_rules with check (reason in ('created', 'ban', 'disabled'));
+
+-- Same as 008, with 'disabled' among the reasons that can only lower an agent.
+create or replace function app.agent_rules_fill() returns trigger
+language plpgsql
+as $$
+declare
+  prev app.agent_rules%rowtype;
+  rank_of constant jsonb := '{"off": 0, "draft": 1, "act": 2}';
+begin
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.rules'), hashtext(new.agent_id::text));
+  select r.id, r.version, r.post_mode, r.reply_mode, r.report_mode, r.daily_cap
+    into prev.id, prev.version, prev.post_mode, prev.reply_mode, prev.report_mode, prev.daily_cap
+    from app.agent_rules r where r.agent_id = new.agent_id order by r.version desc limit 1;
+  new.version := coalesce(prev.version, 0) + 1;
+  new.created_at := now();
+  new.set_by := case when new.reason in ('report_upheld', 'ban', 'disabled') then 'system' else 'owner' end;
+  if new.reason = 'created' then
+    if prev.id is not null then
+      raise exception 'an agent''s first rules are set once' using errcode = '42501';
+    end if;
+    new.post_mode := 'draft';
+    new.reply_mode := 'draft';
+    new.report_mode := 'draft';
+    new.daily_cap := coalesce(new.daily_cap, 20);
+    return new;
+  end if;
+  if prev.id is null then
+    raise exception 'this agent has no rules yet' using errcode = '42501';
+  end if;
+  if (rank_of ->> new.post_mode)::int > (rank_of ->> prev.post_mode)::int
+     or (rank_of ->> new.reply_mode)::int > (rank_of ->> prev.reply_mode)::int
+     or (rank_of ->> new.report_mode)::int > (rank_of ->> prev.report_mode)::int
+     or new.daily_cap > prev.daily_cap then
+    if new.reason in ('report_upheld', 'ban', 'disabled') then
+      raise exception 'an upheld report, a ban or a disabled account can only lower an agent''s rules' using errcode = '42501';
+    end if;
+    if ((new.post_mode = 'act' and prev.post_mode <> 'act') or (new.reply_mode = 'act' and prev.reply_mode <> 'act')
+        or (new.report_mode = 'act' and prev.report_mode <> 'act') or new.daily_cap > prev.daily_cap)
+       and coalesce(current_setting('app.fresh', true), '') <> '1' then
+      raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again to let an agent do more without your approval.';
+    end if;
+  end if;
+  return new;
+end
+$$;
+
+revoke execute on function app.deletion_overdue(uuid) from public;
+grant execute on function app.deletion_overdue(uuid) to dog_signin;
+
+grant create on schema app to dog_signin;
+set local role dog_signin;
+create or replace function app.members_ban_cleanup() returns trigger
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  r record;
+begin
+  if new.status in ('banned', 'disabled') and old.status = 'active' then
+    delete from app.sessions s where s.member_id = new.id;
+    update app.agent_keys k set revoked_at = now()
+      from app.agents a where a.id = k.agent_id and a.owner_id = new.id and k.revoked_at is null;
+    update app.agent_drafts d set status = 'declined' where d.owner_id = new.id and d.status = 'pending';
+    for r in select distinct on (x.agent_id) x.agent_id, x.post_mode, x.reply_mode, x.report_mode, x.daily_cap
+             from app.agent_rules x join app.agents a on a.id = x.agent_id
+             where a.owner_id = new.id order by x.agent_id, x.version desc loop
+      if new.status = 'disabled' then
+        if r.post_mode <> 'off' or r.reply_mode <> 'off' or r.report_mode <> 'off' then
+          insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason)
+            values (r.agent_id, 'off', 'off', 'off', r.daily_cap, 'disabled');
+        end if;
+      elsif 'act' in (r.post_mode, r.reply_mode, r.report_mode) then
+        insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason)
+          values (r.agent_id, case when r.post_mode = 'act' then 'draft' else r.post_mode end,
+                  case when r.reply_mode = 'act' then 'draft' else r.reply_mode end,
+                  case when r.report_mode = 'act' then 'draft' else r.report_mode end, r.daily_cap, 'ban');
+      end if;
+    end loop;
+  end if;
+  return null;
+end
+$$;
+
+-- Sessions (008) and agent keys (005) stop for a disabled account, and for one whose deletion review is overdue,
+-- from the 24th hour, whenever the timer runs. Same as before otherwise.
+create or replace function app.session_resolve(p_session_hash text, p_idle_days integer)
+returns table (member_id uuid, trust_level smallint, is_admin boolean, display_name text, fresh boolean)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  s app.sessions%rowtype;
+begin
+  if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or p_idle_days is null or p_idle_days not between 1 and 30 then
+    return;
+  end if;
+  select * into s from app.sessions x where x.token_hash = p_session_hash;
+  if not found or s.expires_at <= now() or s.last_seen_at <= now() - make_interval(days => p_idle_days) then
+    return;
+  end if;
+  if s.last_seen_at < now() - interval '1 hour' then
+    update app.sessions x set last_seen_at = now() where x.id = s.id;
+    if exists (select 1 from app.members m where m.id = s.member_id and m.trust_level > app.verified_level(m.id)) then
+      insert into app.audit_log (action, subject_kind, subject_id, detail)
+        select 'member.level_changed', 'member', m.id, jsonb_build_object('reason', 'recheck_lapsed', 'from', m.trust_level, 'to', app.verified_level(m.id))
+        from app.members m where m.id = s.member_id;
+      update app.members m set trust_level = app.verified_level(m.id) where m.id = s.member_id;
+    end if;
+  end if;
+  return query select m.id, m.trust_level, m.is_admin, m.display_name, s.created_at > now() - interval '10 minutes'
+    from app.members m where m.id = s.member_id and m.status = 'active' and not app.deletion_overdue(m.id);
+end
+$$;
+
+create or replace function app.agent_resolve(p_key_hash text)
+returns table (agent_id uuid, owner_id uuid)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
+    return;
+  end if;
+  return query
+    select a.id, m.id
+    from app.agent_keys k join app.agents a on a.id = k.agent_id join app.members m on m.id = a.owner_id
+    where k.key_hash = p_key_hash and k.revoked_at is null and a.status = 'active'
+      and m.status = 'active' and (m.trust_level >= 2 or m.is_admin) and not app.deletion_overdue(m.id);
+end
+$$;
+set local role dog_owner;
+revoke create on schema app from dog_signin;
+
+-- ---- Signing in: refused for a disabled account; the regional gate's confirmation (Oct 16, 2026) ----
+-- Sign-up from the EU, EEA, UK and Switzerland stays declined before anything is stored. A member who lives
+-- elsewhere and signs in from there confirms on a page that they live outside those regions; only then does
+-- sign-in finish, and the record is only that they confirmed: when (the log's time), the country, and the member.
+--   p_region: the country they confirmed from, or null. With it, sign-in never makes a new account ('region').
+-- Same as 002 otherwise. Raises 'banned', 'disabled', 'taken' or 'region'.
+drop function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid);
+create function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint,
+                            p_display_name text, p_session_hash text, p_session_days integer,
+                            p_recheck_after timestamptz, p_link_member uuid, p_region text)
+returns table (member_id uuid, is_new boolean, trust_level smallint, is_admin boolean)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  ident app.identities%rowtype;
+  mem app.members%rowtype;
+  fresh boolean := false;
+begin
+  if p_provider is null or not (p_provider = any (array['github', 'x', 'email', 'linkedin']))
+     or p_fingerprints is null or cardinality(p_fingerprints) not between 1 and 5
+     or exists (select 1 from unnest(p_fingerprints) f where f is null or f !~ '^[0-9a-f]{64}$')
+     or p_key_version is null or p_key_version not between 1 and 999
+     or p_level is null or p_level not between 0 and 2 or p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$'
+     or p_session_days is null or p_session_days not between 1 and 30
+     or p_display_name is null or char_length(p_display_name) not between 1 and 80
+     or (p_region is not null and p_region !~ '^[A-Z]{2}$') then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+  if (p_link_member is null and app.actor_kind() <> 'anon')
+     or (p_link_member is not null and (app.actor_kind() not in ('member', 'admin') or p_link_member is distinct from app.current_member())) then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+
+  select * into ident from app.identities i where i.provider = p_provider and i.fingerprint = any (p_fingerprints)
+    order by i.created_at limit 1 for update;
+
+  if found then
+    select * into mem from app.members m where m.id = ident.member_id for update;
+    if p_link_member is not null and p_link_member <> mem.id then
+      raise exception 'taken' using errcode = 'P0001';
+    end if;
+    update app.identities i set fingerprint = p_fingerprints[1], key_version = p_key_version, level = p_level,
+                                verified_at = now(), recheck_after = p_recheck_after
+      where i.id = ident.id;
+  elsif p_link_member is not null then
+    select * into mem from app.members m where m.id = p_link_member for update;
+    if not found then
+      raise exception 'bad sign-in request' using errcode = '22023';
+    end if;
+    insert into app.identities (member_id, provider, fingerprint, key_version, level, recheck_after)
+      values (mem.id, p_provider, p_fingerprints[1], p_key_version, p_level, p_recheck_after);
+  elsif p_region is not null then
+    -- Nobody signs up from a declined region, whatever they confirm.
+    raise exception 'region' using errcode = 'P0001';
+  else
+    insert into app.members (display_name, trust_level) values (p_display_name, p_level) returning * into mem;
+    insert into app.identities (member_id, provider, fingerprint, key_version, level, recheck_after)
+      values (mem.id, p_provider, p_fingerprints[1], p_key_version, p_level, p_recheck_after);
+    fresh := true;
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('member.joined', 'member', mem.id, jsonb_build_object('provider', p_provider, 'level', p_level));
+  end if;
+
+  if mem.status = 'banned' then
+    raise exception 'banned' using errcode = 'P0001';
+  end if;
+  if mem.status = 'disabled' or app.deletion_overdue(mem.id) then
+    raise exception 'disabled' using errcode = 'P0001';
+  end if;
+
+  if app.verified_level(mem.id) is distinct from mem.trust_level then
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('member.level_changed', 'member', mem.id,
+              jsonb_build_object('provider', p_provider, 'from', mem.trust_level, 'to', app.verified_level(mem.id)));
+    update app.members m set trust_level = app.verified_level(mem.id) where m.id = mem.id;
+    mem.trust_level := app.verified_level(mem.id);
+  end if;
+
+  insert into app.sessions (member_id, token_hash, expires_at)
+    values (mem.id, p_session_hash, now() + make_interval(days => p_session_days));
+  insert into app.audit_log (action, subject_kind, subject_id, detail)
+    values (case when p_link_member is not null then 'member.identity_linked' else 'member.signed_in' end,
+            'member', mem.id, jsonb_build_object('provider', p_provider));
+  if p_region is not null then
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('member.region_confirmed', 'member', mem.id, jsonb_build_object('country', p_region));
+  end if;
+
+  return query select mem.id, fresh, mem.trust_level, mem.is_admin;
+end
+$$;
+
+-- Whether a sign-in method already belongs to an account: asked only after the provider (or the emailed link) has
+-- confirmed who the person is, so it tells nobody but the account holder whether the account exists. It decides
+-- whether a sign-in from a declined region gets the confirmation page (a member) or the polite refusal (sign-up).
+create function app.sign_in_known(p_provider text, p_fingerprints text[])
+returns boolean
+language plpgsql stable security definer set search_path = pg_catalog
+as $$
+begin
+  if app.actor_kind() <> 'anon' or p_provider is null or not (p_provider = any (array['github', 'x', 'email', 'linkedin']))
+     or p_fingerprints is null or cardinality(p_fingerprints) not between 1 and 5
+     or exists (select 1 from unnest(p_fingerprints) f where f is null or f !~ '^[0-9a-f]{64}$') then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+  return exists (select 1 from app.identities i where i.provider = p_provider and i.fingerprint = any (p_fingerprints));
+end
+$$;
+revoke execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid, text), app.sign_in_known(text, text[]) from public;
+grant execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid, text), app.sign_in_known(text, text[]) to dog_app;
+grant create on schema app to dog_signin;
+alter function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid, text) owner to dog_signin;
+alter function app.sign_in_known(text, text[]) owner to dog_signin;
+revoke create on schema app from dog_signin;
+
 -- ---- Deleting an account (F8) also clears what JEVs kept about it ----
+grant update (status) on app.members to dog_erase;
 create policy jevs_decisions_erase_select on app.jevs_decisions for select to dog_erase using (true);
 create policy jevs_decisions_erase_delete on app.jevs_decisions for delete to dog_erase using (true);
 grant select (id, member_id, agent_id), delete on app.jevs_decisions to dog_erase;
@@ -1006,40 +1487,44 @@ grant select (id, owner_id), delete on app.jevs_challenges to dog_erase;
 create policy jevs_marks_erase_select on app.jevs_marks for select to dog_erase using (true);
 create policy jevs_marks_erase_delete on app.jevs_marks for delete to dog_erase using (true);
 grant select (id, member_id, agent_id), delete on app.jevs_marks to dog_erase;
+create policy jevs_post_domains_erase_select on app.jevs_post_domains for select to dog_erase using (true);
+create policy jevs_post_domains_erase_delete on app.jevs_post_domains for delete to dog_erase using (true);
+grant select (id, post_id), delete on app.jevs_post_domains to dog_erase;
 create policy jevs_prints_erase_select on app.jevs_prints for select to dog_erase using (true);
 create policy jevs_prints_erase_delete on app.jevs_prints for delete to dog_erase using (true);
 grant select (id, author_id, post_id), delete on app.jevs_prints to dog_erase;
 
-grant create on schema app to dog_erase;
-set local role dog_erase;
-create or replace function app.delete_account()
+-- The deletion itself, for one member: everything about them, in one transaction (F8). It runs with its caller's
+-- rights, and only dog_erase may call it: from app.delete_account (the member, signed in again just now) and from
+-- app.deletion_review_decide (Aaron allowing a reviewed deletion). Aaron's own account is never deleted.
+create function app.erase_member(p_member uuid)
 returns table (posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer)
-language plpgsql security definer set search_path = pg_catalog
+language plpgsql
 as $$
 declare
-  me uuid := app.current_member();
+  me uuid := p_member;
   n_posts integer; n_flags integer; n_my_reports integer; n_agents integer; n_keys integer; n_sessions integer; n_ids integer; n_brakes integer;
-  n_drafts integer; n_jevs integer;
+  n_drafts integer; n_jevs integer; n_reviews integer;
 begin
-  if app.actor_kind() <> 'member' or me is null then
-    raise exception 'not_member' using errcode = '42501';
-  end if;
-  if coalesce(current_setting('app.fresh', true), '') <> '1' then
-    raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again to delete your account.';
+  if me is null then
+    raise exception 'not_active' using errcode = '42501';
   end if;
   perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
   perform 1 from app.identities i where i.member_id = me for update;
-  perform 1 from app.members m where m.id = me and m.status = 'active' and not m.is_admin for update;
+  perform 1 from app.members m where m.id = me and not m.is_admin for update;
   if not found then
     raise exception 'not_active' using errcode = '42501';
   end if;
   perform 1 from app.posts p where p.author_id = me for update;
-  -- What JEVs kept about them (010): decisions, challenges, marks and text prints.
+  -- Its deletion review, then what JEVs kept about them (010): decisions, challenges, marks and text prints.
+  delete from app.deletion_reviews r where r.member_id = me;
+  get diagnostics n_reviews = row_count;
   delete from app.jevs_challenges c where c.owner_id = me;
   delete from app.jevs_decisions d where d.member_id = me or d.agent_id in (select a.id from app.agents a where a.owner_id = me);
   get diagnostics n_jevs = row_count;
   delete from app.jevs_marks k where k.member_id = me or k.agent_id in (select a.id from app.agents a where a.owner_id = me);
   delete from app.jevs_prints r where r.author_id = me;
+  delete from app.jevs_post_domains d where d.post_id in (select p.id from app.posts p where p.author_id = me);
   delete from app.review_flags f where f.post_id in (select p.id from app.posts p where p.author_id = me);
   get diagnostics n_flags = row_count;
   delete from app.review_flags f where f.reporter_id = me;
@@ -1063,29 +1548,141 @@ begin
   delete from app.members m where m.id = me;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('member.deleted', 'member', me, jsonb_build_object('posts', n_posts, 'reports_on_posts', n_flags, 'reports_made', n_my_reports,
-            'agents', n_agents, 'keys', n_keys, 'drafts', n_drafts, 'brakes', n_brakes, 'sessions', n_sessions, 'identities', n_ids, 'jevs_decisions', n_jevs));
+            'agents', n_agents, 'keys', n_keys, 'drafts', n_drafts, 'brakes', n_brakes, 'sessions', n_sessions, 'identities', n_ids,
+            'jevs_decisions', n_jevs, 'deletion_reviews', n_reviews));
   return query select n_posts, n_my_reports, n_agents, n_keys, n_sessions, n_ids;
 end
 $$;
+revoke execute on function app.erase_member(uuid) from public;
+grant execute on function app.erase_member(uuid) to dog_erase;
+
+grant create on schema app to dog_erase;
+set local role dog_erase;
+-- A member deletes their own account: signed in within the last few minutes (RK3), active, not Aaron, and not while
+-- a deletion review is open or keeping the account disabled (that is Aaron's to decide).
+create or replace function app.delete_account()
+returns table (posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  me uuid := app.current_member();
+begin
+  if app.actor_kind() <> 'member' or me is null then
+    raise exception 'not_member' using errcode = '42501';
+  end if;
+  if coalesce(current_setting('app.fresh', true), '') <> '1' then
+    raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again to delete your account.';
+  end if;
+  if exists (select 1 from app.deletion_reviews r where r.member_id = me and (r.decision is null or r.decision = 'keep_disabled')) then
+    raise exception 'under_review' using errcode = 'P0001';
+  end if;
+  perform 1 from app.members m where m.id = me and m.status = 'active' and not m.is_admin;
+  if not found then
+    raise exception 'not_active' using errcode = '42501';
+  end if;
+  return query select * from app.erase_member(me);
+end
+$$;
+
+-- Aaron decides a deletion review: 'delete' (the account and everything about it go now), 'keep_disabled' (it stays,
+-- disabled, with all its data; he can still delete or restore it later) or 'restore' (it is active again; a
+-- restored account's sessions and keys stay ended, so its owner signs in and makes new keys, as after an unban).
+-- Returns 'deleted', 'disabled' or 'restored'. Refusals: not_admin, not_found (P0002), stale (already so).
+create function app.deletion_review_decide(p_review uuid, p_decision text)
+returns text
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  r app.deletion_reviews%rowtype;
+  st text;
+begin
+  if app.actor_kind() <> 'admin' then
+    raise exception 'not_admin' using errcode = '42501';
+  end if;
+  if p_review is null or p_decision is null or p_decision not in ('delete', 'keep_disabled', 'restore') then
+    raise exception 'bad deletion review request' using errcode = '22023';
+  end if;
+  select * into r from app.deletion_reviews x where x.id = p_review for update;
+  if not found then
+    raise exception 'not_found' using errcode = 'P0002';
+  end if;
+  if r.decision = 'restore' or r.decision = p_decision then
+    raise exception 'stale' using errcode = 'P0001';
+  end if;
+  select m.status into st from app.members m where m.id = r.member_id for update;
+  insert into app.audit_log (action, subject_kind, subject_id, detail)
+    values ('deletion_review.decided', 'member', r.member_id, jsonb_build_object('review', r.id, 'decision', p_decision,
+            'was_disabled', r.disabled_at is not null));
+  if p_decision = 'delete' then
+    perform app.erase_member(r.member_id);
+    return 'deleted';
+  elsif p_decision = 'keep_disabled' then
+    if st = 'active' then
+      update app.members m set status = 'disabled' where m.id = r.member_id;
+    end if;
+    update app.deletion_reviews x set decision = 'keep_disabled', decided_at = now(), disabled_at = coalesce(x.disabled_at, now()) where x.id = r.id;
+    return 'disabled';
+  end if;
+  if st = 'disabled' then
+    update app.members m set status = 'active' where m.id = r.member_id;
+  end if;
+  update app.deletion_reviews x set decision = 'restore', decided_at = now() where x.id = r.id;
+  return 'restored';
+end
+$$;
+
+-- The 24-hour timer: every open review Aaron hasn't decided within 24 hours disables its account (sessions end,
+-- sign-in is refused, agents are switched off and their keys revoked; nothing is deleted), recorded. Run by the
+-- site's scheduled job (the system actor) or by Aaron. Returns how many accounts it disabled.
+create function app.deletion_reviews_expire()
+returns integer
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  r record;
+  n integer := 0;
+begin
+  if app.actor_kind() not in ('system', 'admin') then
+    raise exception 'not_system' using errcode = '42501';
+  end if;
+  for r in select x.id, x.member_id from app.deletion_reviews x
+           where x.decision is null and x.disabled_at is null and x.created_at <= now() - interval '24 hours'
+           order by x.created_at for update skip locked loop
+    update app.members m set status = 'disabled' where m.id = r.member_id and m.status = 'active' and not m.is_admin;
+    update app.deletion_reviews x set disabled_at = now() where x.id = r.id;
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('deletion_review.disabled', 'member', r.member_id, jsonb_build_object('review', r.id, 'after_hours', 24));
+    n := n + 1;
+  end loop;
+  return n;
+end
+$$;
+revoke execute on function app.deletion_review_decide(uuid, text), app.deletion_reviews_expire() from public;
+grant execute on function app.deletion_review_decide(uuid, text), app.deletion_reviews_expire() to dog_app;
 set local role dog_owner;
 revoke create on schema app from dog_erase;
 
 -- ---- Who may call what ----
+revoke execute on function app.deletion_reviews_guard() from public;
+revoke execute on function app.posts_scored() from public;
+grant execute on function app.posts_scored() to dog_app;
 revoke execute on function app.jevs_settings_check(), app.jevs_enforcing(), app.jevs_decisions_guard(), app.jevs_challenges_guard(),
-  app.jevs_appealable(uuid), app.jevs_signals(text, uuid, text, text[], bigint), app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint),
+  app.jevs_appealable(uuid), app.jevs_signals(text, uuid, text, text[], bigint), app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint, text),
   app.jevs_answer(uuid, text), app.jevs_mark(text, text, text, uuid), app.jevs_mark_claim(text), app.region_decline(text),
-  app.jevs_settings_audit() from public;
+  app.jevs_settings_audit(), app.jevs_sweep() from public;
 grant execute on function app.jevs_appealable(uuid), app.jevs_signals(text, uuid, text, text[], bigint),
-  app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint), app.jevs_answer(uuid, text), app.jevs_mark(text, text, text, uuid),
-  app.jevs_mark_claim(text), app.region_decline(text), app.jevs_settings_audit() to dog_app;
+  app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint, text), app.jevs_answer(uuid, text), app.jevs_mark(text, text, text, uuid),
+  app.jevs_mark_claim(text), app.region_decline(text), app.jevs_settings_audit(), app.jevs_sweep() to dog_app;
 
 grant create on schema app to dog_jevs;
 alter function app.jevs_appealable(uuid) owner to dog_jevs;
 alter function app.jevs_signals(text, uuid, text, text[], bigint) owner to dog_jevs;
-alter function app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint) owner to dog_jevs;
+alter function app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint, text) owner to dog_jevs;
 alter function app.jevs_answer(uuid, text) owner to dog_jevs;
 alter function app.jevs_mark(text, text, text, uuid) owner to dog_jevs;
 alter function app.jevs_mark_claim(text) owner to dog_jevs;
 alter function app.region_decline(text) owner to dog_jevs;
 alter function app.jevs_settings_audit() owner to dog_jevs;
+alter function app.jevs_sweep() owner to dog_jevs;
+alter function app.posts_scored() owner to dog_jevs;
 revoke create on schema app from dog_jevs;

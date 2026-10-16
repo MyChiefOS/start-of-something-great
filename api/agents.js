@@ -79,9 +79,17 @@ function held(res, d) {
   return reply(res, 403, { error: 'This is held for review: our automatic checks (JEVs) found it high risk or couldn\u2019t finish. '
     + 'Please try again later, or write to hello@dayonegreat.com.' });
 }
-// JEVs's check before a sensitive step, as the signed-in owner (a fresh sign-in counts as confirming a challenge).
-const precheck = (run, who, req, cfg, action, subject = null) =>
-  run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => jevs.check(t, { action, subject, ...jevs.facts(req, cfg.ipKey) }));
+// JEVs's check and the sensitive step in one transaction, as the signed-in owner (the JEVs review, F7): the decision
+// and the step commit together, and a fresh sign-in counts as confirming a challenge, which also answers the owner's
+// earlier requests to confirm the same step. Returns { held: decision } or the step's own result.
+const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {}) =>
+  run({ ...session.actorFor(who), fresh: who.fresh === true }, async (t) => {
+    if (check) {
+      const d = await jevs.check(t, { action, subject, ...jevs.facts(req, cfg.ipKey) });
+      if (jevs.blocks(d)) return { held: d };
+    }
+    return step(t);
+  });
 
 const shapeAgent = (a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, created_at: a.createdAt, claimed_at: a.claimedAt,
   keys: a.keys.map((k) => ({ id: k.id, created_at: k.createdAt, revoked_at: k.revokedAt })) });
@@ -118,14 +126,16 @@ const ROUTES = {
     });
     if (out.refused) return reply(res, 429, { error: 'Too many agents registered from here. Please try again in an hour.' });
     const f = jevs.facts(req, cfg.ipKey);
-    const d = await run({ actor: 'anon' }, (t) => jevs.check(t, { action: 'agent.register', ...f }));
-    if (jevs.blocks(d)) return held(res, d);
+    // JEVs's check and the registration commit together.
     const reg = await run({ actor: 'anon' }, async (t) => {
+      const d = await jevs.check(t, { action: 'agent.register', ...f });
+      if (jevs.blocks(d)) return { held: d };
       const r = await agents.register(t, { name: body.name, description: body.description, keyHash: k.hash, claimHash: c.sha256hex(code) });
       // Which network it registered from (J05, J06): the keyed daily hash only.
       if (f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash, agent: r.id });
       return r;
     });
+    if (reg.held) return held(res, reg.held);
     return reply(res, 201, {
       agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE,
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
@@ -146,11 +156,9 @@ const ROUTES = {
       return reply(res, 200, { agent: { id: p.id, name: maskContacts(p.name), description: p.description ? maskContacts(p.description) : null, registered_at: p.createdAt },
         can_own: who.trustLevel >= 2 || who.isAdmin === true, untrusted_fields: ['agent.name', 'agent.description'] });
     }
-    if (code && (who.trustLevel >= 2 || who.isAdmin === true)) {
-      const d = await precheck(run, who, req, cfg, 'agent.claim');
-      if (jevs.blocks(d)) return held(res, d);
-    }
-    const out = code ? await run(session.actorFor(who), (t) => agents.claim(t, c.sha256hex(code))) : { refused: 'not_found' };
+    const out = code ? await guarded(run, who, req, cfg, 'agent.claim', null, (t) => agents.claim(t, c.sha256hex(code)),
+      { check: who.trustLevel >= 2 || who.isAdmin === true }) : { refused: 'not_found' };
+    if (out.held) return held(res, out.held);
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
@@ -162,12 +170,9 @@ const ROUTES = {
   async 'GET '(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: false });
     if (!who) return;
-    // Automatic level 2 (PR 12): someone who wants to own agents is checked now, so they don't wait for their next post.
-    let canOwn = who.trustLevel >= 2 || who.isAdmin === true;
-    if (!canOwn) {
-      const d = await run(session.actorFor(who), (t) => jevs.check(t, { action: 'account.check', ...jevs.facts(req, cfg.ipKey) }));
-      canOwn = d.effect === 'promote' && d.applied;
-    }
+    // Reading the page changes nothing and records nothing: automatic level 2 is checked at sign-in (at once, with no
+    // wait) and as a member takes part, not on page views (the JEVs review).
+    const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
   },
@@ -176,12 +181,10 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     agents.checkName(body.name);
-    if (who.trustLevel >= 2 || who.isAdmin === true) {
-      const d = await precheck(run, who, req, cfg, 'agent.create');
-      if (jevs.blocks(d)) return held(res, d);
-    }
     const k = agentkey.newKey();
-    const out = await run(session.actorFor(who), (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }));
+    const out = await guarded(run, who, req, cfg, 'agent.create', null, (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }),
+      { check: who.trustLevel >= 2 || who.isAdmin === true });
+    if (out.held) return held(res, out.held);
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE });
@@ -197,11 +200,10 @@ const ROUTES = {
   async 'POST key'(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
-    const d = await precheck(run, who, req, cfg, 'agent.key', v.uuid('agent', body.agent));
-    if (jevs.blocks(d)) return held(res, d);
     const k = agentkey.newKey();
     // A new key for an agent that acts on its own needs a fresh sign-in (PR 7); the database decides.
-    const ok = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    const ok = await guarded(run, who, req, cfg, 'agent.key', v.uuid('agent', body.agent), (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    if (ok && ok.held) return held(res, ok.held);
     if (ok && ok.refused === 'fresh') {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
@@ -240,14 +242,12 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const args = { agent: body.agent, post: body.post, reply: body.reply, report: body.report, dailyCap: body.daily_cap };
-    // Letting an agent act on its own is the sensitive step JEVs checks; lowering or drafting isn't.
-    if ([args.post, args.reply, args.report].includes('act')) {
-      const d = await precheck(run, who, req, cfg, 'agent.rules', v.uuid('agent', args.agent));
-      if (jevs.blocks(d)) return held(res, d);
-    }
-    // Whether this session began in the last 10 minutes (the database's own answer) goes with the change, and the
-    // database decides whether the change needs it (it raises an action to act, or the daily cap).
-    const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => delegation.setRules(t, args));
+    // Letting an agent act on its own is the sensitive step JEVs checks; lowering or drafting isn't. Whether this
+    // session began in the last 10 minutes (the database's own answer) goes with the change, and the database decides
+    // whether the change needs it (it raises an action to act, or the daily cap).
+    const acting = [args.post, args.reply, args.report].includes('act');
+    const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null, (t) => delegation.setRules(t, args), { check: acting });
+    if (out.held) return held(res, out.held);
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }

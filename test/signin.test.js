@@ -166,9 +166,11 @@ test('the router sends each address to the right step, with the right provider a
   const fake = new Proxy({}, { get: (_, name) => (...args) => calls.push([name, ...args.slice(2)]) });
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
-    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['formToken']]);
+    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['formToken'],
+    ['regionContinue'], ['regionCancel']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
-    ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete'],
+    ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete',
+      'POST region/continue', 'POST region/cancel'],
     'only these change anything, and all are POSTs');
 });
 
@@ -219,6 +221,10 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
+  // These tests are about the levels sign-in itself verifies. JEVs's automatic level 2, which now comes at once (no
+  // wait, Oct 16, 2026), would lift every clean GitHub sign-up to 2; it is tested in test/jevs.test.js, so here no
+  // question can pass it.
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.jevs_settings set value = '0' where key = 'pass_max'`); });
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -497,7 +503,7 @@ test('the sign-in function can\'t attach a method to someone else, or sign in wh
   const a = await oauth(env, 'github', '9101');
   const victim = (await me(env, a.browser)).member_id;
   const call = (ctx, link) => db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([c.sha256hex('attacker' + Math.random())])}::text[], 1::smallint, 2::smallint,
-    'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${link}::uuid)`);
+    'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${link}::uuid, null)`);
   await assert.rejects(call({ actor: 'anon' }, victim), /bad sign-in request/, 'someone not signed in naming a member to link to');
   const other = await oauth(setup({ accounts: { 'github:9102': { accountId: '9102', level: 1, recheckAfter: null } } }), 'github', '9102');
   const otherId = (await me(env, other.browser)).member_id;

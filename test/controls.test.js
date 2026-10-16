@@ -441,7 +441,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     await r2(bossCtx, (t) => controls.setBrake(t, { member: quiet.id, people_per_hour: 0 }));
 
     const d = await r2(bossCtx, (t) => controls.dashboard(t, {}));
-    assert.deepStrictEqual(d.totals, { active_members: 4, banned_members: 0, active_agents: 2, people_posts_24h: 4, agent_posts_24h: 4,
+    assert.deepStrictEqual(d.totals, { active_members: 4, banned_members: 0, disabled_members: 0, active_agents: 2, people_posts_24h: 4, agent_posts_24h: 4,
       posts_7d: 8, repeats_7d: 7, brakes_on: 1 });
     const byName = Object.fromEntries(d.owners.map((o) => [o.name, o]));
     assert.deepStrictEqual(Object.keys(byName).sort(), ['Ann', 'Ben', 'Quiet'], 'owners with posts, agents or a brake; Boss has none');

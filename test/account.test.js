@@ -185,7 +185,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   const [rec] = await q(`select actor_kind, actor_id, detail from app.audit_log where action = 'member.deleted' and subject_id = '${m.id}'`);
   assert.deepStrictEqual([rec.actor_kind, rec.actor_id], ['member', m.id]);
   // jevs_decisions: JEVs's own check of the deletion (PR 12), removed with everything else.
-  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, drafts: 0, brakes: 1, sessions: 2, identities: 1, jevs_decisions: 1 });
+  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, drafts: 0, brakes: 1, sessions: 2, identities: 1, jevs_decisions: 1, deletion_reviews: 0 });
   // The old session is gone, and the public feed and profile no longer have them.
   const after = res();
   await flow.account(req('GET', '/auth/account', { cookie: m.cookie }), after);

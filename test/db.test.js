@@ -257,7 +257,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     [`grant dog_signin to ${WEB}`, new RegExp(WEB + ' can act as dog_signin|' + WEB + ' \\(which the site signs in as\\) also belongs to dog_signin')],
     ['grant create on schema app to dog_signin', /dog_signin can create objects in schema app/],
     ['alter role dog_signin login', /dog_signin can sign in directly/],
-    ['grant execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid) to public', /app\.sign_in can be called by every role/],
+    ['grant execute on function app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamptz, uuid, text) to public', /app\.sign_in can be called by every role/],
     ['alter function app.session_resolve(text, integer) reset search_path', /app\.session_resolve must fix its search path/],
     ['set local role dog_owner; create function app.f4() returns int language sql security definer set search_path = pg_catalog as $$ select 1 $$', /app\.f4\(\) runs with its owner's rights/],
     ['set local role dog_owner; create policy members_public on app.members for select to public using (false)', /members_public applies to every role/],

@@ -29,7 +29,10 @@ const DEFINERS = {
   'app.rate_limit_hit(text, text, integer, integer)': 'dog_signin',
   'app.email_token_issue(text, text, text, smallint)': 'dog_signin',
   'app.email_token_redeem(text, text, boolean)': 'dog_signin',
-  'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid)': 'dog_signin',
+  // PR 12 added the region a traveller confirmed (p_region) to sign-in, and the check for whether a sign-in method
+  // already belongs to an account, asked only after the provider has confirmed who the person is.
+  'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid, text)': 'dog_signin',
+  'app.sign_in_known(text, text[])': 'dog_signin',
   'app.session_resolve(text, integer)': 'dog_signin',
   'app.session_end(text)': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
@@ -53,13 +56,21 @@ const DEFINERS = {
   // PR 12: JEVs. Its signals (counts only), its decision, the owner's answer to a challenge, sign-up marks, whether a
   // post can be appealed, the regional gate's daily count, and the record of a settings change.
   'app.jevs_signals(text, uuid, text, text[], bigint)': 'dog_jevs',
-  'app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint)': 'dog_jevs',
+  'app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint, text)': 'dog_jevs',
   'app.jevs_answer(uuid, text)': 'dog_jevs',
   'app.jevs_mark(text, text, text, uuid)': 'dog_jevs',
   'app.jevs_mark_claim(text)': 'dog_jevs',
   'app.jevs_appealable(uuid)': 'dog_jevs',
   'app.region_decline(text)': 'dog_jevs',
-  'app.jevs_settings_audit()': 'dog_jevs'
+  'app.jevs_settings_audit()': 'dog_jevs',
+  // PR 12, after its review: the scheduled sweep that keeps marks no longer than promised, and the commit-time check
+  // that in enforce mode no post goes live without a JEVs decision.
+  'app.jevs_sweep()': 'dog_jevs',
+  'app.posts_scored()': 'dog_jevs',
+  // PR 12 (Aaron, Oct 16, 2026): a high-risk deletion is reviewed by Aaron. His decision (delete, keep disabled or
+  // restore) and the 24-hour timer that disables an account he hasn't decided on, in the role that deletes.
+  'app.deletion_review_decide(uuid, text)': 'dog_erase',
+  'app.deletion_reviews_expire()': 'dog_erase'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -287,7 +298,9 @@ async function problems(sql, { snapshot } = {}) {
     // PR 12: JEVs decisions are only added; a challenge is answered once, by JEVs; settings keep their names and ranges.
     ['jevs_decisions', 'jevs_decisions_guard', 27, 'jevs_decisions_guard', 'every updated or deleted decision'],
     ['jevs_challenges', 'jevs_challenges_guard', 27, 'jevs_challenges_guard', 'every updated or deleted challenge'],
-    ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting']
+    ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting'],
+    // A deletion review's subject never changes; only Aaron's decision or the 24-hour timer moves it.
+    ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

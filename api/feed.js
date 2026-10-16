@@ -17,6 +17,8 @@
 //   POST {"lift": "<brake id>"}                       switch a brake off (Aaron only)
 //   POST {"ban": "<member id>", "note": "..."}        ban a member: their sessions and agents stop at once (Aaron only; F10)
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
+//   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
+//                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
 // JEVs (PR 12) scores every post, draft and report in the same transaction (db/jevs.js); in enforce mode it holds or
@@ -52,7 +54,7 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
-const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample'];
+const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
 
 // An agent's post shows the agent and, as its author, the person who owns it (F3).
 function shape(p) {
@@ -213,8 +215,12 @@ async function reportPost(req, res, run, who, body) {
         if (!(await store.rateLimitHit(t, { bucket, keyHash, ...REPORT_LIMITS[bucket] }))) return { refused: 'slow' };
       }
       const r = await review.report(t, args);
-      // Credible reports can hide a post at once (JEVs, PR 12, in enforce mode); Aaron can put it back.
-      if (r.status === 'reported') await jevs.check(t, { action: 'post.reported', subject: args.post });
+      // Credible reports can hide a post at once (JEVs, PR 12, in enforce mode); Aaron can put it back. The post's own
+      // words are scored (links, contact details, copies), never its author's whole account.
+      if (r.status === 'reported') {
+        const [p] = await t`select body from app.posts where id = ${args.post}`;
+        await jevs.check(t, { action: 'post.reported', subject: args.post, body: p ? p.body : null });
+      }
       return r;
     });
     if (out.refused === 'slow') return reply(res, 429, { error: 'You have sent a lot of reports. Please try again in an hour.' });
@@ -237,6 +243,10 @@ async function answerChallenge(req, res, run, who, body) {
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No challenge of yours with that ID.' });
     if (out.refused === 'stale') return reply(res, 409, { error: 'That has already been answered.' });
     if (out.refused === 'expired') return reply(res, 410, { error: 'That challenge expired. Please do it again.' });
+    if (out.refused === 'fresh') {
+      return reply(res, 403, { error: 'To confirm this, sign in again, then do it once more: it goes ahead straight away, and this request is answered too.',
+        reauth: '/join?return_to=%2Fagents' });
+    }
     return reply(res, 200, { challenge: body.challenge, status: out.status,
       message: out.status === 'confirmed' ? 'Confirmed. If it was a post, it\u2019s live now.' : 'Withdrawn. If it was a post, it won\u2019t be published.' });
   } catch (e) {
@@ -259,12 +269,18 @@ async function appealPost(req, res, run, who, body) {
 }
 
 // Owner controls (PR 6): the emergency brake and banning, Aaron only. The database records each step (O3).
-const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'] };
+const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'] };
+const DELETION_DONE = {
+  deleted: 'Deleted. The account and everything about it are gone; the audit log keeps only that it happened.',
+  disabled: 'Kept disabled. The account and its data stay; you can still delete or restore it here.',
+  restored: 'Restored. The account is active again; its owner signs in again and gives their agents new keys and rules.'
+};
 async function control(req, res, run, who, body) {
   if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
-    + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"} or {"unban": "<member id>", "note"}.';
+    + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
+    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}.';
   if (Object.keys(body).some((k) => !CONTROL_KEYS[kind].includes(k))) return reply(res, 400, { error: usage });
   try {
     if (kind === 'brake') {
@@ -278,6 +294,12 @@ async function control(req, res, run, who, body) {
       if (out.refused) return reply(res, 404, { error: 'No such member.' });
       return reply(res, 201, { brake: out.brake, message: out.brake.member ? 'The brake is on for this owner.' : 'The brake is on for everyone.' });
     }
+    if (kind === 'deletion_review') {
+      const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
+      return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
+    }
     if (kind === 'lift') {
       const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
       return ok ? reply(res, 200, { lifted: body.lift, message: 'The brake is off.' }) : reply(res, 404, { error: 'That brake is already off, or doesn\u2019t exist.' });
@@ -287,7 +309,10 @@ async function control(req, res, run, who, body) {
     const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
-    if (out.refused === 'unchanged') return reply(res, 409, { error: out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
+    if (out.refused === 'unchanged') {
+      return reply(res, 409, { error: out.status === 'disabled' ? 'That account is disabled by a deletion review; decide it under Deletion reviews.'
+        : out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
+    }
     return reply(res, 200, { member: body[kind], status: out.status,
       message: out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden.'
         : 'Unbanned. They can sign in again and give their agents new keys.' });
@@ -321,7 +346,7 @@ async function handle(req, res, run) {
     if (Object.hasOwn(body, 'report')) return reportPost(req, res, run, who, body);
     if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
-    if (['brake', 'lift', 'ban', 'unban'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     try {
       const f = jevs.facts(req, config.load().ipKey);
       const p = await run(session.actorFor(who), async (t) => {
@@ -373,8 +398,10 @@ async function handle(req, res, run) {
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can see the owner controls.' });
-    const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t) }));
+    const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
+      deletion_reviews: await controls.deletionReviews(t) }));
     return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs,
+      deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
       // Repeats are matched ignoring case, spaces and punctuation; this measures and never blocks (F4).
