@@ -717,3 +717,98 @@ test('F8: deleting an account deletes its notices, its alerts to Aaron, its addr
   assert.ok(!out.refused, JSON.stringify(out));
   assert.deepStrictEqual({ ...(await counts()) }, { notices: 0, contacts: 0, links: 0, paused: 0, outbox: 0 });
 });
+
+// ---- JEVs (PR 12) speaks through the inbox (PR 13 on top of PR 12) ----
+const jevs = require('../db/jevs');
+const posts = require('../db/posts');
+const setMode = (m) => asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+const throwaway = (who) => run(who.ctx, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
+const noticesOf = (memberId) => q(`select kind, title, body, link, subject_kind, subject_id, send_copy from app.notices where member_id ${memberId === null ? 'is null' : "= '" + memberId + "'"} order by created_at, id`);
+
+test('JEVs: a challenge reaches its owner\'s inbox in the same transaction and is marked delivered; one a fresh sign-in already answered needs none', async () => {
+  await setMode('enforce');
+  try {
+    const o = await member(2, 'Challenged owner');
+    await throwaway(o);
+    // An hour-old session: a new agent waits for the owner to sign in again.
+    await q(`update app.sessions set created_at = now() - interval '1 hour' where member_id = '${o.id}'`);
+    const made = await agentsApi('POST', '', o, { name: 'Bot' });
+    assert.strictEqual(made.status, 403);
+    const [ch] = await q(`select delivered_at from app.jevs_challenges where id = '${made.json.challenge}'`);
+    assert.ok(ch.delivered_at, 'delivered_at is filled when the notice is written');
+    const mine = (await noticesOf(o.id)).filter((n) => n.kind === 'challenge');
+    assert.strictEqual(mine.length, 1);
+    assert.deepStrictEqual([mine[0].title, mine[0].link, mine[0].subject_kind, mine[0].subject_id, mine[0].send_copy],
+      ['Please confirm making a new agent', '/join?return_to=%2Fagents', 'challenge', made.json.challenge, false]);
+    assert.match(mine[0].body, /Sign in, then do it once more/);
+    assert.ok((await inbox(o)).notices.some((n) => n.kind === 'challenge'), 'it shows in the inbox on /account');
+    // Signed in again: confirmed at once, so nothing to tell them, and the earlier request is answered.
+    await q(`update app.sessions set created_at = now() where member_id = '${o.id}'`);
+    assert.strictEqual((await agentsApi('POST', '', o, { name: 'Bot' })).status, 201);
+    const [fresh] = await q(`select status, delivered_at from app.jevs_challenges where owner_id = '${o.id}' order by created_at desc limit 1`);
+    assert.deepStrictEqual(fresh, { status: 'confirmed', delivered_at: null });
+    assert.strictEqual((await noticesOf(o.id)).filter((n) => n.kind === 'challenge').length, 1);
+    // A post's challenge carries its ID, so the owner can answer it on the notice.
+    const body = 'Write to me about the meetup next week at deals@example.com and I will send the details';
+    const p = await run(o.ctx, async (t) => { const r = await posts.create(t, { body }); r.jevs = await jevs.check(t, { action: 'post.create', subject: r.id, body }); return r; });
+    assert.strictEqual(p.jevs.effect, 'challenge');
+    const [pn] = (await noticesOf(o.id)).filter((n) => n.subject_id === p.jevs.challenge);
+    assert.deepStrictEqual([pn.title, pn.link, pn.subject_kind], ['A post is waiting for you to confirm it', null, 'challenge']);
+  } finally { await setMode('shadow'); }
+});
+
+test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the member, and the alert goes with the account', async () => {
+  await setMode('enforce');
+  try {
+    const before = (await noticesOf(null)).length;
+    const o = await member(2, 'High risk owner');
+    await throwaway(o);
+    // A throwaway address on a new account, with high_any lowered for this test: a new key is held for Aaron.
+    const [ag] = await run(o.ctx, (t) => t`insert into app.agents (name) values ('Keyed') returning id`);
+    await asOwner(`update app.jevs_settings set value = '60' where key = 'high_any'`);
+    const d = await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'agent.key', subject: ag.id }));
+    assert.deepStrictEqual([d.level, d.effect, d.applied], ['high', 'hold', true]);
+    const alerts = (await noticesOf(null)).slice(before);
+    assert.strictEqual(alerts.length, 1);
+    assert.deepStrictEqual([alerts[0].kind, alerts[0].title, alerts[0].link, alerts[0].subject_kind, alerts[0].subject_id],
+      ['alert', 'JEVs held a step for you', '/controls', 'member', o.id]);
+    assert.ok(!/@|J0|J1/.test(alerts[0].body), 'no words or question IDs in the alert');
+    // Low and medium risk, and anything shadow mode only records, alert nobody.
+    await setMode('shadow');
+    await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'agent.key', subject: ag.id }));
+    assert.strictEqual((await noticesOf(null)).length, before + 1);
+    // Deleting the account takes the alert about them with it.
+    await run({ ...o.ctx, fresh: true }, (t) => store.deleteAccount(t));
+    assert.strictEqual((await q(`select count(*)::int as n from app.notices where subject_id = '${o.id}' or member_id = '${o.id}'`))[0].n, 0);
+  } finally {
+    await asOwner(`update app.jevs_settings set value = '80' where key = 'high_any'`);
+    await setMode('shadow');
+  }
+});
+
+test('JEVs: a deletion review tells the member their account was flagged and alerts Aaron; the timers disable it after 24 hours and sweep old marks', async () => {
+  await setMode('enforce');
+  try {
+    const o = await member(0, 'Leaving owner');
+    await throwaway(o);
+    const d = await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'account.delete' }));
+    assert.deepStrictEqual([d.level, d.effect], ['high', 'hold']);
+    const [r] = await q(`select id from app.deletion_reviews where member_id = '${o.id}'`);
+    const told = (await noticesOf(o.id)).find((n) => n.kind === 'account_flagged');
+    assert.deepStrictEqual([told.title, told.link], ['Your account was flagged as high risk', '/account']);
+    assert.match(told.body, /hasn't been deleted\. Aaron will review it and decide\. If he hasn't decided within 24 hours, your account will be disabled/);
+    const alert = (await noticesOf(null)).find((n) => n.title === 'A deletion needs your decision' && n.subject_id === o.id);
+    assert.ok(alert && alert.link === '/controls');
+    // The cron's timers: nothing before 24 hours; after, the account is disabled (not deleted), and the timers say so.
+    let out = await timers();
+    assert.strictEqual(out.deletion_reviews_disabled, 0);
+    await rewrite('deletion_reviews', 'deletion_reviews_guard', `update app.deletion_reviews set created_at = now() - interval '25 hours' where id = '${r.id}'`);
+    await run(o.ctx, (t) => jevs.mark(t, { kind: 'net', keyHash: c.sha256hex('an old network') }));
+    await q(`update app.jevs_marks set created_at = now() - interval '31 days' where member_id = '${o.id}' and kind = 'net'`);
+    out = await timers();
+    assert.strictEqual(out.deletion_reviews_disabled, 1);
+    assert.ok(out.marks_swept >= 1, 'old marks are swept by the same run');
+    assert.strictEqual((await q(`select status from app.members where id = '${o.id}'`))[0].status, 'disabled');
+    assert.strictEqual((await timers()).deletion_reviews_disabled, 0, 'never twice');
+  } finally { await setMode('shadow'); }
+});

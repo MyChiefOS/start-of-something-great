@@ -374,11 +374,11 @@ Built to Aaron's decisions of Oct 16, 2026: people hear inside the system first,
 
 Each notice has a `dedupe_key`, so the same event never leaves two.
 
-**For JEVs (PR 12): the one function to call.** In the same transaction as the decision:
-- a medium-risk challenge: `select app.notify(<member>, 'challenge', <title>, <body>, <link or null>, <subject kind>, <subject id>, 'jevs:<check id>', true)`, or from JavaScript `require('./db/notify').challenge(t, { memberId, title, body, link, subjectKind, subjectId, dedupeKey })`
-- a high-risk hold for Aaron: `app.notify(null, 'alert', ...)`, or `alertAaron(t, {...})`
-
-It runs as the caller, under row-level security: the site and Aaron may notify anyone, a member or an agent only the member it acts as, and anyone signed in may raise an alert for Aaron. It returns false if that dedupe key was already used.
+**JEVs (PR 12) speaks through the inbox.** Three triggers, run as JEVs (`dog_jevs`) in JEVs's own transaction, so a notice exists exactly when what it tells of does:
+- `jevs_challenges_notify`: a pending challenge tells its owner what waits for them, and records when (`delivered_at`). A post's challenge carries its ID, to answer on the notice; a sensitive step says to sign in again and do it once more. A challenge a fresh sign-in already confirmed needs no notice.
+- `jevs_decisions_alert`: every high-risk item that reaches Aaron (held, hidden or listed, as carried out) alerts his inbox, about the member, with no words or question IDs.
+- `deletion_reviews_notify`: a deletion review tells the member their account was flagged as high risk, and alerts Aaron.
+Alerts name the member as their subject, so deleting the account deletes them. Everything else uses `app.notify(...)` (the same function), which runs as the caller under row-level security: the site and Aaron may notify anyone, a member or an agent only the member it acts as, and anyone signed in may raise an alert for Aaron. It returns false if that dedupe key was already used.
 
 **Email copies, at most once (N3 to N7).**
 - When a notice is marked for email, a trigger writes its `app.outbox` row in the same statement, with an idempotency key.
@@ -422,6 +422,8 @@ commit;
 
 **The timers.** `app.run_timers()` (as the site itself, actor `system`) runs:
 - lifting pauses whose time is up
+- disabling accounts whose deletion review Aaron hasn't decided within 24 hours (`app.deletion_reviews_expire`, PR 12)
+- sweeping JEVs's marks once they are older than promised (`app.jevs_sweep`, PR 12)
 - notices for expired drafts (and clearing old links and finished outbox rows)
 - the 90-day check
 - the watch

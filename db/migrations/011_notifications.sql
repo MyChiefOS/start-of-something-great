@@ -31,7 +31,7 @@ create table app.notices (
   id uuid primary key default app.uuid_v7(),
   member_id uuid references app.members (id),
   kind text not null check (kind = any (array['draft_waiting', 'draft_expired', 'report_upheld', 'brake_on', 'contained',
-    'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'alert'])),
+    'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert'])),
   title text not null check (char_length(title) between 1 and 120),
   body text not null check (char_length(body) <= 2000),
   -- A path on this site only, never an address elsewhere.
@@ -198,10 +198,9 @@ $$;
 create trigger notices_queue_email after insert on app.notices for each row execute function app.notices_queue_email();
 alter table app.notices enable always trigger notices_queue_email;
 
--- The one way the rest of the database (and JEVs, PR 12) leaves a notice: in the caller's own transaction, under the
--- policies above. Returns true if this is a new notice, false if the same event already left one (dedupe_key).
---   JEVs: a medium-risk challenge is app.notify(<member>, 'challenge', <title>, <body>, <link>, <subject kind>,
---   <subject id>, 'jevs:<check id>', true); a high-risk hold for Aaron is app.notify(null, 'alert', ...).
+-- The one way the rest of the database leaves a notice: in the caller's own transaction, under the policies above.
+-- Returns true if this is a new notice, false if the same event already left one (dedupe_key). JEVs (PR 12) uses it
+-- from its own triggers (below): challenges, Aaron's alerts and deletion reviews.
 create function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid,
                            p_dedupe text, p_email boolean)
 returns boolean
@@ -1056,9 +1055,95 @@ begin
   end if;
   out := jsonb_build_object('lifted', app.containment_lift_job(), 'expired_drafts', app.drafts_expire_job());
   out := out || app.act_reconfirm_job() || app.watch_job();
+  -- JEVs (PR 12): the 24-hour timer on deletion reviews Aaron hasn't decided, and the sweep that keeps marks no
+  -- longer than promised.
+  out := out || jsonb_build_object('deletion_reviews_disabled', app.deletion_reviews_expire(), 'marks_swept', app.jevs_sweep());
   return out;
 end
 $$;
+
+-- ---- JEVs (PR 12) speaks through the inbox ----
+-- Each runs in JEVs's own transaction, as JEVs (dog_jevs), so a notice exists exactly when what it tells of does.
+--   A challenge: the owner is told what waits for them. A post's challenge carries its ID, and the owner confirms or
+--   withdraws it on the notice; a sensitive step is confirmed by signing in again and doing it once more. The
+--   challenge records when it was delivered (delivered_at).
+--   A high-risk item that reaches Aaron (held, hidden or listed): an alert in his inbox, about the member.
+--   A deletion review: the member is told their account was flagged as high risk, and Aaron is alerted.
+-- Alerts name the member as their subject, so deleting the account deletes them too.
+create policy notices_jevs_insert on app.notices for insert to dog_jevs
+  with check (kind in ('challenge', 'account_flagged', 'alert') and send_copy = false);
+grant insert (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key, send_copy) on app.notices to dog_jevs;
+grant execute on function app.notify(uuid, text, text, text, text, text, uuid, text, boolean) to dog_jevs;
+
+create function app.jevs_challenges_notify() returns trigger
+language plpgsql
+as $$
+declare
+  what text := case new.action when 'agent.create' then 'making a new agent' when 'agent.claim' then 'claiming an agent'
+                 when 'agent.key' then 'a new key for your agent' when 'agent.rules' then 'letting your agent act on its own'
+                 when 'account.delete' then 'deleting your account' else 'this step' end;
+begin
+  if new.status <> 'pending' then
+    return new;
+  end if;
+  if new.subject_kind = 'post' then
+    perform app.notify(new.owner_id, 'challenge', 'A post is waiting for you to confirm it',
+      'Our automatic checks (JEVs) asked you to confirm this post before it goes live. Confirm it or withdraw it here within 48 hours.',
+      null, 'challenge', new.id, 'jevs:challenge:' || new.id::text, false);
+  else
+    perform app.notify(new.owner_id, 'challenge', 'Please confirm ' || what,
+      'Our automatic checks (JEVs) ask you to confirm ' || what || ' by signing in again. Sign in, then do it once more: it goes ahead straight away.',
+      '/join?return_to=' || case when new.action = 'account.delete' then '%2Faccount' else '%2Fagents' end,
+      'challenge', new.id, 'jevs:challenge:' || new.id::text, false);
+  end if;
+  new.delivered_at := now();
+  return new;
+end
+$$;
+create trigger jevs_challenges_notify before insert on app.jevs_challenges for each row execute function app.jevs_challenges_notify();
+alter table app.jevs_challenges enable always trigger jevs_challenges_notify;
+
+create function app.jevs_decisions_alert() returns trigger
+language plpgsql
+as $$
+begin
+  if new.applied and new.effect in ('hold', 'hide', 'queue') then
+    perform app.notify(null, 'alert',
+      case when new.effect = 'hide' then 'JEVs hid a reported post'
+           when new.effect = 'queue' then 'JEVs listed a high-risk account'
+           when new.subject_kind = 'post' then 'JEVs held a post for you'
+           else 'JEVs held a step for you' end,
+      'Action: ' || new.action || '. Level: ' || new.level || case when new.error then ' (scoring failed)' else '' end
+        || '. The scores are on ' || case when new.subject_kind = 'post' then 'the review queue.' else 'the owner controls.' end,
+      case when new.subject_kind = 'post' then '/review' else '/controls' end,
+      case when new.member_id is not null then 'member' else new.subject_kind end, coalesce(new.member_id, new.subject_id),
+      'jevs:alert:' || new.id::text, false);
+  end if;
+  return null;
+end
+$$;
+create trigger jevs_decisions_alert after insert on app.jevs_decisions for each row execute function app.jevs_decisions_alert();
+alter table app.jevs_decisions enable always trigger jevs_decisions_alert;
+
+create function app.deletion_reviews_notify() returns trigger
+language plpgsql
+as $$
+begin
+  perform app.notify(new.member_id, 'account_flagged', 'Your account was flagged as high risk',
+    'Our automatic checks (JEVs) flagged your request to delete your account as high risk, so it hasn''t been deleted. Aaron will '
+    || 'review it and decide. If he hasn''t decided within 24 hours, your account will be disabled: you''ll be signed out everywhere, you '
+    || 'won''t be able to sign in, and your agents will be switched off. Nothing is deleted until he decides.',
+    '/account', 'member', new.member_id, 'jevs:flagged:' || new.id::text, false);
+  perform app.notify(null, 'alert', 'A deletion needs your decision',
+    'JEVs scored a request to delete an account as high risk. Decide it under Deletion reviews: allow the deletion, keep the account '
+    || 'disabled, or restore it. If you haven''t decided within 24 hours, the account is disabled, not deleted.',
+    '/controls', 'member', new.member_id, 'jevs:review:' || new.id::text, false);
+  return null;
+end
+$$;
+create trigger deletion_reviews_notify after insert on app.deletion_reviews for each row execute function app.deletion_reviews_notify();
+alter table app.deletion_reviews enable always trigger deletion_reviews_notify;
+revoke execute on function app.jevs_challenges_notify(), app.jevs_decisions_alert(), app.deletion_reviews_notify() from public;
 
 -- ---- Deleting an account (F8) also clears notices, email copies, links and containments ----
 create policy notices_erase_select on app.notices for select to dog_erase using (true);
