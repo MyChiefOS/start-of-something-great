@@ -53,9 +53,8 @@ function load(env = process.env) {
     github: pair('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'),
     x: pair('X_CLIENT_ID', 'X_CLIENT_SECRET'),
     // LinkedIn was dropped on Oct 16, 2026 (CHARTER.md). The provider name stays in the schema, unused, as built.
-    linkedin: null,
-    // The email service is still Aaron's choice; until it is set up, email links are off.
-    email: null
+    linkedin: null
+    // Email links go out through Amazon SES (notify/sender.js, EMAIL-SETUP.md); without it they stay off.
   };
 }
 

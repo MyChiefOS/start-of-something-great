@@ -2,7 +2,7 @@
 //   log: the default, for tests and previews. It sends nothing; it keeps the last messages in memory (for tests)
 //        and logs one line per email with no address and no words in it.
 //   ses: Amazon SES v2 SendEmail over HTTPS (POST /v2/email/outbound-emails), signed with SigV4 (./sigv4.js). The raw
-//        message is ours (./mime.js), so the one-click unsubscribe headers are exactly what we wrote.
+//        message is ours (./mime.js), so its headers are exactly what we wrote.
 // send({ from, to, raw }) answers { ok: true, id } or { ok: false, retry, error }: retry is true only when the email
 // certainly didn't go (throttled, a server error, no connection). A timeout is not retried, because SES may have
 // sent it; the in-app notice is the copy that always arrives.

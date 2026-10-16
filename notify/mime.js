@@ -1,7 +1,6 @@
-// Builds the raw email (RFC 5322 with MIME) that SES sends as is. Plain text only, UTF-8, base64 body. Every header
-// value is checked here: line breaks and other control characters are refused, so nothing a member or an agent wrote
-// can add a header (header injection). One-click unsubscribe follows RFC 8058: a List-Unsubscribe https address and
-// List-Unsubscribe-Post: List-Unsubscribe=One-Click.
+// Builds the raw email (RFC 5322 with MIME) that SES sends as is: today only sign-in links. Plain text only, UTF-8,
+// base64 body. Every header value is checked here: line breaks and other control characters are refused, so nothing
+// a visitor typed can add a header (header injection).
 'use strict';
 
 const crypto = require('crypto');
@@ -48,8 +47,8 @@ function word(s, { phrase = true } = {}) {
 
 const lines76 = (b64) => b64.replace(/.{1,76}/g, '$&\r\n');
 
-// { from, to, replyTo?, subject, text, unsubscribe?: https url, date?: Date, id? } -> the raw message as a string.
-function build({ from, to, replyTo, subject, text, unsubscribe, date = new Date(), domain = 'dayonegreat.com' }) {
+// { from, to, replyTo?, subject, text, date?: Date } -> the raw message as a string.
+function build({ from, to, replyTo, subject, text, date = new Date(), domain = 'dayonegreat.com' }) {
   const f = mailbox(from);
   const t = mailbox(to);
   const headers = [
@@ -61,27 +60,12 @@ function build({ from, to, replyTo, subject, text, unsubscribe, date = new Date(
     ['MIME-Version', '1.0'],
     ['Content-Type', 'text/plain; charset=UTF-8'],
     ['Content-Transfer-Encoding', 'base64'],
-    // Our own notices, not a list anyone else can post to; mail clients use this to file and to offer "unsubscribe".
+    // Sent by the site itself, so vacation responders don't answer it (RFC 3834).
     ['Auto-Submitted', 'auto-generated']
   ];
   if (replyTo) headers.push(['Reply-To', mailbox(replyTo).header]);
-  if (unsubscribe) {
-    const u = new URL(unsubscribe);
-    if (u.protocol !== 'https:') throw new Error('one-click unsubscribe needs an https address (RFC 8058)');
-    headers.push(['List-Unsubscribe', '<' + headerValue('List-Unsubscribe', u.toString()) + '>']);
-    headers.push(['List-Unsubscribe-Post', 'List-Unsubscribe=One-Click']);
-  }
   const body = String(text).replace(/\r?\n/g, '\r\n');
   return headers.map(([k, v]) => k + ': ' + headerValue(k, v)).join('\r\n') + '\r\n\r\n' + lines76(Buffer.from(body, 'utf8').toString('base64'));
 }
 
-// Reads a raw message back (tests and the log transport): its headers and the decoded text.
-function parse(raw) {
-  const i = raw.indexOf('\r\n\r\n');
-  const head = raw.slice(0, i).split('\r\n');
-  const headers = {};
-  for (const l of head) { const k = l.slice(0, l.indexOf(':')); headers[k.toLowerCase()] = l.slice(k.length + 2); }
-  return { headers, text: Buffer.from(raw.slice(i + 4).replace(/\r\n/g, ''), 'base64').toString('utf8').replace(/\r\n/g, '\n') };
-}
-
-module.exports = { build, parse, mailbox, word, ADDRESS };
+module.exports = { build };

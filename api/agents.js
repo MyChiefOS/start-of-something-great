@@ -175,7 +175,8 @@ const ROUTES = {
     // Reading the page changes nothing and records nothing: automatic level 2 is checked at sign-in (at once, with no
     // wait) and as a member takes part, not on page views (the JEVs review).
     const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
-    const list = await run(session.actorFor(who), (t) => agents.mine(t));
+    // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
+    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.mine(t); });
     return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
   },
 
@@ -226,6 +227,8 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: false });
     if (!who) return;
     const out = await run(session.actorFor(who), async (t) => {
+      // A pause whose time is up ends now, so a missed timer run never makes it longer (PR 13).
+      await notices.liftDue(t);
       const list = await delegation.activity(t);
       // PR 13: when each agent acting on its own was last confirmed (R33), any pause on the owner's agents, unread notices.
       return { inbox: await delegation.inbox(t), agents: list, clock: await notices.actClock(t, list.map((a) => a.id)),
@@ -261,10 +264,14 @@ const ROUTES = {
     // session began in the last 10 minutes (the database's own answer) goes with the change, and the database decides
     // whether the change needs it (it raises an action to act, or the daily cap).
     const acting = [args.post, args.reply, args.report].includes('act');
-    const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null, (t) => delegation.setRules(t, args), { check: acting });
+    const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null,
+      async (t) => { await notices.liftDue(t); return delegation.setRules(t, args); }, { check: acting });
     if (out.held) return held(res, out.held);
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
+    }
+    if (out.refused === 'contained') {
+      return reply(res, 409, { error: 'Your agents draft for your approval until the pause on them ends, so nothing can be raised before then. Lowering still works.' });
     }
     if (out.refused) return reply(res, 404, { error: 'No active agent of yours with that ID.' });
     return reply(res, 201, { agent: body.agent, rules: out.rules });

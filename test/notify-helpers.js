@@ -1,5 +1,6 @@
 // Test fixtures for notifications (PR 13): a throwaway certificate standing in for SNS's signing certificate, made fresh
-// on every run with openssl (nothing secret is kept in the repository), and messages signed the way SNS signs them.
+// on every run with openssl (nothing secret is kept in the repository), messages signed the way SNS signs them, and a
+// reader for raw emails.
 'use strict';
 
 const crypto = require('crypto');
@@ -34,4 +35,12 @@ function signed(key, fields, { version = '2' } = {}) {
 const bounce = (address, type = 'Permanent') => JSON.stringify({ notificationType: 'Bounce', bounce: { bounceType: type, bouncedRecipients: [{ emailAddress: address }] } });
 const complaint = (address) => JSON.stringify({ notificationType: 'Complaint', complaint: { complainedRecipients: [{ emailAddress: address }] } });
 
-module.exports = { TOPIC, CERT_URL, makeCert, signed, bounce, complaint };
+// Reads a raw message back: its headers and the decoded text.
+function parse(raw) {
+  const i = raw.indexOf('\r\n\r\n');
+  const headers = {};
+  for (const l of raw.slice(0, i).split('\r\n')) { const k = l.slice(0, l.indexOf(':')); headers[k.toLowerCase()] = l.slice(k.length + 2); }
+  return { headers, text: Buffer.from(raw.slice(i + 4).replace(/\r\n/g, ''), 'base64').toString('utf8').replace(/\r\n/g, '\n') };
+}
+
+module.exports = { TOPIC, CERT_URL, makeCert, signed, bounce, complaint, parse };

@@ -1,6 +1,7 @@
-// Release 2, PR 13: notifications against a real Postgres. Every behaviour has a test: the inbox first, the outbox in
-// the same transaction, once; email copies (confirm first, one an hour, quiet hours, one-click unsubscribe, bounces);
-// safe one-tap links (R16); the 90-day check on agents acting alone (R33); the watch, containment and the copier rule.
+// Release 2, PR 13: notifications against a real Postgres, in-app only (Aaron, Oct 16, 2026). Every behaviour has a
+// test: the inbox, in the same transaction, once; no member address stored and nothing emailed; one tap on the notice
+// (R16, R33, held posts); safe links and masked titles; bounces on sign-in emails; the watch, containment (no evasion,
+// lifted on time even without a timer run) and the copier rule; JEVs through the inbox.
 'use strict';
 
 const test = require('node:test');
@@ -17,9 +18,8 @@ const controls = require('../db/controls');
 const review = require('../db/review');
 const notices = require('../db/notify');
 const ncfg = require('../notify/config');
-const mime = require('../notify/mime');
 const { logTransport } = require('../notify/transport');
-const { drain } = require('../notify/drain');
+const { signinSender } = require('../notify/sender');
 const fx = require('./notify-helpers');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
@@ -43,7 +43,9 @@ const at = (base, d, user, password) => { const u = new URL(base); u.pathname = 
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const SYSTEM = { actor: 'system' };
-const cfg = ncfg.load({ NOTIFY_KEY: crypto.randomBytes(32).toString('base64'), EMAIL_TRANSPORT: 'log', SNS_TOPIC_ARN: fx.TOPIC, CRON_SECRET: SECRET });
+const cfg = ncfg.load({ EMAIL_TRANSPORT: 'log', SNS_TOPIC_ARN: fx.TOPIC, CRON_SECRET: SECRET });
+// The sign-in fingerprint keys (signin/config.js), which also key the bounce fingerprints.
+const KEYS = [{ version: 1, key: crypto.randomBytes(32) }];
 cfg.transport = logTransport({ keep: 500, log: () => {} });
 
 // The watch stays quiet unless a test turns it up (and then puts it back).
@@ -109,7 +111,7 @@ async function napi(method, route, { cookie = '', json, query = {}, origin = met
   if (contentType) headers['content-type'] = contentType;
   const r = res();
   await require('../api/notify.js').handle({ method, url: '/api/notify/' + route, headers, query: { route, ...query },
-    body: json !== undefined ? JSON.stringify(json) : body }, r, run, cfg, deps || {});
+    body: json !== undefined ? JSON.stringify(json) : body }, r, run, cfg, { keys: KEYS, ...(deps || {}) });
   let parsed = null;
   try { parsed = r.body ? JSON.parse(r.body) : null; } catch { parsed = null; }
   return { status: r.statusCode, json: parsed, r };
@@ -122,48 +124,32 @@ async function agentsApi(method, route, owner, json) {
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
 }
 const timers = () => run(SYSTEM, (t) => notices.runTimers(t));
-const drainNow = () => drain({ run, cfg });
-// Emails the log transport "sent" to one address since a mark.
-const mark = () => cfg.transport.sent.length;
-const mailTo = (address, since = 0) => cfg.transport.sent.slice(since).map((m) => mime.parse(m.raw)).filter((m) => m.headers.to === address);
-const tokenIn = (mail, kind) => { const m = new RegExp('/act#' + kind + '=([A-Za-z0-9_-]{43})').exec(mail.text); return m && m[1]; };
 const inbox = async (who) => (await napi('GET', '', { cookie: who.cookie })).json;
-
-// A member with a confirmed address, copies on and no quiet hours (unless a test sets some).
-async function withEmail(who, address) {
-  const since = mark();
-  const add = await napi('POST', 'email', { cookie: who.cookie, json: { address, time_zone: 'UTC' } });
-  assert.strictEqual(add.status, 202, JSON.stringify(add.json));
-  await drainNow();
-  const [confirm] = mailTo(address, since);
-  assert.ok(confirm, 'a confirmation email went to ' + address);
-  const used = await napi('POST', 'link', { cookie: who.cookie, json: { t: tokenIn(confirm, 'confirm') } });
-  assert.strictEqual(used.status, 200, JSON.stringify(used.json));
-  assert.strictEqual((await napi('POST', 'settings', { cookie: who.cookie, json: { quiet_start: 0, quiet_end: 0, time_zone: 'UTC' } })).status, 200);
-}
+// Leaves a notice the way the database's own triggers do (app.notify), as whoever the transaction acts as.
+const leave = async (t, { memberId, kind, title, body = '', link = null, dedupeKey }) =>
+  (await t`select app.notify(${memberId}::uuid, ${kind}, ${title}, ${body}, ${link}, null, null::uuid, ${dedupeKey}) as fresh`)[0].fresh;
 
 test('the database passes the coverage check and matches the reviewed snapshot with the notification tables (S1, S7, S8, G3)', async () => {
   const snapshot = fs.readFileSync(path.join(root, 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
   assert.deepStrictEqual(await problems(su, { snapshot }), []);
 });
 
-test('N1, N2: a draft leaves its owner a notice and an email copy in the same transaction; nothing exists if that transaction fails', async () => {
+test('N1, N2: a draft leaves its owner a notice in the same transaction; nothing exists if that transaction fails', async () => {
   const owner = await member(2, 'Inbox owner');
   const ag = await agentOf(owner);
   const d = await say(ag, 'Please look at this');
   assert.ok(d.drafted);
-  const [n] = await q(`select n.kind, n.member_id, n.send_copy, o.status, o.idempotency_key from app.notices n join app.outbox o on o.notice_id = n.id
-                       where n.subject_id = '${d.drafted.id}'`);
-  assert.deepStrictEqual({ ...n }, { kind: 'draft_waiting', member_id: owner.id, send_copy: true, status: 'pending', idempotency_key: 'notice:' + (await q(`select id from app.notices where subject_id = '${d.drafted.id}'`))[0].id });
-  // A draft whose transaction rolls back leaves no notice and no email behind.
+  const [n] = await q(`select kind, member_id, subject_kind, subject_id from app.notices where subject_id = '${d.drafted.id}'`);
+  assert.deepStrictEqual({ ...n }, { kind: 'draft_waiting', member_id: owner.id, subject_kind: 'draft', subject_id: d.drafted.id });
+  // A draft whose transaction rolls back leaves no notice behind.
   const before = (await q(`select count(*)::int as n from app.notices`))[0].n;
   await assert.rejects(run(ag.ctx, async (t) => { await delegation.submit(t, { body: 'rolled back' }); throw new Error('stop'); }), /stop/);
   assert.strictEqual((await q(`select count(*)::int as n from app.notices`))[0].n, before);
-  assert.strictEqual((await q(`select count(*)::int as n from app.outbox o left join app.notices n on n.id = o.notice_id where o.purpose = 'notice' and n.id is null`))[0].n, 0);
   // The owner sees it, unread; nobody else does: another member, the agent itself, someone not signed in.
   const box = await inbox(owner);
   assert.strictEqual(box.unread, 1);
-  assert.deepStrictEqual([box.notices[0].kind, box.notices[0].title, box.notices[0].link], ['draft_waiting', 'Helper wrote a draft for you', '/agents']);
+  assert.deepStrictEqual([box.notices[0].kind, box.notices[0].title, box.notices[0].link, box.notices[0].subject], ['draft_waiting', 'Helper wrote a draft for you', '/agents',
+    { kind: 'draft', id: d.drafted.id }]);
   const other = await member(2, 'Nosy');
   assert.strictEqual((await inbox(other)).notices.length, 0);
   assert.strictEqual((await run(ag.ctx, (t) => t`select count(*)::int as n from app.notices`))[0].n, 0, 'an agent can\'t read its owner\'s inbox');
@@ -188,182 +174,82 @@ test('N1: marking read is the only change a notice allows; the unread count foll
   await assert.rejects(q(`update app.notices set body = 'x' where member_id = '${owner.id}'`), /only be marked read/);
 });
 
-test('N2: the same event never leaves two notices or two emails (idempotency key), and JEVs can leave its own', async () => {
+test('N2: the same event never leaves two notices (dedupe key); who may leave one for whom', async () => {
   const m = await member(2, 'Challenged');
-  const once = () => run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'Please confirm it was you', body: 'A new sign-in from a new place.', dedupeKey: 'jevs:check-1' }));
+  const once = () => run(SYSTEM, (t) => leave(t, { memberId: m.id, kind: 'challenge', title: 'Please confirm it was you', body: 'A new sign-in.', dedupeKey: 'check:1' }));
   assert.strictEqual(await once(), true);
   assert.strictEqual(await once(), false);
-  const [r] = await q(`select count(*)::int as n, (select count(*)::int from app.outbox o join app.notices x on x.id = o.notice_id where x.dedupe_key = 'jevs:check-1') as e
-                       from app.notices where dedupe_key = 'jevs:check-1'`);
-  assert.deepStrictEqual([r.n, r.e], [1, 1]);
-  // A member's own transaction may leave a challenge for that member only; an alert for Aaron is open to anyone signed in.
-  await assert.rejects(run(m.ctx, (t) => notices.challenge(t, { memberId: aaron.id, title: 't', body: 'b', dedupeKey: 'jevs:check-2' })), /row-level security/);
-  assert.strictEqual(await run(m.ctx, (t) => notices.alertAaron(t, { title: 'High risk held', body: 'Held for review.', dedupeKey: 'jevs:hold-1' })), true);
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where dedupe_key = 'check:1'`))[0].n, 1);
+  // A member's own transaction may leave a notice for that member only; an alert for Aaron is open to anyone signed in.
+  await assert.rejects(run(m.ctx, (t) => leave(t, { memberId: aaron.id, kind: 'challenge', title: 't', body: 'b', dedupeKey: 'check:2' })), /row-level security/);
+  assert.strictEqual(await run(m.ctx, (t) => leave(t, { memberId: null, kind: 'alert', title: 'High risk held', body: 'Held for review.', dedupeKey: 'hold:1' })), true);
   assert.ok((await inbox(aaron)).notices.some((n) => n.title === 'High risk held' && n.for_admins));
   assert.ok(!(await inbox(m)).notices.some((n) => n.title === 'High risk held'));
-  await assert.rejects(run({ actor: 'anon' }, (t) => notices.alertAaron(t, { title: 't', body: 'b', dedupeKey: 'anon:1' })), /row-level security/);
+  await assert.rejects(run({ actor: 'anon' }, (t) => leave(t, { memberId: null, kind: 'alert', title: 't', body: 'b', dedupeKey: 'anon:1' })), /row-level security/);
 });
 
-test('N3: email copies need a confirmed address; the address is stored sealed; confirmation is a safe one-tap link', async () => {
-  const m = await member(2, 'Emailer');
-  const since = mark();
-  assert.strictEqual((await napi('POST', 'email', { cookie: m.cookie, json: { address: 'not an address' } })).status, 400);
-  assert.strictEqual((await napi('POST', 'email', { cookie: m.cookie, json: { address: 'ada@example.com', time_zone: 'Mars/Olympus' } })).status, 400);
-  const add = await napi('POST', 'email', { cookie: m.cookie, json: { address: 'ada@example.com', time_zone: 'UTC' } });
-  assert.deepStrictEqual([add.status, add.json.address], [202, 'a***@example.com']);
-  const dump = JSON.stringify(await q(`select * from app.email_contacts where member_id = '${m.id}'`));
-  assert.ok(!dump.includes('ada@example.com') && !dump.includes('example.com'), 'the address is never stored in the clear');
-  // Copies wait for the confirmation: a notice now is not emailed.
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'Before confirming', body: 'x', dedupeKey: 'n3:' + m.id }));
-  await drainNow();
-  const mails = mailTo('ada@example.com', since);
-  assert.strictEqual(mails.length, 1);
-  assert.strictEqual(mails[0].headers.subject, 'Confirm email copies from Day One Great');
-  assert.strictEqual((await q(`select status, last_error from app.outbox o join app.notices n on n.id = o.notice_id where n.dedupe_key = 'n3:${m.id}'`))[0].last_error, 'unconfirmed');
-  const token = tokenIn(mails[0], 'confirm');
-  // Looking changes nothing; another member can't use it; the member can, once.
-  assert.strictEqual((await napi('POST', 'link', { cookie: m.cookie, json: { t: token, preview: true } })).json.purpose, 'confirm_email');
-  assert.strictEqual((await inbox(m)).email.status, 'pending');
-  const other = await member(2, 'Not Ada');
-  assert.strictEqual((await napi('POST', 'link', { cookie: other.cookie, json: { t: token } })).status, 404);
-  assert.strictEqual((await napi('POST', 'link', { json: { t: token } })).status, 401);
-  assert.strictEqual((await napi('POST', 'link', { cookie: m.cookie, json: { t: token } })).status, 200);
-  assert.deepStrictEqual([(await inbox(m)).email.status, (await inbox(m)).email.confirmed], ['active', true]);
-  assert.strictEqual((await napi('POST', 'link', { cookie: m.cookie, json: { t: token } })).status, 409, 'used once');
-  // A member can't switch copies on without confirming, even with their own SQL rights.
-  await run(m.ctx, (t) => t`update app.email_contacts set address_sealed = 'x', address_fp = ${c.sha256hex('new')} where member_id = ${m.id}`);
-  assert.strictEqual((await q(`select status from app.email_contacts where member_id = '${m.id}'`))[0].status, 'pending', 'a new address is confirmed first');
-  await assert.rejects(run(m.ctx, (t) => t`update app.email_contacts set status = 'active' where member_id = ${m.id}`), /confirmation email/);
-  // The rate limit on confirmation emails (S6).
-  const r = [];
-  for (let i = 0; i < 6; i++) r.push((await napi('POST', 'email', { cookie: other.cookie, json: { address: 'x' + i + '@example.com', time_zone: 'UTC' } })).status);
-  assert.deepStrictEqual(r, [202, 202, 202, 202, 202, 429]);
+test('N3: in-app only: no member email address is stored anywhere and no notice is emailed; the inbox has no email settings', async () => {
+  // No table or column can hold a member's address or an email copy (the in-app-only decision, Oct 16, 2026).
+  const cols = (await q(`select table_name || '.' || column_name as c from information_schema.columns where table_schema = 'app'`)).map((r) => r.c);
+  for (const gone of ['email_contacts.address_sealed', 'outbox.id', 'action_links.token_hash', 'notices.send_copy']) assert.ok(!cols.includes(gone), gone);
+  assert.deepStrictEqual(cols.filter((x) => /^email/.test(x)).sort(), ['email_suppressions.address_fp', 'email_suppressions.created_at', 'email_suppressions.id',
+    'email_suppressions.reason', 'email_tokens.browser_hash', 'email_tokens.created_at', 'email_tokens.email_fingerprints', 'email_tokens.expires_at',
+    'email_tokens.id', 'email_tokens.key_version', 'email_tokens.token_hash', 'email_tokens.used_at'].sort(), 'only keyed fingerprints and sign-in link hashes');
+  // Notices, timers and all, send nothing: the log transport (where any email would go) stays empty.
+  const m = await member(2, 'Inbox only');
+  const ag = await agentOf(m);
+  const before = cfg.transport.sent.length;
+  await say(ag, 'a draft that only shows on the site');
+  await timers();
+  assert.strictEqual(cfg.transport.sent.length, before);
+  const box = await inbox(m);
+  assert.ok(box.notices.length >= 1);
+  assert.ok(!('email' in box), 'the inbox offers no email settings');
+  // The email routes are gone.
+  for (const r of ['email', 'settings', 'link', 'unsubscribe']) assert.strictEqual((await napi('POST', r, { cookie: m.cookie, json: {} })).status, 404, r);
+  // Sign-in emails still go out, and the address typed at sign-in is used to send, never stored (PR 2's own tests).
+  assert.match(fs.readFileSync(path.join(root, 'signin', 'flow.js'), 'utf8'), /sendEmail\(email, link\)/);
 });
 
-test('N4: at most one email an hour per member, with everything waiting in one digest; quiet hours hold email back', async () => {
-  const m = await member(2, 'Digest');
-  await withEmail(m, 'digest@example.com');
-  const ag = await agentOf(m, 'Writer');
-  const since = mark();
-  await say(ag, 'first words'); await say(ag, 'second words');
-  await drainNow();
-  let mails = mailTo('digest@example.com', since);
-  assert.strictEqual(mails.length, 1, 'two notices, one email');
-  assert.strictEqual(mails[0].headers.subject, 'Day One Great: 2 things for you');
-  assert.match(mails[0].text, /> first words/);
-  assert.match(mails[0].text, /> second words/);
-  // Another notice within the hour waits for the hour to pass.
-  await say(ag, 'third words');
-  await drainNow();
-  assert.strictEqual(mailTo('digest@example.com', since).length, 1);
-  const [w] = await q(`select o.status, o.next_attempt_at > now() + interval '50 minutes' as later from app.outbox o join app.notices n on n.id = o.notice_id
-                       where n.member_id = '${m.id}' and o.status = 'pending'`);
-  assert.deepStrictEqual({ ...w }, { status: 'pending', later: true });
-  // When the hour has passed it goes, unless it's quiet hours where the member is.
-  await run(SYSTEM, (t) => t`update app.email_contacts set next_email_at = now() - interval '1 second' where member_id = ${m.id}`);
-  await q(`update app.outbox set next_attempt_at = now() where status = 'pending' and member_id = '${m.id}'`);
-  const h = new Date().getUTCHours();
-  assert.strictEqual((await napi('POST', 'settings', { cookie: m.cookie, json: { quiet_start: h, quiet_end: (h + 1) % 24, time_zone: 'UTC' } })).status, 200);
-  await drainNow();
-  assert.strictEqual(mailTo('digest@example.com', since).length, 1, 'quiet hours: nothing sent');
-  const [quiet] = await q(`select o.next_attempt_at = date_trunc('hour', now()) + interval '1 hour' as at_end from app.outbox o where o.member_id = '${m.id}' and o.status = 'pending'`);
-  assert.strictEqual(quiet.at_end, true, 'rescheduled for when quiet hours end');
-  await napi('POST', 'settings', { cookie: m.cookie, json: { quiet_start: 0, quiet_end: 0, time_zone: 'UTC' } });
-  await q(`update app.outbox set next_attempt_at = now() where status = 'pending' and member_id = '${m.id}'`);
-  await drainNow();
-  mails = mailTo('digest@example.com', since);
-  assert.strictEqual(mails.length, 2);
-  assert.match(mails[1].text, /> third words/);
-  // The quiet-hours sum itself, across midnight and in a named time zone.
-  const [z] = await q(`select app.quiet_until(22::smallint, 7::smallint, 'UTC') as a, app.quiet_until(5::smallint, 5::smallint, 'UTC') as none`);
-  assert.strictEqual(z.none, null, 'start = end means no quiet hours');
-  if (h >= 22 || h < 7) assert.ok(z.a > new Date()); else assert.strictEqual(z.a, null);
-});
-
-test('N5: one-click unsubscribe (RFC 8058) from the header address; a GET only shows a button; a forged signature does nothing', async () => {
-  const m = await member(2, 'Leaver');
-  await withEmail(m, 'leaver@example.com');
-  const since = mark();
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'Hello', body: 'x', dedupeKey: 'n5:' + m.id }));
-  await drainNow();
-  const [mail] = mailTo('leaver@example.com', since);
-  assert.strictEqual(mail.headers['list-unsubscribe-post'], 'List-Unsubscribe=One-Click');
-  const u = new URL(mail.headers['list-unsubscribe'].slice(1, -1));
-  assert.strictEqual(u.origin + u.pathname, ORIGIN + '/api/notify/unsubscribe');
-  const query = Object.fromEntries(u.searchParams);
-  // A scanner or a person opening it: a redirect to the page with the button, nothing changed.
-  const get = await napi('GET', 'unsubscribe', { query });
-  assert.deepStrictEqual([get.status, get.r.getHeader('Location')], [303, '/act#unsub=' + query.c + '.' + query.s]);
-  assert.strictEqual((await inbox(m)).email.status, 'active');
-  const form = 'application/x-www-form-urlencoded';
-  assert.strictEqual((await napi('POST', 'unsubscribe', { query: { c: query.c, s: 'f'.repeat(64) }, origin: null, contentType: form, body: 'List-Unsubscribe=One-Click' })).status, 400);
-  assert.strictEqual((await napi('POST', 'unsubscribe', { query, origin: null, contentType: form, body: 'something=else' })).status, 400);
-  // The mail provider's one-click POST: no cookie, no Origin.
-  const one = await napi('POST', 'unsubscribe', { query, origin: null, contentType: form, body: 'List-Unsubscribe=One-Click' });
-  assert.deepStrictEqual([one.status, one.json.unsubscribed], [200, true]);
-  assert.strictEqual((await inbox(m)).email.status, 'off');
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'After', body: 'x', dedupeKey: 'n5b:' + m.id }));
-  await run(SYSTEM, (t) => t`update app.email_contacts set next_email_at = now() where member_id = ${m.id}`);
-  await drainNow();
-  assert.strictEqual(mailTo('leaver@example.com', since).length, 1, 'no more email');
-  assert.strictEqual((await q(`select last_error from app.outbox o join app.notices n on n.id = o.notice_id where n.dedupe_key = 'n5b:${m.id}'`))[0].last_error, 'email_off');
-  assert.ok((await inbox(m)).notices.some((n) => n.title === 'After'), 'the notice is still in the inbox');
-  // The member can turn copies back on from their account, since the address was confirmed.
-  assert.strictEqual((await napi('POST', 'email', { cookie: m.cookie, json: { copies: 'on' } })).json.status, 'active');
-  // The page's own button posts the same signature as JSON.
-  assert.strictEqual((await napi('POST', 'unsubscribe', { json: { c: query.c, s: query.s } })).status, 200);
-  assert.strictEqual((await inbox(m)).email.status, 'off');
-});
-
-test('R16: an approval link shows the words on a look and approves only from the owner\'s session, once, for the exact words, within the draft\'s life', async () => {
-  const owner = await member(2, 'Link owner');
-  await withEmail(owner, 'linkowner@example.com');
-  const ag = await agentOf(owner, 'Courier');
-  const since = mark();
-  const d = await say(ag, 'Exact words to approve');
-  await drainNow();
-  const [mail] = mailTo('linkowner@example.com', since);
-  assert.match(mail.text, /Courier wrote, word for word:\n\n> Exact words to approve/);
-  const t = tokenIn(mail, 'approve');
-  assert.ok(t, 'the email carries a link to /act with the token after "#"');
-  const [link] = await q(`select l.token_hash, l.bound_hash, l.member_id, l.expires_at = d.expires_at as same_life, l.bound_hash = d.body_hash as same_words
-                          from app.action_links l join app.agent_drafts d on d.id = l.subject_id where l.subject_id = '${d.drafted.id}'`);
-  assert.deepStrictEqual([link.token_hash, link.member_id, link.same_life, link.same_words], [c.sha256hex(t), owner.id, true, true], 'stored hashed, bound by the database');
-  assert.ok(!JSON.stringify(await q(`select * from app.action_links`)).includes(t), 'the token itself is never stored');
-  // A GET does nothing at all (and the page that shows it is static, with the token after "#").
-  assert.strictEqual((await napi('GET', 'link', { cookie: owner.cookie, query: { t } })).status, 405);
-  // A look shows the words and changes nothing.
-  const look = await napi('POST', 'link', { cookie: owner.cookie, json: { t, preview: true } });
-  assert.deepStrictEqual([look.status, look.json.draft.body, look.json.draft.agent, look.json.draft.status], [200, 'Exact words to approve', 'Courier', 'pending']);
-  assert.strictEqual((await q(`select used_at from app.action_links where token_hash = '${c.sha256hex(t)}'`))[0].used_at, null);
-  // Another session (another member) gets nothing, not even the words.
+test('N4, R16: one tap on the notice approves the draft\'s exact words, from the owner\'s own session only; nothing is a bearer link', async () => {
+  const owner = await member(2, 'Tapper');
+  const ag = await agentOf(owner, 'Writer');
+  const d = await say(ag, 'Exactly these words, and no others.');
+  const [n] = (await inbox(owner)).notices.filter((x) => x.kind === 'draft_waiting' && x.subject.id === d.drafted.id);
+  // The page finds the words by the notice's subject, and approves them with their SHA-256 (account.js does this).
+  const act = await agentsApi('GET', 'activity', owner);
+  const shown = act.json.inbox.find((x) => x.id === n.subject.id);
+  assert.strictEqual(shown.body, 'Exactly these words, and no others.');
+  const hash = c.sha256hex(shown.body);
   const stranger = await member(2, 'Stranger');
-  assert.strictEqual((await napi('POST', 'link', { cookie: stranger.cookie, json: { t, preview: true } })).status, 404);
-  assert.strictEqual((await napi('POST', 'link', { cookie: stranger.cookie, json: { t, hash: c.sha256hex('Exact words to approve') } })).status, 404);
-  // Not from another site, and not without signing in.
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t, hash: c.sha256hex('Exact words to approve') }, origin: 'https://evil.example' })).status, 403);
-  assert.strictEqual((await napi('POST', 'link', { json: { t, hash: c.sha256hex('Exact words to approve') } })).status, 401);
-  // Changed words: refused, and the link stays usable.
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t, hash: c.sha256hex('Exact words to approve!') } })).status, 409);
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t } })).status, 409, 'no hash is no approval');
-  // The owner's own session, the exact words: approved and posted, marked "approved".
-  const ok = await napi('POST', 'link', { cookie: owner.cookie, json: { t, hash: c.sha256hex('Exact words to approve') } });
-  assert.deepStrictEqual([ok.status, ok.json.done], [201, 'approve_draft']);
-  assert.strictEqual((await q(`select delegation from app.posts where id = '${ok.json.post.id}'`))[0].delegation, 'approved');
-  // Used once.
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t, hash: c.sha256hex('Exact words to approve') } })).status, 409);
-  // A link can't outlive its draft: an expired draft's link is refused, and a link can't be minted for a decided draft.
-  const d2 = await say(ag, 'Too late');
-  await drainNow(); // the hour is reserved, so this draft's email waits; mint its link by hand as the site would
-  const t2 = c.token(32);
-  await run(SYSTEM, (x) => x`insert into app.action_links (purpose, subject_id, token_hash) values ('approve_draft', ${d2.drafted.id}, ${c.sha256hex(t2)})`);
-  await rewrite('agent_drafts', 'agent_drafts_guard', `update app.agent_drafts set expires_at = now() - interval '1 second' where id = '${d2.drafted.id}'`);
-  await rewrite('action_links', 'action_links_guard', `update app.action_links set expires_at = now() - interval '1 second' where token_hash = '${c.sha256hex(t2)}'`);
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t: t2, hash: c.sha256hex('Too late') } })).status, 410);
-  await assert.rejects(run(SYSTEM, (x) => x`insert into app.action_links (purpose, subject_id, token_hash) values ('approve_draft', ${d.drafted.id}, ${c.sha256hex(c.token(32))})`), /no waiting draft/);
-  // Nobody but the site mints links, and the database fills in who and what they are bound to.
-  const d3 = await say(ag, 'Still waiting');
-  await assert.rejects(run(owner.ctx, (x) => x`insert into app.action_links (purpose, subject_id, token_hash) values ('approve_draft', ${d3.drafted.id}, ${c.sha256hex('mine')})`), /row-level security/);
+  assert.notStrictEqual((await agentsApi('POST', 'approve', stranger, { draft: shown.id, hash })).status, 201, 'another member\'s session can\'t');
+  assert.strictEqual((await agentsApi('POST', 'approve', owner, { draft: shown.id, hash: c.sha256hex('other words') })).status, 409, 'changed words fail');
+  const ok = await agentsApi('POST', 'approve', owner, { draft: shown.id, hash });
+  assert.strictEqual(ok.status, 201, JSON.stringify(ok.json));
+  assert.strictEqual((await agentsApi('POST', 'approve', owner, { draft: shown.id, hash })).status, 409, 'once');
+  // A notice carries no token: nothing in the inbox works without the owner's session.
+  assert.ok(!JSON.stringify(await q(`select title, body, link from app.notices where member_id = '${owner.id}'`)).match(/[A-Za-z0-9_-]{43}/));
+  const page = fs.readFileSync(path.join(root, 'account.js'), 'utf8');
+  assert.match(page, /sha256\(words\.textContent\)\.then\(function \(h\) \{ return postJson\('\/api\/agents\/approve', \{ draft: d\.id, hash: h \}\)/);
+  assert.match(page, /el\('blockquote', 'draft-words', d\.body\)/, 'the words are shown as text, never as HTML');
+});
+
+test('N5: notice links are paths on this site only; agent names in titles are masked and marked untrusted', async () => {
+  const m = await member(2, 'Linked');
+  for (const bad of ['//evil.example/x', 'https://evil.example', '/\\evil', 'javascript:alert(1)']) {
+    await assert.rejects(run(SYSTEM, (t) => leave(t, { memberId: m.id, kind: 'challenge', title: 't', link: bad, dedupeKey: 'bad:' + crypto.randomUUID() })), /check constraint/, bad);
+    await assert.rejects(q(`insert into app.notices (member_id, kind, title, body, link, dedupe_key) values ('${m.id}', 'challenge', 't', '', '${bad.replace(/'/g, "''")}', 'raw:${crypto.randomUUID()}')`), /check constraint/, bad);
+  }
+  assert.strictEqual(await run(SYSTEM, (t) => leave(t, { memberId: m.id, kind: 'challenge', title: 'fine', link: '/agents#appeal=1', dedupeKey: 'good:1' })), true);
+  // An agent named to look like contact details: the title is masked on the way out, and listed as untrusted.
+  const ag = await agentOf(m, 'Mail me at bob@example.com now');
+  await say(ag, 'hello');
+  const box = await inbox(m);
+  const t = box.notices.find((x) => x.kind === 'draft_waiting');
+  assert.ok(!t.title.includes('bob@example.com'), t.title);
+  assert.match(t.title, /\[email hidden\]/);
+  assert.deepStrictEqual(box.untrusted_fields, ['notices[].title', 'notices[].body']);
+  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /n\.link && \/\^\\\/\(\?!\\\/\)\/\.test\(n\.link\)/, 'the page checks again before linking');
 });
 
 test('scanner-safe sign-in links (item 4): the email link opens a page that changes nothing; only a same-site POST uses it', () => {
@@ -379,37 +265,30 @@ test('scanner-safe sign-in links (item 4): the email link opens a page that chan
 
 test('R33: at day 80 the owner is asked (one tap keeps it); with no answer by day 90 it drafts again, never off, recorded, with a notice', async () => {
   const owner = await member(2, 'Long runner');
-  await withEmail(owner, 'longrunner@example.com');
   const ag = await agentOf(owner, 'Veteran', { act: true });
   const backdate = (days) => rewrite('agent_rules', 'agent_rules_guard', `update app.agent_rules set created_at = now() - interval '${days} days' where agent_id = '${ag.id}'`);
   await backdate(79);
   await timers();
   assert.ok(!(await inbox(owner)).notices.some((n) => n.kind === 'act_reconfirm'), 'nothing before day 80');
   await backdate(81);
-  const since = mark();
   await timers();
   await timers(); // twice: still one notice
   const asked = (await inbox(owner)).notices.filter((n) => n.kind === 'act_reconfirm');
   assert.strictEqual(asked.length, 1);
   assert.match(asked[0].title, /^Keep Veteran acting on its own\?$/);
-  await drainNow();
-  const [mail] = mailTo('longrunner@example.com', since);
-  const t = tokenIn(mail, 'keep');
-  assert.ok(t, 'the email has a one-tap keep link');
-  const look = await napi('POST', 'link', { cookie: owner.cookie, json: { t, preview: true } });
-  assert.deepStrictEqual([look.json.purpose, look.json.agent.name, look.json.rules.post], ['keep_acting', 'Veteran', 'act']);
+  assert.deepStrictEqual(asked[0].subject, { kind: 'agent', id: ag.id }, 'the notice names the agent, for its one tap');
+  // One tap on the notice keeps it: the rules version the page showed, from the owner's session (account.js).
+  const shown = (await agentsApi('GET', 'activity', owner)).json.agents.find((x) => x.id === asked[0].subject.id);
   const stranger = await member(2, 'Not the owner');
-  assert.strictEqual((await napi('POST', 'link', { cookie: stranger.cookie, json: { t } })).status, 404);
-  const kept = await napi('POST', 'link', { cookie: owner.cookie, json: { t } });
-  assert.deepStrictEqual([kept.status, kept.json.done], [201, 'keep_acting']);
+  assert.strictEqual((await agentsApi('POST', 'reconfirm', stranger, { agent: ag.id, version: shown.rules.version })).status, 404);
+  const kept = await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version });
+  assert.strictEqual(kept.status, 201, JSON.stringify(kept.json));
   const [r] = await q(`select version, post_mode, reason, set_by from app.agent_rules where agent_id = '${ag.id}' order by version desc limit 1`);
   assert.deepStrictEqual({ ...r }, { version: 3, post_mode: 'act', reason: 'reconfirmed', set_by: 'owner' }, 'the same rules, confirmed, with no fresh sign-in needed');
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t } })).status, 409, 'once');
+  assert.strictEqual((await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version })).status, 409, 'a stale version is refused');
   await timers();
   assert.strictEqual((await q(`select count(*)::int as n from app.agent_rules where agent_id = '${ag.id}'`))[0].n, 3, 'confirmed: the clock restarted');
-  // A keep link minted before the rules change no longer applies after it.
-  const stale = c.token(32);
-  await run(SYSTEM, (x) => x`insert into app.action_links (purpose, subject_id, token_hash) values ('keep_acting', ${ag.id}, ${c.sha256hex(stale)})`);
+  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /postJson\('\/api\/agents\/reconfirm', \{ agent: a\.id, version: a\.rules\.version \}\)/);
   // No answer by day 90: back to drafting (never off), recorded, with a notice; the agent's other modes are untouched.
   await backdate(91);
   await timers();
@@ -419,7 +298,6 @@ test('R33: at day 80 the owner is asked (one tap keeps it); with no answer by da
   assert.ok((await inbox(owner)).notices.some((n) => n.kind === 'act_expired'));
   const d = await say(ag, 'now I draft');
   assert.ok(d.drafted, 'it drafts for approval rather than posting');
-  assert.strictEqual((await napi('POST', 'link', { cookie: owner.cookie, json: { t: stale } })).status, 409, 'the rules changed since that link');
   // From the agents page, signed in: the same one-tap keep, bound to the version the page showed.
   const owner2 = await member(2, 'Page keeper');
   const ag2 = await agentOf(owner2, 'Steady', { act: true });
@@ -441,83 +319,111 @@ test('draft expiry: an undecided draft tells its owner once when it expires (in 
   await timers(); await timers();
   const exp = (await inbox(owner)).notices.filter((n) => n.kind === 'draft_expired');
   assert.strictEqual(exp.length, 1);
-  assert.strictEqual((await q(`select count(*)::int as n from app.outbox o join app.notices n on n.id = o.notice_id where n.kind = 'draft_expired' and n.member_id = '${owner.id}'`))[0].n, 0);
 });
 
-test('N6: the outbox sends at most once: finished rows never change, a lost outcome is closed as failed, transient failures retry', async () => {
-  const m = await member(2, 'Once');
-  await withEmail(m, 'once@example.com');
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'One', body: 'x', dedupeKey: 'n6:' + m.id }));
-  // A transport that fails "for now", then works.
-  const real = cfg.transport;
-  let calls = 0;
-  cfg.transport = { name: 'flaky', async send() { calls++; return { ok: false, retry: true, error: 'ses_503' }; } };
-  try { await drainNow(); } finally { cfg.transport = real; }
-  const [w] = await q(`select o.status, o.attempts, o.last_error, o.next_attempt_at > now() as later from app.outbox o join app.notices n on n.id = o.notice_id where n.dedupe_key = 'n6:${m.id}'`);
-  assert.deepStrictEqual({ ...w }, { status: 'pending', attempts: 1, last_error: 'ses_503', later: true });
-  assert.strictEqual((await q(`select next_email_at <= now() as free from app.email_contacts where member_id = '${m.id}'`))[0].free, true, 'the hour is given back');
-  await q(`update app.outbox set next_attempt_at = now() where member_id = '${m.id}' and status = 'pending'`);
-  const since = mark();
-  await drainNow();
-  assert.strictEqual(mailTo('once@example.com', since).length, 1);
-  const [sent] = await q(`select o.id, o.status, o.provider_id from app.outbox o join app.notices n on n.id = o.notice_id where n.dedupe_key = 'n6:${m.id}'`);
-  assert.strictEqual(sent.status, 'sent');
-  assert.match(sent.provider_id, /^log-/);
-  await drainNow();
-  assert.strictEqual(mailTo('once@example.com', since).length, 1, 'never twice');
-  await assert.rejects(run(SYSTEM, (t) => t`update app.outbox set status = 'pending' where id = ${sent.id}`), /already finished/);
-  await assert.rejects(q(`update app.outbox set status = 'pending' where id = '${sent.id}'`), /already finished/);
-  // A run that claimed a row and never reported back: the row is closed as failed, not sent again.
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'Lost', body: 'x', dedupeKey: 'n6b:' + m.id }));
-  const [lost] = await q(`select o.id from app.outbox o join app.notices n on n.id = o.notice_id where n.dedupe_key = 'n6b:${m.id}'`);
-  await run(SYSTEM, (t) => t`update app.outbox set status = 'sending' where id = ${lost.id}`);
-  await rewrite('outbox', 'outbox_guard', `update app.outbox set claimed_at = now() - interval '20 minutes' where id = '${lost.id}'`);
-  await drainNow();
-  assert.deepStrictEqual({ ...(await q(`select status, last_error from app.outbox where id = '${lost.id}'`))[0] }, { status: 'failed', last_error: 'unknown_outcome' });
-  // A second run while one holds the lock (Vercel Cron can deliver a run twice) does nothing; so do the timers.
-  await su.begin(async (t) => {
-    await t.unsafe(`select pg_advisory_xact_lock(hashtext('dayonegreat.drain'), 0), pg_advisory_xact_lock(hashtext('dayonegreat.timers'), 0)`);
-    assert.deepStrictEqual(await drainNow(), { busy: true });
-    assert.deepStrictEqual(await timers(), { busy: true });
-  });
-  assert.strictEqual(calls, 1);
+test('N6: while a pause is in force the owner can\'t raise any agent, existing or new, until it ends; lowering stays open', async () => {
+  await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
+  try {
+    const owner = await member(2, 'Evader');
+    const a1 = await agentOf(owner, 'Was acting', { act: true });
+    for (let i = 0; i < 11; i++) await say(a1, 'busy ' + i);
+    await timers();
+    const [cn] = await q(`select id from app.containments where member_id = '${owner.id}' and lifted_at is null`);
+    assert.ok(cn, 'contained');
+    // Signed in again (fresh), the owner tries to put it back to acting: refused, with a plain answer (the review's
+    // probe "evasion" set it back to act and posted live).
+    await q(`update app.sessions set created_at = now() where member_id = '${owner.id}'`);
+    const raise = await agentsApi('POST', 'rules', owner, { agent: a1.id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 1000 });
+    assert.strictEqual(raise.status, 409, JSON.stringify(raise.json));
+    assert.match(raise.json.error, /until the pause on them ends/);
+    assert.ok((await say(a1, 'still drafting')).drafted, 'it can\'t post live');
+    // A new agent made during the pause starts at draft and can't be raised either.
+    const made = await agentsApi('POST', '', owner, { name: 'Fresh helper' });
+    assert.strictEqual(made.status, 201, JSON.stringify(made.json));
+    const fresh = { id: made.json.agent_id, ctx: { actor: 'agent', memberId: owner.id, agentId: made.json.agent_id } };
+    assert.strictEqual((await agentsApi('POST', 'rules', owner, { agent: fresh.id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 })).status, 409);
+    assert.ok((await say(fresh, 'new agent, still drafting')).drafted);
+    // Lowering is always open; a cap raised is a raise too.
+    assert.strictEqual((await agentsApi('POST', 'rules', owner, { agent: a1.id, post: 'off', reply: 'off', report: 'off', daily_cap: 10 })).status, 201);
+    await assert.rejects(run({ ...owner.ctx, fresh: true }, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${a1.id}, 'off', 'off', 'off', 20, 'owner')`), /contained/);
+    // Once it has ended, raising works again.
+    await asOwner(QUIET_WATCH);
+    await rewrite('containments', 'containments_guard', `update app.containments set ends_at = now() - interval '1 second' where id = '${cn.id}'`);
+    await timers();
+    assert.strictEqual((await agentsApi('POST', 'rules', owner, { agent: fresh.id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 })).status, 201);
+  } finally { await asOwner(QUIET_WATCH); }
 });
 
-test('N7: bounces and complaints arrive through SNS only with a verified signature for our topic, and stop email to that address', async () => {
-  const m = await member(2, 'Bouncer');
-  await withEmail(m, 'bounce@example.com');
+test('N9: a pause whose time is up ends when its owner\'s rules are read or written, even if no timer runs', async () => {
+  await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
+  try {
+    const owner = await member(2, 'Missed timer');
+    const a1 = await agentOf(owner, 'Waiting', { act: true });
+    for (let i = 0; i < 11; i++) await say(a1, 'flood ' + i);
+    await timers();
+    const [cn] = await q(`select id from app.containments where member_id = '${owner.id}' and lifted_at is null`);
+    await asOwner(QUIET_WATCH);
+    // Before its time is up, reading ends nothing.
+    assert.strictEqual(await run(owner.ctx, (t) => notices.liftDue(t)), false);
+    // Its time is up, and the timer doesn't run (Vercel Cron is best effort).
+    await rewrite('containments', 'containments_guard', `update app.containments set ends_at = now() - interval '1 minute' where id = '${cn.id}'`);
+    // The owner opens their agents page: the pause ends there and then, as the timer would have ended it.
+    const page = await agentsApi('GET', 'activity', owner);
+    assert.strictEqual(page.json.containment, null);
+    const [x] = await q(`select lifted_at is not null as lifted, lifted_by from app.containments where id = '${cn.id}'`);
+    assert.deepStrictEqual({ ...x }, { lifted: true, lifted_by: 'timer' });
+    assert.strictEqual((await q(`select post_mode from app.agent_rules where agent_id = '${a1.id}' order by version desc limit 1`))[0].post_mode, 'act', 'back on its rules');
+    assert.ok((await inbox(owner)).notices.some((n) => n.kind === 'containment_lifted'));
+    // An owner can't end a pause early this way, or end anyone else's.
+    await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
+    const other = await member(2, 'Still paused');
+    const b1 = await agentOf(other, 'Busy', { act: true });
+    for (let i = 0; i < 11; i++) await say(b1, 'again ' + i);
+    await timers();
+    await asOwner(QUIET_WATCH);
+    assert.ok((await q(`select 1 from app.containments where member_id = '${other.id}' and lifted_at is null`)).length === 1);
+    assert.strictEqual(await run(other.ctx, (t) => notices.liftDue(t)), false, 'not before its time');
+    await assert.rejects(run(other.ctx, (t) => t`update app.containments set lifted_at = now() where member_id = ${other.id}`), /an owner can only appeal/);
+    assert.strictEqual(await run(owner.ctx, (t) => notices.liftDue(t)), false, 'nobody lifts someone else\'s');
+  } finally { await asOwner(QUIET_WATCH); }
+});
+
+test('N7: bounces and complaints on sign-in emails arrive only through verified SNS messages, are kept as fingerprints, and stop sign-in email to that address', async () => {
   const getCert = async () => cert.cert;
-  const post = (msg) => napi('POST', 'sns', { contentType: 'text/plain; charset=UTF-8', origin: null, body: JSON.stringify(msg), deps: { getCert } });
-  // Forged: signed with another key, another topic, or changed after signing.
-  const other = fx.makeCert();
-  assert.strictEqual((await post(fx.signed(other.key, { Message: fx.bounce('bounce@example.com') }))).status, 403);
-  assert.strictEqual((await post({ ...fx.signed(cert.key, { Message: fx.bounce('someone@example.com') }), Message: fx.bounce('bounce@example.com') })).status, 403);
+  const post = (m) => napi('POST', 'sns', { contentType: 'text/plain; charset=UTF-8', body: JSON.stringify(m), deps: { getCert } });
+  // Not trusted: a bad signature, someone else's topic, SignatureVersion 1, or a certificate from another region.
+  const good = fx.signed(cert.key, { Message: fx.bounce('bounce@example.com') });
+  assert.strictEqual((await post({ ...good, Signature: Buffer.from('nope').toString('base64') })).status, 403);
   assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.bounce('bounce@example.com'), TopicArn: 'arn:aws:sns:us-east-1:999999999999:other' }))).status, 403);
-  assert.strictEqual((await post('not json')).status, 403);
-  assert.strictEqual((await inbox(m)).email.status, 'active', 'nothing trusted, nothing changed');
-  // A soft bounce changes nothing; a permanent one suppresses the address (by fingerprint only).
-  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.bounce('bounce@example.com', 'Transient') }))).json.suppressed, 0);
-  const hit = await post(fx.signed(cert.key, { Message: fx.bounce('Bounce@Example.com') }));
-  assert.deepStrictEqual([hit.status, hit.json.suppressed, hit.json.contacts], [200, 1, 1]);
-  assert.strictEqual((await inbox(m)).email.status, 'suppressed');
+  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.bounce('bounce@example.com') }, { version: '1' }))).status, 403);
+  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.bounce('bounce@example.com'), SigningCertURL: 'https://sns.eu-west-1.amazonaws.com/x.pem' }))).status, 403);
+  assert.strictEqual((await q(`select count(*)::int as n from app.email_suppressions`))[0].n, 0, 'nothing trusted, nothing kept');
+  // Trusted: kept as a keyed fingerprint, never the address.
+  const ok = await post(good);
+  assert.deepStrictEqual([ok.status, ok.json.new], [200, 1]);
   assert.ok(!JSON.stringify(await q(`select * from app.email_suppressions`)).includes('example.com'));
-  const since = mark();
-  await run(SYSTEM, (t) => notices.challenge(t, { memberId: m.id, title: 'Not emailed', body: 'x', dedupeKey: 'n7:' + m.id }));
-  await run(SYSTEM, (t) => t`update app.email_contacts set next_email_at = now() where member_id = ${m.id}`);
-  await drainNow();
-  assert.strictEqual(mailTo('bounce@example.com', since).length, 0);
-  // The same address added again by anyone is never mailed again: the confirmation is skipped too.
-  const n = await member(2, 'Same address');
-  await napi('POST', 'email', { cookie: n.cookie, json: { address: 'bounce@example.com', time_zone: 'UTC' } });
-  await drainNow();
-  assert.strictEqual(mailTo('bounce@example.com', since).length, 0);
-  // A complaint suppresses too; a subscription confirmation is followed only to an SNS address.
-  await withEmail(n, 'complainer@example.com');
-  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.complaint('complainer@example.com') }))).json.contacts, 1);
-  let visited = null;
-  const conf = fx.signed(cert.key, { Type: 'SubscriptionConfirmation', Message: 'confirm', Token: 'tok', SubscribeURL: 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=tok' });
-  const confirmed = await napi('POST', 'sns', { contentType: 'text/plain', origin: null, body: JSON.stringify(conf), deps: { getCert, confirm: async (u) => { visited = u; } } });
-  assert.deepStrictEqual([confirmed.status, visited], [200, conf.SubscribeURL]);
+  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.complaint('Complainer@Example.com ') }))).json.new, 1);
+  // A temporary bounce is not a reason to stop.
+  assert.strictEqual((await post(fx.signed(cert.key, { Message: fx.bounce('soft@example.com', 'Transient') }))).json.suppressed, 0);
+  // The sign-in sender skips them (the reply on /join is the same either way); everyone else still gets their link.
+  const sent = [];
+  const ses = { name: 'ses', async send(m) { sent.push(m.to); return { ok: true, id: 'x' }; } };
+  const send = signinSender({ ...cfg, transport: ses }, { run, keys: KEYS });
+  await send('bounce@example.com', 'https://dayonegreat.com/auth/email/continue#t=x');
+  await send('complainer@example.com', 'https://dayonegreat.com/auth/email/continue#t=y');
+  await send('fine@example.com', 'https://dayonegreat.com/auth/email/continue#t=z');
+  assert.deepStrictEqual(sent, ['fine@example.com']);
+  // Without SES there is no sign-in sender at all (the log transport would swallow the link).
+  assert.strictEqual(signinSender(cfg, { run, keys: KEYS }), null);
+  // Subscribing: only our topic's own SNS address is visited, with a time limit.
+  const visited = [];
+  const conf = fx.signed(cert.key, { Type: 'SubscriptionConfirmation', Token: 't', Message: 'confirm', SubscribeURL: 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=t' });
+  const r = await napi('POST', 'sns', { contentType: 'text/plain', body: JSON.stringify(conf), deps: { getCert, confirm: async (u) => visited.push(u) } });
+  assert.deepStrictEqual([r.status, visited.length], [200, 1]);
+  const elsewhere = fx.signed(cert.key, { Type: 'SubscriptionConfirmation', Token: 't', Message: 'confirm', SubscribeURL: 'https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=t' });
+  assert.strictEqual((await napi('POST', 'sns', { contentType: 'text/plain', body: JSON.stringify(elsewhere), deps: { getCert, confirm: async (u) => visited.push(u) } })).status, 403);
+  assert.strictEqual(visited.length, 1);
+  assert.match(fs.readFileSync(path.join(root, 'api', 'notify.js'), 'utf8'), /signal: AbortSignal\.timeout\(SUBSCRIBE_TIMEOUT_MS\)/);
 });
 
 test('N8: an owner far busier than their own last 7 days alerts Aaron; a burst of new accounts too; an owner\'s normal busy hour doesn\'t', async () => {
@@ -559,11 +465,9 @@ test('N9: past the hard limit an owner\'s agents draft for 24 hours, with a noti
   await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
   try {
     const owner = await member(2, 'Flooder');
-    await withEmail(owner, 'flooder@example.com');
     const a1 = await agentOf(owner, 'Fast one', { act: true });
     const a2 = await agentOf(owner, 'Drafter');
     for (let i = 0; i < 11; i++) await say(a1, 'flood ' + i);
-    const since = mark();
     await timers(); await timers();
     const [cn] = await q(`select id, reason, measured, ends_at > now() + interval '23 hours' as day, lifted_at from app.containments where member_id = '${owner.id}'`);
     assert.deepStrictEqual([cn.reason, cn.measured, cn.day, cn.lifted_at], ['volume', 11, true, null]);
@@ -574,8 +478,7 @@ test('N9: past the hard limit an owner\'s agents draft for 24 hours, with a noti
     assert.ok((await say(a1, 'after the limit')).drafted, 'it drafts now: approve, not off');
     const notice = (await inbox(owner)).notices.find((n) => n.kind === 'contained');
     assert.ok(notice && notice.link === '/agents#appeal=' + cn.id);
-    await drainNow();
-    assert.ok(mailTo('flooder@example.com', since).some((m) => /appeal/.test(m.text)), 'the email copy names the appeal');
+    assert.match(notice.body, /you can appeal/);
     assert.ok((await inbox(aaron)).notices.some((n) => n.title === 'An owner\'s agents were set back to drafting'));
     assert.ok((await q(`select 1 from app.audit_log where action = 'containment.start' and subject_id = '${owner.id}'`)).length === 1);
     // The owner sees it on the agents page and appeals once; Aaron sees the appeal in the review queue.
@@ -633,7 +536,7 @@ test('N9: Aaron can lift a pause early after an appeal; an owner\'s own change d
   } finally { await asOwner(QUIET_WATCH); }
 });
 
-test('N10, the copier rule: repeated text brakes whoever repeats it, never the first author', async () => {
+test('N10, the copier rule: repeating another owner\'s live post brakes the copier, never the first author, and taken-down posts count for nothing', async () => {
   await asOwner('update app.watch_settings set copy_limit_per_hour = 5, repeat_alert_count = 5');
   try {
     const author = await member(2, 'First author');
@@ -650,12 +553,26 @@ test('N10, the copier rule: repeated text brakes whoever repeats it, never the f
     assert.strictEqual((await q(`select count(*)::int as n from app.containments where member_id = '${author.id}'`))[0].n, 0, 'the first author is not');
     assert.strictEqual((await q(`select post_mode from app.agent_rules where agent_id = '${original.id}' order by version desc limit 1`))[0].post_mode, 'act');
     assert.ok((await inbox(aaron)).notices.some((n) => n.title === 'The same text keeps being posted'));
-    // An owner repeating their own text is a copier of it too.
+    // Front-running (the review's probe): someone posts the text an honest owner is about to post, then has it taken
+    // down. Copies count only against another owner's earlier post that is still live, so the honest owner isn't paused.
+    const attacker = await member(2, 'Front runner');
+    const shill = await agentOf(attacker, 'Shill', { act: true });
+    const forecast = 'Tomorrow will be sunny with light winds in the bay area, highs near seventy.';
+    for (let i = 0; i < 5; i++) {
+      const r = await say(shill, forecast + ' #' + i);
+      await run(aaron.ctx, (t) => review.decide(t, { post: r.posted.id, decision: 'remove' }));
+    }
+    const honest = await member(2, 'Weather bot owner');
+    const bot = await agentOf(honest, 'Weather', { act: true });
+    for (let i = 0; i < 5; i++) await say(bot, forecast + ' #' + i);
+    await timers();
+    assert.strictEqual((await q(`select count(*)::int as n from app.containments where member_id = '${honest.id}'`))[0].n, 0, 'removed posts count for nothing');
+    // An owner repeating their own text isn't copying anyone (their volume still counts against the hard limit).
     const self = await member(2, 'Self repeater');
     const loop = await agentOf(self, 'Loop', { act: true });
     for (let i = 0; i < 6; i++) await say(loop, 'my slogan');
     await timers();
-    assert.strictEqual((await q(`select measured from app.containments where member_id = '${self.id}'`))[0].measured, 5, 'every post after the first');
+    assert.strictEqual((await q(`select count(*)::int as n from app.containments where member_id = '${self.id}'`))[0].n, 0);
   } finally { await asOwner(QUIET_WATCH); }
 });
 
@@ -687,35 +604,33 @@ test('notices the rest of the system already causes: an upheld report and a brak
   assert.strictEqual((await inbox(reporter)).notices.filter((x) => x.kind === 'brake_on').length, 0, 'a brake for everyone tells nobody one by one');
 });
 
-test('the cron route runs the timers and the drain, only with the right secret', async () => {
+test('N11: the cron route runs the timers, JEVs\'s deletion-review timer and mark sweep included, only with the right secret', async () => {
   const cron = require('../api/cron.js');
   const call = async (h) => { const r = res(); await cron.handle({ method: 'GET', headers: { authorization: h } }, r, run, cfg); return { status: r.statusCode, json: JSON.parse(r.body) }; };
   assert.strictEqual((await call('Bearer wrong')).status, 401);
   const ok = await call('Bearer ' + SECRET);
   assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
-  assert.ok('lifted' in ok.json.timers && 'contained' in ok.json.timers && 'batches' in ok.json.email);
+  for (const k of ['lifted', 'contained', 'deletion_reviews_disabled', 'marks_swept']) assert.ok(k in ok.json.timers, k);
+  assert.ok(!('email' in ok.json), 'nothing is emailed');
   assert.ok(!JSON.stringify(ok.json).includes('@'), 'no addresses in what it reports');
 });
 
-test('F8: deleting an account deletes its notices, its alerts to Aaron, its address, links and pauses', async () => {
+test('F8: deleting an account deletes its notices, its alerts to Aaron and its pauses', async () => {
   await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
   let gone;
   try {
     gone = await member(2, 'Leaving for good');
-    await withEmail(gone, 'leaving@example.com');
     const ag = await agentOf(gone, 'Last', { act: true });
     for (let i = 0; i < 11; i++) await say(ag, 'last words ' + i);
     await timers();
-    await drainNow();
   } finally { await asOwner(QUIET_WATCH); }
   const counts = async () => (await q(`select (select count(*) from app.notices where member_id = '${gone.id}' or subject_id = '${gone.id}')::int as notices,
-    (select count(*) from app.email_contacts where member_id = '${gone.id}')::int as contacts, (select count(*) from app.action_links where member_id = '${gone.id}')::int as links,
-    (select count(*) from app.containments where member_id = '${gone.id}')::int as paused, (select count(*) from app.outbox where member_id = '${gone.id}')::int as outbox`))[0];
+    (select count(*) from app.containments where member_id = '${gone.id}')::int as paused`))[0];
   const before = await counts();
-  assert.ok(before.notices > 0 && before.contacts === 1 && before.links > 0 && before.paused === 1, JSON.stringify(before));
+  assert.ok(before.notices > 0 && before.paused === 1, JSON.stringify(before));
   const out = await run({ ...gone.ctx, fresh: true }, (t) => store.deleteAccount(t));
   assert.ok(!out.refused, JSON.stringify(out));
-  assert.deepStrictEqual({ ...(await counts()) }, { notices: 0, contacts: 0, links: 0, paused: 0, outbox: 0 });
+  assert.deepStrictEqual({ ...(await counts()) }, { notices: 0, paused: 0 });
 });
 
 // ---- JEVs (PR 12) speaks through the inbox (PR 13 on top of PR 12) ----
@@ -723,7 +638,15 @@ const jevs = require('../db/jevs');
 const posts = require('../db/posts');
 const setMode = (m) => asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
 const throwaway = (who) => run(who.ctx, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
-const noticesOf = (memberId) => q(`select kind, title, body, link, subject_kind, subject_id, send_copy from app.notices where member_id ${memberId === null ? 'is null' : "= '" + memberId + "'"} order by created_at, id`);
+const owner2Cookie = (who) => who.cookie;
+async function feedApi(method, cookie, query = {}, json) {
+  const r = res();
+  const headers = { host: 'dayonegreat.com', cookie };
+  if (method === 'POST') { headers.origin = ORIGIN; headers['content-type'] = 'application/json'; }
+  await require('../api/feed.js').handle({ method, url: '/api/feed', headers, query, body: json ? JSON.stringify(json) : undefined }, r, run);
+  return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
+}
+const noticesOf = (memberId) => q(`select kind, title, body, link, subject_kind, subject_id from app.notices where member_id ${memberId === null ? 'is null' : "= '" + memberId + "'"} order by created_at, id`);
 
 test('JEVs: a challenge reaches its owner\'s inbox in the same transaction and is marked delivered; one a fresh sign-in already answered needs none', async () => {
   await setMode('enforce');
@@ -738,8 +661,8 @@ test('JEVs: a challenge reaches its owner\'s inbox in the same transaction and i
     assert.ok(ch.delivered_at, 'delivered_at is filled when the notice is written');
     const mine = (await noticesOf(o.id)).filter((n) => n.kind === 'challenge');
     assert.strictEqual(mine.length, 1);
-    assert.deepStrictEqual([mine[0].title, mine[0].link, mine[0].subject_kind, mine[0].subject_id, mine[0].send_copy],
-      ['Please confirm making a new agent', '/join?return_to=%2Fagents', 'challenge', made.json.challenge, false]);
+    assert.deepStrictEqual([mine[0].title, mine[0].link, mine[0].subject_kind, mine[0].subject_id],
+      ['Please confirm making a new agent', '/join?return_to=%2Fagents', 'challenge', made.json.challenge]);
     assert.match(mine[0].body, /Sign in, then do it once more/);
     assert.ok((await inbox(o)).notices.some((n) => n.kind === 'challenge'), 'it shows in the inbox on /account');
     // Signed in again: confirmed at once, so nothing to tell them, and the earlier request is answered.
@@ -754,6 +677,12 @@ test('JEVs: a challenge reaches its owner\'s inbox in the same transaction and i
     assert.strictEqual(p.jevs.effect, 'challenge');
     const [pn] = (await noticesOf(o.id)).filter((n) => n.subject_id === p.jevs.challenge);
     assert.deepStrictEqual([pn.title, pn.link, pn.subject_kind], ['A post is waiting for you to confirm it', null, 'challenge']);
+    // The owner answers it on the notice (account.js): confirming puts the held post live.
+    const held = (await feedApi('GET', owner2Cookie(o), { challenges: '1' })).json.challenges.find((x) => x.id === p.jevs.challenge);
+    assert.deepStrictEqual([held.subject.kind, held.body], ['post', body]);
+    const yes = await feedApi('POST', owner2Cookie(o), {}, { challenge: p.jevs.challenge, answer: 'confirm' });
+    assert.strictEqual(yes.status, 200, JSON.stringify(yes.json));
+    assert.strictEqual((await q(`select status from app.posts where id = '${p.id}'`))[0].status, 'live');
   } finally { await setMode('shadow'); }
 });
 

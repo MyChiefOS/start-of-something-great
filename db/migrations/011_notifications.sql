@@ -1,23 +1,18 @@
 -- 011 Notifications (Release 2, PR 13).
--- Aaron's decisions this builds on (Oct 16, 2026): tell people inside the system first, with email only as a copy;
--- Amazon SES, switched on by settings Aaron adds himself; containment follows the usual pattern (approve, step up,
--- hold), always with notice and a way to appeal; and no new friction.
--- Criteria (ACCEPTANCE.md, N1 to N9): every notice lands in the member's own inbox first, in the same transaction as
--- the event that causes it; an email copy is queued in that same transaction, once (an idempotency key), and sent at
--- most once, at most one email an hour per member, outside their quiet hours, with one-click unsubscribe; addresses
--- that bounce or complain are never mailed again. R16: an approval link is single use, stored only as a hash, bound
--- to the draft's exact words, its owner and its lifetime; R33: an agent acting on its own is re-confirmed every 90
--- days or goes back to drafting; containment: an owner far past a hard limit has their agents go back to drafting
--- for 24 hours, with a notice and an appeal, and repeated text brakes the copier, never the first author.
+-- Aaron's decisions this builds on (Oct 16, 2026): tell people inside the system first; containment follows the usual
+-- pattern (approve, step up, hold), always with notice and a way to appeal; no new friction; and "notices in-app only
+-- for now": no member email addresses are stored and no notice is emailed. Sign-in emails are still sent.
+-- Criteria (ACCEPTANCE.md, N1 to N11): every notice lands in the member's own inbox, in the same transaction as the
+-- event that causes it, once (a dedupe key); one-tap approval happens on the notice itself, from the owner's own
+-- session, for the draft's exact words (R16); an agent acting on its own is re-confirmed every 90 days or goes back to
+-- drafting (R33); an owner far past a hard limit has their agents go back to drafting for 24 hours, with a notice and
+-- an appeal, and repeated text brakes the copier, never the first author. Sign-in emails skip addresses that bounced
+-- for good or complained (kept only as keyed fingerprints).
 --
 -- How it fits the rest of the database:
---   * Everything runs as the caller (dog_app) under row-level security. No new narrow role and no new function
---     with its owner's rights. The site itself (actor "system": the timers and the outbox drain, run by the Vercel
---     Cron route) gains read access to posts, agents, rules and drafts, which it needs to count and to build emails.
---   * Email addresses are never stored in the clear. The site seals each one (AES-256-GCM, with a key kept outside
---     the database, NOTIFY_KEY) and stores a keyed fingerprint for matching bounces. The database never sees one.
---   * Links in emails are minted when the email is sent, not before: only their SHA-256 is stored, and the database
---     itself binds each one to the right member, the draft's exact words and the draft's lifetime.
+--   * Everything runs as the caller (dog_app) under row-level security. No new narrow role and no new function with
+--     its owner's rights. The site itself (actor "system": the timers, run by the Vercel Cron route, and the bounce
+--     handler) gains read access to posts, agents, rules and drafts, which it needs to count.
 --   * The timers are plain functions. The Vercel Cron route runs them every minute (api/cron.js). They are not
 --     scheduled with pg_cron: a pg_cron job runs as the role that scheduled it, and only a superuser may schedule a
 --     job for another role, so a job could not act as dog_app without breaking the coverage check's role rules
@@ -34,13 +29,12 @@ create table app.notices (
     'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert'])),
   title text not null check (char_length(title) between 1 and 120),
   body text not null check (char_length(body) <= 2000),
-  -- A path on this site only, never an address elsewhere.
-  link text check (char_length(link) <= 200 and link ~ '^/[A-Za-z0-9/?=&#._~%-]*$'),
+  -- A path on this site only, never an address elsewhere (not even "//host", which browsers read as another site).
+  link text check (char_length(link) <= 200 and link ~ '^/([A-Za-z0-9?=&#._~%-][A-Za-z0-9/?=&#._~%-]*)?$'),
   subject_kind text check (char_length(subject_kind) <= 32 and subject_kind ~ '^[a-z][a-z_]*$'),
   subject_id uuid,
   -- The same event never makes two notices.
   dedupe_key text not null unique check (char_length(dedupe_key) between 1 and 160 and dedupe_key ~ '^[a-z0-9_:.-]+$'),
-  send_copy boolean not null default false,
   created_at timestamptz not null default now(),
   read_at timestamptz,
   check (member_id is not null or kind = 'alert')
@@ -50,7 +44,7 @@ create index notices_unread on app.notices (member_id) where read_at is null;
 alter table app.notices enable row level security;
 alter table app.notices force row level security;
 
--- A member reads only their own notices; Aaron also reads the administrators' inbox; the site reads them to send copies.
+-- A member reads only their own notices; Aaron also reads the administrators' inbox; the site reads them to count.
 create policy notices_select on app.notices for select to dog_app
   using ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member())
          or (app.actor_kind() = 'admin' and member_id is null)
@@ -67,7 +61,7 @@ create policy notices_update on app.notices for update to dog_app
   using ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or (app.actor_kind() = 'admin' and member_id is null))
   with check ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or (app.actor_kind() = 'admin' and member_id is null));
 grant select on app.notices to dog_app;
-grant insert (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key, send_copy) on app.notices to dog_app;
+grant insert (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key) on app.notices to dog_app;
 grant update (read_at) on app.notices to dog_app;
 
 create function app.notices_fill() returns trigger
@@ -87,8 +81,8 @@ create function app.notices_guard() returns trigger
 language plpgsql
 as $$
 begin
-  if (new.id, new.member_id, new.kind, new.title, new.body, new.link, new.subject_kind, new.subject_id, new.dedupe_key, new.send_copy, new.created_at)
-     is distinct from (old.id, old.member_id, old.kind, old.title, old.body, old.link, old.subject_kind, old.subject_id, old.dedupe_key, old.send_copy, old.created_at) then
+  if (new.id, new.member_id, new.kind, new.title, new.body, new.link, new.subject_kind, new.subject_id, new.dedupe_key, new.created_at)
+     is distinct from (old.id, old.member_id, old.kind, old.title, old.body, old.link, old.subject_kind, old.subject_id, old.dedupe_key, old.created_at) then
     raise exception 'a notice can only be marked read' using errcode = '42501';
   end if;
   new.read_at := case when old.read_at is not null then old.read_at when new.read_at is not null then now() end;
@@ -98,236 +92,30 @@ $$;
 create trigger notices_guard before update on app.notices for each row execute function app.notices_guard();
 alter table app.notices enable always trigger notices_guard;
 
--- ---- The outbox: an email copy, queued in the same transaction as its notice ----
--- Sending happens later (the drain, in api/cron.js), at most once: a row is claimed ("sending") before the email
--- goes out and finished afterwards; a row whose outcome was never recorded is closed as failed, never sent again.
-create table app.outbox (
-  id uuid primary key default app.uuid_v7(),
-  notice_id uuid references app.notices (id),
-  member_id uuid references app.members (id),
-  purpose text not null check (purpose = any (array['notice', 'confirm_email'])),
-  idempotency_key text not null unique check (char_length(idempotency_key) between 1 and 200 and idempotency_key ~ '^[a-z0-9_:.-]+$'),
-  status text not null default 'pending' check (status = any (array['pending', 'sending', 'sent', 'skipped', 'failed'])),
-  attempts smallint not null default 0 check (attempts between 0 and 20),
-  next_attempt_at timestamptz not null default now(),
-  batch_id uuid,
-  claimed_at timestamptz,
-  sent_at timestamptz,
-  provider_id text check (char_length(provider_id) <= 200),
-  last_error text check (char_length(last_error) <= 200),
-  created_at timestamptz not null default now(),
-  check ((purpose = 'notice') = (notice_id is not null)),
-  check (purpose = 'notice' or member_id is not null),
-  check ((status = 'sent') = (sent_at is not null))
-);
-create index outbox_ready on app.outbox (next_attempt_at) where status = 'pending';
-create index outbox_member on app.outbox (member_id);
-create index outbox_notice on app.outbox (notice_id);
-alter table app.outbox enable row level security;
-alter table app.outbox force row level security;
-
-create policy outbox_select on app.outbox for select to dog_app using (app.actor_kind() = 'system');
-create policy outbox_insert on app.outbox for insert to dog_app
-  with check (app.actor_kind() <> 'anon' and (
-    (member_id is null and purpose = 'notice')
-    or app.actor_kind() in ('admin', 'system')
-    or (app.actor_kind() in ('member', 'agent') and member_id = app.current_member())));
-create policy outbox_update on app.outbox for update to dog_app using (app.actor_kind() = 'system') with check (app.actor_kind() = 'system');
-create policy outbox_delete on app.outbox for delete to dog_app using (app.actor_kind() = 'system' and status in ('sent', 'skipped', 'failed'));
-grant select, delete on app.outbox to dog_app;
-grant insert (notice_id, member_id, purpose, idempotency_key) on app.outbox to dog_app;
-grant update (status, attempts, next_attempt_at, batch_id, claimed_at, sent_at, provider_id, last_error) on app.outbox to dog_app;
-
-create function app.outbox_fill() returns trigger
-language plpgsql
-as $$
-begin
-  new.status := 'pending';
-  new.attempts := 0;
-  new.next_attempt_at := now();
-  new.batch_id := null;
-  new.claimed_at := null;
-  new.sent_at := null;
-  new.provider_id := null;
-  new.last_error := null;
-  new.created_at := now();
-  return new;
-end
-$$;
-create trigger outbox_fill before insert on app.outbox for each row execute function app.outbox_fill();
-alter table app.outbox enable always trigger outbox_fill;
-
--- The allowed moves. Sent, skipped and failed are final, so a copy can never go out twice.
-create function app.outbox_guard() returns trigger
-language plpgsql
-as $$
-begin
-  if (new.id, new.notice_id, new.member_id, new.purpose, new.idempotency_key, new.created_at)
-     is distinct from (old.id, old.notice_id, old.member_id, old.purpose, old.idempotency_key, old.created_at) then
-    raise exception 'an outbox row''s message never changes' using errcode = '42501';
-  end if;
-  if old.status in ('sent', 'skipped', 'failed') then
-    raise exception 'that email is already finished' using errcode = '42501';
-  end if;
-  if not ((old.status = 'pending' and new.status in ('pending', 'sending', 'skipped', 'failed'))
-       or (old.status = 'sending' and new.status in ('sent', 'pending', 'failed'))) then
-    raise exception 'an email can''t go from % to %', old.status, new.status using errcode = '22023';
-  end if;
-  if new.status = 'sending' then
-    new.claimed_at := now();
-    new.batch_id := coalesce(new.batch_id, app.uuid_v7());
-  end if;
-  new.sent_at := case when new.status = 'sent' then now() end;
-  return new;
-end
-$$;
-create trigger outbox_guard before update on app.outbox for each row execute function app.outbox_guard();
-alter table app.outbox enable always trigger outbox_guard;
-
--- A notice marked for email gets its outbox row in the same statement, so the two can't come apart.
-create function app.notices_queue_email() returns trigger
-language plpgsql
-as $$
-begin
-  if new.send_copy then
-    insert into app.outbox (notice_id, member_id, purpose, idempotency_key) values (new.id, new.member_id, 'notice', 'notice:' || new.id);
-  end if;
-  return null;
-end
-$$;
-create trigger notices_queue_email after insert on app.notices for each row execute function app.notices_queue_email();
-alter table app.notices enable always trigger notices_queue_email;
 
 -- The one way the rest of the database leaves a notice: in the caller's own transaction, under the policies above.
 -- Returns true if this is a new notice, false if the same event already left one (dedupe_key). JEVs (PR 12) uses it
 -- from its own triggers (below): challenges, Aaron's alerts and deletion reviews.
 create function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid,
-                           p_dedupe text, p_email boolean)
+                           p_dedupe text)
 returns boolean
 language plpgsql
 as $$
 begin
   -- Not "on conflict do nothing": under row-level security that also needs the caller to be able to read the row,
   -- and an agent leaving a notice for its owner must not read its owner's inbox.
-  insert into app.notices (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key, send_copy)
-    values (p_member, p_kind, left(p_title, 120), left(coalesce(p_body, ''), 2000), p_link, p_subject_kind, p_subject, p_dedupe, coalesce(p_email, false));
+  insert into app.notices (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key)
+    values (p_member, p_kind, left(p_title, 120), left(coalesce(p_body, ''), 2000), p_link, p_subject_kind, p_subject, p_dedupe);
   return true;
 exception when unique_violation then
   return false;
 end
 $$;
 
--- ---- Email copies: an address the member chose to add, confirmed before use ----
--- The address itself is sealed by the site (AES-256-GCM under NOTIFY_KEY, bound to the member) and never readable
--- here. address_fp is a keyed fingerprint (HMAC-SHA256) so a bounce or complaint can be matched without the address.
-create table app.email_contacts (
-  id uuid primary key default app.uuid_v7(),
-  member_id uuid not null unique references app.members (id),
-  address_sealed text not null check (char_length(address_sealed) between 1 and 800),
-  address_fp text not null check (char_length(address_fp) = 64 and address_fp ~ '^[0-9a-f]+$'),
-  status text not null default 'pending' check (status = any (array['pending', 'active', 'off', 'suppressed'])),
-  quiet_start smallint not null default 22 check (quiet_start between 0 and 23),
-  quiet_end smallint not null default 7 check (quiet_end between 0 and 23),
-  time_zone text not null default 'America/Los_Angeles' check (char_length(time_zone) <= 64 and time_zone ~ '^[A-Za-z]+(/[A-Za-z0-9_+-]+){0,2}$'),
-  created_at timestamptz not null default now(),
-  confirmed_at timestamptz,
-  -- No email before this time: one an hour at most.
-  next_email_at timestamptz not null default now()
-);
-create index email_contacts_fp on app.email_contacts (address_fp);
-alter table app.email_contacts enable row level security;
-alter table app.email_contacts force row level security;
 
-create policy email_contacts_select on app.email_contacts for select to dog_app
-  using ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or app.actor_kind() = 'system');
-create policy email_contacts_insert on app.email_contacts for insert to dog_app
-  with check (app.actor_kind() in ('member', 'admin') and member_id = app.current_member());
-create policy email_contacts_update on app.email_contacts for update to dog_app
-  using ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or app.actor_kind() = 'system')
-  with check ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or app.actor_kind() = 'system');
-create policy email_contacts_delete on app.email_contacts for delete to dog_app
-  using (app.actor_kind() in ('member', 'admin') and member_id = app.current_member());
-grant select, delete on app.email_contacts to dog_app;
-grant insert (member_id, address_sealed, address_fp, quiet_start, quiet_end, time_zone) on app.email_contacts to dog_app;
-grant update (address_sealed, address_fp, status, quiet_start, quiet_end, time_zone, next_email_at) on app.email_contacts to dog_app;
-
--- A time zone Postgres knows, so quiet hours can always be worked out.
-create function app.known_time_zone(p_tz text) returns boolean
-language sql stable
-as $$ select exists (select 1 from pg_catalog.pg_timezone_names z where z.name = p_tz) $$;
-
-create function app.email_contacts_fill() returns trigger
-language plpgsql
-as $$
-begin
-  if not app.known_time_zone(new.time_zone) then
-    raise exception 'unknown time zone' using errcode = '22023';
-  end if;
-  new.member_id := app.current_member();
-  new.status := 'pending';
-  new.created_at := now();
-  new.confirmed_at := null;
-  new.next_email_at := now();
-  return new;
-end
-$$;
-create trigger email_contacts_fill before insert on app.email_contacts for each row execute function app.email_contacts_fill();
-alter table app.email_contacts enable always trigger email_contacts_fill;
-
--- What may change, and by whom:
---   the member: the address (which then needs confirming again), quiet hours and time zone, and switching copies off,
---   or back on for an address they already confirmed; "active" for a new address only through a confirmation link
---   used in this same transaction;
---   the site itself: switching copies off (one-click unsubscribe), marking an address suppressed, and the hourly limit.
-create function app.email_contacts_guard() returns trigger
-language plpgsql
-as $$
-begin
-  if (new.id, new.member_id, new.created_at) is distinct from (old.id, old.member_id, old.created_at) then
-    raise exception 'an email contact''s owner never changes' using errcode = '42501';
-  end if;
-  if new.time_zone is distinct from old.time_zone and not app.known_time_zone(new.time_zone) then
-    raise exception 'unknown time zone' using errcode = '22023';
-  end if;
-  if app.actor_kind() = 'system' then
-    if (new.address_sealed, new.address_fp, new.quiet_start, new.quiet_end, new.time_zone)
-       is distinct from (old.address_sealed, old.address_fp, old.quiet_start, old.quiet_end, old.time_zone)
-       or (new.status is distinct from old.status and new.status not in ('off', 'suppressed')) then
-      raise exception 'the site only switches email copies off or suppresses an address' using errcode = '42501';
-    end if;
-    new.confirmed_at := old.confirmed_at;
-    return new;
-  end if;
-  new.next_email_at := old.next_email_at;
-  if new.address_fp is distinct from old.address_fp then
-    -- A new address is confirmed before anything is sent to it.
-    new.status := 'pending';
-    new.confirmed_at := null;
-    return new;
-  end if;
-  new.confirmed_at := old.confirmed_at;
-  if new.status is distinct from old.status then
-    if new.status = 'off' then
-      return new;
-    end if;
-    if new.status = 'active' and old.status = 'off' and old.confirmed_at is not null then
-      return new;
-    end if;
-    if new.status = 'active' and old.status = 'pending'
-       and exists (select 1 from app.action_links l where l.member_id = new.member_id and l.purpose = 'confirm_email'
-                   and l.subject_id = new.id and l.bound_hash = new.address_fp and l.used_at > now() - interval '1 minute') then
-      new.confirmed_at := now();
-      return new;
-    end if;
-    raise exception 'email copies switch on through the confirmation email' using errcode = '42501';
-  end if;
-  return new;
-end
-$$;
-create trigger email_contacts_guard before update on app.email_contacts for each row execute function app.email_contacts_guard();
-alter table app.email_contacts enable always trigger email_contacts_guard;
-
--- Addresses that bounced for good or complained, by fingerprint only. They are never mailed again.
+-- ---- Addresses that bounced for good or complained ----
+-- Only a keyed fingerprint (HMAC under the sign-in fingerprint keys, never the address), so a sign-in email is never
+-- sent to them again (notify/sender.js). Written by the bounce handler (api/notify.js, after SNS's signature checks out).
 create table app.email_suppressions (
   id uuid primary key default app.uuid_v7(),
   address_fp text not null unique check (char_length(address_fp) = 64 and address_fp ~ '^[0-9a-f]+$'),
@@ -341,116 +129,10 @@ create policy email_suppressions_insert on app.email_suppressions for insert to 
 grant select on app.email_suppressions to dog_app;
 grant insert (address_fp, reason) on app.email_suppressions to dog_app;
 
--- ---- Safe one-tap links (R16, R33 and confirming an address) ----
--- Minted by the site as it sends an email; only the SHA-256 of the token is kept. Everything else is filled in here,
--- from the database's own rows: who the link is for, what it is bound to and when it expires.
---   approve_draft: the draft's owner, the draft's exact words (its body_hash) and the draft's own expiry
---   keep_acting:   the agent's owner and the rules version in force (a change to the rules ends the link)
---   confirm_email: the member and the address as it was when the email was sent
-create table app.action_links (
-  id uuid primary key default app.uuid_v7(),
-  member_id uuid not null references app.members (id),
-  purpose text not null check (purpose = any (array['approve_draft', 'keep_acting', 'confirm_email'])),
-  subject_id uuid not null,
-  bound_hash text not null check (char_length(bound_hash) = 64 and bound_hash ~ '^[0-9a-f]+$'),
-  token_hash text not null unique check (char_length(token_hash) = 64 and token_hash ~ '^[0-9a-f]+$'),
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  used_at timestamptz
-);
-create index action_links_member on app.action_links (member_id);
-alter table app.action_links enable row level security;
-alter table app.action_links force row level security;
-
--- A member sees and uses only their own links; the site mints them and clears old ones.
-create policy action_links_select on app.action_links for select to dog_app
-  using ((app.actor_kind() in ('member', 'admin') and member_id = app.current_member()) or app.actor_kind() = 'system');
-create policy action_links_insert on app.action_links for insert to dog_app with check (app.actor_kind() = 'system');
-create policy action_links_update on app.action_links for update to dog_app
-  using (app.actor_kind() in ('member', 'admin') and member_id = app.current_member())
-  with check (app.actor_kind() in ('member', 'admin') and member_id = app.current_member());
-create policy action_links_delete on app.action_links for delete to dog_app
-  using (app.actor_kind() = 'system' and (used_at is not null or expires_at < now()));
-grant select, delete on app.action_links to dog_app;
-grant insert (purpose, subject_id, token_hash) on app.action_links to dog_app;
-grant update (used_at) on app.action_links to dog_app;
-
-create function app.action_links_fill() returns trigger
-language plpgsql
-as $$
-declare
-  d record;
-  r record;
-  ec record;
-begin
-  new.created_at := now();
-  new.used_at := null;
-  if new.purpose = 'approve_draft' then
-    select x.owner_id, x.body_hash, x.expires_at into d from app.agent_drafts x
-      where x.id = new.subject_id and x.status = 'pending' and x.expires_at > now();
-    if not found then
-      raise exception 'no waiting draft for that link' using errcode = '22023';
-    end if;
-    new.member_id := d.owner_id;
-    new.bound_hash := d.body_hash;
-    new.expires_at := d.expires_at;
-  elsif new.purpose = 'keep_acting' then
-    select a.owner_id, x.version into r from app.agents a join app.agent_rules x on x.agent_id = a.id
-      where a.id = new.subject_id and a.status = 'active' order by x.version desc limit 1;
-    if not found then
-      raise exception 'no active agent for that link' using errcode = '22023';
-    end if;
-    new.member_id := r.owner_id;
-    new.bound_hash := app.keep_hash(new.subject_id, r.version);
-    new.expires_at := now() + interval '10 days';
-  else
-    select c.member_id, c.address_fp into ec from app.email_contacts c where c.id = new.subject_id and c.status = 'pending';
-    if not found then
-      raise exception 'no address waiting for confirmation' using errcode = '22023';
-    end if;
-    new.member_id := ec.member_id;
-    new.bound_hash := ec.address_fp;
-    new.expires_at := now() + interval '24 hours';
-  end if;
-  return new;
-end
-$$;
-create trigger action_links_fill before insert on app.action_links for each row execute function app.action_links_fill();
-alter table app.action_links enable always trigger action_links_fill;
-
--- A link is used once, before it expires, and nothing else about it ever changes.
-create function app.action_links_guard() returns trigger
-language plpgsql
-as $$
-begin
-  if (new.id, new.member_id, new.purpose, new.subject_id, new.bound_hash, new.token_hash, new.created_at, new.expires_at)
-     is distinct from (old.id, old.member_id, old.purpose, old.subject_id, old.bound_hash, old.token_hash, old.created_at, old.expires_at) then
-    raise exception 'a link can only be used' using errcode = '42501';
-  end if;
-  if old.used_at is not null then
-    raise exception 'link_used' using errcode = 'P0001';
-  end if;
-  if old.expires_at <= now() then
-    raise exception 'link_expired' using errcode = 'P0001';
-  end if;
-  if new.used_at is null then
-    raise exception 'a link can only be used' using errcode = '42501';
-  end if;
-  new.used_at := now();
-  return new;
-end
-$$;
-create trigger action_links_guard before update on app.action_links for each row execute function app.action_links_guard();
-alter table app.action_links enable always trigger action_links_guard;
-
--- What a "keep acting" link is bound to: this agent and this rules version.
-create function app.keep_hash(p_agent uuid, p_version integer) returns text
-language sql immutable
-as $$ select encode(sha256(convert_to('keep:' || p_agent::text || ':' || p_version::text, 'UTF8')), 'hex') $$;
 
 -- ---- The site itself reads what it must count and send ----
--- The timers and the outbox drain run as the site (actor "system"). They count posts, agents' rules and drafts, and
--- put a waiting draft's words into its owner's email. Each policy keeps its whole rule, with "system" added.
+-- The timers run as the site (actor "system"). They count posts, agents' rules and drafts, and find drafts that
+-- expired. Each policy keeps its whole rule, with "system" added.
 drop policy posts_select on app.posts;
 create policy posts_select on app.posts for select to dog_app
   using ((app.actor_kind() = 'member' and author_id = app.current_member())
@@ -489,7 +171,9 @@ create index agent_rules_owner_set on app.agent_rules (agent_id, created_at) whe
 
 drop policy agent_rules_insert on app.agent_rules;
 create policy agent_rules_insert on app.agent_rules for insert to dog_app
-  with check ((app.actor_kind() in ('member', 'admin') and reason in ('created', 'owner', 'reconfirmed')
+  -- An owner's own read or write of their rules can end a containment whose time is up, which restores the rules it
+  -- replaced ('containment_lifted'; app.agent_rules_fill allows exactly that version back, and only once it has ended).
+  with check ((app.actor_kind() in ('member', 'admin') and reason in ('created', 'owner', 'reconfirmed', 'containment_lifted')
                and exists (select 1 from app.agents a where a.id = agent_id and a.owner_id = app.current_member() and a.status = 'active'))
               or (app.actor_kind() = 'admin' and reason in ('report_upheld', 'containment_lifted'))
               or (app.actor_kind() = 'system' and reason in ('act_expired', 'containment', 'containment_lifted')));
@@ -548,6 +232,13 @@ begin
      or new.daily_cap > prev.daily_cap then
     if new.reason in ('report_upheld', 'ban', 'disabled', 'act_expired', 'containment') then
       raise exception 'an upheld report, a ban, a disabled account, an expiry or a containment can only lower an agent''s rules' using errcode = '42501';
+    end if;
+    -- While a containment is in force (until its time is up), the owner can't raise any agent's rules, existing or
+    -- new: everything drafts for their approval until it ends. Lowering stays open (the notifications review,
+    -- finding 1).
+    if exists (select 1 from app.containments c join app.agents a on a.owner_id = c.member_id
+               where a.id = new.agent_id and c.lifted_at is null and c.ends_at > now()) then
+      raise exception 'contained' using errcode = 'P0001', hint = 'Your agents draft for your approval until the pause ends.';
     end if;
     if ((new.post_mode = 'act' and prev.post_mode <> 'act') or (new.reply_mode = 'act' and prev.reply_mode <> 'act')
         or (new.report_mode = 'act' and prev.report_mode <> 'act') or new.daily_cap > prev.daily_cap)
@@ -618,7 +309,7 @@ alter table app.containments enable always trigger containments_fill;
 -- Who may do what to a containment:
 --   the owner: appeal once, while it is on, with an optional note
 --   Aaron: decide an appeal (lift it now, or keep it), or lift it
---   the site: lift it once its time is up
+--   the site, or the owner's own reads and writes of their rules: lift it once its time is up
 create function app.containments_guard() returns trigger
 language plpgsql
 as $$
@@ -628,6 +319,16 @@ begin
     raise exception 'a containment''s record never changes' using errcode = '42501';
   end if;
   if app.actor_kind() = 'member' then
+    -- Once its time is up, a containment ends whenever the owner's rules are read or written, as the timer would
+    -- end it, so a missed timer run never makes a pause longer (the notifications review, finding 3).
+    if new.lifted_at is distinct from old.lifted_at and new.appeal_note is not distinct from old.appeal_note
+       and new.appeal_decision is not distinct from old.appeal_decision and old.lifted_at is null and old.ends_at <= now() then
+      new.appealed_at := old.appealed_at;
+      new.appeal_decided_at := old.appeal_decided_at;
+      new.lifted_at := now();
+      new.lifted_by := 'timer';
+      return new;
+    end if;
     if (new.lifted_at, new.appeal_decision) is distinct from (old.lifted_at, old.appeal_decision) then
       raise exception 'an owner can only appeal' using errcode = '42501';
     end if;
@@ -697,7 +398,7 @@ begin
     || n || case when n = 1 then ' agent that acted on its own now drafts' else ' agents that acted on their own now draft' end
     || ' for your approval until ' || to_char(new.ends_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC, then go back to your rules by themselves. '
     || 'Nothing else changes, and your posts stay up. If this is a mistake, you can appeal.',
-    '/agents#appeal=' || new.id, 'containment', new.id, 'contained:' || new.id, true);
+    '/agents#appeal=' || new.id, 'containment', new.id, 'contained:' || new.id);
   return null;
 end
 $$;
@@ -719,7 +420,7 @@ begin
     perform app.notify(null, 'alert', 'An owner appealed a containment',
       'An owner whose agents were set back to drafting has appealed. It ends by itself at '
       || to_char(new.ends_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC whatever you decide.',
-      '/review#appeals', 'member', new.member_id, 'appeal:' || new.id, true);
+      '/review#appeals', 'member', new.member_id, 'appeal:' || new.id);
   end if;
   if old.appeal_decision is null and new.appeal_decision is not null then
     insert into app.audit_log (action, subject_kind, subject_id, detail)
@@ -728,7 +429,7 @@ begin
       case when new.appeal_decision = 'lifted' then 'Your appeal was upheld' else 'Your appeal was reviewed' end,
       case when new.appeal_decision = 'lifted' then 'Your agents are back on your own rules now.'
            else 'The pause stays until ' || to_char(new.ends_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC, then ends by itself.' end,
-      '/agents', 'containment', new.id, 'appeal_decided:' || new.id, true);
+      '/agents', 'containment', new.id, 'appeal_decided:' || new.id);
   end if;
   if old.lifted_at is null and new.lifted_at is not null then
     for r in select distinct on (x.agent_id) x.agent_id, x.version, x.reason, x.created_at
@@ -747,7 +448,7 @@ begin
     perform app.notify(new.member_id, 'containment_lifted', 'Your agents are back on your rules',
       'The pause on your agents has ended' || case when new.lifted_by = 'admin' then ' early' else '' end || '. '
       || n || case when n = 1 then ' agent is' else ' agents are' end || ' acting on your rules again.',
-      '/agents', 'containment', new.id, 'lifted:' || new.id, false);
+      '/agents', 'containment', new.id, 'lifted:' || new.id);
   end if;
   return null;
 end
@@ -765,7 +466,7 @@ create table app.watch_settings (
   alert_floor integer not null default 30 check (alert_floor between 1 and 1000000),
   -- Contain an owner whose agents take this many actions in an hour, whatever their usual is.
   hard_limit_per_hour integer not null default 500 check (hard_limit_per_hour between 10 and 10000000),
-  -- Contain an owner whose agents post this many copies of text already posted (by anyone) in an hour.
+  -- Contain an owner whose agents post this many copies of other owners' earlier live posts in an hour.
   copy_limit_per_hour integer not null default 50 check (copy_limit_per_hour between 5 and 10000000),
   -- Alert Aaron when one text is posted this many times in a day by more than one account.
   repeat_alert_count integer not null default 20 check (repeat_alert_count between 2 and 10000000),
@@ -792,7 +493,7 @@ declare
 begin
   select a.name into nm from app.agents a where a.id = new.agent_id;
   perform app.notify(new.owner_id, 'draft_waiting', left(coalesce(nm, 'Your agent'), 80) || ' wrote a draft for you',
-    'It waits for your approval and expires in 48 hours if you don''t decide.', '/agents', 'draft', new.id, 'draft:' || new.id, true);
+    'It waits for your approval and expires in 48 hours if you don''t decide.', '/agents', 'draft', new.id, 'draft:' || new.id);
   return null;
 end
 $$;
@@ -814,7 +515,7 @@ begin
   select a.owner_id, a.name into ow, nm from app.agents a where a.id = new.agent_id;
   perform app.notify(ow, 'report_upheld', left(coalesce(nm, 'Your agent'), 80) || ' is drafting again',
     'A report on one of its posts was upheld and the post was removed, so everything it did on its own now waits for your approval. '
-    || 'You can let it act on its own again from your agents page.', '/agents', 'agent', new.agent_id, 'upheld:' || new.id, true);
+    || 'You can let it act on its own again from your agents page.', '/agents', 'agent', new.agent_id, 'upheld:' || new.id);
   return null;
 end
 $$;
@@ -834,27 +535,13 @@ begin
       case when new.people_per_hour = 0 then 'your own posts are paused' when new.people_per_hour is not null then 'at most ' || new.people_per_hour || ' of your own posts an hour' end,
       case when new.agent_posts_per_hour = 0 then 'your agents'' posts are paused' when new.agent_posts_per_hour is not null then 'at most ' || new.agent_posts_per_hour || ' agent posts an hour' end,
       case when new.new_agents_per_day = 0 then 'new agents are paused' when new.new_agents_per_day is not null then 'at most ' || new.new_agents_per_day || ' new agents a day' end)
-    || '. Questions: hello@dayonegreat.com.', '/agents', 'brake', new.id, 'brake:' || new.id, true);
+    || '. Questions: hello@dayonegreat.com.', '/agents', 'brake', new.id, 'brake:' || new.id);
   return null;
 end
 $$;
 create trigger brakes_notify after insert on app.brakes for each row execute function app.brakes_notify();
 alter table app.brakes enable always trigger brakes_notify;
 
--- ---- Quiet hours ----
--- When quiet hours end, if it is quiet hours now in this time zone; null otherwise. start = end means none.
-create function app.quiet_until(p_start smallint, p_end smallint, p_tz text) returns timestamptz
-language sql stable
-as $$
-  with l as (select (now() at time zone p_tz) as t, extract(hour from now() at time zone p_tz)::int as h)
-  select case
-    when p_start = p_end then null
-    when p_start < p_end and l.h >= p_start and l.h < p_end then (date_trunc('day', l.t) + make_interval(hours => p_end)) at time zone p_tz
-    when p_start > p_end and l.h >= p_start then (date_trunc('day', l.t) + interval '1 day' + make_interval(hours => p_end)) at time zone p_tz
-    when p_start > p_end and l.h < p_end then (date_trunc('day', l.t) + make_interval(hours => p_end)) at time zone p_tz
-  end
-  from l
-$$;
 
 -- ---- The timers (run every minute by api/cron.js as the site itself; each is safe to run twice) ----
 create function app.require_system() returns void
@@ -867,7 +554,7 @@ begin
 end
 $$;
 
--- Drafts that expired without a decision: the owner hears once. Old links and finished outbox rows are cleared.
+-- Drafts that expired without a decision: the owner hears once.
 create function app.drafts_expire_job() returns integer
 language plpgsql
 as $$
@@ -882,12 +569,10 @@ begin
            order by x.expires_at limit 500 loop
     if app.notify(d.owner_id, 'draft_expired', left(coalesce(d.name, 'Your agent'), 80) || '''s draft expired',
          'Nobody decided within 48 hours, so it was not posted. Your agent can write it again.', '/agents', 'draft', d.id,
-         'draft_expired:' || d.id, false) then
+         'draft_expired:' || d.id) then
       n := n + 1;
     end if;
   end loop;
-  delete from app.action_links l where (l.used_at is not null and l.used_at < now() - interval '7 days') or l.expires_at < now() - interval '7 days';
-  delete from app.outbox o where o.status in ('sent', 'skipped', 'failed') and o.created_at < now() - interval '30 days';
   return n;
 end
 $$;
@@ -922,12 +607,12 @@ begin
       perform app.notify(r.owner_id, 'act_expired', left(coalesce(r.name, 'Your agent'), 80) || ' is drafting again',
         'It had acted on its own for 90 days without your confirmation, so what it did on its own now waits for your approval. '
         || 'Nothing is switched off. You can let it act on its own again from your agents page.', '/agents', 'agent', r.agent_id,
-        'act_expired:' || r.agent_id || ':' || r.version, true);
+        'act_expired:' || r.agent_id || ':' || r.version);
       lowered := lowered + 1;
     elsif app.notify(r.owner_id, 'act_reconfirm', 'Keep ' || left(coalesce(r.name, 'your agent'), 80) || ' acting on its own?',
         'It has acted on its own under your rules for 80 days. One tap keeps it that way for another 90 days. '
         || 'If you don''t answer by ' || to_char((r.since + interval '90 days') at time zone 'UTC', 'YYYY-MM-DD') || ', it goes back to drafting for your approval; nothing is switched off.',
-        '/agents', 'agent', r.agent_id, 'act_reconfirm:' || r.agent_id || ':' || r.version, true) then
+        '/agents', 'agent', r.agent_id, 'act_reconfirm:' || r.agent_id || ':' || r.version) then
       asked := asked + 1;
     end if;
   end loop;
@@ -938,7 +623,7 @@ $$;
 -- The watch: each owner's hour compared with their own last 7 days; bursts of new accounts; one text repeated across
 -- accounts. Alerts go to Aaron's inbox. Past the hard limit, the owner is contained (above). Repeated text counts
 -- against whoever repeated it, never against the first author: a post counts as a copy only if the same text
--- (ignoring case, spaces and punctuation) was posted earlier, by anyone.
+-- (ignoring case, spaces and punctuation) is in an earlier post by another owner that is still live.
 create function app.watch_job() returns jsonb
 language plpgsql
 as $$
@@ -966,8 +651,11 @@ begin
     copies as (
       select p.author_id as owner, count(*) as n from app.posts p
       where p.lane = 'agents' and p.created_at > now() - interval '1 hour'
+        -- A copy of an earlier live post by another owner: a removed, hidden or held post counts for nothing, and the
+        -- same owner repeating themselves isn't copying, so nobody can get an honest owner paused by posting their
+        -- text first and having it taken down (the notifications review, finding 2).
         and exists (select 1 from app.posts e where e.body_fp = p.body_fp and e.created_at > now() - interval '7 days'
-                    and (e.created_at, e.id) < (p.created_at, p.id))
+                    and e.status = 'live' and e.author_id <> p.author_id and (e.created_at, e.id) < (p.created_at, p.id))
       group by p.author_id)
     select coalesce(per.owner, copies.owner) as owner, coalesce(per.last_hour, 0) as last_hour, coalesce(per.before, 0) as before,
            coalesce(copies.n, 0) as copies
@@ -981,7 +669,7 @@ begin
     if r.last_hour >= s.alert_floor and r.last_hour > s.alert_multiplier * usual then
       if app.notify(null, 'alert', 'An owner''s agents are unusually busy',
            r.last_hour || ' agent actions in the last hour; this owner''s usual hour over the last 7 days is ' || round(usual, 1) || '.',
-           '/controls', 'member', r.owner, 'alert:volume:' || r.owner || ':' || hour_key, true) then
+           '/controls', 'member', r.owner, 'alert:volume:' || r.owner || ':' || hour_key) then
         alerts := alerts + 1;
       end if;
     end if;
@@ -999,7 +687,7 @@ begin
         case when r.last_hour >= s.hard_limit_per_hour then r.last_hour || ' agent actions in the last hour, past the hard limit of ' || s.hard_limit_per_hour
              else r.copies || ' copies of text already posted, past the limit of ' || s.copy_limit_per_hour end
         || '. It lifts by itself in ' || s.containment_hours || ' hours; the owner can appeal.', '/review#appeals', 'member', r.owner,
-        'alert:contained:' || r.owner || ':' || hour_key, true);
+        'alert:contained:' || r.owner || ':' || hour_key);
       contained := contained + 1;
     end if;
   end loop;
@@ -1009,7 +697,7 @@ begin
   select count(*) / 168.0 into usual from app.members m where m.created_at <= now() - interval '1 hour' and m.created_at > now() - interval '7 days 1 hour';
   if n >= s.signup_floor and n > s.signup_multiplier * usual then
     if app.notify(null, 'alert', 'A burst of new accounts', n || ' accounts joined in the last hour; the usual hour over the last 7 days is ' || round(usual, 1) || '.',
-         '/controls', null, null, 'alert:signups:' || hour_key, true) then
+         '/controls', null, null, 'alert:signups:' || hour_key) then
       alerts := alerts + 1;
     end if;
   end if;
@@ -1020,7 +708,7 @@ begin
            having count(*) >= s.repeat_alert_count and count(distinct p.author_id) > 1 limit 20 loop
     if app.notify(null, 'alert', 'The same text keeps being posted',
          'One text was posted ' || r.posts || ' times by ' || r.authors || ' accounts in the last day. The first author is not counted against; the copies are.',
-         '/controls', null, null, 'alert:repeat:' || r.body_fp || ':' || to_char(now() at time zone 'UTC', 'YYYYMMDD'), true) then
+         '/controls', null, null, 'alert:repeat:' || r.body_fp || ':' || to_char(now() at time zone 'UTC', 'YYYYMMDD')) then
       alerts := alerts + 1;
     end if;
   end loop;
@@ -1071,9 +759,9 @@ $$;
 --   A deletion review: the member is told their account was flagged as high risk, and Aaron is alerted.
 -- Alerts name the member as their subject, so deleting the account deletes them too.
 create policy notices_jevs_insert on app.notices for insert to dog_jevs
-  with check (kind in ('challenge', 'account_flagged', 'alert') and send_copy = false);
-grant insert (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key, send_copy) on app.notices to dog_jevs;
-grant execute on function app.notify(uuid, text, text, text, text, text, uuid, text, boolean) to dog_jevs;
+  with check (kind in ('challenge', 'account_flagged', 'alert'));
+grant insert (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key) on app.notices to dog_jevs;
+grant execute on function app.notify(uuid, text, text, text, text, text, uuid, text) to dog_jevs;
 
 create function app.jevs_challenges_notify() returns trigger
 language plpgsql
@@ -1089,12 +777,12 @@ begin
   if new.subject_kind = 'post' then
     perform app.notify(new.owner_id, 'challenge', 'A post is waiting for you to confirm it',
       'Our automatic checks (JEVs) asked you to confirm this post before it goes live. Confirm it or withdraw it here within 48 hours.',
-      null, 'challenge', new.id, 'jevs:challenge:' || new.id::text, false);
+      null, 'challenge', new.id, 'jevs:challenge:' || new.id::text);
   else
     perform app.notify(new.owner_id, 'challenge', 'Please confirm ' || what,
       'Our automatic checks (JEVs) ask you to confirm ' || what || ' by signing in again. Sign in, then do it once more: it goes ahead straight away.',
       '/join?return_to=' || case when new.action = 'account.delete' then '%2Faccount' else '%2Fagents' end,
-      'challenge', new.id, 'jevs:challenge:' || new.id::text, false);
+      'challenge', new.id, 'jevs:challenge:' || new.id::text);
   end if;
   new.delivered_at := now();
   return new;
@@ -1117,7 +805,7 @@ begin
         || '. The scores are on ' || case when new.subject_kind = 'post' then 'the review queue.' else 'the owner controls.' end,
       case when new.subject_kind = 'post' then '/review' else '/controls' end,
       case when new.member_id is not null then 'member' else new.subject_kind end, coalesce(new.member_id, new.subject_id),
-      'jevs:alert:' || new.id::text, false);
+      'jevs:alert:' || new.id::text);
   end if;
   return null;
 end
@@ -1133,11 +821,11 @@ begin
     'Our automatic checks (JEVs) flagged your request to delete your account as high risk, so it hasn''t been deleted. Aaron will '
     || 'review it and decide. If he hasn''t decided within 24 hours, your account will be disabled: you''ll be signed out everywhere, you '
     || 'won''t be able to sign in, and your agents will be switched off. Nothing is deleted until he decides.',
-    '/account', 'member', new.member_id, 'jevs:flagged:' || new.id::text, false);
+    '/account', 'member', new.member_id, 'jevs:flagged:' || new.id::text);
   perform app.notify(null, 'alert', 'A deletion needs your decision',
     'JEVs scored a request to delete an account as high risk. Decide it under Deletion reviews: allow the deletion, keep the account '
     || 'disabled, or restore it. If you haven''t decided within 24 hours, the account is disabled, not deleted.',
-    '/controls', 'member', new.member_id, 'jevs:review:' || new.id::text, false);
+    '/controls', 'member', new.member_id, 'jevs:review:' || new.id::text);
   return null;
 end
 $$;
@@ -1145,25 +833,15 @@ create trigger deletion_reviews_notify after insert on app.deletion_reviews for 
 alter table app.deletion_reviews enable always trigger deletion_reviews_notify;
 revoke execute on function app.jevs_challenges_notify(), app.jevs_decisions_alert(), app.deletion_reviews_notify() from public;
 
--- ---- Deleting an account (F8) also clears notices, email copies, links and containments ----
+-- ---- Deleting an account (F8) also clears notices and containments ----
 create policy notices_erase_select on app.notices for select to dog_erase using (true);
 create policy notices_erase_delete on app.notices for delete to dog_erase using (true);
 grant select (id, member_id, subject_kind, subject_id), delete on app.notices to dog_erase;
-create policy outbox_erase_select on app.outbox for select to dog_erase using (true);
-create policy outbox_erase_delete on app.outbox for delete to dog_erase using (true);
-grant select (id, member_id, notice_id), delete on app.outbox to dog_erase;
-create policy email_contacts_erase_select on app.email_contacts for select to dog_erase using (true);
-create policy email_contacts_erase_delete on app.email_contacts for delete to dog_erase using (true);
-grant select (id, member_id), delete on app.email_contacts to dog_erase;
-create policy action_links_erase_select on app.action_links for select to dog_erase using (true);
-create policy action_links_erase_delete on app.action_links for delete to dog_erase using (true);
-grant select (id, member_id), delete on app.action_links to dog_erase;
 create policy containments_erase_select on app.containments for select to dog_erase using (true);
 create policy containments_erase_delete on app.containments for delete to dog_erase using (true);
 grant select (id, member_id), delete on app.containments to dog_erase;
 
--- Deleting an account (F8) also clears the member's notices (and Aaron's alerts about them), their email copies,
--- links and containments. The deletion itself is app.erase_member (010), which a member's own deletion and Aaron's
+-- Deleting an account (F8) also clears the member's notices (and Aaron's alerts about them) and containments. The deletion itself is app.erase_member (010), which a member's own deletion and Aaron's
 -- decision on a deletion review both use; it runs with dog_erase's rights. Same as 010 otherwise.
 create or replace function app.erase_member(p_member uuid)
 returns table (posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer)
@@ -1198,13 +876,9 @@ begin
   get diagnostics n_my_reports = row_count;
   delete from app.posts p where p.author_id = me;
   get diagnostics n_posts = row_count;
-  -- PR 13: the member's notices (and the alerts to Aaron about them), their email copies, links and containments.
-  delete from app.outbox o where o.member_id = me
-    or o.notice_id in (select x.id from app.notices x where x.member_id = me or (x.member_id is null and x.subject_kind = 'member' and x.subject_id = me));
+  -- PR 13: the member's notices (and the alerts to Aaron about them) and containments.
   delete from app.notices x where x.member_id = me or (x.member_id is null and x.subject_kind = 'member' and x.subject_id = me);
   get diagnostics n_notices = row_count;
-  delete from app.action_links l where l.member_id = me;
-  delete from app.email_contacts e where e.member_id = me;
   delete from app.containments c where c.member_id = me;
   delete from app.agent_drafts d where d.owner_id = me;
   get diagnostics n_drafts = row_count;
@@ -1230,12 +904,9 @@ end
 $$;
 
 -- ---- Who may call what ----
-revoke execute on function app.notices_fill(), app.notices_guard(), app.outbox_fill(), app.outbox_guard(), app.notices_queue_email(),
-  app.notify(uuid, text, text, text, text, text, uuid, text, boolean), app.known_time_zone(text), app.email_contacts_fill(),
-  app.email_contacts_guard(), app.action_links_fill(), app.action_links_guard(), app.keep_hash(uuid, integer), app.containments_fill(),
-  app.containments_guard(), app.containments_start(), app.containments_after(), app.agent_drafts_notify(), app.agent_rules_notify(),
-  app.brakes_notify(), app.quiet_until(smallint, smallint, text), app.require_system(), app.drafts_expire_job(), app.act_reconfirm_job(),
+revoke execute on function app.notices_fill(), app.notices_guard(), app.notify(uuid, text, text, text, text, text, uuid, text),
+  app.containments_fill(), app.containments_guard(), app.containments_start(), app.containments_after(), app.agent_drafts_notify(),
+  app.agent_rules_notify(), app.brakes_notify(), app.require_system(), app.drafts_expire_job(), app.act_reconfirm_job(),
   app.watch_job(), app.containment_lift_job(), app.run_timers() from public;
-grant execute on function app.notify(uuid, text, text, text, text, text, uuid, text, boolean), app.known_time_zone(text),
-  app.keep_hash(uuid, integer), app.quiet_until(smallint, smallint, text), app.require_system(), app.drafts_expire_job(),
+grant execute on function app.notify(uuid, text, text, text, text, text, uuid, text), app.require_system(), app.drafts_expire_job(),
   app.act_reconfirm_job(), app.watch_job(), app.containment_lift_job(), app.run_timers() to dog_app;

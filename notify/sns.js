@@ -1,8 +1,9 @@
 // Amazon SNS messages (bounces and complaints from SES), trusted only after their signature checks out
 // (https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message.html):
-//   1. the signing certificate comes from an https://sns.<region>.amazonaws.com address, ending in .pem
-//   2. the signature over the message's fields, in SNS's fixed order, verifies with that certificate
-//      (SignatureVersion 1 is SHA1withRSA, 2 is SHA256withRSA)
+//   1. the signing certificate comes from https://sns.<region>.amazonaws.com, for the region of our own topic
+//      (SNS_TOPIC_ARN), ending in .pem: no other region, and no other host that merely looks like SNS
+//   2. the signature over the message's fields, in SNS's fixed order, verifies with that certificate, and it is
+//      SignatureVersion 2 (SHA256withRSA); SHA1 (version 1) is refused
 //   3. the topic is ours (SNS_TOPIC_ARN). Anyone can create a topic and point it at us, and SNS signs their messages
 //      too, so a good signature alone proves only that the message came through SNS.
 //   4. it is less than an hour old, so an old message can't be replayed.
@@ -10,7 +11,13 @@
 
 const crypto = require('crypto');
 
-const CERT_HOST = /^sns\.[a-z0-9-]{3,}\.amazonaws\.com(\.cn)?$/;
+// sns.<region>.amazonaws.com, or .amazonaws.com.cn in AWS's China regions; the region is taken from our topic's ARN.
+const REGION = /^[a-z]{2}(-[a-z]+)+-\d$/;
+function snsHost(topicArn) {
+  const region = typeof topicArn === 'string' ? topicArn.split(':')[3] : null;
+  if (!region || !REGION.test(region)) return null;
+  return 'sns.' + region + '.amazonaws.com' + (region.startsWith('cn-') ? '.cn' : '');
+}
 const MAX_AGE_MS = 3600 * 1000;
 const FIELDS = {
   Notification: ['Message', 'MessageId', 'Subject', 'Timestamp', 'TopicArn', 'Type'],
@@ -18,10 +25,11 @@ const FIELDS = {
   UnsubscribeConfirmation: ['Message', 'MessageId', 'SubscribeURL', 'Timestamp', 'Token', 'TopicArn', 'Type']
 };
 
-function certUrlOk(s) {
+function certUrlOk(s, topicArn) {
+  const host = snsHost(topicArn);
   let u;
   try { u = new URL(s); } catch { return false; }
-  return u.protocol === 'https:' && u.port === '' && CERT_HOST.test(u.hostname) && u.pathname.endsWith('.pem') && !u.search && !u.username;
+  return Boolean(host) && u.protocol === 'https:' && u.port === '' && u.hostname === host && u.pathname.endsWith('.pem') && !u.search && !u.username;
 }
 
 // The exact text SNS signed: each field present, as "Name\nValue\n", in SNS's order.
@@ -63,8 +71,8 @@ async function fetchCert(url) {
 async function verify(m, { topicArn, getCert = fetchCert, now = Date.now() } = {}) {
   if (!m || typeof m !== 'object' || Array.isArray(m)) return { ok: false, reason: 'shape' };
   if (!topicArn || m.TopicArn !== topicArn) return { ok: false, reason: 'topic' };
-  if (m.SignatureVersion !== '1' && m.SignatureVersion !== '2') return { ok: false, reason: 'version' };
-  if (!certUrlOk(m.SigningCertURL)) return { ok: false, reason: 'cert_url' };
+  if (m.SignatureVersion !== '2') return { ok: false, reason: 'version' };
+  if (!certUrlOk(m.SigningCertURL, topicArn)) return { ok: false, reason: 'cert_url' };
   const text = stringToSign(m);
   if (text === null || typeof m.Signature !== 'string' || m.Signature.length > 1024) return { ok: false, reason: 'shape' };
   const at = Date.parse(m.Timestamp);
@@ -79,7 +87,7 @@ async function verify(m, { topicArn, getCert = fetchCert, now = Date.now() } = {
   } catch { return { ok: false, reason: 'cert' }; }
   let good = false;
   try {
-    good = crypto.verify(m.SignatureVersion === '1' ? 'sha1' : 'sha256', Buffer.from(text, 'utf8'), key, Buffer.from(m.Signature, 'base64'));
+    good = crypto.verify('sha256', Buffer.from(text, 'utf8'), key, Buffer.from(m.Signature, 'base64'));
   } catch { good = false; }
   return good ? { ok: true, message: m } : { ok: false, reason: 'signature' };
 }
@@ -96,11 +104,12 @@ function suppressions(m) {
   return [];
 }
 
-// Where to confirm a subscription: only an SNS address over HTTPS.
-function subscribeUrlOk(s) {
+// Where to confirm a subscription: only our topic's own SNS address, over HTTPS.
+function subscribeUrlOk(s, topicArn) {
+  const host = snsHost(topicArn);
   let u;
   try { u = new URL(s); } catch { return false; }
-  return u.protocol === 'https:' && u.port === '' && CERT_HOST.test(u.hostname);
+  return Boolean(host) && u.protocol === 'https:' && u.port === '' && u.hostname === host && !u.username;
 }
 
-module.exports = { verify, stringToSign, certUrlOk, subscribeUrlOk, suppressions, fetchCert };
+module.exports = { verify, stringToSign, certUrlOk, subscribeUrlOk, suppressions, fetchCert, snsHost };

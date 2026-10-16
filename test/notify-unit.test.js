@@ -1,6 +1,6 @@
 // Release 2, PR 13: the parts of notifications that need no database. SigV4 against AWS's published test vectors,
-// the SES request against a local fake server (no real network), the raw email and its one-click unsubscribe, SNS
-// signatures with a fixture certificate made fresh each run, the cron secret, and the wiring in vercel.json.
+// the SES request against a local fake server (no real network), the raw sign-in email, SNS signatures with a fixture
+// certificate made fresh each run (our topic's region only, version 2 only), the cron secret, and vercel.json.
 'use strict';
 
 const test = require('node:test');
@@ -14,7 +14,7 @@ const mime = require('../notify/mime');
 const sns = require('../notify/sns');
 const ncfg = require('../notify/config');
 const { sesTransport, logTransport } = require('../notify/transport');
-const { signinSender, compose } = require('../notify/drain');
+const { signinSender } = require('../notify/sender');
 const fx = require('./notify-helpers');
 
 const root = path.join(__dirname, '..');
@@ -87,12 +87,12 @@ test('SES: one signed SendEmail v2 request with our raw message, and only certai
   assert.throws(() => sesTransport({ region: 'nowhere', ...EXAMPLE }), /region/);
 });
 
-test('email: RFC 8058 one-click headers, UTF-8 subjects, and no header injection from anything a member wrote', () => {
-  const raw = mime.build({ from: 'Day One Great <notices@dayonegreat.com>', to: 'ada@example.com', replyTo: 'hello@dayonegreat.com', subject: 'Héllo · ✓',
-    text: 'line one\nline two ✓', unsubscribe: 'https://dayonegreat.com/api/notify/unsubscribe?c=1&s=2' });
-  const p = mime.parse(raw);
-  assert.strictEqual(p.headers['list-unsubscribe'], '<https://dayonegreat.com/api/notify/unsubscribe?c=1&s=2>');
-  assert.strictEqual(p.headers['list-unsubscribe-post'], 'List-Unsubscribe=One-Click');
+test('email: a plain sign-in message, UTF-8 subjects, no list headers, and no header injection from anything typed', () => {
+  const raw = mime.build({ from: 'Day One Great <signin@dayonegreat.com>', to: 'ada@example.com', replyTo: 'hello@dayonegreat.com', subject: 'Héllo · ✓',
+    text: 'line one\nline two ✓' });
+  const p = fx.parse(raw);
+  assert.ok(!('list-unsubscribe' in p.headers) && !('list-unsubscribe-post' in p.headers), 'not a mailing list: sign-in emails only');
+  assert.strictEqual(p.headers['auto-submitted'], 'auto-generated');
   assert.match(p.headers.subject, /^=\?UTF-8\?B\?/);
   assert.strictEqual(p.text, 'line one\nline two ✓');
   assert.ok(raw.split('\r\n\r\n')[1].length > 0 && !/[^\r]\n/.test(raw), 'every line ends with CRLF');
@@ -101,23 +101,25 @@ test('email: RFC 8058 one-click headers, UTF-8 subjects, and no header injection
     assert.throws(() => mime.build({ from: 'a@dayonegreat.com', to: 'b@example.com', subject: bad, text: 'x' }), /control characters/);
   }
   assert.throws(() => mime.build({ from: 'a@dayonegreat.com', to: 'b@example.com\r\nBcc: c@example.com', subject: 's', text: 'x' }));
-  assert.throws(() => mime.build({ from: 'a@dayonegreat.com', to: 'b@example.com', subject: 's', text: 'x', unsubscribe: 'http://dayonegreat.com/u' }), /https/);
   // Every line of a raw message stays within the 998-character limit, however long the text.
   assert.ok(mime.build({ from: 'a@dayonegreat.com', to: 'b@example.com', subject: 's', text: 'x'.repeat(5000) }).split('\r\n').every((l) => l.length <= 998));
 });
 
-test('SNS: a message is trusted only with a good signature from an SNS certificate address, for our topic, and fresh', async () => {
+test('SNS: a message is trusted only with a good version 2 signature from our topic\'s own SNS region, for our topic, and fresh', async () => {
   const { key, cert } = fx.makeCert();
   const getCert = async (url) => { assert.strictEqual(url, fx.CERT_URL); return cert; };
   const ok = (m) => sns.verify(m, { topicArn: fx.TOPIC, getCert });
-  for (const version of ['1', '2']) assert.strictEqual((await ok(fx.signed(key, { Message: fx.bounce('a@example.com') }, { version }))).ok, true, 'version ' + version);
+  assert.strictEqual((await ok(fx.signed(key, { Message: fx.bounce('a@example.com') }))).ok, true, 'version 2');
+  assert.strictEqual((await ok(fx.signed(key, { Message: fx.bounce('a@example.com') }, { version: '1' }))).reason, 'version', 'SHA1 (version 1) is refused');
   assert.strictEqual((await ok(fx.signed(key, { Message: 'x', Subject: 'Amazon SES Email Event Notification' }))).ok, true, 'with a subject');
   const good = fx.signed(key, { Message: fx.bounce('a@example.com') });
   assert.strictEqual((await ok({ ...good, Message: fx.bounce('b@example.com') })).reason, 'signature', 'changed after signing');
   assert.strictEqual((await sns.verify(good, { topicArn: 'arn:aws:sns:us-east-1:999999999999:theirs', getCert })).reason, 'topic', 'another topic');
   assert.strictEqual((await sns.verify(good, { topicArn: null, getCert })).reason, 'topic', 'no topic configured: nothing trusted');
   for (const u of ['http://sns.us-east-1.amazonaws.com/c.pem', 'https://sns.us-east-1.amazonaws.com.evil.com/c.pem', 'https://evil.com/sns.us-east-1.amazonaws.com/c.pem',
-    'https://sns.us-east-1.amazonaws.com/c.txt', 'https://sns.us-east-1.amazonaws.com:8443/c.pem']) {
+    'https://sns.us-east-1.amazonaws.com/c.txt', 'https://sns.us-east-1.amazonaws.com:8443/c.pem',
+    // Another region, or a host that only looks like SNS (the notifications review's suspicion): refused.
+    'https://sns.eu-west-1.amazonaws.com/c.pem', 'https://sns.s3-external-1.amazonaws.com/c.pem']) {
     assert.strictEqual((await ok(fx.signed(key, { Message: 'x', SigningCertURL: u }))).reason, 'cert_url', u);
   }
   assert.strictEqual((await ok(fx.signed(key, { Message: 'x', Timestamp: new Date(Date.now() - 2 * 3600000).toISOString() }))).reason, 'stale');
@@ -127,7 +129,11 @@ test('SNS: a message is trusted only with a good signature from an SNS certifica
   assert.strictEqual((await ok({ ...good, SignatureVersion: '3' })).reason, 'version');
   const conf = fx.signed(key, { Type: 'SubscriptionConfirmation', Message: 'confirm', Token: 'tok', SubscribeURL: 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription' });
   assert.strictEqual((await ok(conf)).ok, true);
-  assert.ok(sns.subscribeUrlOk(conf.SubscribeURL) && !sns.subscribeUrlOk('https://evil.com/?Action=ConfirmSubscription'));
+  assert.ok(sns.subscribeUrlOk(conf.SubscribeURL, fx.TOPIC) && !sns.subscribeUrlOk('https://evil.com/?Action=ConfirmSubscription', fx.TOPIC));
+  assert.ok(!sns.subscribeUrlOk('https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription', fx.TOPIC), 'our region only');
+  assert.strictEqual(sns.snsHost('arn:aws:sns:cn-north-1:123456789012:t'), 'sns.cn-north-1.amazonaws.com.cn');
+  assert.strictEqual(sns.snsHost('arn:aws:sns:evil.com:1:t'), null, 'a malformed region gives no host, so nothing is trusted');
+  assert.strictEqual(sns.snsHost(null), null);
   assert.deepStrictEqual(sns.suppressions({ Message: fx.bounce('a@example.com') }), [{ address: 'a@example.com', reason: 'bounce' }]);
   assert.deepStrictEqual(sns.suppressions({ Message: fx.bounce('a@example.com', 'Transient') }), [], 'a soft bounce isn\'t suppressed');
   assert.deepStrictEqual(sns.suppressions({ Message: fx.complaint('c@example.com') }), [{ address: 'c@example.com', reason: 'complaint' }]);
@@ -157,20 +163,20 @@ test('the log transport sends nothing and logs no address or words; sign-in emai
   const raw = mime.build({ from: 'a@dayonegreat.com', to: 'secret.person@example.com', subject: 'Private subject', text: 'private words' });
   assert.strictEqual((await lt.send({ raw })).ok, true);
   assert.ok(!/secret\.person|Private|private/.test(lines.join('\n')));
-  assert.strictEqual(signinSender({ transport: lt }), null, 'the log transport would swallow sign-in links');
-  assert.strictEqual(typeof signinSender({ transport: { name: 'ses', send: async () => ({ ok: true }) }, from: 'a@dayonegreat.com', replyTo: 'hello@dayonegreat.com' }), 'function');
-  // A digest: the agent's words quoted, links to /act with the token after "#", and the unsubscribe address signed.
-  const keys = ncfg.keys(crypto.randomBytes(32).toString('base64'));
-  const id = crypto.randomUUID();
-  const msg = compose({ purpose: 'notice', contactId: id, items: [{ kind: 'draft_waiting', title: 'Helper wrote a draft', body: 'b', link: '/agents',
-    approve: { words: 'Line 1\nLine 2', agentName: 'Helper', token: 'T'.repeat(43) } }] }, { keys });
-  assert.match(msg.text, /> Line 1\n> Line 2/);
-  assert.ok(msg.text.includes('https://dayonegreat.com/act#approve=' + 'T'.repeat(43)));
-  assert.ok(ncfg.unsubOk(keys, id, new URL(msg.unsubscribe).searchParams.get('s')));
-  assert.ok(!ncfg.unsubOk(keys, crypto.randomUUID(), new URL(msg.unsubscribe).searchParams.get('s')), 'a signature works for its own contact only');
+  const deps = { run: async () => false, keys: [{ version: 1, key: crypto.randomBytes(32) }] };
+  assert.strictEqual(signinSender({ transport: lt }, deps), null, 'the log transport would swallow sign-in links');
+  assert.strictEqual(typeof signinSender({ transport: { name: 'ses', send: async () => ({ ok: true }) }, from: 'a@dayonegreat.com', replyTo: 'hello@dayonegreat.com' }, deps), 'function');
+  assert.strictEqual(signinSender({ transport: { name: 'ses' } }, { run: deps.run, keys: null }), null, 'no keys, no suppression check, so no sender');
+  // Bounce fingerprints: the same address however it is written, keyed (never the address), one per key in use.
+  const k2 = [{ version: 2, key: crypto.randomBytes(32) }, deps.keys[0]];
+  const a = ncfg.suppressionPrints(k2, ' Ada@Example.com ');
+  assert.deepStrictEqual(a, ncfg.suppressionPrints(k2, 'ada@example.com'));
+  assert.strictEqual(a.length, 2);
+  assert.ok(a.every((f) => /^[0-9a-f]{64}$/.test(f) && !f.includes('ada')));
+  assert.notDeepStrictEqual(a[1], require('../signin/crypto').fingerprints(deps.keys, 'email', 'ada@example.com')[0], 'a label of its own, never a sign-in fingerprint');
 });
 
-test('vercel.json: the outbox drain runs every minute, /api/notify is routed, and the cron path is never redirected', () => {
+test('vercel.json: the timers run every minute, /api/notify is routed, and the cron path is never redirected', () => {
   const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   assert.deepStrictEqual(v.crons, [{ path: '/api/cron', schedule: '* * * * *' }]);
   assert.ok(v.rewrites.some((r) => r.source === '/api/notify/:path*' && r.destination === '/api/notify?route=:path*'));
@@ -181,16 +187,3 @@ test('vercel.json: the outbox drain runs every minute, /api/notify is routed, an
   assert.ok(!rule.test('/api/cron') && rule.test('/') && rule.test('/api/cronx') && rule.test('/agents') && rule.test('/api/notify'));
 });
 
-test('the /act page shows what a link does first, by text only, and approves by hashing the very words it shows', () => {
-  const js = fs.readFileSync(path.join(root, 'act.js'), 'utf8');
-  const html = fs.readFileSync(path.join(root, 'act.html'), 'utf8');
-  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function/.test(js));
-  assert.match(js, /preview: true/, 'it looks before it does anything');
-  assert.match(js, /sha256\(words\.textContent\)/, 'the hash of the words on the page');
-  assert.match(js, /words\.textContent = d\.draft\.body/);
-  assert.match(js, /history\.replaceState/, 'the token leaves the address bar');
-  assert.match(html, /<script defer src="\/act\.js"><\/script>/);
-  assert.match(html, /name="robots" content="noindex"/);
-  assert.match(html, /name="referrer" content="no-referrer"/);
-  assert.ok(!/<form/.test(html), 'no form: nothing posts by itself');
-});
