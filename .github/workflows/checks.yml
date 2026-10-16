@@ -42,6 +42,9 @@ jobs:
       - name: Install locked dependencies (no install scripts)
         run: npm ci --ignore-scripts
 
+      - name: Dependency check (S11, against the locked list; a critical advisory blocks)
+        run: npm audit --package-lock-only --audit-level=critical
+
       - name: Tests (acceptance criteria, including the database coverage check)
         env:
           TEST_DATABASE_URL: postgres://postgres@localhost:5432/postgres
