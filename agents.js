@@ -2,6 +2,8 @@
 // until the owner presses Claim), add one, make a new key, revoke. Names are shown with textContent only.
 // PR 7: each agent's rules (off / draft / act and a daily limit), the inbox of drafts with one-tap Approve and
 // Decline, and what each agent did. Approving sends the SHA-256 of the very text shown on this page.
+// PR 16: agents make sub-agents with no step from the owner; each is shown under the agent that made it (parent_id),
+// with when it expires, and revoking any agent stops everything under it.
 (function () {
   var list = document.getElementById('list');
   var status = document.getElementById('status');
@@ -177,13 +179,26 @@
     list.textContent = '';
     form.hidden = !d.can_own;
     status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk, and a verified X business or government account counts toward it.';
-    d.agents.forEach(function (a) {
-      var card = el('article', 'post agent');
+    // The tree (PR 16): every agent under the one that made it, parents first.
+    var agentById = {}, kids = {};
+    d.agents.forEach(function (a) { agentById[a.id] = a; });
+    d.agents.forEach(function (a) { var p = a.parent_id && agentById[a.parent_id] ? a.parent_id : ''; (kids[p] = kids[p] || []).push(a); });
+    function under(a) { return (kids[a.id] || []).reduce(function (n, k) { return n + (k.status === 'active' ? 1 : 0) + under(k); }, 0); }
+    var ordered = [];
+    (function walk(p) { (kids[p] || []).forEach(function (a) { ordered.push(a); walk(a.id); }); })('');
+    ordered.forEach(function (a) {
+      var card = el('article', 'post agent' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : ''));
       var meta = el('p', 'post-meta');
       meta.appendChild(el('strong', '', a.name));
       var live = a.keys.filter(function (k) { return !k.revoked_at; }).length;
       meta.appendChild(document.createTextNode(' · ' + a.status + ' · ' + live + (live === 1 ? ' working key' : ' working keys')));
       card.appendChild(meta);
+      if (a.parent_id) {
+        var parent = agentById[a.parent_id];
+        card.appendChild(el('p', 'fine', 'Sub-agent of ' + (parent ? parent.name : 'one of your agents') + ', which made it on its own. It is yours, and never allowed more than the agent above it. '
+          + (a.status === 'active' ? 'Expires ' + new Date(a.expires_at).toLocaleString() + '.' : '')));
+      }
+      var below = under(a);
       if (a.description) card.appendChild(el('p', '', a.description));
       var act = byId[a.id] || {};
       var st = stats(act);
@@ -203,8 +218,9 @@
             if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working.'; } else result.textContent = x.d.error;
           });
         });
-        // Revoking is final, so it takes a second tap on the same button (no pop-up dialog).
-        var revoke = el('button', 'button danger', 'Revoke');
+        // Revoking is final, so it takes a second tap on the same button (no pop-up dialog). It stops every sub-agent
+        // under this one too (PR 16), and says so.
+        var revoke = el('button', 'button danger', below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke');
         revoke.type = 'button';
         var armed = false;
         revoke.addEventListener('click', function () {

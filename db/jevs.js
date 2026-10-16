@@ -60,9 +60,12 @@ const ACTIONS = {
   'agent.claim': { impact: 'high' },
   'agent.key': { impact: 'high' },
   'agent.rules': { impact: 'high' },
-  'account.delete': { impact: 'high' }
+  'account.delete': { impact: 'high' },
+  // PR 16: an agent making a sub-agent (no human step; medium makes it drafting everything, high holds it).
+  'agent.subagent': { impact: 'high' }
 };
-const SENSITIVE = { 'agent.rules': 30, 'account.delete': 30, 'agent.key': 20, 'agent.create': 10, 'agent.claim': 10, 'agent.register': 10 };
+const SENSITIVE = { 'agent.rules': 30, 'account.delete': 30, 'agent.key': 20, 'agent.create': 10, 'agent.claim': 10, 'agent.register': 10,
+  'agent.subagent': 10 };
 
 // The first band whose floor the value reaches (bands from the highest floor down).
 function band(n, bands) {
@@ -96,7 +99,7 @@ const QUESTIONS = [
       return Math.max(band(num(s.net_members_24h), [[10, 80], [5, 50], [2, 25]]), band(num(s.domain_members_7d), [[10, 60], [3, 30]]),
         band(num(s.net_signups_1h), [[20, 50], [5, 25]]), site);
     } },
-  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours, or agents registered from one network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
+  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours (sub-agents are counted by J15 instead), or agents registered from one network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
     score: (s) => Math.max(band(num(s.owner_agents_24h), [[25, 70], [10, 50], [4, 25]]), band(num(s.net_agents_24h), [[25, 70], [10, 50], [4, 25]])) },
   { id: 'J07', title: 'Links and new domains', description: 'Links in the text: 25 for each site not linked to by a low-risk post that has stayed up here for at least a day, and 10 for each link after the third. At most 100.',
     score: (s) => Math.min(100, 25 * num(s.new_domains) + 10 * Math.max(0, num(s.links) - 3)) },
@@ -106,14 +109,18 @@ const QUESTIONS = [
     score: (s) => band(num(s.copies), [[5, 90], [2, 60], [1, 30]]) },
   { id: 'J10', title: 'Track record', description: 'Reports upheld against the account in the last 90 days (one 30, two 60, three or more 90) or an emergency brake on it now (40). The highest counts.',
     score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0) },
-  { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key 20, a new or claimed or registered agent 10.',
+  { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key 20, a new, claimed or registered agent or a sub-agent 10.',
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
   { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
   { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session.',
     score: (s, ctx) => (ctx.confirmed ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
   { id: 'J14', title: 'Credible reports', description: 'Members at level 2, whose accounts are more than a week old, with an open report on this post: 35 each, at most 100. Reporters who signed up from the same network or share an uncommon email domain count as one.',
-    score: (s) => Math.min(100, 35 * num(s.credible_reports)) }
+    score: (s) => Math.min(100, 35 * num(s.credible_reports)) },
+  // PR 16. The depth limit and the hourly rates in the database already stop a runaway tree; this says how unusual it is.
+  { id: 'J15', title: 'Sub-agent spawning', description: 'For an agent making a sub-agent: one that would sit at the deepest level allowed scores 20; sub-agents its tree made in the last hour, 20 or more 25, 50 or more 45, 150 or more 70. The higher counts. Never more than 70: the depth limit and the hourly rates already stop a runaway tree, so this alone never holds one.',
+    score: (s) => Math.max(num(s.subagent_max_depth) > 0 && num(s.subagent_depth) >= num(s.subagent_max_depth) ? 20 : 0,
+      band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]])) }
 ];
 const BY_ID = Object.fromEntries(QUESTIONS.map((q) => [q.id, q]));
 
@@ -132,6 +139,8 @@ const ASKS = {
   'agent.register': ['J05', 'J06', 'J11', 'J13']
 };
 for (const a of ['agent.create', 'agent.claim', 'agent.key', 'agent.rules', 'account.delete']) ASKS[a] = [...ACCOUNT, 'J11'];
+// PR 16: the owner's account questions (judged through the acting agent), the action, and where the sub-agent would sit.
+ASKS['agent.subagent'] = [...ACCOUNT, 'J11', 'J15'];
 
 // The scores for one action: { J01: 25, ... }, every question it asks, in order.
 function score(action, signals, ctx = {}) {
@@ -249,7 +258,7 @@ async function claimMarks(t, token) {
 // action: one of ACTIONS. subject: the post, draft or agent it is about (null where there isn't one yet). body: the
 // words, for posts and drafts. netHash and country: from facts(). Returns what JEVs decided:
 //   { decision, level, effect, applied, mode, challenge, challengeStatus, scores, error }
-// effect: none | challenge | hold | hide | promote | queue; applied: whether it was carried out (shadow mode carries
+// effect: none | challenge | hold | hide | promote | queue | draft (PR 16: a sub-agent made with everything drafting); applied: whether it was carried out (shadow mode carries
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
 async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false }) {

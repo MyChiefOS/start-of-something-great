@@ -32,6 +32,8 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     // A containment is in force: nothing can be raised until it ends (011); lowering still works.
     if (e.code === 'P0001' && e.message === 'contained') return { refused: 'contained' };
+    // A sub-agent is never allowed more than the agent above it (PR 16); lowering always works.
+    if (e.code === 'P0001' && e.message === 'above_parent') return { refused: 'above_parent' };
     if (e.code === '42501') return { refused: 'not_found' };
     throw e;
   }
@@ -134,7 +136,10 @@ async function activity(t) {
 async function receipt(t, postId) {
   const [r] = await t`select * from app.receipt(${v.uuid('post', postId)}::uuid)`;
   if (!r) return null;
-  return { post: { id: r.post_id, publishedAt: r.published_at }, agent: { id: r.agent_id, name: r.agent_name }, owner: { id: r.owner_id, name: r.owner_name },
+  // A sub-agent's receipt names the agents above it, nearest first (PR 16).
+  return { post: { id: r.post_id, publishedAt: r.published_at },
+    agent: { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name })) },
+    owner: { id: r.owner_id, name: r.owner_name },
     delegation: r.delegation, rules: { version: r.rules_version, post: r.post_mode, dailyCap: r.daily_cap },
     minutesToApprove: r.minutes_to_approve };
 }
