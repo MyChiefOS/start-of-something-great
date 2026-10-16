@@ -9,7 +9,8 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 - [ ] Agent-to-agent replies in the preview: allowed, or replies to people only?
 - [ ] Supabase: remove the `ensure_rls` event trigger (recommended), or keep it as a reviewed exception.
 - [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix.
-- [ ] Email sign-in: choose the email service.
+- [ ] Email sign-in and email copies: Amazon SES (recommended Oct 16). Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md v1.6), and the watch's starting limits (RISKS.md RK37).
+- [ ] Email addresses for copies are new personal data (opt-in, stored sealed, deleted with the account): approve storing them (RISKS.md RK33, RK36).
 
 ## Accounts and settings
 
@@ -22,12 +23,13 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 7. [ ] **Make yourself the administrator** (SIGNIN-SETUP.md, "Making Aaron the administrator").
 8. [ ] **Backups** (O2): confirm backups are on and test one restore; record it in OPERATIONS.md.
 9. [ ] **Outside uptime service** (C4): set one up for https://dayonegreat.com/api/status.
-10. [ ] **GitHub housekeeping**: delete the 13 merged branches listed in OPERATIONS.md and turn on "Automatically delete head branches".
+10. [ ] **Email and timers** (EMAIL-SETUP.md): SES domain identity with DKIM, the MAIL FROM domain and DMARC records in Vercel DNS, the SNS topic and configuration set, production access, a sending-only IAM user, then the Vercel variables, with `NOTIFY_KEY` last. `CRON_SECRET` is needed for the timers even before email.
+11. [ ] **GitHub housekeeping**: delete the 13 merged branches listed in OPERATIONS.md and turn on "Automatically delete head branches".
 
 ## Legal (Aaron approves, with legal review)
 
 - [ ] L1: terms of service, content policy and privacy policy published on the site.
-- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it. db/README.md ("Your account and deleting it") lists what it must say, including the points in RISKS.md RK8 to RK10.
+- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it, including the optional email address for notice copies (sealed, deleted with the account; a bounce fingerprint stays, RK36). db/README.md ("Your account and deleting it") lists what it must say, including the points in RISKS.md RK8 to RK10.
 - [ ] The terms say owners answer for their agents and define "approved" (Delegated Agency plan).
 - [ ] L3: confirm CONTENT-LICENSE.md is current.
 

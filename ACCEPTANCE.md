@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.6.** v1.4 was approved by Aaron Chandler on October 14, 2026 (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them). v1.5 records his October 16 decisions. v1.6 adds JV1 to JV13 for JEVs, approved when he merges the change that adds them (PR 12).
+**Status: v1.7, draft.** v1.4 was approved by Aaron Chandler on October 14, 2026 (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them). v1.5 records his October 16 decisions (merged by him in PR #24). v1.6 adds JV1 to JV13 for JEVs, approved when he merges the change that adds them (PR 12). v1.7 adds the notification criteria (N1 to N11, R16, R33), which wait for his approval when he merges PR 13.
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -157,6 +157,28 @@ JEVs is the checking layer F6 and the trust levels rely on (Aaron's definition, 
 | O2 | Database backups are on, and a restore has been tested once | Manual test, recorded |
 | O3 | Every approval, removal, ban and use of the emergency brake is in the audit log, with who did it and when | Automated test |
 
+### Notifications (PR 13; draft, for Aaron's approval)
+
+Built to Aaron's decisions of Oct 16, 2026: people hear inside the system first and email is only a copy; Amazon SES; containment follows the usual pattern (approve, step up, hold) with notice and appeal; no new friction.
+
+| ID | Criterion | How it's checked |
+|---|---|---|
+| N1 | Every notice lands first in the member's own inbox on the site (/account). Only that member reads it (Aaron also reads the administrators' inbox); marking it read is the only change anyone can make | Automated test |
+| N2 | A notice and its email copy are written in the same transaction as the event that causes it (a draft waiting, an upheld report, a brake on one owner, a containment, the 90-day check, a JEVs challenge), so a failed event leaves neither, and the same event never leaves two (idempotency key) | Automated test |
+| N3 | Email copies go only to an address the member added and confirmed with a one-tap link. The address is stored sealed, with a key kept outside the database, and is deleted with the account | Automated test |
+| N4 | At most one email an hour per member (everything waiting goes in one digest), and none in the member's quiet hours (default 22:00 to 07:00 in their time zone; they can change it) | Automated test |
+| N5 | Every email has one-click unsubscribe (RFC 8058: List-Unsubscribe and List-Unsubscribe-Post). Opening the link never unsubscribes by itself, and a forged link does nothing | Automated test |
+| N6 | Each email copy goes out at most once: claimed before sending, finished after; a lost outcome is closed as failed, never resent; failures that certainly didn't send are retried, at most 5 times | Automated test |
+| N7 | Permanent bounces and complaints are accepted only from Amazon SNS messages whose signature, certificate address, topic and age all check out; that address is never emailed again | Automated test, with a certificate made fresh for each run |
+| N8 | Each owner's hour of agent actions is compared with their own last 7 days, bursts of new accounts and texts repeated across accounts are flagged, and the alerts go to Aaron's inbox | Automated test |
+| N9 | Past the hard limit (a setting only the database owner role can change), an owner's agents that act on their own go back to drafting (never off) for 24 hours, with a notice and a way to appeal. The pause ends by itself and restores exactly the rules it replaced, unless the owner changed them meanwhile | Automated test |
+| N10 | The copier rule: repeated text counts against whoever repeats it, never against the first author | Automated test |
+| N11 | The timers and the email drain run every minute from Vercel Cron, only with the CRON_SECRET header (compared in constant time, never logged), and running twice changes nothing | Automated test |
+| R16 | A one-tap approval link is single use, stored only as a hash, and bound to the draft's exact words, its owner and its lifetime. Opening it only shows the words and an Approve button; only a POST from the owner's own signed-in session approves. A GET, another member's session, a used link and changed words all fail | Automated test |
+| R33 | An agent acting on its own is re-confirmed every 90 days: at day 80 the owner gets a notice with one tap to keep it acting; with no answer by day 90 its actions go back to draft (never off), recorded in the audit log, with a notice | Automated test |
+
+Email sign-in links already open a page that changes nothing; only pressing Continue (a POST) uses them (PR 2, test/signin.test.js). PR 13 sends them through SES once it is switched on.
+
 ### Legal: Aaron approves
 
 | ID | Criterion | How it's checked |
@@ -169,6 +191,7 @@ JEVs is the checking layer F6 and the trust levels rely on (Aaron's definition, 
 
 ## Change log
 
+- v1.7 (2026-10-16, draft): adds Notifications, N1 to N11, plus R16 (safe one-tap approval links) and R33 (the 90-day check on agents acting alone), built in PR 13 to Aaron's Oct 16 decisions (inbox first, email as a copy through Amazon SES, containment with notice and appeal). No existing criterion changes. The status line, which still said v1.4 after v1.5, now names the version.
 - v1.6 (2026-10-16): adds JV1 to JV13, what "done" means for JEVs, built in PR 12; approved when Aaron merges it. JV8, JV10, JV12 and JV13 follow Aaron's later decisions the same day: level 2 with no wait, the regional gate for new sign-ups with the traveller's confirmation, and high-risk deletions reviewed by him with the 24-hour disable. F6 and the trust levels are unchanged: they already describe JEVs as built (first-post review ends with the same switch that turns enforcement on). The status line now names the current version.
 - v1.5 (2026-10-16): Aaron's decisions from the gap register. LinkedIn dropped. Verification today is JEVs plus GitHub, X and email, with Stripe Identity planned for later (replacing "Stripe is for payments only"). Members trusted by default: F6 now checks every post through JEVs, with first-post review kept only until JEVs has run in shadow mode. Level 2 is promoted automatically by JEVs. F4 reworded as approved. Criteria A1 to A6 approved as built in PR 7. F10, S5 and L2 no longer name LinkedIn.
 - v1.4 (2026-10-15, notes; no criteria changed): **P4 failed after release.** The Oct 14 red and blue team review found that the conversation feed (API and MCP) showed email addresses and phone numbers from Discussion replies unmasked, and that look-alike characters (such as a full-width @, invisible characters or digits from other scripts) could slip past masking. An independent review on Oct 15 also found commit text in the changes feed unmasked. All three are fixed on Oct 15 for our API and MCP and covered by tests in test/security.test.js. **Still open under P4, for Aaron's decision:** the comments on /talk are shown by giscus straight from GitHub, so we can't mask them (the Release 2 plan replaces giscus with our own copy, G2). **Known limits of masking:** contacts spelled out in words ("jane at example dot com"), numbers split by colons, and IP addresses, which are hidden as numbers. The same change adds a short GitHub cache with a 4-second timeout (R1), a strict Content-Security-Policy with no framing (R2), and HTTPS required on every subdomain (today every web subdomain points at Vercel; a future subdomain without HTTPS would be refused by browsers). **C4 is not met:** GitHub's scheduler ran the 15-minute uptime check only twice overnight on Oct 14 to 15. Next step, on the to-do list: an outside uptime service, with the GitHub monitor kept as a backup.

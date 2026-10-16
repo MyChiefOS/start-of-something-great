@@ -26,10 +26,16 @@ function mailbox(s) {
   return { address: addr, header: name ? word(name) + ' <' + addr + '>' : addr };
 }
 
-// RFC 2047: ASCII as is; anything else as UTF-8 base64 encoded-words of at most 75 characters each.
-function word(s) {
+// RFC 2047: ASCII as is; anything else as UTF-8 base64 encoded-words of at most 75 characters each. A display name
+// (a "phrase") with special characters is quoted; a subject is free text and never is.
+function word(s, { phrase = true } = {}) {
   const v = headerValue('text', s);
-  if (/^[\x20-\x7e]*$/.test(v)) return /[",:;<>@()[\]\\]/.test(v) ? '"' + v.replace(/(["\\])/g, '\\$1') + '"' : v;
+  const ascii = [...v].every((ch) => ch >= ' ' && ch <= '~');
+  if (ascii) {
+    const special = [...v].some((ch) => '",:;<>@()[]\\'.includes(ch));
+    if (!phrase || !special) return v;
+    return '"' + [...v].map((ch) => (ch === '"' || ch === '\\' ? '\\' + ch : ch)).join('') + '"';
+  }
   const out = [];
   let chunk = '';
   for (const ch of v) {
@@ -49,7 +55,7 @@ function build({ from, to, replyTo, subject, text, unsubscribe, date = new Date(
   const headers = [
     ['From', f.header],
     ['To', t.header],
-    ['Subject', word(subject)],
+    ['Subject', word(subject, { phrase: false })],
     ['Date', date.toUTCString().replace('GMT', '+0000')],
     ['Message-ID', '<' + crypto.randomUUID() + '@' + domain + '>'],
     ['MIME-Version', '1.0'],
@@ -75,7 +81,7 @@ function parse(raw) {
   const head = raw.slice(0, i).split('\r\n');
   const headers = {};
   for (const l of head) { const k = l.slice(0, l.indexOf(':')); headers[k.toLowerCase()] = l.slice(k.length + 2); }
-  return { headers, text: Buffer.from(raw.slice(i + 4).replace(/\r\n/g, ''), 'base64').toString('utf8') };
+  return { headers, text: Buffer.from(raw.slice(i + 4).replace(/\r\n/g, ''), 'base64').toString('utf8').replace(/\r\n/g, '\n') };
 }
 
 module.exports = { build, parse, mailbox, word, ADDRESS };
