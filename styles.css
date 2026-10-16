@@ -424,3 +424,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .brake-form label { display: grid; gap: 0.25rem; }
 .brake-form input, .brake-form select { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .brake-form input:focus-visible, .brake-form select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* Your account (/account, PR 8) */
+.account-form { display: grid; gap: 0.6rem; max-width: 30rem; }
+.account-form label { display: grid; gap: 0.25rem; }
+.account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.account-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }

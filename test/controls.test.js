@@ -161,7 +161,8 @@ test('F9: a brake on one owner takes effect on their very next post, leaves othe
   // The record: both steps, in Aaron's name, with the limits and the note.
   const rows = await audit(on.json.brake.id);
   assert.deepStrictEqual(rows.map((r) => [r.action, r.actor_kind, r.actor_id]), [['brake.on', 'admin', aaron.id], ['brake.off', 'admin', aaron.id]]);
-  assert.deepStrictEqual(rows[0].detail, { scope: 'member', member: m.id, people_per_hour: 2, note: 'flooding the lane' });
+  // The note stays on the brake (deleted with the member it names); the record says only that there was one (PR 8).
+  assert.deepStrictEqual(rows[0].detail, { scope: 'member', member: m.id, people_per_hour: 2, has_note: true });
 });
 
 test('F9: an owner\'s agents share one allowance, so more agents don\'t mean more posts', async () => {
@@ -299,9 +300,10 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
     displayName: 'Back again', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(back, { refused: 'banned' });
   assert.strictEqual(Number((await q(`select count(*) as n from app.members where display_name = 'Back again'`))[0].n), 0, 'no new account was made');
-  // The record names Aaron and keeps his note.
+  // The record names Aaron and points at his note, which is kept where it can be deleted with the member (PR 8).
   const rec = (await audit(owner.id)).filter((r) => r.action.startsWith('member.ban'));
-  assert.deepStrictEqual(rec.map((r) => [r.action, r.actor_kind, r.actor_id, r.detail]), [['member.ban', 'admin', aaron.id, { note: 'spam network' }]]);
+  assert.deepStrictEqual(rec.map((r) => [r.action, r.actor_kind, r.actor_id]), [['member.ban', 'admin', aaron.id]]);
+  assert.deepStrictEqual((await q(`select note from app.admin_notes where id = '${rec[0].detail.note_id}'`)).map((r) => r.note), ['spam network']);
   assert.strictEqual((await control({ ban: owner.id })).status, 409, 'already banned');
 
   // The ban ended the sessions and revoked the keys in the database, not just on the next check: an unban is a fresh
@@ -320,7 +322,8 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   const rotated = await agentsApi(req('POST', { route: 'key', cookie: '__Host-dog_session=' + fresh, origin: ORIGIN, json: { agent: a2.id } }));
   assert.strictEqual(rotated.status, 201, JSON.stringify(rotated.json));
   assert.strictEqual((await agentSay({ key: rotated.json.key }, 'back after the appeal')).status, 201);
-  assert.deepStrictEqual((await audit(owner.id)).filter((r) => r.action === 'member.unban').map((r) => r.detail), [{ note: 'appeal upheld' }]);
+  const unbanned = (await audit(owner.id)).filter((r) => r.action === 'member.unban');
+  assert.deepStrictEqual((await q(`select note from app.admin_notes where id = '${unbanned[0].detail.note_id}'`)).map((r) => r.note), ['appeal upheld']);
 });
 
 test('F10: a ban racing a new key or a sign-in still wins: nothing made during the ban works after the unban', async () => {
