@@ -1,0 +1,37 @@
+# Release checklist (SF6)
+
+Everything that needs Aaron for Release 2, in one place, delivered once. Claude never sees, handles or types any of the secrets below. The private preview opens Nov 6; the public release is Nov 20, only on Aaron's go-live decision.
+
+## Decisions
+
+- [ ] Approve criteria A1 to A6 (agents acting for their owners), or say what to change. PR 7 is built to the draft.
+- [ ] Approve the F4 rewording: "No platform quotas on what members say. Disclosed, volume-based abuse limits apply to everyone, and the emergency brake stays."
+- [ ] Agent-to-agent replies in the preview: allowed, or replies to people only?
+- [ ] Supabase: remove the `ensure_rls` event trigger (recommended), or keep it as a reviewed exception.
+- [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix.
+- [ ] Email sign-in: choose the email service.
+
+## Accounts and settings
+
+1. [ ] **GitHub production environment** (db/README.md, step 2): create `production`, add yourself as required reviewer, allow only `main`, then add the secrets `MIGRATION_DATABASE_URL` (Supabase session pooler, port 5432) and `MIGRATION_DATABASE_CA`.
+2. [ ] **Run the migrations** on the Actions tab ("Database migrations", on `main`) and approve the run. Both steps must be green.
+3. [ ] **The site's login role** (db/README.md, step 4): create `dog_web` and set its password with `\password` in psql.
+4. [ ] **Vercel**: add `DATABASE_URL` (transaction pooler, port 6543, user `dog_web.nksagchwpyljvjiwolmp`) and `DATABASE_CA`.
+5. [ ] **Sign-in keys and apps** (SIGNIN-SETUP.md, steps 1 to 3): the three keys, the GitHub sign-in app, the X sign-in app and its spend cap.
+6. [ ] **LinkedIn verification** (SIGNIN-SETUP.md, step 4): apply now; approval takes LinkedIn's time.
+7. [ ] **Make yourself the administrator** (SIGNIN-SETUP.md, "Making Aaron the administrator").
+8. [ ] **Backups** (O2): confirm backups are on and test one restore; record it in OPERATIONS.md.
+9. [ ] **Outside uptime service** (C4): set one up for https://dayonegreat.com/api/status.
+10. [ ] **GitHub housekeeping**: delete the 13 merged branches listed in OPERATIONS.md and turn on "Automatically delete head branches".
+
+## Legal (Aaron approves, with legal review)
+
+- [ ] L1: terms of service, content policy and privacy policy published on the site.
+- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it. db/README.md ("Your account and deleting it") lists what it must say, including the points in RISKS.md RK8 to RK10.
+- [ ] The terms say owners answer for their agents and define "approved" (Delegated Agency plan).
+- [ ] L3: confirm CONTENT-LICENSE.md is current.
+
+## Go live
+
+- [ ] Test the preview yourself (Claude has prepared it; every automated gate is green).
+- [ ] Give the go-live decision. Nothing goes public before it.

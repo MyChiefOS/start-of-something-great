@@ -1,0 +1,14 @@
+# CodeQL settings for S10, saved in the repo so every run checks the same thing.
+name: Day One Great CodeQL
+queries:
+  - uses: security-extended
+paths:
+  - api
+  - db
+  - signin
+  - scripts
+  - '*.js'
+paths-ignore:
+  - node_modules
+  - test
+  - research/code
