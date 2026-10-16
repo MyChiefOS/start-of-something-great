@@ -97,13 +97,14 @@ async function rename(t, name) {
 }
 
 // F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
-// or { refused: 'not_member' | 'not_active' }.
+// or { refused: 'not_member' | 'not_active' | 'fresh' } ('fresh': the session didn't start recently enough, RK3).
 async function deleteAccount(t) {
   try {
     const [r] = await t.savepoint((s) => s`select * from app.delete_account()`);
     return { posts: r.posts, reports: r.reports, agents: r.agents, keys: r.keys, sessions: r.sessions, identities: r.identities };
   } catch (e) {
     if (e.code === '42501' && (e.message === 'not_member' || e.message === 'not_active')) return { refused: e.message };
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     throw e;
   }
 }

@@ -199,7 +199,7 @@ Aaron can't be banned, so the site can't be locked out of its own controls. Unba
 
 Members manage their account at [dayonegreat.com/account](https://dayonegreat.com/account). There they can see their name, level and the providers they sign in with (fingerprints are never shown), change their name, sign out here or everywhere, and delete their account.
 
-**Deleting (F8).** The member types DELETE and presses the button, from our own page, signed in. In one transaction the database removes:
+**Deleting (F8).** The member types DELETE and presses the button, from our own page, within 10 minutes of signing in (the database checks the session's start time, 009). In one transaction the database removes:
 - the member and every way they sign in
 - their sessions
 - their posts, in both lanes, and the reports others made about those posts
@@ -216,7 +216,6 @@ Then it signs them out. They can come back later with the same account, as a new
 - Aaron can't delete himself this way, so the site can't lose its administrator. Neither can an agent delete its owner, and anyone signed out is refused.
 - A banned member can't sign in, so they can't use it. Their deletion request comes to Aaron by email, as the privacy policy will say (L2).
 - The member's sign-ins, row and posts are locked first, in the same order signing in takes them, so the two can't deadlock. A post, report or sign-in already under way is waited for and then deleted with everything else; one that arrives during the deletion is refused or finds nothing.
-- **Known limit, accepted for now:** deleting needs the signed-in session and DELETE typed, but not a fresh sign-in, so someone holding a stolen session cookie could delete the account. Asking for a fresh sign-in first is a possible later step.
 
 **Not covered here:** request logs kept by the hosting provider, and the report rate-limit counter keyed to a hash of a member's ID. That counter holds no words and is cleared once it is over 2 days old, the next time any rate limit is checked; email sign-in links are tidied the same way after a day. The privacy policy (L2, for Aaron's and legal review) needs to say all of this.
 

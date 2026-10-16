@@ -209,8 +209,8 @@ function make(deps) {
       return h.redirect(res, '/account?saved=name');
     },
 
-    // F8: delete your account. A form on /account, from our own pages, signed in, with the word DELETE typed in.
-    // Aaron can't delete himself here (the database refuses too).
+    // F8: delete your account. A form on /account, from our own pages, signed in within the last few minutes (RK3; the
+    // database decides), with the word DELETE typed in. Aaron can't delete himself here (the database refuses too).
     async deleteAccount(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/account');
       const who = await current(req);
@@ -218,7 +218,8 @@ function make(deps) {
       const body = await h.form(req);
       if (!body || body.confirm !== 'DELETE') return h.redirect(res, '/account?error=confirm');
       if (who.isAdmin) return h.redirect(res, '/account?error=admin');
-      const out = await run(session.actorFor(who), (t) => store.deleteAccount(t));
+      const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => store.deleteAccount(t));
+      if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
       return h.redirect(res, '/join?deleted=1');

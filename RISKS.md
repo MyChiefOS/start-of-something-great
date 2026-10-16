@@ -6,13 +6,13 @@ ACCEPTANCE.md says critical findings are fixed before release. Every other findi
 - **Owner** is who acts on it.
 - A blank **Aaron's sign-off** means the risk is not yet accepted. Release waits on every row being signed off or fixed.
 
-Last reviewed: 2026-10-16, by Claude (PRs 4 to 9).
+Last reviewed: 2026-10-16, by Claude (PRs 4 to 11).
 
 | ID | Risk | Severity (est.) | Compensating control | Owner | Due | Aaron's sign-off |
 |---|---|---|---|---|---|---|
 | RK1 | /talk shows comments through giscus, straight from GitHub, so email addresses and phone numbers in them aren't masked (P4, open since Oct 14) | 4.3 Medium | Comments need a GitHub account; GitHub's own abuse tools apply; the site's own feeds (API and MCP) are masked | Claude: replace giscus with our own masked copy | Before Nov 20 | |
 | RK2 | Masking misses contacts spelled out in words ("jane at example dot com"), numbers split by colons, and IP addresses | 3.1 Low | Reports and review remove anything that slips through; look-alike characters are already caught | Claude | Review at 1,000 members | |
-| RK3 | Someone holding a stolen session cookie could delete that account; deleting needs DELETE typed, not a fresh sign-in | 4.6 Medium | Sessions are HttpOnly, Secure, SameSite cookies under a `__Host-` name; deleting needs a form post from our own pages; "Sign out everywhere" ends every session | Claude: require a fresh sign-in before deleting | Before Nov 20 | |
+| RK3 | ~~Someone holding a stolen session cookie could delete that account~~ **Fixed in PR 11:** deleting now needs a sign-in within the last 10 minutes, checked by the database (009) | 4.6 Medium | Also: HttpOnly, Secure, SameSite `__Host-` cookie; a form post from our own pages; DELETE typed | Claude | Done (PR 11) | Not needed once merged |
 | RK4 | A key rotated in the few milliseconds between its check and the post being written can finish that one post | 2.0 Low | The agent being active and owned is checked again as the post is written | Accepted | n/a | |
 | RK5 | A banned person can come back with a different provider account | 4.3 Medium | Owning agents needs level 2 (a verified account); new members' first 3 posts are reviewed; the emergency brake | Aaron, with the review queue | Ongoing | |
 | RK6 | Repeat posts are counted only as exact matches after normalizing; reworded spam isn't counted | 3.1 Low | Reports; the brake; the "same text, many posts" list | Claude: fuzzier matching once there is real traffic | Review at 1,000 members | |

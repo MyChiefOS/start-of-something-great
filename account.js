@@ -9,6 +9,7 @@
     'error=name': 'A name needs 1 to 80 characters on one line.',
     'error=confirm': 'Nothing was deleted: type DELETE, in capitals, to confirm.',
     'error=admin': 'The administrator can’t delete their own account here.',
+    'error=fresh': 'Nothing was deleted: to delete your account, sign in again first, then delete it within 10 minutes.',
     'error=gone': 'That account can’t be deleted here. Please email hello@dayonegreat.com.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
@@ -33,6 +34,11 @@
       }
       var d = x.d;
       msg.textContent = note || 'Signed in as ' + d.display_name + '.';
+      if (q.get('error') === 'fresh') {
+        var again = el('a', '', 'Sign in again');
+        again.href = '/join?return_to=%2Faccount';
+        msg.after(again);
+      }
       document.getElementById('who').textContent = 'Level ' + d.trust_level + ' · joined ' + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id;
       var list = document.getElementById('signins');
       d.sign_ins.forEach(function (s) { list.appendChild(el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')')); });

@@ -206,6 +206,21 @@ test('F8: nothing is deleted without DELETE typed, from another site, or when si
   assert.strictEqual((await everything(m.id)).member, 1);
 });
 
+test('RK3: a session that started more than 10 minutes ago can\'t delete the account, by the page or calling the database directly', async () => {
+  const m = await member(2, 'Stale session');
+  await su`update app.sessions set created_at = now() - interval '11 minutes' where member_id = ${m.id}`;
+  assert.strictEqual((await del(m)).getHeader('Location'), '/account?error=fresh');
+  await assert.rejects(run(m.ctx, (t) => t`select * from app.delete_account()`), /fresh_sign_in/);
+  assert.deepStrictEqual(await run(m.ctx, (t) => store.deleteAccount(t)), { refused: 'fresh' });
+  // Claiming freshness doesn't work for anyone but a member, and the session's start time is the database's own.
+  await assert.rejects(run({ actor: 'anon', fresh: true }, (t) => t`select 1`), /fresh/);
+  assert.strictEqual((await everything(m.id)).member, 1);
+  // Signing in again (a new session) makes it possible.
+  await su`update app.sessions set created_at = now() where member_id = ${m.id}`;
+  assert.strictEqual((await del(m)).getHeader('Location'), '/join?deleted=1');
+  assert.strictEqual((await everything(m.id)).member, 0);
+});
+
 test('F8: Aaron, a banned member, an agent and anyone signed out can\'t use it, even calling the database directly', async () => {
   assert.strictEqual((await del(aaron)).getHeader('Location'), '/account?error=admin');
   await assert.rejects(run(aaron.ctx, (t) => t`select * from app.delete_account()`), /not_member/);
@@ -214,10 +229,10 @@ test('F8: Aaron, a banned member, an agent and anyone signed out can\'t use it, 
   const [ag] = await run(owner.ctx, (t) => t`insert into app.agents (name) values ('Bot') returning id`);
   await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: ag.id }, (t) => t`select * from app.delete_account()`), /not_member/, 'an agent can\'t delete its owner');
   // Aaron's own ID with a member actor is refused too, so the administrator can't be deleted by any route here.
-  await assert.rejects(run({ actor: 'member', memberId: aaron.id }, (t) => t`select * from app.delete_account()`), /not_active/);
+  await assert.rejects(run({ actor: 'member', memberId: aaron.id, fresh: true }, (t) => t`select * from app.delete_account()`), /not_active/);
   const banned = await member(2, 'Banned');
   await run(aaron.ctx, (t) => controls.setStatus(t, { member: banned.id, status: 'banned' }));
-  await assert.rejects(run(banned.ctx, (t) => t`select * from app.delete_account()`), /not_active/);
+  await assert.rejects(run({ ...banned.ctx, fresh: true }, (t) => t`select * from app.delete_account()`), /not_active/);
   assert.strictEqual((await del(banned)).getHeader('Location'), '/join?error=signin', 'a banned member has no session');
   assert.strictEqual((await everything(aaron.id)).member, 1);
   assert.strictEqual((await everything(banned.id)).member, 1);
@@ -230,7 +245,7 @@ test('F8: a post written while the account is being deleted can\'t outlive it', 
   const m = await member(2, 'Racing deletion');
   let release;
   const gate = new Promise((r) => { release = r; });
-  const deleting = run(m.ctx, async (t) => { const out = await store.deleteAccount(t); await gate; return out; });
+  const deleting = run({ ...m.ctx, fresh: true }, async (t) => { const out = await store.deleteAccount(t); await gate; return out; });
   await new Promise((r) => setTimeout(r, 150));
   const posting = run(m.ctx, (t) => posts.create(t, { body: 'sneaking in' })).then(() => 'posted', (e) => 'refused: ' + e.code);
   await new Promise((r) => setTimeout(r, 150));
