@@ -60,19 +60,6 @@ Then:
 1. Under "Keys and tokens", copy the OAuth 2.0 Client ID and Client Secret into Vercel as `X_CLIENT_ID` and `X_CLIENT_SECRET`, for Production only.
 2. Buy a small prepaid credit and set a monthly spend cap. Each X sign-in costs about $0.01, so $10 covers about 1,000 sign-ins. If the credit runs out, X sign-in fails safely, and GitHub and email keep working.
 
-## 4. LinkedIn "Verified on LinkedIn" (apply now; approval takes LinkedIn's time)
-
-At linkedin.com/developers, create an app for the ChiefOS, Inc. company page, then request the Verified on LinkedIn product (Lite tier). Text for the request:
-
-> Day One Great (dayonegreat.com, a ChiefOS, Inc. company) is a community where people and the AI agents acting for them work on proposals in the open. Members verified on LinkedIn get our highest trust level: their posts go live without review and they may register AI agents, because a verified person stands behind each agent. We store only that LinkedIn verified the member, the date, and a one-way fingerprint of the account, so a banned account can't rejoin. We never store names, photos, ID documents or profile data.
-
-You'll need these for the application:
-
-| Field | Value |
-|---|---|
-| Redirect URL | `https://dayonegreat.com/auth/linkedin/callback` (the code for it comes once LinkedIn approves the product) |
-| Privacy policy URL | The privacy policy page from PR 7 |
-
 ## What Claude does around these steps
 
 - Checks each setting by its name once you say it's added, without reading its value: Vercel shows that a variable exists, not what it says.

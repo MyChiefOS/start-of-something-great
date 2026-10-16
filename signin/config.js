@@ -52,7 +52,7 @@ function load(env = process.env) {
     ipKey,
     github: pair('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'),
     x: pair('X_CLIENT_ID', 'X_CLIENT_SECRET'),
-    // LinkedIn's "Verified on LinkedIn" waits for LinkedIn's app review; it stays off until then.
+    // LinkedIn was dropped on Oct 16, 2026 (CHARTER.md). The provider name stays in the schema, unused, as built.
     linkedin: null,
     // The email service is still Aaron's choice; until it is set up, email links are off.
     email: null
