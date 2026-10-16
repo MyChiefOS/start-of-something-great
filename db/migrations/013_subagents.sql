@@ -535,8 +535,8 @@ alter table app.agent_drafts enable always trigger agent_drafts_tree_cap;
 -- what it asks for (default: draft, or lower if its parent is lower), never above its parent's. With p_draft_only (JEVs
 -- found the creation medium risk, in enforce mode) every "act" becomes "draft", so its owner approves what it does.
 -- The emergency brake's new-agents limit counts it toward the owner (app.agents_limit). Keys arrive hashed, as ever.
--- p_caller_key: the SHA-256 of the key the request came with. The parent's row and that key's row are locked (in that
--- order, the order revoking and a new key take them) and checked again here, in the transaction that makes the
+-- p_caller_key: the SHA-256 of the key the request came with. The owner's row, the parent's row and that key's row are
+-- locked (in that order, the order a ban, a deletion, revoking and a new key take them) and checked again here, in the transaction that makes the
 -- sub-agent, so a revoke or a new key that is under way or has just committed always wins (the review of PR 16,
 -- F1 and F2): the request is refused, never left with a sub-agent made by a stopped agent or a stopped key.
 -- Returns the new agent, and the chain above it (the IDs of its parent and every agent above, nearest first), which the
@@ -574,6 +574,10 @@ begin
   end if;
   -- One owner's tree grows one sub-agent at a time, so the rates can't be raced.
   perform pg_advisory_xact_lock(hashtext('dayonegreat.subagents'), hashtext(me::text));
+  -- The owner's row first, then the parent's, then the key's: the order a ban, a disabled account and deleting the
+  -- account take them (member, then keys), and a new key (member, then keys), so none of them can deadlock with this
+  -- (the re-review of PR 16, N1). The new agent's own owner check (app.agents_owner_active) then finds it held.
+  perform 1 from app.members m where m.id = me for share;
   select * into s from app.subagent_settings limit 1;
   select a.status, a.depth, a.expires_at, a.owner_id into p_status, p_depth, p_expires, p_owner from app.agents a where a.id = par for share;
   perform 1 from app.agent_keys k where k.key_hash = p_caller_key and k.agent_id = par and k.revoked_at is null for share;

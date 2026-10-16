@@ -766,3 +766,52 @@ test('review: a tree of a few thousand sub-agents posting keeps a post under 500
     await asOwner(DEFAULT_LIMITS);
   }
 });
+
+// ---- The re-review of PR 16 (N1): a ban or a deletion racing a creation must not deadlock ----
+// A creation is paused, deterministically, inside the brake's check (a brake is on, and another connection holds the
+// brake's per-owner lock) after it has locked what it locks first; then a ban or a deletion starts, and the creation is
+// let go. Before the fix the creation locked agent then key, then the member row, while a ban and a deletion take the
+// member row first, then keys: one of the two died with a deadlock (40P01), leaving the member active.
+async function pausedCreation(owner) {
+  await run(aaron.ctx, (t) => controls.setBrake(t, { member: owner.id, new_agents_per_day: 1000, note: 'test' }));
+  const h = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: () => {} });
+  const hold = gate(); const held = gate();
+  const tx = h.begin(async (t) => { await t`select pg_advisory_xact_lock(hashtext('dayonegreat.limits'), hashtext(${owner.id}))`; held.open(); await hold.p; });
+  await held.p;
+  return { release: async () => { hold.open(); await tx; await h.end({ timeout: 5 }); } };
+}
+
+test('re-review N1: a ban racing a sub-agent\'s creation never deadlocks; the ban lands and the new sub-agent stops', async () => {
+  const owner = await member(2, 'Ban race');
+  const lead = await newAgent(owner);
+  const p = await pausedCreation(owner);
+  const asking = spawnRaw(lead, { name: 'Racer' });
+  await sleep(400);
+  const banning = run(aaron.ctx, (t) => controls.setStatus(t, { member: owner.id, status: 'banned' })).then((x) => x, (e) => ({ error: e.code }));
+  await sleep(400);
+  await p.release();
+  const [r, ban] = await Promise.all([asking, banning]);
+  assert.deepStrictEqual(ban, { status: 'banned' }, 'the ban lands, never a deadlock');
+  assert.notStrictEqual(r.status, 500);
+  assert.strictEqual((await q(`select status from app.members where id = '${owner.id}'`))[0].status, 'banned');
+  if (r.status === 201) {
+    assert.strictEqual((await me({ key: r.json.key })).status, 401, 'a sub-agent made just before the ban stops with it');
+    assert.strictEqual((await q(`select count(*)::int as n from app.agent_keys where agent_id = '${r.json.agent_id}' and revoked_at is null`))[0].n, 0);
+  }
+});
+
+test('re-review N1: deleting the account while a sub-agent is being made never deadlocks; the whole tree goes', async () => {
+  const owner = await member(2, 'Delete race');
+  const lead = await newAgent(owner);
+  const p = await pausedCreation(owner);
+  const asking = spawnRaw(lead, { name: 'Racer' });
+  await sleep(400);
+  const deleting = run({ ...owner.ctx, fresh: true }, (t) => t`select * from app.delete_account()`).then((x) => x[0], (e) => ({ error: e.code }));
+  await sleep(400);
+  await p.release();
+  const [r, del] = await Promise.all([asking, deleting]);
+  assert.strictEqual(del.error, undefined, 'the deletion completes, never a deadlock: ' + JSON.stringify(del));
+  assert.notStrictEqual(r.status, 500);
+  assert.strictEqual((await q(`select count(*)::int as n from app.members where id = '${owner.id}'`))[0].n, 0);
+  assert.strictEqual((await q(`select count(*)::int as n from app.agents where id = '${lead.id}' or parent_id = '${lead.id}'`))[0].n, 0);
+});
