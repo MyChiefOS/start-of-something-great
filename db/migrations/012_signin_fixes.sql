@@ -32,8 +32,8 @@
 --   R1 (Medium), revoke on unlink: whatever a linked method's sessions did dies with it. Agent keys, owner-set rules
 --     versions and links record the method of the session that made them (read by the database from the request's
 --     own session, app.current_identity). Unlinking method M, in the same transaction: every agent key made (or agent
---     claimed) from a session of M is revoked; every "act" a session of M kept in force goes back to "draft" (never
---     "off"), and a daily cap it raised goes back; every method M's sessions linked is unlinked too, and so on down the
+--     claimed) from a session of M is revoked; every action a session of M raised to "act" goes back to "draft"
+--     (never "off"), and a daily cap it raised goes back; every method M's sessions linked is unlinked too, and so on down the
 --     chain; and the sessions of all of them end. One audit row and one notice say exactly what was undone.
 --   R2 (Medium): the 90-day clock (R33) restarts only on an owner's save made with a fresh sign-in (a fresh
 --     re-confirm, a raise, or a first switch to act). A save without one that leaves actions on act is still allowed,
@@ -375,9 +375,9 @@ $$;
 --   * the methods its sessions linked are unlinked too, and the ones theirs linked, down the chain (never the method
 --     this session signed in with: seniority puts it before all of them);
 --   * every agent key made, and every agent claimed, from a session of any of them is revoked;
---   * every "act" that a rules version set from such a session keeps in force (since the action last became "act")
---     goes back to "draft", never "off"; a daily cap such a version raised goes back to what it was before; and an
---     agent paused by a containment gets a version too, so the pause's end can't restore what that method set;
+--   * every action that a rules version from such a session raised to "act" (and is still on "act" since) goes back
+--     to "draft", never "off"; a daily cap such a version raised goes back to what it was before; and an agent paused
+--     by a containment gets a version too, so the pause's end can't restore what that method set;
 --   * every other session of the member ends, theirs included.
 -- One audit row and one notice say exactly what was undone. The level follows the methods that remain.
 -- Raises 'fresh_sign_in', 'not_found' (no such method of theirs, or the account isn't active), 'last_method' or
@@ -473,17 +473,18 @@ begin
     post := a.post_mode;
     rep := a.reply_mode;
     rpt := a.report_mode;
-    -- An action on "act" was set by them if any version since it last became "act" is theirs.
+    -- An action on "act" was raised by them if the version that last switched it to "act" is theirs. (A version of
+    -- theirs that only kept an owner's "act" as it was, or re-confirmed it, raised nothing, and the owner's choice stands.)
     if post = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version > coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.post_mode <> 'act'), 0)) then
+         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.post_mode <> 'act'), 0) + 1) then
       post := 'draft';
     end if;
     if rep = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version > coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.reply_mode <> 'act'), 0)) then
+         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.reply_mode <> 'act'), 0) + 1) then
       rep := 'draft';
     end if;
     if rpt = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version > coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.report_mode <> 'act'), 0)) then
+         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.report_mode <> 'act'), 0) + 1) then
       rpt := 'draft';
     end if;
     select min(p.daily_cap) into cap_before

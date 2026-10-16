@@ -853,3 +853,219 @@ test('PR 15 review F6: a traveller\'s sealed confirmation works once; a replayed
   assert.strictEqual(replay.getHeader('Location'), '/join?error=expired');
   assert.ok(![].concat(replay.getHeader('Set-Cookie') || []).some((x) => x.startsWith(SESSION + '=') && !/Max-Age=0/.test(x)), 'a replay makes no session');
 });
+
+// ---- PR 15, after its second review (R1 revoke on unlink, R2 the 90-day clock, R3 lock order) --------------------
+// Each of these began as one of the reviewer's probes (A, C, D, B), which showed the flaw; they now show the fix.
+const session = require('../signin/session');
+const agents = require('../db/agents');
+const delegation = require('../db/delegation');
+const notices = require('../db/notify');
+const runAs = (ctx, fn) => db.tx(web, ctx, fn);
+// Who a browser is, exactly as every API handler finds it (session.current), and the actor it acts as.
+const whoOf = async (browser) => session.current(req('GET', '/api/agents', { cookie: browser.header() }), runAs);
+const as = async (browser) => { const w = await whoOf(browser); return { ...session.actorFor(w), fresh: w.fresh === true }; };
+const latest = async (agent) => ({ ...(await q(`select post_mode, reply_mode, report_mode, daily_cap, reason, set_by from app.agent_rules
+  where agent_id = '${agent}' order by version desc limit 1`))[0] });
+const resolves = async (keyHash) => Boolean(await runAs({ actor: 'anon' }, (t) => agents.resolve(t, keyHash)));
+
+test('PR 15 second review R1 (probes A and C): unlinking a method undoes what its sessions did: their agent keys and claims are revoked, what they raised to act drafts again, what they linked is unlinked, and the owner is told exactly that', async () => {
+  const env = setup({ accounts: { 'x:9701': { accountId: '9701', level: 2, recheckAfter: null }, 'github:9702': { accountId: '9702', level: 1, recheckAfter: null },
+    'github:9703': { accountId: '9703', level: 1, recheckAfter: null } } });
+  const owner = await oauth(env, 'x', '9701');
+  const id = (await me(env, owner.browser)).member_id;
+  // The owner's own agent, which the owner lets post on its own (fresh): nothing below should undo that.
+  const mineKey = c.sha256hex('mine' + Math.random());
+  const mine = await runAs(await as(owner.browser), (t) => agents.create(t, { name: 'mine', description: null, keyHash: mineKey }));
+  assert.ok((await runAs(await as(owner.browser), (t) => delegation.setRules(t, { agent: mine.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
+  // An intruder copies the owner's fresh cookie, links their own GitHub with it, then signs in with that GitHub.
+  const shared = twoBrowsers(owner.browser);
+  assert.strictEqual((await oauth(env, 'github', '9702', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/');
+  const intruder = await oauth(env, 'github', '9702');
+  assert.strictEqual((await me(env, intruder.browser)).member_id, id);
+  // From that session: a new agent with a key, raised to act; and the owner's agent re-saved with its cap raised.
+  const keyHash = c.sha256hex('intruder-key-' + Math.random());
+  const helper = await runAs(await as(intruder.browser), (t) => agents.create(t, { name: 'helper', description: null, keyHash }));
+  assert.ok(helper.id);
+  assert.ok((await runAs(await as(intruder.browser), (t) => delegation.setRules(t, { agent: helper.id, post: 'act', reply: 'act', report: 'draft', dailyCap: 20 }))).rules);
+  assert.ok((await runAs(await as(intruder.browser), (t) => delegation.setRules(t, { agent: mine.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 200 }))).rules);
+  // Probe C: the intruder's fresh session links yet another GitHub (which ends the owner's sessions), and from a
+  // session of that one claims an outside agent whose key the intruder holds.
+  assert.strictEqual((await oauth(env, 'github', '9703', { browser: intruder.browser, query: '?link=1' })).r.getHeader('Location'), '/');
+  assert.deepStrictEqual(await me(env, owner.browser), { signed_in: false });
+  const deeper = await oauth(env, 'github', '9703');
+  const outsideKey = c.sha256hex('outside-key-' + Math.random());
+  const claimCode = c.sha256hex('claim-' + Math.random());
+  await runAs({ actor: 'anon' }, (t) => agents.register(t, { name: 'outside', description: null, keyHash: outsideKey, claimHash: claimCode }));
+  const claimed = await runAs(await as(deeper.browser), (t) => agents.claim(t, claimCode));
+  assert.ok(claimed, JSON.stringify(claimed));
+  for (const k of [keyHash, outsideKey, mineKey]) assert.ok(await resolves(k), 'every key works before the unlink');
+  const [g1] = await q(`select id from app.identities where member_id = '${id}' and provider = 'github' order by created_at limit 1`);
+
+  // The owner signs back in with their older X and unlinks the intruder's first GitHub, as the notice says.
+  const back = await oauth(env, 'x', '9701');
+  const r = res();
+  await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: back.browser.header(), origin: ORIGIN, body: { id: g1.id } }), r);
+  assert.strictEqual(r.getHeader('Location'), '/account?saved=unlinked');
+
+  // Without even signing out everywhere: both GitHubs are gone, every session of theirs ended, and their keys are dead.
+  assert.deepStrictEqual((await q(`select provider from app.identities where member_id = '${id}'`)).map((x) => x.provider), ['x']);
+  for (const b of [intruder.browser, deeper.browser, shared]) assert.deepStrictEqual(await me(env, b), { signed_in: false });
+  assert.strictEqual(await resolves(keyHash), false, 'the key made from the linked method\'s session is revoked');
+  assert.strictEqual(await resolves(outsideKey), false, 'the agent claimed from a session of a method it linked is revoked too');
+  assert.strictEqual(await resolves(mineKey), true, 'the owner\'s own key still works');
+  // What they raised to act drafts again (never off); the owner's own "act" stays, and the cap they raised goes back.
+  assert.deepStrictEqual(await latest(helper.id), { post_mode: 'draft', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' });
+  assert.deepStrictEqual(await latest(mine.id), { post_mode: 'act', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' });
+  // One audit row and one notice say exactly what was undone, and send the owner to their agents.
+  const au = await q(`select detail from app.audit_log where action = 'member.identity_unlinked' and subject_id = '${id}'`);
+  assert.deepStrictEqual(au.map((x) => x.detail), [{ provider: 'github', sessions_ended: 2, also_unlinked: ['github'], keys_revoked: 2, agents_lowered: 2 }]);
+  const ns = await q(`select title, body, link from app.notices where member_id = '${id}' and kind = 'signin_unlinked'`);
+  assert.strictEqual(ns.length, 1);
+  assert.strictEqual(ns[0].link, '/agents');
+  assert.strictEqual(ns[0].body, 'GitHub can no longer sign in to your account, and every other session of yours was signed out. '
+    + 'Also unlinked, because they were linked from its sessions: GitHub. 2 agent keys made or claimed from those sessions were revoked. '
+    + '2 agents that those sessions let act on their own now draft for your approval again (nothing was switched off). '
+    + 'Check your agents and your posts: anything else done from those sessions, such as a post or a deletion, isn\'t undone. '
+    + 'If this wasn\'t you, sign in again and check how you sign in on your account page.');
+  // The notice about the link now says what unlinking does, and what it doesn't.
+  const [ln] = await q(`select body from app.notices where member_id = '${id}' and kind = 'signin_linked' order by created_at limit 1`);
+  assert.match(ln.body, /revokes any agent key made with it, puts any agent it let act on its own back to drafting/);
+  assert.match(ln.body, /isn't undone\.$/);
+  // The record: the key names the method of the session that made it (the intruder's first GitHub, now gone).
+  const [rec] = await q(`select by_identity from app.agent_keys where key_hash = '${keyHash}'`);
+  assert.strictEqual(rec.by_identity, g1.id);
+});
+
+test('PR 15 second review R1: an agent paused by a containment when the method is unlinked stays drafting after the pause, instead of getting back what that method raised', async () => {
+  const env = setup({ accounts: { 'x:9741': { accountId: '9741', level: 2, recheckAfter: null }, 'github:9742': { accountId: '9742', level: 1, recheckAfter: null } } });
+  const owner = await oauth(env, 'x', '9741');
+  const id = (await me(env, owner.browser)).member_id;
+  await oauth(env, 'github', '9742', { browser: twoBrowsers(owner.browser), query: '?link=1' });
+  const intruder = await oauth(env, 'github', '9742');
+  const ag = await runAs(await as(owner.browser), (t) => agents.create(t, { name: 'paused', description: null, keyHash: c.sha256hex('p' + Math.random()) }));
+  assert.ok((await runAs(await as(intruder.browser), (t) => delegation.setRules(t, { agent: ag.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
+  // The watch contains the owner: every act goes back to draft for a while.
+  await runAs({ actor: 'system' }, (t) => t`insert into app.containments (member_id, reason, measured, usual_x100, ends_at)
+    values (${id}, 'volume', 1000, 100, now() + interval '2 seconds')`);
+  assert.strictEqual((await latest(ag.id)).reason, 'containment');
+  const back = await oauth(env, 'x', '9741');
+  const [g] = await q(`select id from app.identities where member_id = '${id}' and provider = 'github'`);
+  assert.strictEqual((await runAs(await as(back.browser), (t) => store.unlink(t, { identity: g.id, sessionHash: hashOf(back.browser) }))).agentsLowered, 1);
+  // The pause ends: the containment's own version is no longer the latest, so the intruder's "act" isn't restored.
+  await new Promise((r) => setTimeout(r, 2500));
+  await runAs({ actor: 'system' }, (t) => t`update app.containments set lifted_at = now() where member_id = ${id} and lifted_at is null`);
+  assert.deepStrictEqual(await latest(ag.id), { post_mode: 'draft', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' });
+});
+
+test('PR 15 second review R1: the method a session made things with is read by the database from the request\'s own session; another member\'s session, or none, records nothing, and the site can\'t write the record', async () => {
+  const env = setup({ accounts: { 'x:9711': { accountId: '9711', level: 2, recheckAfter: null }, 'x:9712': { accountId: '9712', level: 2, recheckAfter: null } } });
+  const a = await oauth(env, 'x', '9711');
+  const b = await oauth(env, 'x', '9712');
+  const ida = (await me(env, a.browser)).member_id;
+  const ident = async (ctx) => (await runAs(ctx, (t) => t`select app.current_identity() as i`))[0].i;
+  const [own] = await q(`select identity_id from app.sessions where token_hash = '${hashOf(a.browser)}'`);
+  assert.ok(own.identity_id);
+  assert.strictEqual(await ident(await as(a.browser)), own.identity_id);
+  assert.strictEqual(await ident({ actor: 'member', memberId: ida, session: hashOf(b.browser) }), null, 'another member\'s session counts for nothing');
+  assert.strictEqual(await ident({ actor: 'member', memberId: ida }), null);
+  await assert.rejects(runAs({ actor: 'anon', session: hashOf(a.browser) }, async () => {}), /only member calls carry a session/);
+  await assert.rejects(runAs({ actor: 'member', memberId: ida, session: 'not-a-hash' }, async () => {}), /session must be a session hash/);
+  const ag = await runAs(await as(a.browser), (t) => agents.create(t, { name: 'rec', description: null, keyHash: c.sha256hex('rec' + Math.random()) }));
+  await assert.rejects(runAs(await as(a.browser), (t) => t`insert into app.agent_keys (agent_id, key_hash, by_identity) values (${ag.id}, ${c.sha256hex('z' + Math.random())}, null)`), /permission denied/);
+  await assert.rejects(runAs(await as(a.browser), (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason, restarts_clock)
+    values (${ag.id}, 'draft', 'draft', 'draft', 20, 'owner', true)`), /permission denied/);
+});
+
+test('PR 15 second review R2 (probe D): the 90-day clock restarts only on a save made with a fresh sign-in; re-saving act rules without one is allowed but doesn\'t move it', async () => {
+  const env = setup({ accounts: { 'x:9721': { accountId: '9721', level: 2, recheckAfter: null } } });
+  const o = await oauth(env, 'x', '9721');
+  const made = await runAs(await as(o.browser), (t) => agents.create(t, { name: 'clock', description: null, keyHash: c.sha256hex('d' + Math.random()) }));
+  assert.ok((await runAs(await as(o.browser), (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
+  const age = (days) => q(`alter table app.agent_rules disable trigger agent_rules_guard;
+    update app.agent_rules set created_at = created_at - interval '${days} days' where agent_id = '${made.id}';
+    alter table app.agent_rules enable always trigger agent_rules_guard`);
+  const daysAgo = async (browser) => Math.round((Date.now() - +(await runAs(await as(browser), (t) => notices.actClock(t, [made.id]))).get(made.id)) / 86400000);
+  const ver = async () => (await q(`select max(version)::int as v from app.agent_rules where agent_id = '${made.id}'`))[0].v;
+  await age(85);
+  await ago(o.browser, 11); // the owner's session is no longer fresh
+  const stale = await as(o.browser);
+  assert.strictEqual(stale.fresh, false);
+  assert.deepStrictEqual(await runAs(stale, async (t) => notices.reconfirm(t, { agent: made.id, version: await ver() })), { refused: 'fresh' });
+  // The same rules re-saved without a fresh sign-in: accepted (no extra friction), but the clock stays at day 85.
+  assert.ok((await runAs(stale, (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules, 'allowed');
+  assert.strictEqual(await daysAgo(o.browser), 85, 'the 90-day clock did not restart');
+  const [row] = await q(`select restarts_clock, set_by from app.agent_rules where agent_id = '${made.id}' order by version desc limit 1`);
+  assert.deepStrictEqual({ ...row }, { restarts_clock: false, set_by: 'owner' });
+  // Lowering one action without a fresh sign-in, leaving another on act, doesn't move it either.
+  assert.ok((await runAs(stale, (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'off', report: 'draft', dailyCap: 20 }))).rules);
+  assert.strictEqual(await daysAgo(o.browser), 85);
+  // At day 91 the timer puts it back to drafting, whatever was re-saved since.
+  await age(6);
+  assert.ok((await runAs(stale, (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'off', report: 'draft', dailyCap: 20 }))).rules);
+  await runAs({ actor: 'system' }, (t) => notices.runTimers(t));
+  assert.deepStrictEqual(await latest(made.id), { post_mode: 'draft', reply_mode: 'off', report_mode: 'draft', daily_cap: 20, reason: 'act_expired', set_by: 'system' });
+  // A fresh choice does restart it: raising it to act again, and later a fresh re-confirm.
+  const fresh = await oauth(env, 'x', '9721');
+  assert.ok((await runAs(await as(fresh.browser), (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'off', report: 'draft', dailyCap: 20 }))).rules);
+  assert.strictEqual(await daysAgo(fresh.browser), 0);
+  await age(85);
+  assert.strictEqual(await daysAgo(fresh.browser), 85);
+  const kept = await runAs(await as(fresh.browser), async (t) => notices.reconfirm(t, { agent: made.id, version: await ver() }));
+  assert.ok(kept.version, JSON.stringify(kept));
+  assert.strictEqual(await daysAgo(fresh.browser), 0);
+});
+
+test('PR 15 second review R3 (probe B): a link or an unlink at the same moment as a ban waits for it instead of deadlocking, and is refused cleanly', async () => {
+  const env = setup({ accounts: { 'github:9731': { accountId: '9731', level: 1, recheckAfter: null }, 'github:9732': { accountId: '9732', level: 1, recheckAfter: null },
+    'x:9733': { accountId: '9733', level: 1, recheckAfter: null } } });
+  const race = async (browser, step) => {
+    const id = (await me(env, browser)).member_id;
+    const [ident] = await q(`select id from app.identities where member_id = '${id}' order by created_at limit 1`);
+    // T0 stands in for a sign-in with the same method on another device (app.sign_in locks that row FOR UPDATE).
+    let release0; const gate0 = new Promise((r) => { release0 = r; });
+    let locked; const isLocked = new Promise((r) => { locked = r; });
+    const t0 = su.begin(async (t) => { await t.unsafe(`select 1 from app.identities where id = '${ident.id}' for update`); locked(); await gate0; });
+    await isLocked;
+    const t1 = runAs({ actor: 'member', memberId: id }, (t) => step(t));
+    await new Promise((r) => setTimeout(r, 300));
+    // T2: Aaron bans the member: the update locks the member row, then its trigger ends the sessions.
+    const t2 = su.begin(async (t) => { await t.unsafe(`select set_config('app.actor', 'system', true)`); await t.unsafe(`update app.members set status = 'banned' where id = '${id}'`); });
+    await new Promise((r) => setTimeout(r, 300));
+    release0();
+    const out = await Promise.allSettled([t0, t1, t2]);
+    for (const o of out) assert.strictEqual(o.status, 'fulfilled', o.reason && (o.reason.code + ' ' + o.reason.message));
+    const [m] = await q(`select status from app.members where id = '${id}'`);
+    assert.strictEqual(m.status, 'banned', 'the ban went through');
+    return out[1].value;
+  };
+  const a = await oauth(env, 'github', '9731');
+  const [fp] = await q(`select i.fingerprint from app.identities i join app.sessions s on s.member_id = i.member_id where s.token_hash = '${hashOf(a.browser)}'`);
+  const linked = await race(a.browser, (t) => store.link(t, { provider: 'github', fingerprints: [fp.fingerprint], keyVersion: 1, level: 1, sessionHash: hashOf(a.browser) }));
+  assert.deepStrictEqual(linked, { refused: 'banned' });
+  const b = await oauth(env, 'github', '9732');
+  await oauth(env, 'x', '9733', { browser: b.browser, query: '?link=1' });
+  const bid = (await me(env, b.browser)).member_id;
+  const [xid] = await q(`select id from app.identities where member_id = '${bid}' and provider = 'x'`);
+  const unlinked = await race(b.browser, (t) => store.unlink(t, { identity: xid.id, sessionHash: hashOf(b.browser) }));
+  assert.deepStrictEqual(unlinked, { refused: 'not_found' });
+  assert.strictEqual(await countIds(bid), 2, 'nothing was unlinked');
+});
+
+test('PR 15 second review R3: a deadlock or serialization failure left in a link or unlink is a clean "try again", never an error page', async () => {
+  for (const code of ['40P01', '40001', '55P03']) {
+    const t = { savepoint: async () => { throw Object.assign(new Error('lost a race'), { code }); }, array: (x) => x };
+    assert.deepStrictEqual(await store.unlink(t, { identity: crypto.randomUUID(), sessionHash: 'a'.repeat(64) }), { refused: 'busy' }, code);
+    assert.deepStrictEqual(await store.link(t, { provider: 'x', fingerprints: ['b'.repeat(64)], keyVersion: 1, level: 1, sessionHash: 'a'.repeat(64) }), { refused: 'busy' }, code);
+  }
+  const other = { savepoint: async () => { throw Object.assign(new Error('boom'), { code: 'XX000' }); }, array: (x) => x };
+  await assert.rejects(store.unlink(other, { identity: crypto.randomUUID(), sessionHash: 'a'.repeat(64) }), /boom/, 'anything else is still an error');
+  // The account page says to try again.
+  const who = { memberId: crypto.randomUUID(), trustLevel: 1, isAdmin: false, displayName: 'z', fresh: true };
+  const cfg = { ready: true, sessionKey: key(), ipKey: crypto.randomBytes(32), fingerprintKeys: [{ version: 1, key: crypto.randomBytes(32) }] };
+  const flow = make({ config: cfg, run: async (ctx) => (ctx.actor === 'anon' ? who : { refused: 'busy' }), providers: {}, sendEmail: async () => {} });
+  const r = res();
+  await flow.unlink(req('POST', '/auth/account/unlink', { cookie: SESSION + '=' + c.token(32), origin: ORIGIN, body: { id: crypto.randomUUID() } }), r);
+  assert.strictEqual(r.getHeader('Location'), '/account?error=busy');
+  const page = fs.readFileSync(path.join(root, 'account.js'), 'utf8');
+  assert.match(page, /'error=busy': 'Nothing was changed: something else was changing your account at the same moment\. Please try again\.'/);
+});
