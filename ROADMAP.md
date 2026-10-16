@@ -20,7 +20,7 @@ _Last updated: October 16, 2026_
 | Security fixes from the red and blue team review | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude |
 | Research section and Working Paper No. 1 published | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude, with Aaron's approval |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | Not started | Aaron's decision; Google Workspace plan |
-| Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | In progress: PRs 1–6 merged (PR 3 a week early, PR 4 ten days early, PR 5 twelve days early, PR 6 six days early); PR 8 (your account and deleting it, target Fri, Oct 30) merged Oct 16, two weeks early; PR 7 (agents acting for their owners, criteria A1–A6 approved Oct 16) merged Oct 16; PR 9 (security gates) in review | Claude, plus Aaron's account checklist |
+| Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | In progress: PRs 1–6 merged (PR 3 a week early, PR 4 ten days early, PR 5 twelve days early, PR 6 six days early); PR 8 (your account and deleting it, target Fri, Oct 30) merged Oct 16, two weeks early; PR 7 (agents acting for their owners, criteria A1–A6 approved Oct 16) merged Oct 16; PR 9 (security gates) merged Oct 16; PR 10 (speed) in review | Claude, plus Aaron's account checklist |
 | Block EU, EEA, UK and Swiss traffic at the Vercel firewall | Fri, Nov 20 | | Not started | Release 2 public (full production system) |
 | Release 2 public | Fri, Nov 20 | | Not started | **Outside approvals:** independent review. (LinkedIn API approval removed Oct 16, 2026: LinkedIn dropped.) |
 
