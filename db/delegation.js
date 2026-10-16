@@ -102,7 +102,12 @@ async function decline(t, draft) {
 
 // What each of the owner's agents did (R36), and how far the owner trusted it, over the last 30 days.
 async function activity(t) {
-  const agents = await t`select id, name, status from app.agents where owner_id = app.current_member() order by id desc limit 200`;
+  // The agents the owner made or claimed first, in their own part of the query, so a busy tree of sub-agents never
+  // pushes them off (the review of PR 16, F3); then sub-agents still running or made in the last week.
+  const agents = await t`(select id, name, status from app.agents where owner_id = app.current_member() and parent_id is null order by id desc limit 300)
+                         union all
+                         (select id, name, status from app.agents where owner_id = app.current_member() and parent_id is not null
+                            and (status = 'active' or created_at > now() - interval '7 days') order by id desc limit 300)`;
   if (!agents.length) return [];
   const ids = agents.map((a) => a.id);
   const rules = await t`select distinct on (agent_id) * from app.agent_rules where agent_id in ${t(ids)} order by agent_id, version desc`;
@@ -138,7 +143,7 @@ async function receipt(t, postId) {
   if (!r) return null;
   // A sub-agent's receipt names the agents above it, nearest first (PR 16).
   return { post: { id: r.post_id, publishedAt: r.published_at },
-    agent: { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name })) },
+    agent: { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name, active: x.active !== false })) },
     owner: { id: r.owner_id, name: r.owner_name },
     delegation: r.delegation, rules: { version: r.rules_version, post: r.post_mode, dailyCap: r.daily_cap },
     minutesToApprove: r.minutes_to_approve };

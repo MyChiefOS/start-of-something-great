@@ -201,6 +201,13 @@
           + (a.status === 'active' ? 'Expires ' + new Date(a.expires_at).toLocaleString() + '.' : '')));
       }
       var below = under(a);
+      // A busy tree (the review of PR 16, F3): the agents you made are always listed; if not every sub-agent under one
+      // is, say how many run there, since revoking it stops them all.
+      var tree = !a.parent_id && (d.trees || []).filter(function (x) { return x.root_id === a.id; })[0];
+      if (tree) below = Math.max(below, tree.active_subagents);
+      if (tree && tree.active_subagents > tree.listed) {
+        card.appendChild(el('p', 'fine', tree.active_subagents + ' sub-agents are running under it; the newest ' + tree.listed + ' are listed below. Revoking it stops them all.'));
+      }
       if (a.description) card.appendChild(el('p', '', a.description));
       var act = byId[a.id] || {};
       var st = stats(act);

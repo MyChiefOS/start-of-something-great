@@ -52,6 +52,9 @@ const MAX_BODY_BYTES = 4096;
 const REGISTER_LIMITS = { agent_register_ip: { windowSeconds: 3600, max: 10 }, agent_register_net: { windowSeconds: 3600, max: 20 },
   agent_register_all: { windowSeconds: 3600, max: 500 } };
 const ALL = '0'.repeat(64);
+// Asking for sub-agents is limited per agent too (the review of PR 16, F6), like registration: twice the per-parent rate
+// of making them, so refusals can't flood JEVs's decisions or the database's checks.
+const SUBAGENT_LIMITS = { subagent_agent: { windowSeconds: 3600, max: 60 } };
 // Letting an agent act without approval needs a sign-in this recent (R17), so a stolen or forgotten session can't do it.
 const FRESH_MINUTES = 10;
 const REAUTH = '/join?return_to=%2Fagents';
@@ -186,8 +189,11 @@ const ROUTES = {
     // wait) and as a member takes part, not on page views (the JEVs review).
     const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
-    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.mine(t); });
-    return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
+    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.listMine(t); });
+    // The agents the owner made come first, always; then sub-agents, with a count per tree of how many are running and
+    // how many are listed here (PR 16, the review's F3).
+    return reply(res, 200, { agents: list.agents.map(shapeAgent), can_own: canOwn,
+      trees: list.trees.map((x) => ({ root_id: x.rootId, active_subagents: x.active, listed: x.listed })), subagents_truncated: list.truncated });
   },
 
   async 'POST '(req, res, run, body, cfg) {
@@ -334,16 +340,24 @@ const ROUTES = {
   async 'POST subagents'(req, res, run, body, cfg) {
     const a = await agentkey.resolve(req, run);
     if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
-    agents.checkName(body.name);
+    const input = { name: body.name, description: body.description, rules: body.rules, ttlHours: body.ttl_hours };
+    // Inputs first, so a malformed request uses up no allowance; then the per-agent request limit.
+    agents.subArgs(input);
+    const limited = await run({ actor: 'anon' }, async (t) => !(await store.rateLimitHit(t, { bucket: 'subagent_agent', keyHash: c.sha256hex('subagent ' + a.agentId),
+      ...SUBAGENT_LIMITS.subagent_agent })));
+    if (limited) return reply(res, 429, { error: 'This agent has asked for too many sub-agents this hour. Please try again later.', refused: 'requests' });
     const k = agentkey.newKey();
-    // JEVs's check and the creation commit together. High risk (or scoring that failed) holds it for Aaron; medium
-    // makes it with every action drafting, so each thing it does waits for the owner, never for an agent.
+    // The cheap refusals first (depth, the per-parent rate), then JEVs's check and the creation, which commit together.
+    // High risk (or scoring that failed) holds it for Aaron; medium makes it with every action drafting, so each thing
+    // it does waits for the owner, never for an agent. The database locks and re-checks the parent and the very key
+    // this request came with as it makes the sub-agent, so a revoke or a new key always wins.
     const out = await run(agentkey.actorFor(a), async (t) => {
+      const pre = await agents.subPrecheck(t);
+      if (pre) return pre;
       const d = await jevs.check(t, { action: 'agent.subagent', subject: a.agentId, ...jevs.facts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
       const draftOnly = Boolean(d.applied && d.effect === 'draft');
-      const r = await agents.createSub(t, { name: body.name, description: body.description, keyHash: k.hash, rules: body.rules,
-        ttlHours: body.ttl_hours, draftOnly });
+      const r = await agents.createSub(t, { ...input, keyHash: k.hash, callerKeyHash: agentkey.fromRequest(req).hash, draftOnly });
       if (r.refused) return r;
       return { ...r, draftOnly };
     });
@@ -427,3 +441,4 @@ module.exports = async (req, res) => {
 module.exports.handle = handle;
 module.exports.ROUTES = ROUTES;
 module.exports.REGISTER_LIMITS = REGISTER_LIMITS;
+module.exports.SUBAGENT_LIMITS = SUBAGENT_LIMITS;

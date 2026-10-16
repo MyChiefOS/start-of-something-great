@@ -9,9 +9,28 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const hex = (field, s) => v.text(field, s, { min: 64, max: 64, pattern: HEX64 });
 // An agent's name can't imitate the line that names its owner ("X · agent of Y"), since registering needs no account,
 // nor the chain a sub-agent's posts show ("X · sub-agent of Y — owned by Z", PR 16), since agents name sub-agents.
+// Checked on the NFKC form (so full-width and styled letters count as plain ones), refusing every dash, the minus
+// sign and the dots and bars the labels use, characters that show as nothing, and a "skeleton" in which common
+// Cyrillic, Greek and other lookalikes of Latin letters are read as those letters (the review of PR 16, F4). A small
+// built-in map, not the whole Unicode confusables list: it covers the letters of "agent of" and "owned by".
+const NAME_MARKS = /[\p{Pd}\u2212\u00b7\u0387\u2022\u2027\u2219\u22c5\u30fb\uff65|]/u;
+// Shown as nothing, or as a blank: soft hyphen, combining grapheme joiner, zero-width (non-)joiner, Mongolian vowel
+// separator, Hangul fillers, and every other invisible "format" character (\p{Cf}).
+const NAME_HIDDEN = /[\p{Cf}\u00ad\u034f\u115f\u1160\u180e\u200c\u200d\u3164\uffa0]/u;
+const LOOKALIKE = { 'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'ԛ': 'q', 'ԝ': 'w', 'ɡ': 'g',
+  'ո': 'n', 'ց': 'g', 'ս': 'u', 'օ': 'o', 'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'ν': 'v', 'ι': 'i', 'κ': 'k', 'τ': 't', 'υ': 'u', 'β': 'b', 'η': 'n',
+  'ᴀ': 'a', 'ʙ': 'b', 'ᴄ': 'c', 'ᴅ': 'd', 'ᴇ': 'e', 'ɢ': 'g', 'ʜ': 'h', 'ɪ': 'i', 'ᴋ': 'k', 'ʟ': 'l', 'ᴍ': 'm', 'ɴ': 'n', 'ᴏ': 'o', 'ᴘ': 'p', 'ʀ': 'r',
+  'ᴛ': 't', 'ᴜ': 'u', 'ᴠ': 'v', 'ᴡ': 'w', 'ʏ': 'y', 'ᴢ': 'z', 'ı': 'i', 'ɑ': 'a', 'ɵ': 'o', '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's' };
+function skeleton(n) {
+  return [...n.normalize('NFKC').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')].map((ch) => LOOKALIKE[ch] || ch).join('')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ');
+}
 function name(s) {
   const n = v.text('name', s, { max: 80 });
-  if (/[·•|\u2014\u2013]|agent\s+of|owned\s+by/i.test(n)) throw new v.ValidationError('name', 'can\'t contain "·", "|", "•", "—", "–", "agent of" or "owned by"');
+  const k = n.normalize('NFKC');
+  if (NAME_MARKS.test(k) || NAME_HIDDEN.test(n) || NAME_HIDDEN.test(k) || /agent\s*of|owned\s*by/.test(skeleton(n))) {
+    throw new v.ValidationError('name', 'can\'t contain "·", "|", "•", any dash, invisible characters, "agent of" or "owned by" (in any lettering)');
+  }
   return n;
 }
 const description = (s) => (s === undefined || s === null || s === '' ? null : v.text('description', s, { max: 500, multiline: true }));
@@ -67,19 +86,34 @@ async function create(t, { name: n, description: d, keyHash }) {
   }
 }
 
-// The signed-in owner's agents, with their keys' details (never the keys). Sub-agents (PR 16) come with their place in
-// the tree; stopped sub-agents drop off the list after a week, so a busy tree doesn't bury the agents the owner made.
-async function mine(t) {
-  const agents = await t`select id, name, description, status, created_at, claimed_at, parent_id, depth, expires_at from app.agents
-                         where owner_id = app.current_member()
-                           and (parent_id is null or status = 'active' or created_at > now() - interval '7 days')
-                         order by id desc limit 500`;
+// The signed-in owner's agents, with their keys' details (never the keys). The agents the owner made or claimed always
+// come first, in a query of their own, so no tree can push them (and their Revoke buttons) off the list (the review of
+// PR 16, F3). Then sub-agents (PR 16), with their place in the tree, newest first, up to SUB_LISTED; stopped ones drop
+// off after a week. trees: per top-level agent, how many sub-agents are active and how many are listed.
+const SUB_LISTED = 300;
+async function listMine(t) {
+  const roots = await t`select id, name, description, status, created_at, claimed_at, parent_id, depth, expires_at from app.agents
+                        where owner_id = app.current_member() and parent_id is null order by id desc limit 500`;
+  const subs = await t`select id, name, description, status, created_at, claimed_at, parent_id, depth, expires_at, root_id from app.agents
+                       where owner_id = app.current_member() and parent_id is not null
+                         and (status = 'active' or created_at > now() - interval '7 days')
+                       order by id desc limit ${SUB_LISTED + 1}`;
+  const trees = await t`select root_id, count(*) filter (where status = 'active')::int as active from app.agents
+                        where owner_id = app.current_member() and parent_id is not null group by root_id`;
+  const agents = roots.concat(subs.slice(0, SUB_LISTED));
   const keys = agents.length ? await t`select id, agent_id, created_at, revoked_at from app.agent_keys
                                        where agent_id in ${t(agents.map((a) => a.id))} order by id` : [];
-  return agents.map((a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, createdAt: a.created_at, claimedAt: a.claimed_at,
+  const shaped = agents.map((a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, createdAt: a.created_at, claimedAt: a.claimed_at,
     parentId: a.parent_id, depth: a.depth, expiresAt: a.expires_at,
     keys: keys.filter((k) => k.agent_id === a.id).map((k) => ({ id: k.id, createdAt: k.created_at, revokedAt: k.revoked_at })) }));
+  const listed = subs.slice(0, SUB_LISTED);
+  return {
+    agents: shaped,
+    trees: trees.map((x) => ({ rootId: x.root_id, active: x.active, listed: listed.filter((a) => a.root_id === x.root_id).length })),
+    truncated: subs.length > SUB_LISTED
+  };
 }
+const mine = async (t) => (await listMine(t)).agents;
 
 // Revoke an agent (final): every key stops at once. true if it was the owner's active agent.
 async function revoke(t, agentId) {
@@ -128,16 +162,40 @@ async function whoami(t) {
 // the creation medium risk (enforce mode), so every "act" becomes "draft".
 // { id, depth, expiresAt, rules, chain (the IDs above it, nearest first) } or { refused: 'depth' | 'rate_parent' | 'rate_owner' | 'ttl' | 'above_parent' | 'brake' | 'not_active', message? }
 const MODES = ['off', 'draft', 'act'];
-async function createSub(t, { name: n, description: d, keyHash, rules, ttlHours, draftOnly = false }) {
+// The request's own fields, checked before anything else (so a malformed request uses up no allowance and reaches
+// neither JEVs nor the database): { name, description, post, reply, report, cap, ttl }.
+function subArgs({ name: n, description: d, rules, ttlHours }) {
   const r = rules === undefined || rules === null ? {} : v.object('rules', rules, { maxBytes: 200 });
   for (const k of Object.keys(r)) if (!['post', 'reply', 'report', 'daily_cap'].includes(k)) throw new v.ValidationError('rules', 'can set only post, reply, report and daily_cap');
   const mode = (f) => (r[f] === undefined || r[f] === null ? null : v.oneOf('rules.' + f, r[f], MODES));
-  const cap = r.daily_cap === undefined || r.daily_cap === null ? null : v.int('rules.daily_cap', r.daily_cap, { min: 1, max: 1000 });
-  const ttl = ttlHours === undefined || ttlHours === null ? null : v.int('ttl_hours', ttlHours, { min: 1, max: 720 });
-  const args = [name(n), description(d), hex('keyHash', keyHash), mode('post'), mode('reply'), mode('report')];
+  return { name: name(n), description: description(d), post: mode('post'), reply: mode('reply'), report: mode('report'),
+    cap: r.daily_cap === undefined || r.daily_cap === null ? null : v.int('rules.daily_cap', r.daily_cap, { min: 1, max: 1000 }),
+    ttl: ttlHours === undefined || ttlHours === null ? null : v.int('ttl_hours', ttlHours, { min: 1, max: 720 }) };
+}
+// The cheap refusals, as the acting agent, before JEVs scores anything (the review of PR 16, F6): its depth against the
+// limit, and the sub-agents it made in the last hour against the per-parent rate. The database checks both again, with
+// the per-owner rate, when it makes the sub-agent. null, or { refused, message } worded as the database words them.
+async function subPrecheck(t) {
+  const [r] = await t`select a.depth, s.max_depth, s.per_parent_per_hour,
+                        (select count(*)::int from app.agents c where c.parent_id = a.id and c.created_at > now() - interval '1 hour') as made
+                      from app.agents a cross join app.subagent_settings s where a.id = app.current_agent()`;
+  if (!r) return { refused: 'not_active' };
+  if (r.depth + 1 > r.max_depth) {
+    return { refused: 'depth', message: 'Sub-agents go at most ' + r.max_depth + ' levels below the agent their owner made, and this agent is already at level ' + r.depth + '.' };
+  }
+  if (r.made >= r.per_parent_per_hour) return { refused: 'rate_parent', message: 'One agent can make at most ' + r.per_parent_per_hour + ' sub-agents an hour.' };
+  return null;
+}
+// callerKeyHash: the SHA-256 of the key the request came with; the database locks and re-checks it (F2).
+async function createSub(t, { keyHash, callerKeyHash, draftOnly = false, ...input }) {
+  const x0 = subArgs(input);
+  const args = [x0.name, x0.description, hex('keyHash', keyHash), x0.post, x0.reply, x0.report];
+  const cap = x0.cap;
+  const ttl = x0.ttl;
+  const caller = hex('callerKeyHash', callerKeyHash);
   try {
     const [x] = await t.savepoint((s) => s`select * from app.subagent_create(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]},
-      ${cap}::integer, ${ttl}::integer, ${draftOnly === true})`);
+      ${cap}::integer, ${ttl}::integer, ${draftOnly === true}, ${caller})`);
     return { id: x.agent_id, depth: x.depth, expiresAt: x.expires_at,
       rules: { version: x.rules_version, post: x.post_mode, reply: x.reply_mode, report: x.report_mode, daily_cap: x.daily_cap },
       chain: x.chain || [] };
@@ -178,4 +236,5 @@ async function subLimits(t) {
 
 const checkName = name;
 
-module.exports = { checkName, resolve, register, claim, preview, create, mine, revoke, rotate, whoami, createSub, children, revokeChild, subLimits };
+module.exports = { checkName, skeleton, resolve, register, claim, preview, create, mine, listMine, revoke, rotate, whoami, subArgs, subPrecheck, createSub,
+  children, revokeChild, subLimits };
