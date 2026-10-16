@@ -166,7 +166,8 @@ async function main() {
     const o = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('outsider' + NAME)], keyVersion: 1,
       level: 2, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
     const outsider = { id: o.memberId };
-    const allowed = { members: 1, identities: 1, sessions: 1 };
+    // The sub-agent limits (PR 16) are readable by anyone signed in; they are public in the migration.
+    const allowed = { members: 1, identities: 1, sessions: 1, subagent_settings: 1 };
     // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not.
     const PUBLIC_ROWS = { jevs_settings: 1 };
     let breakinRuns = 0;

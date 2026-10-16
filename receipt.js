@@ -18,6 +18,8 @@
       var r = x.d.receipt;
       summary.textContent = r.delegation.label + '.';
       row('Agent', r.agent.name);
+      // A sub-agent (PR 16): which agents made it, nearest first, and who owns the whole chain.
+      if (r.agent.sub_agent_of) row('Chain', r.agent.chain_label.charAt(0).toUpperCase() + r.agent.chain_label.slice(1));
       row('Acts for', r.owner.name);
       row('Posted', new Date(r.post.published_at).toLocaleString());
       row('How', r.approval ? 'Its owner approved these exact words' + (r.approval.minutes_to_approve === null ? '' : ', about ' + r.approval.minutes_to_approve + ' minutes after the draft') + '.'
