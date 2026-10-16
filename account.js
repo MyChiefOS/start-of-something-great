@@ -53,7 +53,8 @@
       var list = document.getElementById('signins');
       d.sign_ins.forEach(function (s) {
         var li = el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')');
-        // An Unlink form for each method while there is more than one: a plain same-site POST (form-action 'self').
+        // An Unlink form for each method while there is more than one: a plain same-site POST. /account is served
+        // form-action 'self' (vercel.json; guarded by test/security.test.js, which also covers forms built here).
         if (d.sign_ins.length > 1 && s.id) {
           var f = el('form', 'inline-form');
           f.method = 'post';
