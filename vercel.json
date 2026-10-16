@@ -3,36 +3,36 @@
   "trailingSlash": false,
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/:path((?!api/cron$).*)",
       "has": [
         {
           "type": "host",
           "value": "start-of-something-great-chief-os.vercel.app"
         }
       ],
-      "destination": "https://dayonegreat.com/:path*",
+      "destination": "https://dayonegreat.com/:path",
       "permanent": true
     },
     {
-      "source": "/:path*",
+      "source": "/:path((?!api/cron$).*)",
       "has": [
         {
           "type": "host",
           "value": "start-of-something-great.vercel.app"
         }
       ],
-      "destination": "https://dayonegreat.com/:path*",
+      "destination": "https://dayonegreat.com/:path",
       "permanent": true
     },
     {
-      "source": "/:path*",
+      "source": "/:path((?!api/cron$).*)",
       "has": [
         {
           "type": "host",
           "value": "start-of-something-great-git-main-chief-os.vercel.app"
         }
       ],
-      "destination": "https://dayonegreat.com/:path*",
+      "destination": "https://dayonegreat.com/:path",
       "permanent": true
     }
   ],
@@ -129,6 +129,16 @@
     {
       "source": "/api/agents/:path*",
       "destination": "/api/agents?route=:path*"
+    },
+    {
+      "source": "/api/notify/:path*",
+      "destination": "/api/notify?route=:path*"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "* * * * *"
     }
   ]
 }

@@ -59,7 +59,7 @@ jobs:
       - name: Code scan (Semgrep 1.95.0, rules saved in .semgrep/)
         run: |
           python -m pip install --quiet "semgrep==1.95.0" "setuptools==75.6.0"
-          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ signin/ proposals.js shipped.js join.js signin.js feed.js review.js agents.js controls.js account.js receipt.js
+          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ signin/ notify/ proposals.js shipped.js join.js signin.js feed.js review.js agents.js controls.js account.js receipt.js act.js
 
       - name: Secret scan (gitleaks 8.21.2, checksum verified)
         run: |

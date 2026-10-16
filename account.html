@@ -35,6 +35,27 @@
         <p id="who"></p>
         <ul id="signins"></ul>
 
+        <section id="notices" class="inbox" aria-labelledby="notices-heading">
+          <h2 id="notices-heading">Notices</h2>
+          <p id="notices-summary" class="fine" role="status" aria-live="polite">Loading your notices…</p>
+          <div id="notice-list"></div>
+          <p><button type="button" id="read-all" class="button" hidden>Mark all read</button></p>
+
+          <h3>Email copies</h3>
+          <p class="fine">Every notice arrives here first. If you like, we also email you a copy: at most one email an hour, never in your quiet hours, and every email has a one-click unsubscribe. Your address is stored sealed, used only for these copies, and deleted with your account.</p>
+          <p id="email-state" class="fine" role="status" aria-live="polite"></p>
+          <form id="email-form" class="account-form" hidden>
+            <label>Email address for copies <input name="address" id="email-address" type="email" maxlength="254" required autocomplete="email"></label>
+            <p><button type="submit" class="button">Send me a confirmation</button></p>
+          </form>
+          <form id="quiet-form" class="account-form" hidden>
+            <label>Quiet from <select id="quiet-start" name="quiet_start"></select></label>
+            <label>until <select id="quiet-end" name="quiet_end"></select></label>
+            <p><button type="submit" class="button">Save quiet hours</button> <span id="quiet-zone" class="fine"></span></p>
+          </form>
+          <p id="email-actions" hidden><button type="button" id="copies-toggle" class="button"></button> <button type="button" id="email-remove" class="button danger">Remove my address</button></p>
+        </section>
+
         <h2>Your name</h2>
         <form method="post" action="/auth/account/name" class="account-form">
           <label>Name shown on your posts <input name="name" id="name" type="text" maxlength="80" required autocomplete="nickname"></label>

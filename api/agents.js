@@ -14,6 +14,7 @@
 //   POST /api/agents/approve    {"draft", "hash"}         approve the exact words shown (hash = the hex SHA-256 of
 //                                                         the UTF-8 text, computed by the page that showed it)
 //   POST /api/agents/decline    {"draft"}                 decline a draft
+//   POST /api/agents/reconfirm  {"agent", "version"}      keep an agent acting on its own for another 90 days (R33, PR 13)
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
 // letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron.
@@ -25,6 +26,7 @@ const agents = require('../db/agents');
 const delegation = require('../db/delegation');
 const jevs = require('../db/jevs');
 const region = require('../signin/region');
+const notices = require('../db/notify');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -223,13 +225,26 @@ const ROUTES = {
   async 'GET activity'(req, res, run) {
     const who = await owner(req, res, run, { write: false });
     if (!who) return;
-    const out = await run(session.actorFor(who), async (t) => ({ inbox: await delegation.inbox(t), agents: await delegation.activity(t) }));
+    const out = await run(session.actorFor(who), async (t) => {
+      const list = await delegation.activity(t);
+      // PR 13: when each agent acting on its own was last confirmed (R33), any pause on the owner's agents, unread notices.
+      return { inbox: await delegation.inbox(t), agents: list, clock: await notices.actClock(t, list.map((a) => a.id)),
+        containment: await notices.myContainment(t), unread: await notices.unread(t) };
+    });
+    const due = (a) => {
+      const since = out.clock.get(a.id);
+      const acts = a.rules && [a.rules.post, a.rules.reply, a.rules.report].includes('act');
+      return acts && since ? { confirmed_at: since, ask_at: new Date(+since + 80 * 86400000), drafts_at: new Date(+since + 90 * 86400000) } : null;
+    };
     return reply(res, 200, {
+      unread_notices: out.unread,
+      containment: out.containment ? { id: out.containment.id, reason: out.containment.reason, measured: out.containment.measured,
+        ends_at: out.containment.endsAt, appealed: out.containment.appealed, decision: out.containment.decision } : null,
       // The words are sent exactly as the agent wrote them; to approve, the page sends back the SHA-256 of the text it
       // showed, so only words someone actually saw can be approved (A2).
       inbox: out.inbox.map((d) => ({ id: d.id, agent: { id: d.agent.id, name: maskContacts(d.agent.name) }, body: d.body,
         rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt })),
-      agents: out.agents.map((a) => ({ id: a.id, name: maskContacts(a.name), status: a.status, rules: a.rules,
+      agents: out.agents.map((a) => ({ id: a.id, name: maskContacts(a.name), status: a.status, rules: a.rules, acting_alone: due(a),
         last_30_days: { approved: a.last30Days.approved, declined: a.last30Days.declined, expired: a.last30Days.expired, waiting: a.last30Days.waiting,
           approval_rate: a.last30Days.approvalRate, median_minutes_to_approve: a.last30Days.medianMinutesToApprove, upheld_reports: a.last30Days.upheldReports },
         recent: a.recent.map((p) => ({ id: p.id, status: p.status, delegation: p.delegation, rules_version: p.rulesVersion, created_at: p.createdAt, preview: p.preview })) })),
@@ -274,6 +289,17 @@ const ROUTES = {
         message: 'Approved, and held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it.' });
     }
     return reply(res, 201, { draft: body.draft, post: out.post, receipt: '/receipt?post=' + out.post.id, message: 'Approved and posted.' });
+  },
+
+  // R33: keep an agent acting on its own for another 90 days. The rules version shown must still be the current one.
+  async 'POST reconfirm'(req, res, run, body) {
+    const who = await owner(req, res, run, { write: true });
+    if (!who) return;
+    const out = await run(session.actorFor(who), (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
+    if (out.refused === 'not_found') return reply(res, 404, { error: 'No active agent of yours with that ID.' });
+    if (out.refused === 'changed') return reply(res, 409, { error: 'Its rules changed since this page loaded. Refresh and look again.' });
+    if (out.refused) return reply(res, 409, { error: 'This agent doesn’t act on its own, so there is nothing to keep.' });
+    return reply(res, 201, { agent: body.agent, rules_version: out.version, message: 'Kept. It goes on acting on its own for another 90 days.' });
   },
 
   async 'POST decline'(req, res, run, body) {

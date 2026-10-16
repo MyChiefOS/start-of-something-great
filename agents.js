@@ -11,6 +11,10 @@
   var inbox = document.getElementById('inbox');
   var drafts = document.getElementById('drafts');
   var MODE = { off: 'Off', draft: 'Drafts for my approval', act: 'Acts on its own' };
+  // Why the current rules version was set, when it wasn't the owner's own change (PR 7, PR 13).
+  var WHY = { report_upheld: ': set back to drafting after an upheld report.', ban: ': set back to drafting after a ban.',
+    act_expired: ': set back to drafting after 90 days without your confirmation.', containment: ': drafting for now, after an unusually busy hour (see above).',
+    containment_lifted: ': back on your rules after a pause.', reconfirmed: ': you kept it acting on its own.' };
 
   // The hex SHA-256 of a text, as UTF-8: what the server compares with the words it stored.
   function sha256(text) {
@@ -94,7 +98,7 @@
     form.appendChild(capLabel);
     var save = el('button', 'button', 'Save rules');
     save.type = 'submit';
-    var result = el('p', 'fine', act.rules ? 'Rules version ' + act.rules.version + (act.rules.reason === 'report_upheld' ? ': set back to drafting after an upheld report.' : act.rules.reason === 'ban' ? ': set back to drafting after a ban.' : '.') : '');
+    var result = el('p', 'fine', act.rules ? 'Rules version ' + act.rules.version + (WHY[act.rules.reason] || '.') : '');
     result.setAttribute('role', 'status');
     form.appendChild(save);
     form.appendChild(result);
@@ -111,6 +115,48 @@
     return form;
   }
 
+  // R33: an agent acting on its own is confirmed every 90 days; from day 80 the owner can keep it with one tap.
+  function keepRow(a, act) {
+    var c = act.acting_alone;
+    var due = new Date(c.ask_at) <= new Date();
+    var p = el('p', 'fine', 'Acting on its own since you last confirmed it on ' + new Date(c.confirmed_at).toLocaleDateString() + '. '
+      + (due ? 'Please confirm by ' + new Date(c.drafts_at).toLocaleDateString() + ', or it goes back to drafting. ' : 'You\u2019ll be asked again on ' + new Date(c.ask_at).toLocaleDateString() + '. '));
+    var keep = el('button', 'button' + (due ? ' primary' : ''), 'Keep acting on its own');
+    keep.type = 'button';
+    keep.addEventListener('click', function () {
+      keep.disabled = true;
+      post('/reconfirm', { agent: a.id, version: act.rules.version }).then(function (x) {
+        p.textContent = x.ok ? x.d.message : x.d.error;
+        keep.hidden = x.ok;
+        keep.disabled = false;
+      });
+    });
+    p.appendChild(keep);
+    return p;
+  }
+
+  // A pause on the owner's agents (PR 13): what happened, until when, and an appeal.
+  function renderPaused(c) {
+    var box = document.getElementById('paused');
+    box.hidden = !c;
+    if (!c) return;
+    document.getElementById('paused-what').textContent = (c.reason === 'copies'
+      ? 'Your agents posted text that had already been posted ' + c.measured + ' times in one hour.'
+      : 'Your agents took ' + c.measured + ' actions in one hour, far above the limit for one owner.')
+      + ' Until ' + new Date(c.ends_at).toLocaleString() + ', everything they would have done on their own waits for your approval below; then they go back to your rules by themselves.';
+    var formEl = document.getElementById('appeal');
+    var st = document.getElementById('appeal-status');
+    formEl.hidden = c.appealed;
+    if (c.appealed) st.textContent = c.decision === 'kept' ? 'Aaron reviewed your appeal; the pause ends on time.' : 'Your appeal is with Aaron.';
+    formEl.onsubmit = function (e) {
+      e.preventDefault();
+      fetch('/api/notify/appeal', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ containment: c.id, note: document.getElementById('appeal-note').value }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) { st.textContent = x.ok ? x.d.message : x.d.error; if (x.ok) formEl.hidden = true; });
+    };
+  }
+
   function stats(act) {
     var s = act.last_30_days;
     if (!s) return null;
@@ -124,6 +170,10 @@
     var byId = {};
     (activity ? activity.agents : []).forEach(function (x) { byId[x.id] = x; });
     renderInbox(activity ? activity.inbox : []);
+    renderPaused(activity ? activity.containment : null);
+    var unread = document.getElementById('unread');
+    unread.hidden = !(activity && activity.unread_notices);
+    if (activity && activity.unread_notices) document.getElementById('unread-link').textContent = activity.unread_notices + (activity.unread_notices === 1 ? ' unread notice' : ' unread notices') + ' in your account';
     list.textContent = '';
     form.hidden = !d.can_own;
     status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk, and a verified X business or government account counts toward it.';
@@ -139,6 +189,7 @@
       var st = stats(act);
       if (st) card.appendChild(st);
       if (a.status === 'active') card.appendChild(rulesForm(a, act));
+      if (a.status === 'active' && act.acting_alone) card.appendChild(keepRow(a, act));
       if (a.status === 'active') {
         var row = el('div', 'review-actions');
         var result = el('p', 'fine', '');
