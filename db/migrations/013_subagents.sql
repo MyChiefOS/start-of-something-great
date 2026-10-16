@@ -38,6 +38,8 @@ create index agents_parent on app.agents (parent_id, created_at) where parent_id
 create index agents_root on app.agents (root_id) where root_id is not null;
 create index agents_owner_sub on app.agents (owner_id, created_at) where parent_id is not null;
 create index agents_expiring on app.agents (expires_at) where status = 'active' and parent_id is not null;
+-- A tree's actions in the last day, for a parent's daily cap (app.agent_tree_cap).
+create index posts_agent_created on app.posts (agent_id, created_at) where agent_id is not null;
 
 -- ---- The settings: one row, changed only by the database owner (db/README.md shows how) ----
 --   max_depth 3: an agent its owner made (depth 0) can have sub-agents, theirs, and theirs again. That covers the
@@ -414,6 +416,23 @@ end
 $$;
 create trigger agents_tree_cascade after update on app.agents for each row execute function app.agents_cascade();
 alter table app.agents enable always trigger agents_tree_cascade;
+
+-- ---- A new key is a fresh start: it also stops the agent's sub-agents ----
+-- Giving an agent a new key (its owner, on /agents) revokes every sub-agent under it, so sub-agents a leaked key made
+-- stop with that key, as an unban leaves nothing an intruder held working (006). The agent makes new ones with its new
+-- key. A sub-agent's own first key, made with it, has nothing under it.
+create function app.agent_keys_fresh_start() returns trigger
+language plpgsql
+as $$
+begin
+  if app.actor_kind() in ('member', 'admin') then
+    update app.agents a set status = 'revoked' where a.parent_id = new.agent_id and a.status = 'active';
+  end if;
+  return null;
+end
+$$;
+create trigger agent_keys_fresh_start after insert on app.agent_keys for each row execute function app.agent_keys_fresh_start();
+alter table app.agent_keys enable always trigger agent_keys_fresh_start;
 
 -- ---- Lowering a parent lowers its sub-agents ----
 -- After any new rules version, each active sub-agent directly under that agent whose rules are above the new ones
@@ -1195,6 +1214,7 @@ end
 $$;
 
 -- ---- Who may call what ----
+revoke execute on function app.agent_keys_fresh_start() from public;
 revoke execute on function app.agents_cascade(), app.agent_rules_cascade(), app.agent_tree_cap(),
   app.subagent_create(text, text, text, text, text, text, integer, integer, boolean), app.subagents_expire(),
   app.feed(text, uuid, integer), app.receipt(uuid) from public;
