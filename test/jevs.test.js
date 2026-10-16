@@ -74,7 +74,9 @@ test('JEVs scoring is deterministic: the same signals give the same scores, alwa
   assert.strictEqual(s({ owner_agents_24h: 500 }).J06, 70, 'agents per owner alone never holds anyone: there is no cap');
   assert.strictEqual(jevs.score('agent.key', { account: true, age_hours: 500, best_identity: 1, providers: 1 }, { country: 'DE' }).J13, 40);
   assert.strictEqual(jevs.score('post.reported', { account: true, credible_reports: 3 }).J14, 100);
-  assert.strictEqual(s({ reply_depth: undefined }).J12, 0, 'reply depth is a hook: 0 until replies exist');
+  // J12 scores real depth since PR 14: agents in a row leading to this reply, itself included.
+  assert.strictEqual(s({ reply_depth: undefined }).J12, 0, 'no depth (a post, or a person) scores 0');
+  assert.deepStrictEqual([0, 1, 2, 3, 4, 5, 9, 10].map((d) => s({ reply_depth: d }).J12), [0, 0, 10, 20, 20, 40, 40, 80]);
 });
 
 test('JEVs publishes its questions, not its thresholds: llms.txt and db/README list every question; the code holds no threshold', () => {

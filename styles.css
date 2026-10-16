@@ -462,6 +462,26 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .compose button.button { cursor: pointer; }
 .feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
 .feed .post p { margin: 0.4rem 0; white-space: pre-line; }
+/* Replies (/feed, PR 14): threaded under their post. Indented by depth with classes, never inline styles (the CSP
+   allows none); deeper replies line up with the sixth level so a phone never scrolls sideways. Agents' replies have a
+   dashed rule, as their lane does in words ("agent of"). */
+.post-actions { display: flex; flex-wrap: wrap; gap: 0 1.25rem; align-items: baseline; }
+.thread { margin: 0.25rem 0 0.5rem; }
+.reply { border-left: 2px solid var(--rule); padding: 0.35rem 0 0.35rem 0.75rem; margin: 0.5rem 0; overflow-wrap: anywhere; }
+.reply.by-agent { border-left-style: dashed; }
+.reply.depth-2 { margin-left: 0.75rem; }
+.reply.depth-3 { margin-left: 1.5rem; }
+.reply.depth-4 { margin-left: 2.25rem; }
+.reply.depth-5 { margin-left: 3rem; }
+.reply.depth-6 { margin-left: 3.75rem; }
+@media (max-width: 560px) {
+  .reply.depth-2 { margin-left: 0.5rem; } .reply.depth-3 { margin-left: 1rem; } .reply.depth-4 { margin-left: 1.5rem; }
+  .reply.depth-5 { margin-left: 2rem; } .reply.depth-6 { margin-left: 2.5rem; }
+}
+.reply-form { display: grid; gap: 0.5rem; margin: 0.5rem 0 0.25rem; max-width: 30rem; }
+.reply-form label { font-family: var(--display); font-weight: 600; font-size: 0.95rem; }
+.reply-form textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; resize: vertical; }
+.reply-form textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* Reports (/feed) and the review queue (/review): big targets for thumbs (SF5) */
 .feed button.button { cursor: pointer; font-family: var(--display); font-weight: 600; font-size: 1rem; }

@@ -149,6 +149,26 @@ async function main() {
       [5, 'someone opens a profile', async () => {
         const r = res(); await feed.handle(request('GET', '/api/feed', { query: { profile: pick(members).id } }), r, run); return [r.statusCode === 200, r.statusCode];
       }],
+      // Replies (PR 14): members and agents reply to live posts and replies, and readers open threads.
+      [6, 'member replies', async () => {
+        if (!live.length) return [true, 'none yet'];
+        const m = pick(members.filter((x) => x.level === 2));
+        const r = res(); await feed.handle(request('POST', '/api/feed', { cookie: m.cookie, json: { body: 'reply ' + crypto.randomUUID(), reply_to: pick(live) } }), r, run);
+        if (r.statusCode === 201) live.push(JSON.parse(r.body).id);
+        return [[201, 404, 429].includes(r.statusCode), r.statusCode + ' ' + r.body.slice(0, 80)];
+      }],
+      [4, 'agent replies or drafts a reply', async () => {
+        if (!live.length) return [true, 'none yet'];
+        const a = pick(agents);
+        const r = res(); await feed.handle(request('POST', '/api/feed', { key: a.key, json: { body: 'agent reply ' + crypto.randomUUID(), reply_to: pick(live) } }), r, run);
+        return [[202, 404, 409, 429].includes(r.statusCode), r.statusCode + ' ' + r.body.slice(0, 80)];
+      }],
+      [5, 'someone reads a thread', async () => {
+        const r = res(); await feed.handle(request('GET', '/api/feed', { query: { lane: 'people', limit: '5' } }), r, run);
+        const p = JSON.parse(r.body).posts[0];
+        if (!p) return [true, 'none yet'];
+        const r2 = res(); await feed.handle(request('GET', '/api/feed', { query: { thread: p.id } }), r2, run); return [[200, 404].includes(r2.statusCode), r2.statusCode];
+      }],
       [3, 'someone opens a receipt', async () => {
         const r = res(); await feed.handle(request('GET', '/api/feed', { query: { lane: 'agents', limit: '1' } }), r, run);
         const p = JSON.parse(r.body).posts[0];
@@ -167,8 +187,9 @@ async function main() {
       level: 2, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
     const outsider = { id: o.memberId };
     const allowed = { members: 1, identities: 1, sessions: 1 };
-    // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not.
-    const PUBLIC_ROWS = { jevs_settings: 1 };
+    // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not. The
+    // reply limits are a published rule (PR 14).
+    const PUBLIC_ROWS = { jevs_settings: 1, reply_settings: 1 };
     let breakinRuns = 0;
     const violations = [];
     const stopAt = Date.now() + SECONDS * 1000;

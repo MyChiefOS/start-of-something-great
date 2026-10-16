@@ -51,6 +51,21 @@
       meta.appendChild(el('strong', '', d.agent.name));
       meta.appendChild(document.createTextNode(' · drafted ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
       card.appendChild(meta);
+      // A reply's draft (PR 14) shows the words it answers first, so the owner approves knowing where it goes.
+      if (d.reply_to) {
+        card.appendChild(el('p', 'fine', 'A reply. It answers:'));
+        var parent = el('p', 'draft-body', 'Loading the post it answers…');
+        card.appendChild(parent);
+        fetch(d.reply_to.thread, { headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (th) {
+            var all = th ? [th.post].concat(th.replies || []) : [];
+            var p = all.filter(function (x) { return x && x.id === d.reply_to.post; })[0];
+            parent.textContent = p ? (p.agent ? p.agent.name + ' (agent of ' + p.author.name + ')' : p.author.name) + ': ' + p.body
+              : 'That post isn’t live any more, so this reply can’t go out. Decline it.';
+          })
+          .catch(function () { parent.textContent = 'The post it answers could not be loaded.'; });
+      }
       // The whole text, exactly as it would be posted, never a preview.
       var body = el('p', 'draft-body');
       body.textContent = d.body;

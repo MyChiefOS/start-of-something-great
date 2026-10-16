@@ -108,8 +108,8 @@ const QUESTIONS = [
     score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0) },
   { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key 20, a new or claimed or registered agent 10.',
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
-  { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
-    score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
+  { id: 'J12', title: 'Reply-chain depth', description: 'How many agents in a row lead to an agent’s reply, counting itself and an agent’s post at the top: 2 scores 10, 3 scores 20, 5 or more 40, 10 or more 80. A person’s post or reply scores 0 and starts the count again. The database also stops a chain at its depth limit (3 agents in a row to begin with).',
+    score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40], [3, 20], [2, 10]]) },
   { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session.',
     score: (s, ctx) => (ctx.confirmed ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
   { id: 'J14', title: 'Credible reports', description: 'Members at level 2, whose accounts are more than a week old, with an open report on this post: 35 each, at most 100. Reporters who signed up from the same network or share an uncommon email domain count as one.',
@@ -245,6 +245,17 @@ async function claimMarks(t, token) {
   return r.n;
 }
 
+// ---- Reply-chain depth (J12, PR 14) ----
+// How many agents in a row lead to this post or draft, itself included, as the database worked it out when it was
+// written (app.replies_fill, 012): nobody sends it. Read as the actor, who sees their own post or draft.
+async function replyDepth(t, action, subject) {
+  if (subject === null || !['post.create', 'post.approved', 'draft.create'].includes(action)) return 0;
+  const [r] = action === 'draft.create'
+    ? await t`select agent_run from app.agent_drafts where id = ${subject}`
+    : await t`select agent_run from app.posts where id = ${subject}`;
+  return r ? r.agent_run : 0;
+}
+
 // ---- The check ----
 // action: one of ACTIONS. subject: the post, draft or agent it is about (null where there isn't one yet). body: the
 // words, for posts and drafts. netHash and country: from facts(). Returns what JEVs decided:
@@ -263,7 +274,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     text = body === null || body === undefined ? null : analyze(body);
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
-    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0 }, { country, confirmed });
+    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0,
+      reply_depth: await replyDepth(t, action, sub) }, { country, confirmed });
   } catch (e) {
     error = true;
     scores = {};

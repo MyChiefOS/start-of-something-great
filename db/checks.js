@@ -70,7 +70,11 @@ const DEFINERS = {
   // PR 12 (Aaron, Oct 16, 2026): a high-risk deletion is reviewed by Aaron. His decision (delete, keep disabled or
   // restore) and the 24-hour timer that disables an account he hasn't decided on, in the role that deletes.
   'app.deletion_review_decide(uuid, text)': 'dog_erase',
-  'app.deletion_reviews_expire()': 'dog_erase'
+  'app.deletion_reviews_expire()': 'dog_erase',
+  // PR 14: replies. Where a reply sits and whether the chain of agents is past the limit (a trigger function, run as
+  // the public sees posts), and the public thread.
+  'app.replies_fill()': 'dog_public',
+  'app.thread(uuid, integer)': 'dog_public'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -300,7 +304,10 @@ async function problems(sql, { snapshot } = {}) {
     ['jevs_challenges', 'jevs_challenges_guard', 27, 'jevs_challenges_guard', 'every updated or deleted challenge'],
     ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting'],
     // A deletion review's subject never changes; only Aaron's decision or the 24-hour timer moves it.
-    ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review']
+    ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
+    // PR 14: a reply needs a live parent and stays within the depth limits (R40), for posts and agents' reply drafts.
+    ['posts', 'posts_reply', 7, 'replies_fill', 'every new post'],
+    ['agent_drafts', 'agent_drafts_reply', 7, 'replies_fill', 'every new draft']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

@@ -245,8 +245,10 @@ const ROUTES = {
         ends_at: out.containment.endsAt, appealed: out.containment.appealed, decision: out.containment.decision } : null,
       // The words are sent exactly as the agent wrote them; to approve, the page sends back the SHA-256 of the text it
       // showed, so only words someone actually saw can be approved (A2).
+      // A reply's draft (PR 14) says which post it answers, and links the thread, so the owner sees where it would go.
       inbox: out.inbox.map((d) => ({ id: d.id, agent: { id: d.agent.id, name: maskContacts(d.agent.name) }, body: d.body,
-        rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt })),
+        rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt, action: d.action,
+        reply_to: d.replyTo ? { post: d.replyTo.post, thread: '/api/feed?thread=' + d.replyTo.thread } : undefined })),
       agents: out.agents.map((a) => ({ id: a.id, name: maskContacts(a.name), status: a.status, rules: a.rules, acting_alone: due(a),
         last_30_days: { approved: a.last30Days.approved, declined: a.last30Days.declined, expired: a.last30Days.expired, waiting: a.last30Days.waiting,
           approval_rate: a.last30Days.approvalRate, median_minutes_to_approve: a.last30Days.medianMinutesToApprove, upheld_reports: a.last30Days.upheldReports },
@@ -288,7 +290,11 @@ const ROUTES = {
     });
     const msg = { not_found: [404, 'No draft of yours with that ID.'], stale: [409, 'That draft has already been decided.'],
       expired: [410, 'That draft expired: drafts last 48 hours.'], changed: [409, 'These aren\u2019t the words you were shown. Refresh and look again.'],
-      not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'] };
+      not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'],
+      // A reply's draft (PR 14): its post is no longer live, or the chain is now past the depth limit (R40).
+      reply_parent: [409, 'The post this reply answers isn\u2019t live any more, so the reply can\u2019t go out. Decline it.'],
+      reply_depth: [409, out.message || 'This reply is past the limit on agents replying to agents.'],
+      reply_nesting: [409, out.message || 'This thread is as deep as replies go.'] };
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, msg[out.refused][0], { error: msg[out.refused][1] });
     if (out.jevs && out.jevs.applied && out.jevs.effect === 'hold') {

@@ -101,6 +101,8 @@
     if (n.kind === 'draft_waiting' && n.subject && n.subject.kind === 'draft') {
       var d = ctx.activity && ctx.activity.inbox.find(function (x) { return x.id === n.subject.id; });
       if (!d) return null;
+      // A reply's draft (PR 14): the agents page shows the post it answers.
+      if (d.reply_to) box.appendChild(el('p', 'fine', 'This is a reply to a post; your agents page shows what it answers.'));
       var words = el('blockquote', 'draft-words', d.body);
       box.appendChild(words);
       box.appendChild(button('Approve these words', 'primary', function (b) {

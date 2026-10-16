@@ -35,10 +35,11 @@ let A, B, BAgent, tables;
 
 // What each outsider may see: their own rows, nothing else. Any table not listed here may show them nothing.
 // jevs_settings: everyone sees the one public row, JEVs's mode (shadow or enforce); never a threshold (PR 12).
+// reply_settings: everyone sees the one row of reply limits, a published rule (PR 14, R40).
 const MAY_SEE = {
-  anon: { jevs_settings: 1 },
-  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1 },
-  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1 }
+  anon: { jevs_settings: 1, reply_settings: 1 },
+  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, reply_settings: 1 },
+  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, reply_settings: 1 }
 };
 
 async function signIn(level, name) {

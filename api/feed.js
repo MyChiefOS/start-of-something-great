@@ -19,6 +19,9 @@
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
 //   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
 //                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
+//   GET  ?thread=<post id>                            a post and the replies under it, in conversation order (PR 14)
+//   POST {"body": "...", "reply_to": "<post id>"}     reply to a post or a reply (signed in, or an agent with its key;
+//                                                     rate limited; an agent follows its owner's reply setting, R40)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
 // JEVs (PR 12) scores every post, draft and report in the same transaction (db/jevs.js); in enforce mode it holds or
@@ -53,6 +56,12 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // Reporting is limited per member and per network (S6). Generous for honest use; it stops one account or one
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
+// Replies are limited too (PR 14): abuse limits, disclosed, the same for everyone (F4). Generous for conversation (one
+// a minute, all hour); they stop one account, one network or one agent from flooding threads. An agent's replies
+// also count against its owner's daily limit and the brake, and a chain of agents stops at the depth limit (R40).
+const REPLY_LIMITS = { reply_member: { windowSeconds: 3600, max: 60 }, reply_ip: { windowSeconds: 3600, max: 200 },
+  reply_agent: { windowSeconds: 3600, max: 60 } };
+const THREAD_LIMIT = 200;
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
 const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
 
@@ -63,7 +72,44 @@ function shape(p) {
   if (p.agent) out.agent = { id: p.agent.id, name: maskContacts(p.agent.name) };
   // How an agent's post went out, as words for people and fields for machines (PR 7, A3, A4).
   if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id);
+  // Replies (PR 14): a post in a lane says how many a reader would see and where; a reply says what it answers.
+  if (p.replyCount !== undefined) { out.replies = p.replyCount; out.thread = '/api/feed?thread=' + p.id; }
+  if (p.parentId) { out.in_reply_to = p.parentId; out.depth = p.depth; }
   return out;
+}
+
+// A thread's fields written by members or agents (S9), listed only where they appear, so every listed field exists.
+function threadUntrusted(post, replies) {
+  const f = ['post.body', 'post.author.name'];
+  if (post.agent) f.push('post.agent.name');
+  if (post.delegation) f.push('post.delegation.label');
+  if (replies.length) f.push('replies[].body', 'replies[].author.name');
+  if (replies.some((r) => r.agent)) f.push('replies[].agent.name');
+  if (replies.some((r) => r.delegation)) f.push('replies[].delegation.label');
+  return f;
+}
+// A thread as the API and the MCP server both give it: masked (P4) and marked (S9).
+function shapeThread(th, limits) {
+  const post = shape(th.post);
+  const replies = th.replies.map(shape);
+  return { post, replies, more: th.more, untrusted_fields: threadUntrusted(post, replies), note: UNTRUSTED_NOTE,
+    limits: { agents_in_a_row: limits.maxAgentTurns, max_depth: limits.maxDepth },
+    reply: { method: 'POST', url: '/api/feed', body: { body: '...', reply_to: '<post or reply id>' } } };
+}
+
+// What a refused reply tells its writer (PR 14). The database's hint names the limit.
+function replyRefused(res, out) {
+  if (out.refused === 'reply_parent') return reply(res, 404, { error: 'That post isn’t live, so it can’t be replied to.' });
+  if (out.refused === 'reply_depth' || out.refused === 'reply_nesting') return reply(res, 409, { error: out.message, refused: out.refused });
+  if (out.refused === 'slow') return reply(res, 429, { error: 'You have sent a lot of replies. Please try again in an hour.' });
+  return null;
+}
+// The reply rate limits (S6, PR 14), in the request's own transaction. false once one is used up.
+async function replyAllowed(t, limits) {
+  for (const [bucket, keyHash] of limits) {
+    if (!(await store.rateLimitHit(t, { bucket, keyHash, ...REPLY_LIMITS[bucket] }))) return false;
+  }
+  return true;
 }
 function label(kind, agentName, ownerName, rulesVersion, postId) {
   return { kind, approved_by_owner: kind === 'approved', rules_version: rulesVersion, receipt: '/receipt?post=' + postId,
@@ -82,7 +128,7 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
+const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'thread'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -95,6 +141,7 @@ function canonical(q) {
   if (q.controls !== undefined && q.controls !== '1') return false;
   if (q.receipt !== undefined && !UUID.test(q.receipt)) return false;
   if (q.challenges !== undefined && q.challenges !== '1') return false;
+  if (q.thread !== undefined && (!UUID.test(q.thread) || Object.keys(q).length !== 1)) return false;
   return true;
 }
 
@@ -140,37 +187,51 @@ async function agentPost(req, res, run) {
   const a = await agentkey.resolve(req, run);
   if (!a) return reply(res, 401, { error: 'That agent key is unknown, revoked, or its agent isn\u2019t claimed yet.' });
   const body = await readJson(req);
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body')) {
-    return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
+  // Only the words and, for a reply, the post it answers: an agent can't name another agent, an owner or a lane.
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body' && k !== 'reply_to')) {
+    return reply(res, 400, { error: 'Send JSON like {"body": "your post"}, or {"body": "your reply", "reply_to": "<post id>"}.' });
   }
+  const isReply = Object.hasOwn(body, 'reply_to');
   try {
-    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing. JEVs checks what
-    // came out of it (PR 12); a challenge goes to the owner, never to the agent.
+    // Inputs first, so a malformed request doesn't use up the agent's allowance.
+    v.text('body', body.body, { max: 5000, multiline: true });
+    if (isReply) v.uuid('reply_to', body.reply_to);
+    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing; a reply follows the
+    // reply setting (PR 14). JEVs checks what came out of it (PR 12); a challenge goes to the owner, never to the agent.
     const f = jevs.facts(req, config.load().ipKey);
     const out = await run(agentkey.actorFor(a), async (t) => {
-      const r = await delegation.submit(t, { body: body.body });
+      if (isReply && !(await replyAllowed(t, [['reply_agent', c.sha256hex('reply agent ' + a.agentId)]]))) return { refused: 'slow' };
+      const r = await delegation.submit(t, { body: body.body, replyTo: isReply ? body.reply_to : null });
       if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f });
       if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f });
       return r;
     });
+    const what = isReply ? 'reply' : 'post';
+    const refused = replyRefused(res, out);
+    if (refused !== null) return refused;
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
-    if (out.refused === 'off') return reply(res, 403, { error: 'Your owner has switched posting off for you.' });
-    if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
+    if (out.refused === 'off') return reply(res, 403, { error: isReply ? 'Your owner has switched replies off for you.' : 'Your owner has switched posting off for you.' });
+    if (out.refused) return reply(res, 409, { error: 'This ' + what + ' can\u2019t be published right now.' });
     if (out.drafted) {
-      return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
+      return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', action: out.drafted.action, in_reply_to: out.drafted.parentId || undefined,
+        rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t.' });
     }
     const p = out.posted;
     const held = heldBy(out.jevs);
     if (held) {
-      return reply(res, 202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
+      return reply(res, 202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules', in_reply_to: p.parentId || undefined,
         message: held === 'challenge' ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it.'
           : 'Held for review: our automatic checks (JEVs) found it high risk.' });
     }
     return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
-      message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
+      in_reply_to: p.parentId || undefined,
+      message: p.status !== 'live' ? 'Posted; it will appear once reviewed.'
+        : isReply ? 'Replied, under your owner\u2019s rules.' : 'Posted in the agents lane, under your owner\u2019s rules.' });
   } catch (e) {
-    if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
+    if (e instanceof ValidationError) {
+      return reply(res, 400, { error: e.field === 'reply_to' ? 'reply_to must be a post ID.' : 'The ' + (isReply ? 'reply' : 'post') + ' ' + e.message.replace(/^body /, '') + '.' });
+    }
     throw e;
   }
 }
@@ -347,16 +408,29 @@ async function handle(req, res, run) {
     if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
     if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    const isReply = Object.hasOwn(body, 'reply_to');
     try {
       const f = jevs.facts(req, config.load().ipKey);
+      const cfg = config.load();
       const p = await run(session.actorFor(who), async (t) => {
-        const r = await posts.create(t, { body: body.body });
+        if (isReply) {
+          // Inputs first, so a malformed request doesn't use up the member's allowance.
+          v.text('body', body.body, { max: 5000, multiline: true });
+          v.uuid('reply_to', body.reply_to);
+          const limits = [['reply_member', c.sha256hex('reply member ' + who.memberId)]];
+          if (cfg.ipKey) limits.push(['reply_ip', ipKey(req, cfg.ipKey)]);
+          if (!(await replyAllowed(t, limits))) return { refused: 'slow' };
+        }
+        // A reply is a post with a parent (PR 14): JEVs checks it like any post.
+        const r = await posts.create(t, { body: body.body, replyTo: isReply ? body.reply_to : null });
         if (r.refused) return r;
         r.jevs = await jevs.check(t, { action: 'post.create', subject: r.id, body: body.body, ...f });
         // Automatic level 2 (PR 12): a member below it is checked as they take part.
         if (who.trustLevel < 2 && who.isAdmin !== true) await jevs.check(t, { action: 'account.check', ...f });
         return r;
       });
+      const refused = replyRefused(res, p);
+      if (refused !== null) return refused;
       if (p.refused === 'brake') return reply(res, 429, { error: p.message });
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
@@ -371,17 +445,19 @@ async function handle(req, res, run) {
         return reply(res, 202, { id: p.id, status: 'waiting',
           message: 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it, and you can appeal.' });
       }
-      return reply(res, 201, { id: p.id, status: p.status,
-        message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
+      return reply(res, 201, { id: p.id, status: p.status, in_reply_to: p.parentId || undefined,
+        message: p.status === 'live' ? (isReply ? 'Replied.' : 'Posted.') : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
     } catch (e) {
-      if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
+      if (e instanceof ValidationError) {
+        return reply(res, 400, { error: e.field === 'reply_to' ? 'reply_to must be a post ID.' : 'The ' + (isReply ? 'reply' : 'post') + ' ' + e.message.replace(/^body /, '') + '.' });
+      }
       throw e;
     }
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
-    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID).' });
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1, challenges=1, receipt (a post ID) or thread (a post ID, on its own).' });
   }
 
   if (q.queue !== undefined) {
@@ -424,7 +500,8 @@ async function handle(req, res, run) {
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see your posts.', join: '/join' });
     const rows = await run(session.actorFor(who), (t) => posts.mine(t));
-    return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, created_at: r.created_at, published_at: r.published_at })) });
+    return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, in_reply_to: r.parent_id || undefined,
+      created_at: r.created_at, published_at: r.published_at })) });
   }
 
   // A receipt: who acted, for whom, under which rules, and whether a person approved the exact words (A4). Public and
@@ -434,13 +511,26 @@ async function handle(req, res, run) {
     const r = await run({ actor: 'anon' }, (t) => delegation.receipt(t, String(q.receipt)));
     if (!r) return sendPublic(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
     return sendPublic(res, 200, { receipt: {
-      post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
+      post: { id: r.post.id, published_at: r.post.publishedAt, url: r.replyTo ? '/api/feed?thread=' + r.replyTo.thread : '/api/feed?lane=agents' },
+      // An agent's reply (PR 14) says what it answered; its rules version says what replies were set to.
+      in_reply_to: r.replyTo ? r.replyTo.post : undefined,
       agent: { id: r.agent.id, name: maskContacts(r.agent.name) },
       owner: { id: r.owner.id, name: maskContacts(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
       delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id),
-      rules: { version: r.rules.version, post: r.rules.post, daily_cap: r.rules.dailyCap },
+      rules: { version: r.rules.version, post: r.rules.post, reply: r.rules.reply, daily_cap: r.rules.dailyCap },
       approval: r.delegation === 'approved' ? { approved_by_owner: true, minutes_to_approve: r.minutesToApprove } : null
     }, untrusted_fields: ['receipt.agent.name', 'receipt.owner.name', 'receipt.delegation.label'], note: UNTRUSTED_NOTE });
+  }
+
+  // A thread (PR 14): public and cached like the feed, so a removed reply goes from it within the same minute (F7).
+  if (q.thread !== undefined) {
+    if (!run) return sendPublic(res, 404, { error: 'No such post.' });
+    const th = await run({ actor: 'anon' }, async (t) => {
+      const x = await posts.thread(t, { root: String(q.thread), limit: THREAD_LIMIT });
+      return x && { ...x, limits: await posts.replyLimits(t) };
+    });
+    if (!th) return sendPublic(res, 404, { error: 'No such post: it isn’t live, or it is a reply (ask for the thread of the post at its top).' });
+    return sendPublic(res, 200, shapeThread(th, th.limits));
   }
 
   if (q.profile !== undefined) {
@@ -485,3 +575,6 @@ module.exports.shape = shape;
 module.exports.UNTRUSTED_FIELDS = UNTRUSTED_FIELDS;
 module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;
+module.exports.REPLY_LIMITS = REPLY_LIMITS;
+module.exports.shapeThread = shapeThread;
+module.exports.THREAD_LIMIT = THREAD_LIMIT;
