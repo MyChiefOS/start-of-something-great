@@ -7,10 +7,11 @@ const v = require('./validate');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const hex = (field, s) => v.text(field, s, { min: 64, max: 64, pattern: HEX64 });
-// An agent's name can't imitate the line that names its owner ("X · agent of Y"), since registering needs no account.
+// An agent's name can't imitate the line that names its owner ("X · agent of Y"), since registering needs no account,
+// nor the chain a sub-agent's posts show ("X · sub-agent of Y — owned by Z", PR 16), since agents name sub-agents.
 function name(s) {
   const n = v.text('name', s, { max: 80 });
-  if (/[·•|]|agent\s+of/i.test(n)) throw new v.ValidationError('name', 'can\'t contain "·", "|", "•" or "agent of"');
+  if (/[·•|\u2014\u2013]|agent\s+of|owned\s+by/i.test(n)) throw new v.ValidationError('name', 'can\'t contain "·", "|", "•", "—", "–", "agent of" or "owned by"');
   return n;
 }
 const description = (s) => (s === undefined || s === null || s === '' ? null : v.text('description', s, { max: 500, multiline: true }));

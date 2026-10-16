@@ -220,7 +220,8 @@ const ROUTES = {
     if (ok && ok.refused === 'fresh') {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
-    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working.' })
+    // A new key is a fresh start (PR 16): the agent's sub-agents stop too, so none that a leaked key made carry on.
+    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working, and so have its sub-agents.' })
       : reply(res, 404, { error: 'No active agent of yours with that ID.' });
   },
 

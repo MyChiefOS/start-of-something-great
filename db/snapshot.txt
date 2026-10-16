@@ -308,6 +308,7 @@ function app.agent_drafts_notify() owner=dog_owner execute=dog_owner language=pl
 function app.agent_keys_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=775f367412199b786d9a60fd1aa74866
 function app.agent_keys_by() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=303622a2e6f61a366f31fb0a54dcc3ab
 function app.agent_keys_fresh() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=ac6046b2b30552101c5c4b4466b5b3dd
+function app.agent_keys_fresh_start() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=928978585362dc12e8f0314686b4abd4
 function app.agent_keys_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6940f6db4124bdbdf351efeb786c9656
 function app.agent_keys_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4b0b142d82b31d4a8b8b4e405d23ede0
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=5cfd72d7dad720bfa87219050b19e727
@@ -1048,6 +1049,7 @@ trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_tree_cap BEFORE I
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_audit AFTER INSERT OR UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_audit()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_by BEFORE INSERT OR UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_by()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_fresh BEFORE INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_fresh()
+trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_fresh_start AFTER INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_fresh_start()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_guard BEFORE UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_guard()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_owner_active BEFORE INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_owner_active()
 trigger app.agent_rules enabled=A CREATE TRIGGER agent_rules_audit AFTER INSERT ON app.agent_rules FOR EACH ROW EXECUTE FUNCTION app.agent_rules_audit()

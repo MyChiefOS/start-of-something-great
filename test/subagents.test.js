@@ -169,6 +169,7 @@ test('SA1: an agent makes a sub-agent with its key and no human step; same owner
   const lead = await newAgent(owner, 'Lead');
   const before = Date.now();
   const w = await spawn(lead, { name: 'Worker', description: 'Sorts the inbox' });
+  assert.strictEqual((await spawn(lead, { name: 'Planner, Inc.' })).json.depth, 1, 'ordinary punctuation in a name is fine');
   assert.match(w.key, /^dogk_[A-Za-z0-9_-]{43}$/);
   assert.deepStrictEqual([w.json.parent_id, w.json.owner_id, w.json.depth], [lead.id, owner.id, 1]);
   assert.deepStrictEqual(w.json.rules, { version: 1, post: 'draft', reply: 'draft', report: 'draft', daily_cap: 20 }, 'drafts unless asked otherwise');
@@ -189,7 +190,7 @@ test('SA1: an agent makes a sub-agent with its key and no human step; same owner
   assert.deepStrictEqual([(await current(w.id)).set_by, (await current(w.id)).reason], ['agent', 'created']);
   // The parent lists its own sub-agents, and the limits they're made within.
   const list = await api(req('GET', 'subagents', { key: lead.key }));
-  assert.deepStrictEqual([list.status, list.json.subagents.map((x) => x.id), list.json.limits.max_depth, list.json.limits.default_ttl_hours], [200, [w.id], 3, 24]);
+  assert.deepStrictEqual([list.status, list.json.subagents.length, list.json.subagents.some((x) => x.id === w.id), list.json.limits.max_depth, list.json.limits.default_ttl_hours], [200, 2, true, 3, 24]);
   assert.deepStrictEqual(list.json.untrusted_fields, ['subagents[].name', 'subagents[].description']);
   // The owner sees it on /agents, under its parent.
   const mine = await api(req('GET', '', { cookie: owner.cookie }));
@@ -269,7 +270,14 @@ test('SA4: sub-agents go at most 3 levels down; a fourth is refused; only the da
   await assert.rejects(asOwner('update app.subagent_settings set max_ttl_hours = 721'), /check constraint/);
   await asOwner('update app.subagent_settings set max_depth = 4');
   assert.strictEqual((await spawn(a, { name: 'Level 4' })).json.depth, 4);
-  await asOwner(DEFAULT_LIMITS);
+  // The README's steps for changing the limits work exactly as written (and put back the seeded values).
+  const readme = fs.readFileSync(path.join(root, 'db', 'README.md'), 'utf8');
+  const block = readme.split('## Sub-agents (Release 2, PR 16)')[1].match(/```sql\n([\s\S]*?)```/)[1];
+  assert.match(block, /set local role dog_owner;/);
+  const one = await su.reserve();
+  try { await one.unsafe(block); } finally { one.release(); }
+  assert.deepStrictEqual((await q('select max_depth, default_ttl_hours, max_ttl_hours, per_parent_per_hour, per_owner_per_hour from app.subagent_settings')).map((r) => ({ ...r })),
+    [{ max_depth: 3, default_ttl_hours: 24, max_ttl_hours: 168, per_parent_per_hour: 30, per_owner_per_hour: 200 }]);
   assert.strictEqual((await spawnRaw(a, { name: 'Level 4b' })).json.refused, 'depth', 'back at 3, a fourth level is refused again');
 });
 
@@ -523,7 +531,12 @@ test('SA12: a sub-agent can\'t claim agents, make agents for anyone else, or use
   // Bad input.
   assert.strictEqual((await spawnRaw(lead, { name: 'Bad mode', rules: { post: 'always' } })).status, 400);
   assert.strictEqual((await spawnRaw(lead, { name: 'Extra', rules: { owner: stranger.id } })).status, 400);
-  assert.strictEqual((await spawnRaw(lead, { name: 'Lead · agent of Aaron' })).status, 400, 'no imitating the owner line');
+  // No name can imitate the line that names the owner or the chain (P7, SA10), whether an agent names a sub-agent or
+  // an agent registers itself.
+  for (const n of ['Lead · agent of Aaron', 'Planner \u2014 owned by Aaron', 'Planner owned by Aaron', 'Planner, sub-agent of Aaron', 'A \u2013 B']) {
+    assert.strictEqual((await spawnRaw(lead, { name: n })).status, 400, n);
+    assert.strictEqual((await api(req('POST', 'register', { json: { name: n } }))).status, 400, 'registering too: ' + n);
+  }
   assert.strictEqual((await spawnRaw({ key: 'dogk_' + 'x'.repeat(43) }, { name: 'No key' })).status, 401);
   // The rates: per parent, then per owner (all of an owner's agents together).
   // So far: lead made 1 (w), the owner's agents 2 (w, ww). With 2 per parent and 3 per owner:
@@ -540,6 +553,19 @@ test('SA12: a sub-agent can\'t claim agents, make agents for anyone else, or use
   } finally {
     await asOwner(DEFAULT_LIMITS);
   }
+});
+
+test('SA6: a new key is a fresh start: the agent\'s sub-agents stop with its old key, and it makes new ones with the new key', async () => {
+  const owner = await member(2, 'Sol');
+  const lead = await newAgent(owner);
+  const kid = await spawn(lead, { name: 'Made with the old key' });
+  const grand = await spawn(kid, { name: 'Under it' });
+  const r = await api(req('POST', 'key', { cookie: owner.cookie, json: { agent: lead.id } }));
+  assert.deepStrictEqual([r.status, /and so have its sub-agents/.test(r.json.key_note)], [201, true]);
+  for (const a of [kid, grand]) { assert.strictEqual(await statusOf(a.id), 'revoked'); assert.strictEqual((await me(a)).status, 401); }
+  assert.strictEqual((await me(lead)).status, 401, 'the old key stopped');
+  const fresh = await spawn({ key: r.json.key }, { name: 'Made with the new key' });
+  assert.strictEqual((await me(fresh)).status, 200);
 });
 
 test('deleting an account deletes its whole tree; the owner can revoke any one node from /agents', async () => {

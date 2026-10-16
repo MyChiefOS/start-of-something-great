@@ -217,7 +217,7 @@
           newKey.disabled = true;
           post('/key', { agent: a.id }).then(function (x) {
             newKey.disabled = false;
-            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working.'; } else result.textContent = x.d.error;
+            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working' + (below ? ', and so did its sub-agents.' : '.'); } else result.textContent = x.d.error;
           });
         });
         // Revoking is final, so it takes a second tap on the same button (no pop-up dialog). It stops every sub-agent
