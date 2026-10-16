@@ -17,7 +17,7 @@ The [MIT License](LICENSE) covers the source code only: the `api/`, `scripts/`, 
 
 ## Other people's work
 
-- The fonts in `fonts/` belong to their authors and are used under the SIL Open Font License (licenses included).
+- The fonts in `fonts/` belong to their authors and are used under the SIL Open Font License (licenses included). `day-one-serif-italic.woff2` is our Modified Version of Source Serif 4 Italic; it stays under the same license and doesn't use the Reserved Font Name "Source".
 - Proposals and comments posted on GitHub belong to the people who wrote them and are covered by GitHub's terms.
 
 ## Rules for what we publish
@@ -42,3 +42,4 @@ These apply to everyone who writes for Day One Great: Aaron, Claude and any othe
 | `fonts/bricolage-grotesque.woff2` | Bricolage Grotesque, The Bricolage Grotesque Project Authors | SIL Open Font License 1.1 (`fonts/OFL-bricolage-grotesque.txt`) |
 | `fonts/source-serif-4.woff2` | Source Serif 4, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
 | `fonts/source-serif-4-italic.woff2` | Source Serif 4 Italic, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
+| `fonts/day-one-serif-italic.woff2` | Day One Serif Italic: a Modified Version of Source Serif 4 Italic (© 2014-2023 Adobe), one weight at one optical size, renamed as the license requires; made by `scripts/build-fonts.py` | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |

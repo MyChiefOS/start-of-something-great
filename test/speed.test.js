@@ -11,9 +11,10 @@ const { weigh, BUDGET } = require('../scripts/page-weight');
 const { simulate } = require('../scripts/review-time-sim');
 
 const root = path.join(__dirname, '..');
-// Pages over the SF2 budget today, each recorded in the risk register with a fix for Aaron to choose. They may not
-// grow, and a page not listed here may not go over at all.
-const KNOWN_OVER = { 'research/decision-loop.html': { risk: 'RK14', maxKB: 403 } };
+// Pages over the SF2 budget, each recorded in the risk register with a fix for Aaron to choose. They may not grow,
+// and a page not listed here may not go over at all. Empty since PR 16: /research/decision-loop (RK14) passes
+// with the smaller italic, and /talk (RK15) without giscus.
+const KNOWN_OVER = {};
 
 test('SF2: every page\'s first visit is under 400 KB, apart from the recorded exceptions, which may not grow', () => {
   const risks = fs.readFileSync(path.join(root, 'RISKS.md'), 'utf8');
