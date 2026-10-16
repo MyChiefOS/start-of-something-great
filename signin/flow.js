@@ -183,6 +183,47 @@ function make(deps) {
       return h.redirect(res, '/');
     },
 
+    // The account page's data (PR 8): who you are, how you sign in, how many sessions are open.
+    async account(req, res) {
+      const who = await current(req);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      if (!who) { res.statusCode = 401; return res.end(JSON.stringify({ signed_in: false })); }
+      const a = await run(session.actorFor(who), (t) => store.account(t));
+      res.statusCode = 200;
+      res.end(JSON.stringify({ signed_in: true, member_id: a.memberId, display_name: a.displayName, trust_level: a.trustLevel, joined: a.joined,
+        is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions }));
+    },
+
+    async rename(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/account');
+      const who = await current(req);
+      if (!who) return h.redirect(res, '/join?error=signin');
+      const body = await h.form(req);
+      try {
+        await run(session.actorFor(who), (t) => store.rename(t, body && body.name));
+      } catch (e) {
+        if (e instanceof v.ValidationError) return h.redirect(res, '/account?error=name');
+        throw e;
+      }
+      return h.redirect(res, '/account?saved=name');
+    },
+
+    // F8: delete your account. A form on /account, from our own pages, signed in, with the word DELETE typed in.
+    // Aaron can't delete himself here (the database refuses too).
+    async deleteAccount(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/account');
+      const who = await current(req);
+      if (!who) return h.redirect(res, '/join?error=signin');
+      const body = await h.form(req);
+      if (!body || body.confirm !== 'DELETE') return h.redirect(res, '/account?error=confirm');
+      if (who.isAdmin) return h.redirect(res, '/account?error=admin');
+      const out = await run(session.actorFor(who), (t) => store.deleteAccount(t));
+      if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
+      h.addCookie(res, h.clear(SESSION));
+      return h.redirect(res, '/join?deleted=1');
+    },
+
     async me(req, res) {
       const who = await current(req);
       res.statusCode = 200;

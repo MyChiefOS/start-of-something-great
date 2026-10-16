@@ -1,5 +1,5 @@
-// Sign-in for Release 2: /auth/<route>, rewritten here by vercel.json. The only endpoint that accepts writes, and
-// only these: starting an email link, finishing one, and logging out (all same-site POSTs).
+// Sign-in for Release 2: /auth/<route>, rewritten here by vercel.json. Its writes are all same-site form POSTs:
+// starting an email link, finishing one, logging out, and (PR 8) renaming yourself or deleting your account.
 // Off unless every production setting is present and the request is for dayonegreat.com itself.
 'use strict';
 
@@ -27,7 +27,11 @@ const ROUTES = {
   'POST email/finish': (f, q, s) => f.emailFinish(q, s),
   'POST logout': (f, q, s) => f.logout(q, s, false),
   'POST logout-all': (f, q, s) => f.logout(q, s, true),
-  'GET me': (f, q, s) => f.me(q, s)
+  'GET me': (f, q, s) => f.me(q, s),
+  // PR 8: your account (F8).
+  'GET account': (f, q, s) => f.account(q, s),
+  'POST account/name': (f, q, s) => f.rename(q, s),
+  'POST account/delete': (f, q, s) => f.deleteAccount(q, s)
 };
 
 function plain(res, status, text) {

@@ -166,8 +166,9 @@ test('the router sends each address to the right step, with the right provider a
   const fake = new Proxy({}, { get: (_, name) => (...args) => calls.push([name, ...args.slice(2)]) });
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
-    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me']]);
-  assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')), ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all'],
+    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount']]);
+  assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
+    ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete'],
     'only these change anything, and all are POSTs');
 });
 

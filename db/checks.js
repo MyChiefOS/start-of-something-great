@@ -15,10 +15,10 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase'];
 // Narrow roles that only act inside their own reviewed functions (below). dog_limits (PR 6) only counts, inside the
-// two emergency-brake checks.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits'];
+// two emergency-brake checks; dog_erase (PR 8) only deletes, inside the one account-deletion function.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by dog_signin,
 // fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -42,7 +42,9 @@ const DEFINERS = {
   'app.posts_limit()': 'dog_limits',
   'app.agents_limit()': 'dog_limits',
   // PR 6: a ban ends the member's sessions and revokes their agents' keys, in the role that manages sessions and keys.
-  'app.members_ban_cleanup()': 'dog_signin'
+  'app.members_ban_cleanup()': 'dog_signin',
+  // PR 8: a member deletes their own account (F8).
+  'app.delete_account()': 'dog_erase'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -51,7 +53,8 @@ const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name,
 const AUDIT_POLICIES = {
   audit_insert: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_select: { cmd: 'r', using: "app.actor_kind()='admin'::text", check: '' },
-  audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
+  audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
+  audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
@@ -123,7 +126,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -155,7 +158,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

@@ -76,4 +76,34 @@ async function sessionsEndAll(t) {
   return rows.length;
 }
 
-module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, sessionResolve, sessionEnd, sessionsEndAll };
+// The signed-in member's own account page: their name, level, when they joined, and how they sign in (the provider
+// only; fingerprints are never shown or needed), through their own row-level security policies.
+async function account(t) {
+  const [m] = await t`select id, display_name, trust_level, created_at from app.members where id = app.current_member()`;
+  if (!m) return null;
+  const ids = await t`select provider, level, verified_at from app.identities where member_id = app.current_member() order by created_at`;
+  const [s] = await t`select count(*)::int as n from app.sessions where member_id = app.current_member()`;
+  return { memberId: m.id, displayName: m.display_name, trustLevel: m.trust_level, joined: m.created_at,
+    signIns: ids.map((i) => ({ provider: i.provider, level: i.level, verifiedAt: i.verified_at })), sessions: s.n };
+}
+
+// A member renames themselves (1 to 80 characters, one line).
+async function rename(t, name) {
+  const n = v.text('name', name, { max: 80 });
+  const r = await t`update app.members set display_name = ${n} where id = app.current_member()`;
+  return r.count === 1;
+}
+
+// F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
+// or { refused: 'not_member' | 'not_active' }.
+async function deleteAccount(t) {
+  try {
+    const [r] = await t.savepoint((s) => s`select * from app.delete_account()`);
+    return { posts: r.posts, reports: r.reports, agents: r.agents, keys: r.keys, sessions: r.sessions, identities: r.identities };
+  } catch (e) {
+    if (e.code === '42501' && (e.message === 'not_member' || e.message === 'not_active')) return { refused: e.message };
+    throw e;
+  }
+}
+
+module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
