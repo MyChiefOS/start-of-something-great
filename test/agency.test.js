@@ -159,6 +159,15 @@ test('R17: letting an agent act alone, or raising its cap, needs a sign-in in th
   // An agent can never set its own rules.
   await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${a.id}, 'act', 'act', 'act', 1000, 'owner')`), /row-level security|fresh_sign_in/);
   await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id, fresh: true }, (t) => t`select 1`), /only member calls can be fresh/);
+  // A new key for an agent that acts on its own needs a fresh sign-in too, so an old session can't mint one.
+  const fresh = await member(2, 'Fresh owner');
+  const acting = await newAgent(fresh, 'Already acting');
+  await rules(fresh, acting, { post: 'act' });
+  await q(`update app.sessions set created_at = now() - interval '1 hour' where member_id = '${fresh.id}'`);
+  const minted = await api(req('POST', 'key', { cookie: fresh.cookie, origin: ORIGIN, json: { agent: acting.id } }));
+  assert.deepStrictEqual([minted.status, minted.json.reauth], [403, '/join?return_to=%2Fagents']);
+  assert.strictEqual((await say(acting.key, 'the old key still works; nothing was rotated')).status, 201);
+  await assert.rejects(run(fresh.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${acting.id}, ${c.sha256hex('sneaky')})`), /fresh_sign_in/);
   // Versions are only ever added.
   await assert.rejects(q(`update app.agent_rules set post_mode = 'act' where agent_id = '${a.id}'`), /only ever added/);
   await assert.rejects(q(`delete from app.agent_rules where agent_id = '${a.id}'`), /only ever added/);
@@ -344,4 +353,31 @@ test('deleting an account also deletes its agents\' rules and drafts', async () 
   assert.ok(!out.refused);
   assert.strictEqual(Number((await q(`select count(*) as n from app.agent_rules where agent_id = '${a.id}'`))[0].n), 0);
   assert.strictEqual(Number((await q(`select count(*) as n from app.agent_drafts where agent_id = '${a.id}'`))[0].n), 0);
+});
+
+test('migration 008 refuses, with a plain message, a database that already has agent posts', async () => {
+  const os = require('os');
+  const D = 'dog_agency_m008_' + crypto.randomBytes(4).toString('hex');
+  await server.unsafe('create database ' + D);
+  const s2 = postgres(at(SERVER, D), { max: 1, ssl: false, onnotice: () => {} });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dog-m008-'));
+  try {
+    const all = fs.readdirSync(path.join(root, 'db', 'migrations')).filter((f) => f.endsWith('.sql'));
+    for (const f of all.filter((x) => x < '008')) fs.copyFileSync(path.join(root, 'db', 'migrations', f), path.join(dir, f));
+    await migrate(s2, { dir });
+    // An agent post made the PR 5 way, before owners' rules existed.
+    const [m] = await s2`insert into app.members (display_name, trust_level) values ('Old owner', 2) returning id`;
+    await s2.begin(async (t) => {
+      await t`select set_config('app.actor', 'member', true), set_config('app.member_id', ${m.id}, true)`;
+      const [a] = await t`insert into app.agents (name) values ('Old agent') returning id`;
+      await t`select set_config('app.actor', 'agent', true), set_config('app.agent_id', ${a.id}, true)`;
+      await t`insert into app.posts (author_id, body) values (${m.id}, 'posted before rules')`;
+    });
+    fs.copyFileSync(path.join(root, 'db', 'migrations', '008_delegated_agency.sql'), path.join(dir, '008_delegated_agency.sql'));
+    await assert.rejects(migrate(s2, { dir }), /already has agent posts/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    await s2.end({ timeout: 5 });
+    await server.unsafe(`drop database if exists ${D} with (force)`);
+  }
 });

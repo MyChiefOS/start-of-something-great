@@ -96,8 +96,16 @@ async function rotate(t, { agent, keyHash }) {
   if (!m) return false;
   const [a] = await t`select id from app.agents where id = ${id} and owner_id = app.current_member() and status = 'active'`;
   if (!a) return false;
-  await t`update app.agent_keys set revoked_at = now() where agent_id = ${id} and revoked_at is null`;
-  await t`insert into app.agent_keys (agent_id, key_hash) values (${id}, ${h})`;
+  try {
+    await t.savepoint(async (s) => {
+      await s`update app.agent_keys set revoked_at = now() where agent_id = ${id} and revoked_at is null`;
+      await s`insert into app.agent_keys (agent_id, key_hash) values (${id}, ${h})`;
+    });
+  } catch (e) {
+    // An agent that acts on its own needs a fresh sign-in for a new key (PR 7); nothing was changed.
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
+    throw e;
+  }
   return true;
 }
 

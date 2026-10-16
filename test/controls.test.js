@@ -340,7 +340,7 @@ test('F10: a ban racing a new key or a sign-in still wins: nothing made during t
   // A new key that started before the ban committed: the ban waits for it, then revokes it.
   let release;
   const gate = new Promise((r) => { release = r; });
-  const keying = run(owner.ctx, async (t) => {
+  const keying = run({ ...owner.ctx, fresh: true }, async (t) => {
     const k = require('../signin/agentkey').newKey();
     const ok = await require('../db/agents').rotate(t, { agent: a.id, keyHash: k.hash });
     await gate;

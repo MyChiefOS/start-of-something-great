@@ -149,7 +149,11 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const k = agentkey.newKey();
-    const ok = await run(session.actorFor(who), (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    // A new key for an agent that acts on its own needs a fresh sign-in (PR 7); the database decides.
+    const ok = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    if (ok && ok.refused === 'fresh') {
+      return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
+    }
     return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working.' })
       : reply(res, 404, { error: 'No active agent of yours with that ID.' });
   },
@@ -185,10 +189,9 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const args = { agent: body.agent, post: body.post, reply: body.reply, report: body.report, dailyCap: body.daily_cap };
-    // Whether this session began in the last few minutes is told to the database, which decides whether the change
-    // needs it (it raises an action to act, or the daily cap).
-    const fresh = Boolean(who.startedAt && Date.now() - who.startedAt.getTime() < FRESH_MINUTES * 60000);
-    const out = await run({ ...session.actorFor(who), fresh }, (t) => delegation.setRules(t, args));
+    // Whether this session began in the last 10 minutes (the database's own answer) goes with the change, and the
+    // database decides whether the change needs it (it raises an action to act, or the daily cap).
+    const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => delegation.setRules(t, args));
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }

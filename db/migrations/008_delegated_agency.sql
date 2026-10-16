@@ -265,9 +265,18 @@ alter table app.agent_drafts enable always trigger agent_drafts_audit;
 alter table app.posts add column delegation text check (delegation = any (array['approved', 'rules']));
 alter table app.posts add column rules_version integer check (rules_version between 1 and 1000000);
 alter table app.posts add column draft_id uuid references app.agent_drafts (id);
-alter table app.posts add constraint posts_delegation_lane check ((lane = 'people') = (delegation is null));
-alter table app.posts add constraint posts_delegation_version check ((delegation is null) = (rules_version is null));
-alter table app.posts add constraint posts_delegation_draft check ((coalesce(delegation, '') = 'approved') = (draft_id is not null));
+-- Every agent post must say how it went out, so this migration can only run before any agent has posted (no database
+-- has agent posts yet: the private preview starts with this). If one does, it stops with a plain message rather than
+-- inventing a history for those posts.
+do $checks$
+begin
+  alter table app.posts add constraint posts_delegation_lane check ((lane = 'people') = (delegation is null));
+  alter table app.posts add constraint posts_delegation_version check ((delegation is null) = (rules_version is null));
+  alter table app.posts add constraint posts_delegation_draft check ((coalesce(delegation, '') = 'approved') = (draft_id is not null));
+exception when check_violation then
+  raise exception '008 can''t run on a database that already has agent posts: they were made before owners'' rules existed. Decide how to label them (or remove them) first.';
+end
+$checks$;
 
 -- An agent's actions in the last 24 hours, against its daily cap: drafts it wrote plus posts it made under the rules.
 -- (An approved draft becomes a post marked "approved", so it isn't counted twice.) Runs as the caller: an agent sees
@@ -439,6 +448,8 @@ begin
   if app.actor_kind() not in ('member', 'admin') or p_draft is null then
     raise exception 'not_found' using errcode = 'P0002';
   end if;
+  -- The same per-member lock account deletion takes first, so the two can't deadlock.
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(app.current_member()::text));
   select * into d from app.agent_drafts x where x.id = p_draft for update;
   if not found or d.owner_id is distinct from app.current_member() then
     raise exception 'not_found' using errcode = 'P0002';
@@ -469,11 +480,11 @@ end
 $$;
 
 -- ---- Freshly signed in? (R17) ----
--- Resolving a session now also says when it began, so the site can ask for a fresh sign-in before letting an agent do
--- more on its own. Same rules as before otherwise (002_signin.sql).
+-- Resolving a session now also says whether it began in the last 10 minutes, so the site can ask for a fresh sign-in
+-- before letting an agent do more on its own. Same rules as before otherwise (002_signin.sql).
 drop function app.session_resolve(text, integer);
 create function app.session_resolve(p_session_hash text, p_idle_days integer)
-returns table (member_id uuid, trust_level smallint, is_admin boolean, display_name text, started_at timestamptz)
+returns table (member_id uuid, trust_level smallint, is_admin boolean, display_name text, fresh boolean)
 language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
@@ -495,10 +506,31 @@ begin
       update app.members m set trust_level = app.verified_level(m.id) where m.id = s.member_id;
     end if;
   end if;
-  return query select m.id, m.trust_level, m.is_admin, m.display_name, s.created_at
+  -- Fresh: this session began in the last 10 minutes, by the database's own clock.
+  return query select m.id, m.trust_level, m.is_admin, m.display_name, s.created_at > now() - interval '10 minutes'
     from app.members m where m.id = s.member_id and m.status = 'active';
 end
 $$;
+
+-- ---- A new key for an agent that acts on its own needs a fresh sign-in too ----
+-- Otherwise a stolen or forgotten session could mint a working key for an agent that already posts without approval.
+-- A brand-new agent (first rules: draft) and a self-registered one (no owner yet) are unaffected.
+create function app.agent_keys_fresh() returns trigger
+language plpgsql
+as $$
+begin
+  if app.actor_kind() in ('member', 'admin')
+     and exists (select 1 from app.agent_rules r where r.agent_id = new.agent_id
+                 and r.version = (select max(x.version) from app.agent_rules x where x.agent_id = new.agent_id)
+                 and 'act' in (r.post_mode, r.reply_mode, r.report_mode))
+     and coalesce(current_setting('app.fresh', true), '') <> '1' then
+    raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again to make a new key for an agent that acts on its own.';
+  end if;
+  return new;
+end
+$$;
+create trigger agent_keys_fresh before insert on app.agent_keys for each row execute function app.agent_keys_fresh();
+alter table app.agent_keys enable always trigger agent_keys_fresh;
 
 -- ---- A ban also takes back what the owner's agents were allowed (M1 of the design review) ----
 -- Banning already ends sessions and revokes keys (006). It now also lowers every agent that could act alone back to
@@ -613,6 +645,7 @@ begin
   if app.actor_kind() <> 'member' or me is null then
     raise exception 'not_member' using errcode = '42501';
   end if;
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
   perform 1 from app.identities i where i.member_id = me for update;
   perform 1 from app.members m where m.id = me and m.status = 'active' and not m.is_admin for update;
   if not found then
@@ -649,7 +682,7 @@ $$;
 set local role dog_owner;
 revoke create on schema app from dog_erase;
 
-revoke execute on function app.agent_rules_fill(), app.agent_rules_guard(), app.agent_rules_audit(), app.agents_first_rules(),
+revoke execute on function app.agent_keys_fresh(), app.agent_rules_fill(), app.agent_rules_guard(), app.agent_rules_audit(), app.agents_first_rules(),
   app.agent_actions_today(uuid), app.agent_drafts_fill(), app.agent_drafts_guard(), app.agent_drafts_audit(), app.posts_delegation(),
   app.review_flags_agent_upheld(), app.approve_draft(uuid, text), app.session_resolve(text, integer), app.feed(text, uuid, integer),
   app.receipt(uuid) from public;
