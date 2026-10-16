@@ -185,6 +185,16 @@ test.before(async () => {
   aaron.ctx = { actor: 'admin', memberId: aaron.id };
 });
 const aaronCookie = () => aaron.cookie;
+// Audit rows written in one transaction share one time, and their order within it isn't fixed (UUIDv7s made in the
+// same millisecond differ only in random bits), so records are compared transaction by transaction.
+const inTransactions = (rows) => {
+  const out = [];
+  for (const r of rows) {
+    const last = out[out.length - 1];
+    if (last && +last.at === +r.at) last.items.push(r.action); else out.push({ at: r.at, items: [r.action] });
+  }
+  return out.map((g) => g.items.sort());
+};
 // Tests only: move a row back in time. The guard that refuses this everywhere else is lifted for this one statement,
 // inside one transaction, by the superuser the tests run as.
 const backdate = (table, guard, sqlText) => su.begin(async (t) => {
@@ -350,8 +360,8 @@ test('enforce mode is one switch: first-post review stops, medium risk waits for
     assert.strictEqual(item.firstPosts, false);
     assert.strictEqual((await run(aaron.ctx, (t) => review.decide(t, { post: high.json.id, decision: 'approve' }))).status, 'live', 'Aaron can release it');
     // The record: held by JEVs, released by Aaron.
-    const log = await q(`select action from app.audit_log where subject_id = '${high.json.id}' order by at, id`);
-    assert.deepStrictEqual(log.map((r) => r.action), ['jevs.hold', 'review.flag', 'post.approve', 'review.close']);
+    const log = await q(`select action, at from app.audit_log where subject_id = '${high.json.id}' order by at`);
+    assert.deepStrictEqual(inTransactions(log), [['jevs.hold', 'review.flag'], ['post.approve', 'review.close']]);
     // Aaron himself is never held (he runs the controls).
     const mine2 = await feed('POST', { cookie: aaron.cookie, json: { body: links(4) } });
     assert.strictEqual(mine2.status, 201);
@@ -786,9 +796,10 @@ test('deletion review: Aaron allows the deletion, keeps the account disabled, or
     for (const [table, col] of [['members', 'id'], ['identities', 'member_id'], ['deletion_reviews', 'member_id'], ['jevs_decisions', 'member_id'], ['jevs_marks', 'member_id']]) {
       assert.strictEqual((await q(`select count(*)::int as n from app.${table} where ${col} = '${kept.id}'`))[0].n, 0, table);
     }
-    const log = (await q(`select action, actor_kind, detail from app.audit_log where subject_id = '${kept.id}' and action in ('deletion_review.decided', 'member.deleted') order by at, id`));
-    assert.deepStrictEqual(log.map((r) => [r.action, r.actor_kind]), [['deletion_review.decided', 'admin'], ['deletion_review.decided', 'admin'], ['member.deleted', 'admin']]);
-    assert.strictEqual(log[2].detail.deletion_reviews, 1);
+    const log = (await q(`select action, actor_kind, detail, at from app.audit_log where subject_id = '${kept.id}' and action in ('deletion_review.decided', 'member.deleted') order by at`));
+    assert.deepStrictEqual(inTransactions(log), [['deletion_review.decided'], ['deletion_review.decided', 'member.deleted']], 'kept disabled, then deleted');
+    assert.ok(log.every((r) => r.actor_kind === 'admin'), 'both by Aaron');
+    assert.strictEqual(log.find((r) => r.action === 'member.deleted').detail.deletion_reviews, 1);
     // Allow deletion straight from an open review.
     const now = await riskyMember(env, 'Deleted now', '7603');
     await askToDelete(env, now);
