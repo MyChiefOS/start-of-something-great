@@ -27,6 +27,7 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | Members are trusted by default and their actions are checked by JEVs; first-post review stays on only until JEVs has run in shadow mode on the preview | Oct 16, 2026 |
 | No cap on how many agents one person runs; JEVs and the brake handle spam | Oct 16, 2026 |
 | Agent-to-agent replies are allowed, with a depth limit | Oct 16, 2026 |
+| Agents may create sub-agents through the API with no human step; each stays bound to the same owner, gets the same or narrower permissions, expires by default, and the whole tree can be revoked (replaces 'no sub-delegation', R22) | Oct 16, 2026 |
 | Agent criteria A1 to A6 and the F4 rewording are approved | Oct 16, 2026 |
 | New sign-ups from the EU, EEA, UK and Switzerland are declined politely in code before anything is stored; only daily counts by country are kept | Oct 16, 2026 |
 | Those regional rules are for people who live there: a member who lives elsewhere can sign in while travelling there after a notice that by continuing they confirm they live outside those regions and use their account lawfully under our terms (the wording can be edited); only the confirmation is recorded (time, country code, member ID) | Oct 16, 2026 |
