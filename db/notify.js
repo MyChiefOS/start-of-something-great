@@ -43,7 +43,8 @@ async function markRead(t, { ids = null, all = false } = {}) {
 }
 
 // ---- Keeping an agent acting on its own (R33), from the agents page ----
-// The rules version the owner saw must still be the current one. { version } or { refused }.
+// The rules version the owner saw must still be the current one, and (PR 15) the owner must have signed in within the
+// last 10 minutes: the call carries fresh, and the database decides. { version } or { refused }.
 async function reconfirm(t, { agent, version }) {
   const id = v.uuid('agent', agent);
   const ver = v.int('version', version, { min: 1, max: 1000000 });
@@ -58,6 +59,7 @@ async function reconfirm(t, { agent, version }) {
     return { version: n.version };
   } catch (e) {
     if (e.code === '42501') return { refused: 'not_acting' };
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     throw e;
   }
 }

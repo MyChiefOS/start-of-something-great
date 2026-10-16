@@ -32,7 +32,11 @@ test('the account page: private, forms post to our own sign-in routes, deleting 
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function/.test(js));
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js));
   const { ROUTES } = require('../api/auth.js');
-  for (const r of ['GET account', 'POST account/name', 'POST account/delete']) assert.ok(ROUTES[r], r);
+  for (const r of ['GET account', 'POST account/name', 'POST account/delete', 'POST account/unlink']) assert.ok(ROUTES[r], r);
+  // PR 15: each sign-in method gets an Unlink form, built without HTML strings, posting to our own sign-in route.
+  assert.match(js, /f\.action = '\/auth\/account\/unlink'/);
+  assert.match(js, /f\.method = 'post'/);
+  assert.match(js, /d\.sign_ins\.length > 1/, 'never offered for the only method');
 });
 
 if (!SERVER) {

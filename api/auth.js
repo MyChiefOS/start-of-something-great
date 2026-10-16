@@ -1,7 +1,7 @@
 // Sign-in for Release 2: /auth/<route>, rewritten here by vercel.json. Its writes are all same-site form POSTs:
 // starting an email link, finishing one, logging out, and (PR 8) renaming yourself or deleting your account. Sign-up
 // steps decline the EU, EEA, UK and Switzerland before anything is stored, and a member travelling there confirms
-// where they live before signing in (PR 12, in signin/flow.js).
+// where they live before signing in (PR 12, in signin/flow.js). PR 15 adds unlinking a sign-in method.
 // Off unless every production setting is present and the request is for dayonegreat.com itself.
 'use strict';
 
@@ -39,6 +39,8 @@ const ROUTES = {
   'GET account': (f, q, s) => f.account(q, s),
   'POST account/name': (f, q, s) => f.rename(q, s),
   'POST account/delete': (f, q, s) => f.deleteAccount(q, s),
+  // PR 15: unlink one of your sign-in methods (a fresh session, never the last one).
+  'POST account/unlink': (f, q, s) => f.unlink(q, s),
   // PR 12: the email form's sealed time stamp (a bot check), and a traveller's confirmation before signing in from
   // a region where we don't sign people up (Continue finishes signing in; Cancel stores nothing).
   'GET form': (f, q, s) => f.formToken(q, s),

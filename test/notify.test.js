@@ -284,7 +284,7 @@ test('R33: at day 80 the owner is asked (one tap keeps it); with no answer by da
   const kept = await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version });
   assert.strictEqual(kept.status, 201, JSON.stringify(kept.json));
   const [r] = await q(`select version, post_mode, reason, set_by from app.agent_rules where agent_id = '${ag.id}' order by version desc limit 1`);
-  assert.deepStrictEqual({ ...r }, { version: 3, post_mode: 'act', reason: 'reconfirmed', set_by: 'owner' }, 'the same rules, confirmed, with no fresh sign-in needed');
+  assert.deepStrictEqual({ ...r }, { version: 3, post_mode: 'act', reason: 'reconfirmed', set_by: 'owner' }, 'the same rules, confirmed, from a fresh session (PR 15)');
   assert.strictEqual((await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version })).status, 409, 'a stale version is refused');
   await timers();
   assert.strictEqual((await q(`select count(*)::int as n from app.agent_rules where agent_id = '${ag.id}'`))[0].n, 3, 'confirmed: the clock restarted');
@@ -309,6 +309,30 @@ test('R33: at day 80 the owner is asked (one tap keeps it); with no answer by da
   assert.strictEqual((await agentsApi('POST', 'reconfirm', owner, { agent: ag2.id, version: row.rules.version + 1 })).status, 404, 'not your agent');
   // Confirming can never raise anything.
   await assert.rejects(run(owner2.ctx, (x) => x`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag2.id}, 'act', 'act', 'act', 1000, 'reconfirmed')`), /keeps rules that act exactly/);
+});
+
+// PR 15: keeping an agent acting on its own for another 90 days is letting it act without approval, so it needs a
+// fresh sign-in (the last 10 minutes, by the database clock), like raising it to act did. From the notice, from the
+// agents page, and calling the database directly.
+test('PR 15: keeping an agent acting on its own (R33) needs a fresh sign-in, from the notice, the agents page or the database', async () => {
+  const owner = await member(2, 'Stale keeper');
+  const ag = await agentOf(owner, 'Keeper', { act: true });
+  const shown = (await agentsApi('GET', 'activity', owner)).json.agents.find((x) => x.id === ag.id);
+  const versions = async () => (await q(`select count(*)::int as n from app.agent_rules where agent_id = '${ag.id}'`))[0].n;
+  const n0 = await versions();
+  await q(`update app.sessions set created_at = now() - interval '11 minutes' where member_id = '${owner.id}'`);
+  const stale = await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version });
+  assert.strictEqual(stale.status, 403, JSON.stringify(stale.json));
+  assert.match(stale.json.error, /sign in again/i);
+  assert.strictEqual(stale.json.reauth, '/join?return_to=%2Fagents');
+  assert.strictEqual(await versions(), n0, 'nothing was confirmed');
+  const same = (x) => x`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag.id}, 'act', 'draft', 'draft', 1000, 'reconfirmed')`;
+  await assert.rejects(run(owner.ctx, same), /fresh_sign_in/, 'the database refuses it without a fresh sign-in');
+  await run({ ...owner.ctx, fresh: true }, same);
+  await q(`update app.sessions set created_at = now() where member_id = '${owner.id}'`);
+  const now = (await agentsApi('GET', 'activity', owner)).json.agents.find((x) => x.id === ag.id);
+  assert.strictEqual((await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: now.rules.version })).status, 201);
+  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /x\.d\.reauth/, 'the notice offers to sign in again');
 });
 
 test('draft expiry: an undecided draft tells its owner once when it expires (in the inbox only)', async () => {

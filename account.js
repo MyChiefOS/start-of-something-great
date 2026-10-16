@@ -1,4 +1,5 @@
-// /account (PR 8): your name, how you sign in, signing out, and deleting your account (F8).
+// /account (PR 8): your name, how you sign in, signing out, and deleting your account (F8). PR 15: unlinking a
+// sign-in method, with a form per method (never the last one; the server checks that the session is fresh).
 // The forms post to /auth/... themselves; this only fills in the page and shows what happened. Text is set with
 // textContent, never as HTML.
 (function () {
@@ -15,7 +16,11 @@
     'error=admin': 'The administrator can’t delete their own account here.',
     'error=fresh': 'Nothing was deleted: to delete your account, sign in again first, then delete it within 10 minutes.',
     'error=gone': 'That account can’t be deleted right now: it isn’t active.',
-    'error=review': REVIEW
+    'error=review': REVIEW,
+    'saved=unlinked': 'Unlinked. That method no longer signs in to your account, and every other session of yours was signed out.',
+    'error=fresh_method': 'Nothing was changed: to link or unlink a sign-in method, sign in again first, then do it within 10 minutes.',
+    'error=last_method': 'Nothing was changed: that is the only way you sign in. Link another method first.',
+    'error=unlink': 'Nothing was changed: that sign-in method isn’t yours or is already gone.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };
@@ -39,14 +44,31 @@
       }
       var d = x.d;
       msg.textContent = note || 'Signed in as ' + d.display_name + '.';
-      if (q.get('error') === 'fresh') {
+      if (q.get('error') === 'fresh' || q.get('error') === 'fresh_method') {
         var again = el('a', '', 'Sign in again');
         again.href = '/join?return_to=%2Faccount';
         msg.after(again);
       }
       document.getElementById('who').textContent = 'Level ' + d.trust_level + ' · joined ' + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id;
       var list = document.getElementById('signins');
-      d.sign_ins.forEach(function (s) { list.appendChild(el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')')); });
+      d.sign_ins.forEach(function (s) {
+        var li = el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')');
+        // An Unlink form for each method while there is more than one: a plain same-site POST (form-action 'self').
+        if (d.sign_ins.length > 1 && s.id) {
+          var f = el('form', 'inline-form');
+          f.method = 'post';
+          f.action = '/auth/account/unlink';
+          var hid = el('input');
+          hid.type = 'hidden'; hid.name = 'id'; hid.value = s.id;
+          var b = el('button', 'button', 'Unlink');
+          b.type = 'submit';
+          f.appendChild(hid);
+          f.appendChild(b);
+          li.appendChild(document.createTextNode(' '));
+          li.appendChild(f);
+        }
+        list.appendChild(li);
+      });
       document.getElementById('name').value = d.display_name;
       document.getElementById('sessions').textContent = d.sessions + (d.sessions === 1 ? ' session open' : ' sessions open');
       if (d.deletion_review) {
@@ -90,6 +112,8 @@
   // What a one-tap answer says back, then the inbox again.
   function answered(out, x) {
     out.textContent = x.d.message || x.d.error || (x.ok ? 'Done.' : 'That didn’t go through. Please try again.');
+    // PR 15: keeping an agent acting on its own needs a fresh sign-in; offer one.
+    if (!x.ok && x.d.reauth) { var again = el('a', '', 'Sign in again'); again.href = x.d.reauth; out.appendChild(document.createTextNode(' ')); out.appendChild(again); }
     if (x.ok) setTimeout(loadNotices, 1200);
   }
 

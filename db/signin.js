@@ -31,10 +31,10 @@ async function emailTokenRedeem(t, { tokenHash, browserHash, confirmed }) {
   return r.status === 'ok' ? { status: 'ok', emailFingerprints: r.email_fingerprints.split(','), keyVersion: r.key_version } : { status: 'confirm' };
 }
 
-// Returns { memberId, isNew, trustLevel, isAdmin }, or { refused: 'banned' | 'disabled' | 'taken' | 'region' }.
+// Returns { memberId, isNew, trustLevel, isAdmin }, or { refused: 'banned' | 'disabled' | 'region' }.
 // region: the country a member confirmed they are travelling in (PR 12); with it, no new account is ever made
-// ('region'), and the confirmation is recorded.
-async function signIn(t, { provider, fingerprints, keyVersion, level, displayName, sessionHash, sessionDays, recheckAfter = null, linkMember = null, region = null }) {
+// ('region'), and the confirmation is recorded. Signing in never links a method (PR 15: see link below).
+async function signIn(t, { provider, fingerprints, keyVersion, level, displayName, sessionHash, sessionDays, recheckAfter = null, region = null }) {
   const fps = fingerprints.map((f) => hex('fingerprint', f));
   if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
   const args = {
@@ -45,7 +45,6 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
     session: hex('sessionHash', sessionHash),
     days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
     recheck: recheckAfter === null ? null : new Date(recheckAfter),
-    link: linkMember === null ? null : v.uuid('linkMember', linkMember),
     region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
   };
   // Two first sign-ins of the same account at the same moment: one wins, the other tries once more and finds it.
@@ -53,13 +52,55 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
     try {
       // A savepoint, so a refusal or a lost race leaves the surrounding transaction usable.
       const [r] = await t.savepoint((s) => s`select * from app.sign_in(${args.provider}, ${s.array(fps)}::text[], ${args.keyVersion}::smallint,
-        ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, ${args.link}::uuid, ${args.region})`);
+        ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, null::uuid, ${args.region})`);
       return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
     } catch (e) {
       if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
       if (e.code === '23505' && attempt === 0) continue;
       throw e;
     }
+  }
+}
+
+// PR 15: the signed-in member links another sign-in method, from their own session (sessionHash), which must have
+// begun in the last 10 minutes (the database decides, by its own clock). No session is made, so a link never makes
+// anyone fresh; every other session of the member ends, and they get a notice. region: as for signIn.
+// Returns { memberId, trustLevel, isAdmin, linked, sessionsEnded }, or { refused: 'fresh' | 'taken' | 'banned' | 'disabled' }.
+async function link(t, { provider, fingerprints, keyVersion, level, sessionHash, recheckAfter = null, region = null }) {
+  const fps = fingerprints.map((f) => hex('fingerprint', f));
+  if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
+  const p = v.oneOf('provider', provider, ['github', 'x', 'email', 'linkedin']);
+  const kv = v.int('keyVersion', keyVersion, { min: 1, max: 999 });
+  const lv = v.int('level', level, { min: 0, max: 2 });
+  const sh = hex('sessionHash', sessionHash);
+  const recheck = recheckAfter === null ? null : new Date(recheckAfter);
+  const rg = region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ });
+  try {
+    const [r] = await t.savepoint((s) => s`select * from app.identity_link(${p}, ${s.array(fps)}::text[], ${kv}::smallint, ${lv}::smallint,
+      ${recheck}::timestamptz, ${sh}, ${rg})`);
+    return { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, linked: r.linked, sessionsEnded: r.sessions_ended };
+  } catch (e) {
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
+    if (e.code === 'P0001' && ['taken', 'banned', 'disabled'].includes(e.message)) return { refused: e.message };
+    throw e;
+  }
+}
+
+// PR 15: the signed-in member removes one of their sign-in methods (by its ID, from their account page), from their
+// own session begun in the last 10 minutes. Never the last one. Returns { provider, trustLevel, sessionsEnded }, or
+// { refused: 'fresh' | 'not_found' | 'last' }.
+async function unlink(t, { identity, sessionHash }) {
+  let id;
+  try { id = v.uuid('identity', identity); } catch { return { refused: 'not_found' }; }
+  const sh = hex('sessionHash', sessionHash);
+  try {
+    const [r] = await t.savepoint((s) => s`select * from app.identity_unlink(${id}::uuid, ${sh})`);
+    return { provider: r.provider, trustLevel: r.trust_level, sessionsEnded: r.sessions_ended };
+  } catch (e) {
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
+    if (e.code === 'P0001' && e.message === 'not_found') return { refused: 'not_found' };
+    if (e.code === 'P0001' && e.message === 'last_method') return { refused: 'last' };
+    throw e;
   }
 }
 
@@ -95,12 +136,12 @@ async function sessionsEndAll(t) {
 async function account(t) {
   const [m] = await t`select id, display_name, trust_level, created_at from app.members where id = app.current_member()`;
   if (!m) return null;
-  const ids = await t`select provider, level, verified_at from app.identities where member_id = app.current_member() order by created_at`;
+  const ids = await t`select id, provider, level, verified_at from app.identities where member_id = app.current_member() order by created_at`;
   const [s] = await t`select count(*)::int as n from app.sessions where member_id = app.current_member()`;
   // A deletion JEVs flagged as high risk, waiting for Aaron (PR 12).
   const [r] = await t`select created_at from app.deletion_reviews where member_id = app.current_member() and decision is null`;
   return { memberId: m.id, displayName: m.display_name, trustLevel: m.trust_level, joined: m.created_at,
-    signIns: ids.map((i) => ({ provider: i.provider, level: i.level, verifiedAt: i.verified_at })), sessions: s.n,
+    signIns: ids.map((i) => ({ id: i.id, provider: i.provider, level: i.level, verifiedAt: i.verified_at })), sessions: s.n,
     deletionReview: r ? { since: r.created_at, disablesAt: new Date(new Date(r.created_at).getTime() + 24 * 3600 * 1000) } : null };
 }
 
@@ -126,4 +167,4 @@ async function deleteAccount(t) {
   }
 }
 
-module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

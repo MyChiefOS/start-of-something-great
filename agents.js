@@ -127,6 +127,8 @@
       keep.disabled = true;
       post('/reconfirm', { agent: a.id, version: act.rules.version }).then(function (x) {
         p.textContent = x.ok ? x.d.message : x.d.error;
+        // PR 15: keeping it needs a fresh sign-in; offer one.
+        if (!x.ok && x.d.reauth) { var link = el('a', '', 'Sign in again'); link.href = x.d.reauth; p.appendChild(document.createTextNode(' ')); p.appendChild(link); }
         keep.hidden = x.ok;
         keep.disabled = false;
       });
