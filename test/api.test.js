@@ -10,7 +10,7 @@ test('every API endpoint rejects writes (read-only)', async () => {
   }
 });
 
-test('MCP: initialize, list tools, and every tool is read-only except create_post, which needs an agent key', async () => {
+test('MCP: initialize, list tools, and every tool is read-only', async () => {
   mockGitHub([fakeIssue()]);
   const mcp = fresh('mcp.js');
   const init = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
@@ -18,13 +18,7 @@ test('MCP: initialize, list tools, and every tool is read-only except create_pos
   const list = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/list' });
   const tools = list.json.result.tools;
   assert.ok(tools.find((t) => t.name === 'list_proposals'));
-  // The one exception (PR 5): an agent posting with its own key. Everything else changes nothing.
-  for (const t of tools.filter((x) => x.name !== 'create_post')) assert.strictEqual(t.annotations.readOnlyHint, true, t.name + ' is not read-only');
-  const cp = tools.find((t) => t.name === 'create_post');
-  assert.deepStrictEqual([cp.annotations.readOnlyHint, cp.annotations.destructiveHint], [false, false]);
-  // Without a key it posts nothing, and says why.
-  const r = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'create_post', arguments: { body: 'hello' } } });
-  assert.strictEqual(r.json.result.isError, true);
+  for (const t of tools) assert.strictEqual(t.annotations.readOnlyHint, true, t.name + ' is not read-only');
 });
 
 test('MCP: list_proposals filters by status and warns that content is untrusted', async () => {

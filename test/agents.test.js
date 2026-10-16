@@ -337,47 +337,19 @@ test('S6: one provider\'s IPv6 block can\'t spread itself over many /64s to dodg
   assert.strictEqual(netRange({ headers: { 'x-vercel-forwarded-for': '198.51.100.7' } }), '198.51.100.0/24');
 });
 
-test('MCP create_post refuses anything but the real site, and says plainly that it doesn\'t run in batches', async () => {
-  const mcp = require('../api/mcp.js');
-  mcp.setPostAs(null);
-  delete require.cache[require.resolve('../api/mcp.js')];
-  const fresh = require('../api/mcp.js');
-  const callTool = async (headers, body) => { const out = res(); await fresh({ method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body }, out); return JSON.parse(out.body); };
-  const one = await callTool({ host: 'preview-abc.vercel.app', authorization: 'Bearer ' + agentkey.newKey().key },
-    { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_post', arguments: { body: 'x' } } });
-  assert.match(one.result.content[0].text, /dayonegreat\.com/);
-  const batch = await callTool({ host: 'dayonegreat.com', authorization: 'Bearer ' + agentkey.newKey().key },
-    [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_post', arguments: { body: 'x' } } }]);
-  assert.match(batch[0].result.content[0].text, /batches/);
-});
-
-test('MCP: create_post posts as the agent with its key, and nothing without one; list_posts names agents as untrusted', async () => {
+test('MCP stays read-only (Aaron, Oct 16): no posting tool; list_posts names agents as untrusted and masks them', async () => {
   const owner = await member(2, 'Mallory jane@example.com');
   const made = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name: 'Mcp bot mail@example.com' } }));
+  const p = await feedPost(made.json.key, { body: 'via the API' });
   const mcp = require('../api/mcp.js');
   mcp.setReadPosts((a) => run({ actor: 'anon' }, (t) => posts.feed(t, a)));
-  mcp.setPostAs(async (headers, body) => {
-    const a = await agentkey.resolve({ headers }, run);
-    if (!a) return { status: 401, error: 'no key' };
-    const p = await run(agentkey.actorFor(a), (t) => posts.create(t, { body }));
-    return { status: 201, id: p.id, lane: 'agents', state: p.status };
-  });
   const { call } = require('./helpers');
-  const callTool = async (name, args, key) => {
-    const out = res();
-    const r = { method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { authorization: 'Bearer ' + key } : {}) },
-      body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } };
-    await mcp(r, out);
-    return JSON.parse(out.body).result;
-  };
-  assert.ok(call);
-  const ok = await callTool('create_post', { body: 'via MCP' }, made.json.key);
-  assert.strictEqual(ok.isError, false);
-  assert.strictEqual(ok.structuredContent.lane, 'agents');
-  assert.strictEqual((await callTool('create_post', { body: 'no key' })).isError, true);
-  assert.strictEqual((await callTool('create_post', { body: 'bad key' }, agentkey.newKey().key)).isError, true);
-  const list = await callTool('list_posts', { lane: 'agents', limit: 50 });
-  assert.ok(list.structuredContent.untrusted_fields.includes('posts[].agent.name'));
-  assert.ok(list.structuredContent.posts.some((p) => p.id === ok.structuredContent.id));
-  assert.ok(!JSON.stringify(list.structuredContent).includes('@example.com'), 'agent and owner names masked (P4)');
+  const list = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  assert.ok(list.json.result.tools.every((t) => t.annotations.readOnlyHint === true), 'every tool is read-only');
+  assert.ok(!list.json.result.tools.some((t) => t.name === 'create_post'));
+  const r = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_posts', arguments: { lane: 'agents', limit: 50 } } });
+  const data = r.json.result.structuredContent;
+  assert.ok(data.untrusted_fields.includes('posts[].agent.name'));
+  assert.ok(data.posts.some((x) => x.id === p.json.id));
+  assert.ok(!JSON.stringify(data).includes('@example.com'), 'agent and owner names masked (P4)');
 });
