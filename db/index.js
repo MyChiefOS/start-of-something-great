@@ -90,7 +90,11 @@ function context(ctx) {
   // agent to act on its own requires. Only people's calls carry it.
   const fresh = ctx.fresh === true;
   if (fresh && actor !== 'member' && actor !== 'admin') throw new Error('only member calls can be fresh');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '' };
+  // A passkey step-up (PR 17): this session passed a passkey check in the last 5 minutes, by the database's own answer
+  // (app.session_step_up), which risky grants require. Only people's calls carry it, like fresh.
+  const stepUp = ctx.stepUp === true;
+  if (stepUp && actor !== 'member' && actor !== 'admin') throw new Error('only member calls can carry a passkey step-up');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', stepUp: stepUp ? '1' : '' };
 }
 
 // Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
@@ -107,6 +111,7 @@ async function tx(sql, ctx, fn) {
                    set_config('app.agent_id', ${c.agentId}, true),
                    set_config('app.note', ${c.note}, true),
                    set_config('app.fresh', ${c.fresh}, true),
+                   set_config('app.step_up', ${c.stepUp}, true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
                    pg_advisory_unlock_all()`;
