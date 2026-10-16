@@ -1,4 +1,8 @@
 # Reviewed database snapshot. Rebuild with: npm run db:snapshot
+constraint app.admin_notes admin_notes_action_check CHECK ((action = ANY (ARRAY['member.ban'::text, 'member.unban'::text, 'member.level_set'::text])))
+constraint app.admin_notes admin_notes_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
+constraint app.admin_notes admin_notes_note_check CHECK (((char_length(note) >= 1) AND (char_length(note) <= 200)))
+constraint app.admin_notes admin_notes_pkey PRIMARY KEY (id)
 constraint app.agent_keys agent_keys_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id)
 constraint app.agent_keys agent_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.agent_keys agent_keys_key_hash_key UNIQUE (key_hash)
@@ -79,6 +83,8 @@ constraint app.sessions sessions_member_id_fkey FOREIGN KEY (member_id) REFERENC
 constraint app.sessions sessions_pkey PRIMARY KEY (id)
 constraint app.sessions sessions_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.sessions sessions_token_hash_key UNIQUE (token_hash)
+default app.admin_notes.created_at = now()
+default app.admin_notes.id = app.uuid_v7()
 default app.agent_keys.created_at = now()
 default app.agent_keys.id = app.uuid_v7()
 default app.agents.created_at = now()
@@ -130,18 +136,18 @@ function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql v
 function app.agents_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=d49b0b63509bfd48464899074cdad145
 function app.agents_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c5dd087de8df28ca0356ff2667dcf059
 function app.audit_log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d9ae51d115dd87e702077c0fef83ccc2
-function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=23e9c24a67e7adf1e85c6c59d5aab830
+function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b9bba9af26b586a124ac1a0ea3ca91ba
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
 function app.current_actor_id() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase language=sql volatile=s definer=false config= returns=uuid body_md5=78082b715a972b0254a50e6555af6789
 function app.current_agent() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase language=sql volatile=s definer=false config= returns=uuid body_md5=739668a7732ef5a425a1d1bda0c3edd5
 function app.current_member() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase language=sql volatile=s definer=false config= returns=uuid body_md5=e46adb2e55a90833fc5dd4176dc9670b
-function app.delete_account() owner=dog_erase execute=dog_erase,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=cd5f14f0a85e4947c763e59f7e407612
+function app.delete_account() owner=dog_erase execute=dog_erase,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=e2bbe12a1afa34d4440a2d46bbf5838e
 function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=3fe206a9383583c62c0fe78273dfdc07
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text) body_md5=8c5ded932969811625cbe59209e1c821
 function app.is_reviewer() owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=boolean body_md5=7d420a3147ea7f058784ef85d6f5aaab
-function app.members_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=39cbd2e17e95f6ddc110bc210f426db3
+function app.members_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c77dd084fe69e24b324baae4e4ea109d
 function app.members_ban_cleanup() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=c714012ee5bf156687f80ad635e17d73
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=326d6bb467220f9c1bb6f7fd70f718d3
 function app.posts_after_review() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=f1065c1650a1e0d87965e576053b6aae
@@ -164,6 +170,13 @@ function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=f47122798a71797a95f59613fb2a1c3b
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=17c1cf584098aea3cdffa54fa6ac120d
+grant app.admin_notes dog_app SELECT
+grant app.admin_notes dog_erase DELETE
+grant app.admin_notes.action dog_app INSERT
+grant app.admin_notes.id dog_erase SELECT
+grant app.admin_notes.member_id dog_app INSERT
+grant app.admin_notes.member_id dog_erase SELECT
+grant app.admin_notes.note dog_app INSERT
 grant app.agent_keys dog_erase DELETE
 grant app.agent_keys dog_signin DELETE
 grant app.agent_keys dog_signin SELECT
@@ -248,6 +261,7 @@ grant app.identities.fingerprint dog_signin INSERT
 grant app.identities.fingerprint dog_signin UPDATE
 grant app.identities.id dog_app SELECT
 grant app.identities.id dog_erase SELECT
+grant app.identities.key_version dog_erase UPDATE
 grant app.identities.key_version dog_signin INSERT
 grant app.identities.key_version dog_signin UPDATE
 grant app.identities.level dog_app SELECT
@@ -289,6 +303,7 @@ grant app.posts.author_id dog_erase SELECT
 grant app.posts.author_id dog_limits SELECT
 grant app.posts.author_id dog_public SELECT
 grant app.posts.body dog_app INSERT
+grant app.posts.body dog_erase UPDATE
 grant app.posts.body dog_public SELECT
 grant app.posts.created_at dog_limits SELECT
 grant app.posts.id dog_erase SELECT
@@ -333,6 +348,10 @@ grant app.sessions.member_id dog_app SELECT
 grant app.sessions.member_id dog_erase SELECT
 grant app.sessions.member_id dog_signin INSERT
 grant app.sessions.token_hash dog_signin INSERT
+policy app.admin_notes admin_notes_erase_delete cmd=d permissive=true to=dog_erase using=true check=
+policy app.admin_notes admin_notes_erase_select cmd=r permissive=true to=dog_erase using=true check=
+policy app.admin_notes admin_notes_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'admin'::text)
+policy app.admin_notes admin_notes_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
 policy app.agent_keys agent_keys_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agent_keys agent_keys_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.agent_keys agent_keys_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text)))))
@@ -369,6 +388,7 @@ policy app.email_tokens email_tokens_signin_select cmd=r permissive=true to=dog_
 policy app.email_tokens email_tokens_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.identities identities_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_select cmd=r permissive=true to=dog_erase using=true check=
+policy app.identities identities_erase_update cmd=w permissive=true to=dog_erase using=true check=true
 policy app.identities identities_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=
 policy app.identities identities_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.identities identities_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -388,6 +408,7 @@ policy app.members members_signin_update cmd=w permissive=true to=dog_signin usi
 policy app.members members_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text))
 policy app.posts posts_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.posts posts_erase_select cmd=r permissive=true to=dog_erase using=true check=
+policy app.posts posts_erase_update cmd=w permissive=true to=dog_erase using=true check=true
 policy app.posts posts_insert cmd=a permissive=true to=dog_app using= check=((author_id = app.current_member()) AND (((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (lane = 'people'::text) AND (agent_id IS NULL)) OR ((app.actor_kind() = 'agent'::text) AND (lane = 'agents'::text) AND (agent_id = app.current_agent()) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = app.current_agent()) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text)))))))
 policy app.posts posts_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.posts posts_public_select cmd=r permissive=true to=dog_public using=(status = 'live'::text) check=

@@ -155,7 +155,14 @@ test('F8: deleting an account removes the member and all their personal data at 
   const theirs = await run(other.ctx, (t) => posts.create(t, { body: 'someone else\'s post' }));
   await run(m.ctx, (t) => review.report(t, { post: theirs.id, reason: 'spam' }));
   await run(other.ctx, (t) => review.report(t, { post: p.id, reason: 'other' }));
-  await run(aaron.ctx, (t) => controls.setBrake(t, { member: m.id, people_per_hour: 100 }));
+  await run(aaron.ctx, (t) => controls.setBrake(t, { member: m.id, people_per_hour: 100, note: 'Leaving posts too fast' }));
+  // Aaron's notes about them: a ban, an unban and a hand-set level, each with a note naming them.
+  await run({ ...aaron.ctx, note: 'Leaving was rude to Bob' }, (t) => controls.setStatus(t, { member: m.id, status: 'banned' }));
+  await run({ ...aaron.ctx, note: 'Leaving apologised' }, (t) => controls.setStatus(t, { member: m.id, status: 'active' }));
+  await run({ ...aaron.ctx, note: 'Leaving verified by phone' }, (t) => t`update app.members set trust_level = 2 where id = ${m.id}`);
+  // The ban ended their sessions; they sign in again.
+  m.cookie = SESSION + '=' + await (async () => { const tok = c.token(32); await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github',
+    fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(tok), sessionDays: 30 })); return tok; })();
   await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(await everything(m.id), { member: 1, identities: 1, sessions: 2, posts: 2, reports: 1, agents: 1, brakes: 1 });
@@ -168,7 +175,8 @@ test('F8: deleting an account removes the member and all their personal data at 
   assert.strictEqual(await count(`select count(*) as n from app.review_flags where post_id = '${p.id}'`), 0, 'reports on their posts went with them');
   // Nothing anywhere still holds their name or words.
   const dump = JSON.stringify(await q(`select * from app.members`)) + JSON.stringify(await q(`select body from app.posts`)) + JSON.stringify(await q(`select detail from app.audit_log`));
-  for (const s of ['Leaving', 'my words', 'my agent\'s words', 'My agent', m.fp]) assert.ok(!dump.includes(s), s);
+  for (const s of ['Leaving', 'Bob', 'apologised', 'phone', 'too fast', 'my words', 'my agent\'s words', 'My agent', m.fp]) assert.ok(!dump.includes(s), s);
+  assert.strictEqual(await count(`select count(*) as n from app.admin_notes where member_id = '${m.id}'`), 0, 'Aaron\'s notes about them went too');
   // Everyone else's things stay: the other member and their post.
   assert.strictEqual(await count(`select count(*) as n from app.posts where id = '${theirs.id}'`), 1);
   // The record: one row, the member by ID, counts only.
@@ -243,4 +251,58 @@ test('F8: a post already being written when the deletion starts is waited for, t
   await posting;
   assert.strictEqual((await deleting).getHeader('Location'), '/join?deleted=1', 'the deletion waits, then succeeds');
   assert.deepStrictEqual(await everything(m.id), { member: 0, identities: 0, sessions: 0, posts: 0, reports: 0, agents: 0, brakes: 0 });
+});
+
+test('F8: a report or a sign-in already under way when the deletion starts is waited for, then cleaned up; neither gives an error', async () => {
+  const m = await member(2, 'Busy leaver');
+  const other = await member(2, 'Reporter');
+  const p = await run(m.ctx, (t) => posts.create(t, { body: 'reported as I leave' }));
+  // A report in flight.
+  let release;
+  let gate = new Promise((r) => { release = r; });
+  const reporting = run(other.ctx, async (t) => { const out = await review.report(t, { post: p.id, reason: 'spam' }); await gate; return out; });
+  await new Promise((r) => setTimeout(r, 150));
+  let deleting = del(m);
+  await new Promise((r) => setTimeout(r, 150));
+  release();
+  assert.deepStrictEqual(await reporting, { status: 'reported' });
+  assert.strictEqual((await deleting).getHeader('Location'), '/join?deleted=1');
+  assert.strictEqual(await count(`select count(*) as n from app.review_flags where post_id = '${p.id}'`), 0);
+  // A sign-in in flight with the same account.
+  const n = await member(2, 'Signing in as I leave');
+  gate = new Promise((r) => { release = r; });
+  const signing = run({ actor: 'anon' }, async (t) => {
+    const out = await store.signIn(t, { provider: 'github', fingerprints: [n.fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
+    await gate;
+    return out;
+  });
+  await new Promise((r) => setTimeout(r, 150));
+  deleting = del(n);
+  await new Promise((r) => setTimeout(r, 150));
+  release();
+  assert.strictEqual((await signing).memberId, n.id);
+  assert.strictEqual((await deleting).getHeader('Location'), '/join?deleted=1');
+  assert.deepStrictEqual(await everything(n.id), { member: 0, identities: 0, sessions: 0, posts: 0, reports: 0, agents: 0, brakes: 0 });
+});
+
+test('F8: a sign-in that starts while a deletion is waiting can\'t deadlock with it', async () => {
+  const m = await member(2, 'Slow leaver');
+  const p = await run(m.ctx, (t) => posts.create(t, { body: 'locked by a slow review' }));
+  // Something else holds the member's post for a moment (as a slow review decision would).
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const holding = su.begin(async (t) => { await t`select id from app.posts where id = ${p.id} for update`; await gate; });
+  await new Promise((r) => setTimeout(r, 150));
+  const deleting = del(m);
+  await new Promise((r) => setTimeout(r, 150));
+  const signing = run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x',
+    sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 })).then((x) => x, (e) => ({ error: e.code }));
+  await new Promise((r) => setTimeout(r, 150));
+  release();
+  await holding;
+  const [d, s] = await Promise.all([deleting, signing]);
+  assert.strictEqual(d.getHeader('Location'), '/join?deleted=1', 'the deletion finishes');
+  assert.notDeepStrictEqual(s, { error: '40P01' }, 'no deadlock');
+  // The sign-in waited for the deletion and then made a fresh account; the old one is gone.
+  assert.strictEqual((await everything(m.id)).member, 0);
 });

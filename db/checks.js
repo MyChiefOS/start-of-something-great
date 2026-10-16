@@ -19,8 +19,8 @@ const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase'
 // Narrow roles that only act inside their own reviewed functions (below). dog_limits (PR 6) only counts, inside the
 // two emergency-brake checks; dog_erase (PR 8) only deletes, inside the one account-deletion function.
 const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase'];
-// The only functions allowed to run with their owner's rights (security definer). Each must be owned by dog_signin,
-// fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
+// The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
+// role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
 // Each is pinned to the one narrow role it must run as.
 const DEFINERS = {
