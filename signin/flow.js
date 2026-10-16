@@ -158,7 +158,7 @@ function make(deps) {
   const FRESH_METHOD = '/account?error=fresh_method';
   // A link that didn't go through returns to the account page (the member is still signed in), never /join.
   const LINK_FAILED = '/account?error=link';
-  const LINK_REFUSED = { taken: '/account?error=taken_method' };
+  const LINK_REFUSED = { taken: '/account?error=taken_method', busy: '/account?error=busy' };
 
   // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
   // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
@@ -445,7 +445,8 @@ function make(deps) {
 
     // PR 15: unlink one of your sign-in methods. A form on /account, from our own pages, signed in within the last 10
     // minutes (the database decides, by its clock); never the last method. Every other session of yours ends, and you
-    // get a notice.
+    // get a notice. What that method's sessions did goes with it (the second review, R1): the methods they linked, the
+    // agent keys they made, and the agents they let act on their own (back to drafting).
     async unlink(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/account');
       const who = await current(req);
@@ -456,6 +457,7 @@ function make(deps) {
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
       if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
       if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
+      if (out.refused === 'busy') return h.redirect(res, '/account?error=busy');
       if (out.refused) return h.redirect(res, '/account?error=unlink');
       return h.redirect(res, '/account?saved=unlinked');
     },

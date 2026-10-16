@@ -90,7 +90,14 @@ function context(ctx) {
   // agent to act on its own requires. Only people's calls carry it.
   const fresh = ctx.fresh === true;
   if (fresh && actor !== 'member' && actor !== 'admin') throw new Error('only member calls can be fresh');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '' };
+  // The request's own session, by its hash (PR 15's second review, R1): the database reads from it which sign-in
+  // method the person signed in with, and records it on the agent keys, rules and links they make, so that unlinking
+  // a method undoes what its sessions did. Only people's calls carry one; it proves nothing by itself (the database
+  // uses it only if it is the acting member's own current session).
+  const session = ctx.session == null ? null : String(ctx.session);
+  if (session !== null && !/^[0-9a-f]{64}$/.test(session)) throw new Error('session must be a session hash');
+  if (session !== null && actor !== 'member' && actor !== 'admin') throw new Error('only member calls carry a session');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '' };
 }
 
 // Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
@@ -107,6 +114,7 @@ async function tx(sql, ctx, fn) {
                    set_config('app.agent_id', ${c.agentId}, true),
                    set_config('app.note', ${c.note}, true),
                    set_config('app.fresh', ${c.fresh}, true),
+                   set_config('app.session', ${c.session}, true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
                    pg_advisory_unlock_all()`;

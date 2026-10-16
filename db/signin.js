@@ -5,6 +5,9 @@
 const v = require('./validate');
 
 const HEX64 = /^[0-9a-f]{64}$/;
+// A link or unlink that lost a race it can't wait out (a deadlock, a serialization failure, a lock it couldn't get):
+// nothing was changed, and trying again works. A clean refusal, never an error page (PR 15's second review, R3).
+const BUSY = ['40P01', '40001', '55P03'];
 const hex = (field, s) => v.text(field, s, { max: 64, min: 64, pattern: HEX64 });
 
 async function rateLimitHit(t, { bucket, keyHash, windowSeconds, max }) {
@@ -65,7 +68,7 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
 // PR 15: the signed-in member links another sign-in method, from their own session (sessionHash), which must have
 // begun in the last 10 minutes (the database decides, by its own clock). No session is made, so a link never makes
 // anyone fresh; every other session of the member ends, and they get a notice. region: as for signIn.
-// Returns { memberId, trustLevel, isAdmin, linked, sessionsEnded }, or { refused: 'fresh' | 'taken' | 'banned' | 'disabled' }.
+// Returns { memberId, trustLevel, isAdmin, linked, sessionsEnded }, or { refused: 'fresh' | 'taken' | 'banned' | 'disabled' | 'busy' }.
 async function link(t, { provider, fingerprints, keyVersion, level, sessionHash, recheckAfter = null, region = null }) {
   const fps = fingerprints.map((f) => hex('fingerprint', f));
   if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
@@ -84,26 +87,30 @@ async function link(t, { provider, fingerprints, keyVersion, level, sessionHash,
     if (e.code === 'P0001' && ['taken', 'banned', 'disabled'].includes(e.message)) return { refused: e.message };
     // Two members linking the same method at the same moment: whoever comes second finds it taken (review F4).
     if (e.code === '23505') return { refused: 'taken' };
+    if (BUSY.includes(e.code)) return { refused: 'busy' };
     throw e;
   }
 }
 
 // PR 15: the signed-in member removes one of their sign-in methods (by its ID, from their account page), from their
 // own session begun in the last 10 minutes. Never the last one, and (review F1, seniority) only a method added after
-// the one this session signed in with. Returns { provider, trustLevel, sessionsEnded }, or
-// { refused: 'fresh' | 'not_found' | 'last' | 'senior' }.
+// the one this session signed in with. What the method's sessions did goes with it (the second review, R1).
+// Returns { provider, trustLevel, sessionsEnded, alsoUnlinked, keysRevoked, agentsLowered }, or
+// { refused: 'fresh' | 'not_found' | 'last' | 'senior' | 'busy' }.
 async function unlink(t, { identity, sessionHash }) {
   let id;
   try { id = v.uuid('identity', identity); } catch { return { refused: 'not_found' }; }
   const sh = hex('sessionHash', sessionHash);
   try {
     const [r] = await t.savepoint((s) => s`select * from app.identity_unlink(${id}::uuid, ${sh})`);
-    return { provider: r.provider, trustLevel: r.trust_level, sessionsEnded: r.sessions_ended };
+    return { provider: r.provider, trustLevel: r.trust_level, sessionsEnded: r.sessions_ended, alsoUnlinked: r.also_unlinked,
+      keysRevoked: r.keys_revoked, agentsLowered: r.agents_lowered };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     if (e.code === 'P0001' && e.message === 'not_found') return { refused: 'not_found' };
     if (e.code === 'P0001' && e.message === 'last_method') return { refused: 'last' };
     if (e.code === 'P0001' && e.message === 'not_senior') return { refused: 'senior' };
+    if (BUSY.includes(e.code)) return { refused: 'busy' };
     throw e;
   }
 }

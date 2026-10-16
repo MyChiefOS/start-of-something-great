@@ -720,7 +720,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   const [n] = await q(`select title from app.notices where member_id = '${id}' and kind = 'signin_unlinked'`);
   assert.strictEqual(n.title, 'A sign-in method was removed');
   const [au] = await q(`select actor_kind, detail from app.audit_log where action = 'member.identity_unlinked' and subject_id = '${id}'`);
-  assert.deepStrictEqual([au.actor_kind, au.detail], ['member', { provider: 'x', sessions_ended: 1 }]);
+  assert.deepStrictEqual([au.actor_kind, au.detail], ['member', { provider: 'x', sessions_ended: 1, also_unlinked: [], keys_revoked: 0, agents_lowered: 0 }]);
   const githubId = signIns.find((s) => s.provider === 'github').id;
   assert.strictEqual(await unlink(a.browser, { id: githubId }), '/account?error=last_method');
   await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${githubId}::uuid, ${hashOf(a.browser)})`), /last_method/);

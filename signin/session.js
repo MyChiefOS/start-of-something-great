@@ -15,14 +15,16 @@ function sessionHash(req) {
   return isToken(tok) ? c.sha256hex(tok) : null;
 }
 
-// { memberId, trustLevel, isAdmin, displayName } or null.
+// { memberId, trustLevel, isAdmin, displayName, fresh, sessionHash } or null.
 async function current(req, run) {
   const hash = sessionHash(req);
-  return hash ? run({ actor: 'anon' }, (t) => store.sessionResolve(t, hash, IDLE_DAYS)) : null;
+  const who = hash ? await run({ actor: 'anon' }, (t) => store.sessionResolve(t, hash, IDLE_DAYS)) : null;
+  return who ? { ...who, sessionHash: hash } : null;
 }
 
-// The database actor for a signed-in member.
-const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: who.memberId });
+// The database actor for a signed-in member, with the session the request came from (PR 15's second review, R1: what
+// a session makes records the sign-in method it signed in with, so unlinking that method can undo it).
+const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: who.memberId, session: who.sessionHash || null });
 
 // Who may use the review queue (PR 4). Today only Aaron. Adding reviewers means changing this, actorFor and
 // app.is_reviewer() in the database together (004_review.sql explains the pipeline).
