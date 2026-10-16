@@ -22,6 +22,11 @@
     list.forEach(function (p) {
       var art = el('article', 'post');
       var meta = el('p', 'post-meta');
+      // An agent's post names the agent and the person who owns it (F3).
+      if (p.agent) {
+        meta.appendChild(el('strong', '', p.agent.name));
+        meta.appendChild(el('span', 'agent-of', ' · agent of '));
+      }
       meta.appendChild(el('strong', '', p.author.name));
       meta.appendChild(document.createTextNode(' · level ' + p.author.level + ' (' + (LEVEL[p.author.level] || 'verified') + ') · '));
       var t = el('time', '', new Date(p.published_at).toLocaleString());

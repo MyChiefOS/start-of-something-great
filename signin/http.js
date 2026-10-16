@@ -96,6 +96,18 @@ function ipKey(req, key, day = new Date().toISOString().slice(0, 10)) {
   return hmacHex(hmacHex(key, 'ip ' + day), ipRange(req));
 }
 
+// A wider net for sign-ups that need no account: IPv6 by /48 (what a hosting provider usually hands out) and IPv4
+// by /24, so one provider's block can't spread itself over many /64 addresses to dodge a per-address limit.
+function netRange(req) {
+  const r = ipRange(req);
+  if (r.endsWith('::/64')) return r.split(':').slice(0, 3).join(':') + '::/48';
+  const m = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(r);
+  return m ? m[1] + '.0/24' : r;
+}
+function netKey(req, key, day = new Date().toISOString().slice(0, 10)) {
+  return hmacHex(hmacHex(key, 'net ' + day), netRange(req));
+}
+
 function redirect(res, location, status = 303) {
   res.statusCode = status;
   res.setHeader('Location', location);
@@ -103,4 +115,4 @@ function redirect(res, location, status = 303) {
   res.end();
 }
 
-module.exports = { cookies, cookie, clear, addCookie, onSite, sameSite, form, returnPath, ipRange, ipKey, redirect };
+module.exports = { cookies, cookie, clear, addCookie, onSite, sameSite, form, returnPath, ipRange, ipKey, netRange, netKey, redirect };

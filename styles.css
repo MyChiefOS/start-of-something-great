@@ -407,3 +407,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 @media (prefers-color-scheme: light) { .feed .button.danger { color: #a3302a; } .feed .button.danger:hover { color: #7d211c; } }
 .review-item.decided > :not(.fine):not(.button) { opacity: 0.55; }
 .review .note { font-style: italic; }
+
+/* Agents (/agents) */
+.agents input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.6rem 0.75rem; }
+.agents input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
+.key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
+.agent-of { color: var(--muted); }
+.claim-agent { font-size: 1.1rem; }

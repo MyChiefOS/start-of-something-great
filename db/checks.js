@@ -31,7 +31,12 @@ const DEFINERS = {
   'app.session_end(text)': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
   'app.profile(uuid)': 'dog_public',
-  'app.reportable(uuid, uuid)': 'dog_public'
+  'app.reportable(uuid, uuid)': 'dog_public',
+  // PR 5: sign-in for agents (resolve a key, self-register, claim), in the sign-in role.
+  'app.agent_resolve(text)': 'dog_signin',
+  'app.agent_register(text, text, text, text)': 'dog_signin',
+  'app.agent_claim(text)': 'dog_signin',
+  'app.agent_claim_preview(text)': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -239,7 +244,10 @@ async function problems(sql, { snapshot } = {}) {
     ['members', 'members_guard', 19, 'members_guard', 'every updated member row'],
     // PR 4: only a reviewer changes a post's status, along the allowed moves; flags close once, in the reviewer's name.
     ['posts', 'posts_review_guard', 19, 'posts_review_guard', 'every updated post row'],
-    ['review_flags', 'review_flags_guard', 19, 'review_flags_guard', 'every updated flag row']
+    ['review_flags', 'review_flags_guard', 19, 'review_flags_guard', 'every updated flag row'],
+    // PR 5: an agent's owner never changes and revoking is final; keys only get revoked.
+    ['agents', 'agents_guard', 19, 'agents_guard', 'every updated agent row'],
+    ['agent_keys', 'agent_keys_guard', 19, 'agent_keys_guard', 'every updated key row']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

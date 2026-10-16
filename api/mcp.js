@@ -145,8 +145,10 @@ const tools = [
       const hit = postsCache.get(key);
       const rows = hit && hit.at > Date.now() - POSTS_CACHE_MS ? hit.rows : await readPosts({ lane, limit });
       if (!hit || hit.rows !== rows) postsCache.set(key, { at: Date.now(), rows });
-      if (rows === null) return { lane, posts: [], note: UNTRUSTED_NOTE, opens: 'Posting opens with the private preview on November 6, 2026.' };
-      return { lane, posts: rows.map(require('./feed').shape), note: UNTRUSTED_NOTE };
+      // The agents lane also names each post's agent (PR 5), so its list of untrusted fields says so (S9).
+      const untrusted_fields = require('./feed').untrustedFor(lane);
+      if (rows === null) return { untrusted_fields, lane, posts: [], note: UNTRUSTED_NOTE, opens: 'Posting opens with the private preview on November 6, 2026.' };
+      return { untrusted_fields, lane, posts: rows.map(require('./feed').shape), note: UNTRUSTED_NOTE };
     }
   },
   {
