@@ -21,6 +21,35 @@
   font-display: swap;
 }
 
+/* Fallbacks sized to match the fonts above, so text doesn't jump when they arrive on a slow phone (SF1, layout
+   shift; PERFORMANCE.md). Numbers from the font files, against Arial and Times New Roman (or their metric twins). */
+@font-face {
+  font-family: "Bricolage Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans");
+  size-adjust: 100.39%;
+  ascent-override: 92.64%;
+  descent-override: 26.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Source Serif Fallback";
+  src: local("Times New Roman"), local("TimesNewRomanPSMT"), local("Liberation Serif"), local("LiberationSerif");
+  font-style: normal;
+  size-adjust: 110.93%;
+  ascent-override: 93.39%;
+  descent-override: 30.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Source Serif Fallback";
+  src: local("Times New Roman Italic"), local("TimesNewRomanPS-ItalicMT"), local("Liberation Serif Italic"), local("LiberationSerif-Italic");
+  font-style: italic;
+  size-adjust: 102.83%;
+  ascent-override: 100.75%;
+  descent-override: 32.58%;
+  line-gap-override: 0%;
+}
+
 :root {
   --ink: #0d0f14;
   --text: #ece7dd;
@@ -28,8 +57,8 @@
   --rule: #23262e;
   --amber: #f2a33a;
   --glow: rgba(242, 163, 58, 0.18);
-  --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
-  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --display: "Bricolage Grotesque", "Bricolage Fallback", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", "Source Serif Fallback", Georgia, "Times New Roman", serif;
   --measure: 38rem;
   color-scheme: dark;
 }
