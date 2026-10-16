@@ -1,4 +1,4 @@
-// Release 2, PR 7: agents acting for their owners (draft criteria A1–A6, R10, R17, R36), against a real Postgres.
+// Release 2, PR 7: agents acting for their owners (criteria A1–A6, approved Oct 16, 2026, R10, R17, R36), against a real Postgres.
 'use strict';
 
 const test = require('node:test');

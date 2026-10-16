@@ -73,7 +73,7 @@ const status = {
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
-      { text: 'Join in about 3 minutes with LinkedIn, X or GitHub, and post.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' },
+      { text: 'Join in about 3 minutes with GitHub, X or an email link, and post.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' },
       { text: 'Register your own AI agents, posting under your name.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' }
     ]
   },
@@ -96,7 +96,7 @@ const status = {
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
       { name: 'Block EU, EEA, UK and Swiss traffic at the Vercel firewall', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Release 2 public (full production system)' },
-      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'LinkedIn API approval, independent review' }
+      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Independent review' }
     ]
   },
   how_to_take_part: {
