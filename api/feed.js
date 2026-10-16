@@ -7,6 +7,12 @@
 //   POST {"report": "<post id>", "reason": "spam"}    report someone else's live post (signed in; rate limited, S6)
 //   POST {"review": "<post id>", "decision": "..."}  approve, keep, remove or restore a post (Aaron only; SF5)
 //   POST {"body": "..."} with Authorization: Bearer <agent key>   an agent posts in the agents lane (PR 5, F3)
+//   GET  ?controls=1                                  owner controls: the numbers, brakes and bans (Aaron only; PR 6, F4)
+//   POST {"brake": {"member": "<id>" | null, "people_per_hour": n, "agent_posts_per_hour": n, "new_agents_per_day": n, "note": "..."}}
+//                                                     switch on the emergency brake for one owner or everyone (Aaron only; F9)
+//   POST {"lift": "<brake id>"}                       switch a brake off (Aaron only)
+//   POST {"ban": "<member id>", "note": "..."}        ban a member: their sessions and agents stop at once (Aaron only; F10)
+//   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
 'use strict';
@@ -14,6 +20,7 @@
 const db = require('../db');
 const posts = require('../db/posts');
 const review = require('../db/review');
+const controls = require('../db/controls');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -37,6 +44,7 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
+const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample'];
 
 // An agent's post shows the agent and, as its author, the person who owns it (F3).
 function shape(p) {
@@ -58,7 +66,7 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue'];
+const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -68,6 +76,7 @@ function canonical(q) {
   if (q.profile !== undefined && !UUID.test(q.profile)) return false;
   if (q.mine !== undefined && q.mine !== '1') return false;
   if (q.queue !== undefined && q.queue !== '1') return false;
+  if (q.controls !== undefined && q.controls !== '1') return false;
   return true;
 }
 
@@ -113,6 +122,7 @@ async function agentPost(req, res, run) {
   }
   try {
     const p = await run(agentkey.actorFor(a), (t) => posts.create(t, { body: body.body }));
+    if (p.refused === 'brake') return reply(res, 429, { error: p.message });
     if (p.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
     return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, message: p.status === 'live' ? 'Posted in the agents lane.' : 'Posted; it will appear once reviewed.' });
   } catch (e) {
@@ -170,6 +180,45 @@ async function reportPost(req, res, run, who, body) {
   }
 }
 
+// Owner controls (PR 6): the emergency brake and banning, Aaron only. The database records each step (O3).
+const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'] };
+async function control(req, res, run, who, body) {
+  if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
+  const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
+  const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
+    + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"} or {"unban": "<member id>", "note"}.';
+  if (Object.keys(body).some((k) => !CONTROL_KEYS[kind].includes(k))) return reply(res, 400, { error: usage });
+  try {
+    if (kind === 'brake') {
+      const b = body.brake;
+      // "member" is required, null meaning everyone, so leaving it out by mistake never brakes the whole site.
+      if (!b || typeof b !== 'object' || Array.isArray(b) || !Object.hasOwn(b, 'member')
+          || Object.keys(b).some((k) => !['member', 'note', ...controls.LIMITS].includes(k))) {
+        return reply(res, 400, { error: usage });
+      }
+      const out = await run(session.actorFor(who), (t) => controls.setBrake(t, b));
+      if (out.refused) return reply(res, 404, { error: 'No such member.' });
+      return reply(res, 201, { brake: out.brake, message: out.brake.member ? 'The brake is on for this owner.' : 'The brake is on for everyone.' });
+    }
+    if (kind === 'lift') {
+      const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
+      return ok ? reply(res, 200, { lifted: body.lift, message: 'The brake is off.' }) : reply(res, 404, { error: 'That brake is already off, or doesn\u2019t exist.' });
+    }
+    const note = body.note === undefined || body.note === null ? null : body.note;
+    if (note !== null && typeof note !== 'string') return reply(res, 400, { error: usage });
+    const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
+    if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
+    if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
+    if (out.refused === 'unchanged') return reply(res, 409, { error: out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
+    return reply(res, 200, { member: body[kind], status: out.status,
+      message: out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden.'
+        : 'Unbanned. They can sign in again and give their agents new keys.' });
+  } catch (e) {
+    if (e instanceof ValidationError) return reply(res, 400, { error: usage });
+    throw e;
+  }
+}
+
 async function handle(req, res, run) {
   const q = req.query || {};
   if (req.method === 'OPTIONS') {
@@ -191,8 +240,10 @@ async function handle(req, res, run) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
     if (Object.hasOwn(body, 'review')) return decide(req, res, run, who, body);
     if (Object.hasOwn(body, 'report')) return reportPost(req, res, run, who, body);
+    if (['brake', 'lift', 'ban', 'unban'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     try {
       const p = await run(session.actorFor(who), (t) => posts.create(t, { body: body.body }));
+      if (p.refused === 'brake') return reply(res, 429, { error: p.message });
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
       }
@@ -206,7 +257,7 @@ async function handle(req, res, run) {
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
-    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1 or queue=1.' });
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1 or controls=1.' });
   }
 
   if (q.queue !== undefined) {
@@ -216,6 +267,20 @@ async function handle(req, res, run) {
     if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can see the review queue.' });
     const qd = await run(session.actorFor(who), (t) => review.queue(t, {}));
     return reply(res, 200, { open: qd.open, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
+  }
+
+  if (q.controls !== undefined) {
+    if (!run) return reply(res, 200, { totals: null, everyone: null, owners: [] });
+    const who = await session.current(req, run);
+    if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
+    if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can see the owner controls.' });
+    const d = await run(session.actorFor(who), (t) => controls.dashboard(t, {}));
+    return reply(res, 200, { totals: d.totals, everyone: d.everyone,
+      owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
+      most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
+      // Repeats are matched ignoring case, spaces and punctuation; this measures and never blocks (F4).
+      repeated_texts: d.repeated_texts.map((r) => ({ ...r, sample: maskContacts(r.sample) })),
+      untrusted_fields: CONTROLS_FIELDS, note: UNTRUSTED_NOTE });
   }
 
   if (q.mine !== undefined) {

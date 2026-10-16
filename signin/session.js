@@ -27,5 +27,8 @@ const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: 
 // Who may use the review queue (PR 4). Today only Aaron. Adding reviewers means changing this, actorFor and
 // app.is_reviewer() in the database together (004_review.sql explains the pipeline).
 const canReview = (who) => Boolean(who && who.isAdmin === true);
+// Who may use the owner controls: the numbers, the emergency brake and banning (PR 6). Only Aaron, and unlike
+// reviewing it stays that way: the database allows these to the admin actor alone.
+const canControl = (who) => Boolean(who && who.isAdmin === true);
 
-module.exports = { SESSION, isToken, sessionHash, current, actorFor, canReview };
+module.exports = { SESSION, isToken, sessionHash, current, actorFor, canReview, canControl };

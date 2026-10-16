@@ -36,6 +36,7 @@ async function claim(t, claimHash) {
     return r.id ? { id: r.id } : { refused: 'not_found' };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'level_required') return { refused: 'level' };
+    if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint || 'New agents are limited for now.' };
     throw e;
   }
 }
@@ -58,6 +59,7 @@ async function create(t, { name: n, description: d, keyHash }) {
     });
   } catch (e) {
     if (e.code === '42501') return { refused: 'level' };
+    if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint || 'New agents are limited for now.' };
     throw e;
   }
 }

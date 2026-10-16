@@ -83,7 +83,10 @@ function context(ctx) {
   const needsMember = actor === 'member' || actor === 'admin' || actor === 'agent';
   if (needsMember !== (memberId !== null)) throw new Error(actor + ' calls ' + (needsMember ? 'need' : 'must not have') + ' a member ID');
   if ((actor === 'agent') !== (agentId !== null)) throw new Error(actor + ' calls ' + (actor === 'agent' ? 'need' : 'must not have') + ' an agent ID');
-  return { actor, memberId: memberId || '', agentId: agentId || '' };
+  // Aaron's note for the record, such as why he banned someone (PR 6); the database copies it into the audit log.
+  const note = ctx.note == null || ctx.note === '' ? null : v.text('note', ctx.note, { max: 200 });
+  if (note !== null && actor !== 'admin') throw new Error('only admin calls carry a note');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '' };
 }
 
 // Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
@@ -98,6 +101,7 @@ async function tx(sql, ctx, fn) {
     await t`select set_config('app.actor', ${c.actor}, true),
                    set_config('app.member_id', ${c.memberId}, true),
                    set_config('app.agent_id', ${c.agentId}, true),
+                   set_config('app.note', ${c.note}, true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
                    pg_advisory_unlock_all()`;
