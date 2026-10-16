@@ -1,0 +1,36 @@
+# JEVs question J05: email domains so widely shared that many sign-ups from one of them say nothing. Sign-ups from
+# these domains are never compared with each other, and no mark is kept for them.
+# Written by Claude for Day One Great; MIT like the code. One domain per line, lower case.
+126.com
+163.com
+aol.com
+att.net
+comcast.net
+fastmail.com
+gmail.com
+gmx.com
+gmx.net
+googlemail.com
+hey.com
+hotmail.com
+icloud.com
+live.com
+mac.com
+mail.com
+me.com
+msn.com
+naver.com
+outlook.com
+pm.me
+proton.me
+protonmail.com
+qq.com
+rocketmail.com
+sbcglobal.net
+tuta.io
+tutanota.com
+verizon.net
+yahoo.com
+yandex.com
+ymail.com
+zoho.com

@@ -160,7 +160,8 @@ test('F8: deleting an account removes the member and all their personal data at 
   // Aaron's notes about them: a ban, an unban and a hand-set level, each with a note naming them.
   await run({ ...aaron.ctx, note: 'Leaving was rude to Bob' }, (t) => controls.setStatus(t, { member: m.id, status: 'banned' }));
   await run({ ...aaron.ctx, note: 'Leaving apologised' }, (t) => controls.setStatus(t, { member: m.id, status: 'active' }));
-  await run({ ...aaron.ctx, note: 'Leaving verified by phone' }, (t) => t`update app.members set trust_level = 2 where id = ${m.id}`);
+  // A hand-set level (only ever lower since Oct 16, 2026: no level is raised by hand), with a note naming them.
+  await run({ ...aaron.ctx, note: 'Leaving slowed down for now' }, (t) => t`update app.members set trust_level = 1 where id = ${m.id}`);
   // The ban ended their sessions; they sign in again.
   m.cookie = SESSION + '=' + await (async () => { const tok = c.token(32); await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github',
     fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(tok), sessionDays: 30 })); return tok; })();
@@ -183,7 +184,8 @@ test('F8: deleting an account removes the member and all their personal data at 
   // The record: one row, the member by ID, counts only.
   const [rec] = await q(`select actor_kind, actor_id, detail from app.audit_log where action = 'member.deleted' and subject_id = '${m.id}'`);
   assert.deepStrictEqual([rec.actor_kind, rec.actor_id], ['member', m.id]);
-  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, drafts: 0, brakes: 1, sessions: 2, identities: 1 });
+  // jevs_decisions: JEVs's own check of the deletion (PR 12), removed with everything else.
+  assert.deepStrictEqual(rec.detail, { posts: 2, reports_on_posts: 1, reports_made: 1, agents: 1, keys: 1, drafts: 0, brakes: 1, sessions: 2, identities: 1, jevs_decisions: 1 });
   // The old session is gone, and the public feed and profile no longer have them.
   const after = res();
   await flow.account(req('GET', '/auth/account', { cookie: m.cookie }), after);

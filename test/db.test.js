@@ -163,7 +163,7 @@ test.before(async () => {
   await server.unsafe(`create database ${NAME} owner ${OWNER}`);
   // On a server where an earlier run already made the roles, the migration login is given the admin right over
   // them that it would have had as their creator. On a fresh server (CI) it creates them itself.
-  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
+  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
@@ -228,7 +228,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],
@@ -303,16 +303,20 @@ test('S3 groundwork: a member sees and changes only their own row; someone not s
   assert.deepStrictEqual(rows.map((r) => r.display_name), ['Member B', 'Renamed A']);
 });
 
-test('S3 groundwork: only the site creates members, only Aaron changes trust levels, and nobody deletes yet', async () => {
+test('S3 groundwork: only the site creates members, nobody raises a trust level by hand (Aaron only lowers one), and nobody deletes yet', async () => {
   const a = await newMember('Member C');
   await fails(as(member(a.id), (t) => t`insert into app.members (display_name) values ('Sneaky')`), /row-level security/);
   await fails(as(ANON, (t) => t`insert into app.members (display_name) values ('Sneaky')`), /row-level security/);
-  await fails(as(member(a.id), (t) => members.setTrustLevel(t, a.id, 2)), /only an administrator/);
+  await fails(as(member(a.id), (t) => t`update app.members set trust_level = 2 where id = ${a.id}`), /only an administrator/);
   await fails(as(member(a.id), (t) => t`update app.members set id = app.uuid_v7() where id = ${a.id}`), /permission denied/);
   await fails(as(member(a.id), (t) => t`delete from app.members where id = ${a.id}`), /permission denied/);
   const aaron = await newMember('Aaron');
-  assert.strictEqual(await as(AARON(aaron.id), (t) => members.setTrustLevel(t, a.id, 2)), true);
-  assert.strictEqual((await as(member(a.id), (t) => members.get(t, a.id))).trust_level, 2);
+  // No trust levels promoted by hand (Oct 16, 2026): not even Aaron. JEVs or a verified sign-in raises a level.
+  await fails(as(AARON(aaron.id), (t) => t`update app.members set trust_level = 2 where id = ${a.id}`), /never by hand/);
+  assert.strictEqual((await as(SYSTEM, (t) => t`update app.members set trust_level = 1 where id = ${a.id}`)).count, 0, 'the site itself can\'t reach a member\'s level');
+  assert.strictEqual((await as(member(a.id), (t) => members.get(t, a.id))).trust_level, 0);
+  assert.strictEqual(await as(AARON(aaron.id), (t) => members.lowerTrustLevel(t, a.id, 0)), false, 'already at level 0: nothing to lower');
+  assert.strictEqual(members.setTrustLevel, undefined, 'the hand-promotion helper is gone');
 });
 
 test('S7, G4: the audit log takes new rows, shows them only to Aaron, and refuses every edit or deletion', async () => {

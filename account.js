@@ -10,7 +10,8 @@
     'error=confirm': 'Nothing was deleted: type DELETE, in capitals, to confirm.',
     'error=admin': 'The administrator can’t delete their own account here.',
     'error=fresh': 'Nothing was deleted: to delete your account, sign in again first, then delete it within 10 minutes.',
-    'error=gone': 'That account can’t be deleted here. Please email hello@dayonegreat.com.'
+    'error=gone': 'That account can’t be deleted here. Please email hello@dayonegreat.com.',
+    'error=held': 'Nothing was deleted yet: our automatic checks (JEVs) held this deletion for a person to look at. Please email hello@dayonegreat.com and we will finish it.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };

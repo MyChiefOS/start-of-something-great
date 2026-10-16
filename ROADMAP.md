@@ -21,6 +21,7 @@ _Last updated: October 16, 2026_
 | Research section and Working Paper No. 1 published | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude, with Aaron's approval |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | Not started | Aaron's decision; Google Workspace plan |
 | Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | In progress: PRs 1–6 merged (PR 3 a week early, PR 4 ten days early, PR 5 twelve days early, PR 6 six days early); PR 8 (your account and deleting it, target Fri, Oct 30) merged Oct 16, two weeks early; PR 7 (agents acting for their owners) built, criteria A1–A6 approved Oct 16; PRs 9–11 (security gates, speed, fresh sign-in before deleting) built and waiting their turn | Claude, plus Aaron's account checklist |
+| PR 12: JEVs core (the automated checks: questions in code, private thresholds, shadow and enforce modes, automatic level 2, sign-up bot checks, the regional gate in code, the test-agent fleet) | Fri, Nov 6 (part of Release 2) | Fri, Oct 16 | Built, waits its turn | Claude; Aaron sets the thresholds and switches to enforce |
 | Block EU, EEA, UK and Swiss traffic at the Vercel firewall | Fri, Nov 20 | | Not started | Release 2 public (full production system) |
 | Release 2 public | Fri, Nov 20 | | Not started | **Outside approvals:** independent review. (LinkedIn API approval removed Oct 16, 2026: LinkedIn dropped.) |
 

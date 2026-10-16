@@ -9,6 +9,10 @@
 //   first, so nobody can quietly sign someone else into the asker's account.
 //   Sessions: a fresh random token at every sign-in, kept by the browser in a __Host- cookie and by us only as a
 //   SHA-256. /auth/logout and /auth/logout-all are POSTs; /auth/me says who is signed in.
+//   PR 12: the regional gate declines sign-up from the EU, EEA, UK and Switzerland before anything is kept (only a
+//   daily count per country); the email form carries two bot checks people never notice (a field they can't see, and
+//   a sealed time stamp from /auth/form, so a form sent within a second of the page opening is turned back); every
+//   sign-in leaves JEVs's marks and an account check, which can promote a member to level 2 automatically.
 'use strict';
 
 const c = require('./crypto');
@@ -16,6 +20,8 @@ const h = require('./http');
 const { ORIGIN, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES } = require('./config');
 const store = require('../db/signin');
 const v = require('../db/validate');
+const jevs = require('../db/jevs');
+const region = require('./region');
 
 const session = require('./session');
 const { SESSION, isToken } = session;
@@ -30,13 +36,20 @@ const LIMITS = {
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
-  email_all: { windowSeconds: 3600, max: 500 }
+  email_all: { windowSeconds: 3600, max: 500 },
+  // And on all GitHub and X sign-ins started (PR 12): far above honest use, low enough to blunt a scripted burst.
+  signin_all: { windowSeconds: 600, max: 3000 }
 };
+// The email form must have been open at least this long (a person needs longer to type or pick an address; scripts
+// send at once), and its time stamp lasts this long.
+const MIN_FILL_MS = 1000;
+const FORM_TTL_MS = 2 * 3600 * 1000;
 const ALL = '0'.repeat(64);
 
 function make(deps) {
   const { config, run, providers, sendEmail } = deps;
   const stateKey = config.sessionKey ? c.subkey(config.sessionKey, 'oauth state') : null;
+  const formKey = config.sessionKey ? c.subkey(config.sessionKey, 'form time') : null;
   const keys = config.fingerprintKeys;
 
   const limited = async (bucket, keyHash) => !(await run(ANON, (t) => store.rateLimitHit(t, { bucket, keyHash, ...LIMITS[bucket] })));
@@ -51,12 +64,42 @@ function make(deps) {
     return out;
   }
 
+  // The regional gate: true (and the polite page sent) if sign-up is declined where this request comes from. Nothing is
+  // kept but one more in that country's count for today; no cookie is set.
+  async function regionGate(req, res) {
+    const country = region.declined(req);
+    if (!country) return false;
+    try { await run(ANON, (t) => jevs.regionDecline(t, country)); } catch { /* the count is not worth failing the answer */ }
+    res.statusCode = 451;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    res.end(region.page());
+    return true;
+  }
+
+  // After a sign-in: the network mark (and an email link's marks), then JEVs's account check, which can promote the
+  // member to level 2. A failure here never undoes the sign-in; it is logged.
+  async function afterSignIn(req, out, emailToken = null) {
+    try {
+      const f = jevs.facts(req, config.ipKey);
+      await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId }, async (t) => {
+        if (emailToken) await jevs.claimMarks(t, emailToken);
+        if (f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash });
+        await jevs.check(t, { action: out.isNew ? 'signup' : 'account.check', ...f });
+      });
+    } catch (e) {
+      jevs.logFailure('after sign-in', e);
+    }
+  }
+
   return {
     async start(req, res, provider) {
       const p = providers[provider];
       const creds = config[provider];
       if (!p || !creds) return h.redirect(res, '/join?error=unavailable');
-      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return h.redirect(res, '/join?error=slow');
+      if (await regionGate(req, res)) return;
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey)) || await limited('signin_all', ALL)) return h.redirect(res, '/join?error=slow');
       const url = new URL(req.url, ORIGIN);
       // Adding a second sign-in method is only for someone already signed in, and only links after they
       // complete that provider's sign-in. A matching email address never joins two accounts.
@@ -82,6 +125,7 @@ function make(deps) {
       // Single use: the state cookie is cleared whatever happens next.
       h.addCookie(res, h.clear(stateCookie(provider)));
       if (!p || !creds) return h.redirect(res, '/join?error=unavailable');
+      if (await regionGate(req, res)) return;
       if (url.searchParams.has('error')) return h.redirect(res, '/join?error=cancelled');
       const code = url.searchParams.get('code');
       if (!saved || saved.p !== provider || !(saved.e > Date.now()) || !c.same(url.searchParams.get('state'), saved.s)
@@ -103,6 +147,7 @@ function make(deps) {
         level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter, linkMember: saved.l || null });
       if (out.refused === 'banned') return h.redirect(res, '/join?error=unavailable');
       if (out.refused === 'taken') return h.redirect(res, '/join?error=taken');
+      await afterSignIn(req, out);
       // A fresh session replaces any older one in this browser.
       const old = sessionHash(req);
       if (old) await run(ANON, (t) => store.sessionEnd(t, old));
@@ -111,8 +156,16 @@ function make(deps) {
 
     async emailStart(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
+      if (await regionGate(req, res)) return;
       if (!sendEmail) return h.redirect(res, '/join?error=email_off');
       const body = await h.form(req);
+      // Bot checks (S6, PR 12). A field people never see must be empty: if a script filled it in, it is told the
+      // link was sent and nothing is done or kept. And the form's sealed time stamp must be at least a second old.
+      if (body && typeof body.website === 'string' && body.website !== '') return h.redirect(res, '/join?sent=1');
+      const stamp = formKey && body && typeof body.ft === 'string' ? c.open(formKey, body.ft) : null;
+      const age = stamp && stamp.k === 'join' && Number.isFinite(stamp.t) ? Date.now() - stamp.t : NaN;
+      if (!(age >= 0 && age <= FORM_TTL_MS)) return h.redirect(res, '/join?error=expired');
+      if (age < MIN_FILL_MS) return h.redirect(res, '/join?error=fast');
       let email;
       try {
         email = v.text('email', body && body.email, { max: 254, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }).toLowerCase();
@@ -126,8 +179,12 @@ function make(deps) {
       if (!isToken(nonce)) nonce = c.token(32);
       h.addCookie(res, h.cookie(EMAIL_BROWSER, nonce, { maxAge: 20 * 60 }));
       const token = c.token(32);
-      await run(ANON, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps,
-        browserHash: c.sha256hex(nonce), keyVersion: keys[0].version }));
+      await run(ANON, async (t) => {
+        await store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps, browserHash: c.sha256hex(nonce), keyVersion: keys[0].version });
+        // JEVs's marks for this address (J03, J05): its domain, keyed, unless everyone uses it, and whether it is a
+        // throwaway service. They wait with the link and become the member's when it is used; never the address.
+        for (const m of jevs.emailMarks(email, config.ipKey)) await jevs.mark(t, { kind: m.kind, keyHash: m.keyHash, token: c.sha256hex(token) });
+      });
       // The link is always built from our own address, never from the request.
       const link = ORIGIN + '/auth/email/continue#t=' + token;
       try { await sendEmail(email, link); } catch { /* the reply is the same either way */ }
@@ -145,8 +202,17 @@ function make(deps) {
         + '<script src="/signin.js"></script>');
     },
 
+    // A sealed time stamp for the email form (PR 12), fetched by /join.js when the page opens. It names no one.
+    async formToken(req, res) {
+      res.statusCode = formKey ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(JSON.stringify(formKey ? { token: c.seal(formKey, { k: 'join', t: Date.now() }) } : { error: 'Sign-in is not switched on here yet.' }));
+    },
+
     async emailFinish(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
+      if (await regionGate(req, res)) return;
       const body = await h.form(req);
       const t = body && body.t;
       if (!isToken(t)) return h.redirect(res, '/join?error=expired');
@@ -164,6 +230,7 @@ function make(deps) {
         level: 0, displayName: NEW_NAME });
       h.addCookie(res, h.clear(EMAIL_BROWSER));
       if (out.refused) return h.redirect(res, '/join?error=unavailable');
+      await afterSignIn(req, out, c.sha256hex(t));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
       return h.redirect(res, '/');
@@ -218,6 +285,11 @@ function make(deps) {
       const body = await h.form(req);
       if (!body || body.confirm !== 'DELETE') return h.redirect(res, '/account?error=confirm');
       if (who.isAdmin) return h.redirect(res, '/account?error=admin');
+      // JEVs checks the deletion first (PR 12): medium risk is confirmed by the fresh sign-in deleting already needs;
+      // high risk (or a check that couldn't finish) holds it, and the member is told to write to us.
+      const d = await run({ ...session.actorFor(who), fresh: who.fresh === true },
+        (t) => jevs.check(t, { action: 'account.delete', ...jevs.facts(req, config.ipKey) }));
+      if (jevs.blocks(d)) return h.redirect(res, '/account?error=' + (d.effect === 'challenge' ? 'fresh' : 'held'));
       const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => store.deleteAccount(t));
       if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
@@ -255,4 +327,4 @@ function page(inner) {
     + '<body><main class="wrap signin">' + inner + '</main></body></html>';
 }
 
-module.exports = { make, SESSION, LIMITS };
+module.exports = { make, SESSION, LIMITS, MIN_FILL_MS, FORM_TTL_MS };

@@ -167,6 +167,8 @@ async function main() {
       level: 2, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
     const outsider = { id: o.memberId };
     const allowed = { members: 1, identities: 1, sessions: 1 };
+    // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not.
+    const PUBLIC_ROWS = { jevs_settings: 1 };
     let breakinRuns = 0;
     const violations = [];
     const stopAt = Date.now() + SECONDS * 1000;
@@ -176,7 +178,7 @@ async function main() {
           for (const t of tables) {
             try {
               const [{ n }] = await run(ctx, (x) => x.unsafe(`select count(*)::int as n from app.${t}`));
-              const may = label === 'member' ? (allowed[t] || 0) : 0;
+              const may = (label === 'member' ? (allowed[t] || 0) : 0) + (PUBLIC_ROWS[t] || 0);
               if (n > may) violations.push(label + ' saw ' + n + ' rows of ' + t);
             } catch (e) { if (e.code !== '42501') violations.push(label + ' ' + t + ': ' + e.message); }
           }

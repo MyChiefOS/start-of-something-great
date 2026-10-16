@@ -12,7 +12,8 @@
     email: 'That doesn’t look like an email address.',
     signin: 'Please sign in first.',
     email_off: 'Sign-in by email isn\u2019t switched on yet. Please use GitHub or X for now.',
-    deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.'
+    deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.',
+    fast: 'That was quick! Please press the button once more.'
   };
   var key = q.get('sent') === '1' ? 'sent' : q.get('deleted') === '1' ? 'deleted' : q.get('error');
   var el = document.getElementById('message');
@@ -27,4 +28,15 @@
   document.querySelectorAll('a[href="/auth/github/start"], a[href="/auth/x/start"]').forEach(function (a) {
     a.setAttribute('href', a.getAttribute('href') + '?return_to=' + encodeURIComponent(rt));
   });
+})();
+
+// The email form's sealed time stamp (a bot check, PR 12): fetched when the page opens, so a form sent within a second
+// of opening is turned back. People never notice; scripts that post the form straight away are refused.
+(function () {
+  var f = document.querySelector('form.email-signin input[name="ft"]');
+  if (!f || !window.fetch) return;
+  fetch('/auth/form', { credentials: 'same-origin', cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) { if (d && typeof d.token === 'string') f.value = d.token; })
+    .catch(function () { /* the form still works; the server says if the stamp is missing */ });
 })();

@@ -166,7 +166,7 @@ test('the router sends each address to the right step, with the right provider a
   const fake = new Proxy({}, { get: (_, name) => (...args) => calls.push([name, ...args.slice(2)]) });
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
-    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount']]);
+    ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['formToken']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete'],
     'only these change anything, and all are POSTs');
@@ -184,7 +184,13 @@ test('form bodies: read the same whether Vercel has already parsed them or not, 
 
 test('SF4, S5: the join page has one field and no password, and posts only to our own sign-in', () => {
   const html = fs.readFileSync(path.join(root, 'join.html'), 'utf8');
-  const fields = html.match(/<(input|select|textarea)\b(?![^>]*type="hidden")[^>]*>/g) || [];
+  // The bot-check field (PR 12) is one no person meets: off screen, hidden from screen readers, out of the tab order,
+  // never filled in by the browser. Every other field counts.
+  const hp = html.match(/<div class="hp" aria-hidden="true">([\s\S]*?)<\/div>/);
+  assert.ok(hp, 'the bot-check field is wrapped so nobody meets it');
+  assert.match(hp[1], /<input id="website" name="website" type="text" tabindex="-1" autocomplete="off">/);
+  assert.match(fs.readFileSync(path.join(root, 'styles.css'), 'utf8'), /\.hp \{ position: absolute; left: -10000px;/);
+  const fields = html.replace(hp[0], '').match(/<(input|select|textarea)\b(?![^>]*type="hidden")[^>]*>/g) || [];
   assert.ok(fields.length <= 5, fields.length + ' fields');
   assert.strictEqual(fields.length, 1);
   assert.ok(!/type="password"|autocomplete="(new|current)-password"/.test(html));
@@ -232,6 +238,8 @@ function setup({ keys, accounts = {}, mail = [] } = {}) {
   const flow = make({ config: cfg, run: (ctx, fn) => db.tx(web, ctx, fn), providers: fakeProviders(accounts), sendEmail: async (to, link) => mail.push({ to, link }) });
   return { flow, cfg, accounts, mail };
 }
+// The email form's sealed time stamp (PR 12 bot check), as /auth/form hands it out, opened ageMs ago.
+const stamp = (env, ageMs = 5000) => c.seal(c.subkey(env.cfg.sessionKey, 'form time'), { k: 'join', t: Date.now() - ageMs });
 // The full GitHub or X round trip, as a browser would do it.
 async function oauth(env, provider, account, { browser = jar(), query = '', ip } = {}) {
   const r1 = browser.take(res());
@@ -344,7 +352,7 @@ test('linking: only while signed in, never by matching email, and never onto som
 
 test('email links: same answer for every address, a Continue page that changes nothing, single use, 15 minutes', async () => {
   const env = setup();
-  const post = async (url, body, opts = {}) => { const r = res(); const b = opts.browser || jar(); await (url.endsWith('start') ? env.flow.emailStart : env.flow.emailFinish)(req('POST', url, { body, origin: ORIGIN, cookie: b.header(), ...opts }), r); b.take(r); return r; };
+  const post = async (url, body, opts = {}) => { const r = res(); const b = opts.browser || jar(); const full = url.endsWith('start') ? { ft: stamp(env), ...body } : body; await (url.endsWith('start') ? env.flow.emailStart : env.flow.emailFinish)(req('POST', url, { body: full, origin: ORIGIN, cookie: b.header(), ...opts }), r); b.take(r); return r; };
   const noOrigin = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email: 'a@example.com' } }), noOrigin);
   assert.strictEqual(noOrigin.getHeader('Location'), '/join?error=expired', 'a post without our Origin is refused');
   assert.strictEqual(env.mail.length, 0);
@@ -403,7 +411,7 @@ test('email links: same answer for every address, a Continue page that changes n
 
 test('S6: too many email links or sign-in attempts are slowed down', async () => {
   const env = setup();
-  const send = async (email, ip) => { const r = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email }, origin: ORIGIN, ip }), r); return r.getHeader('Location'); };
+  const send = async (email, ip) => { const r = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email, ft: stamp(env) }, origin: ORIGIN, ip }), r); return r.getHeader('Location'); };
   const out = [];
   for (let i = 0; i < 6; i++) out.push(await send('same@example.com', '198.51.100.' + (i + 1)));
   assert.deepStrictEqual(out, ['/join?sent=1', '/join?sent=1', '/join?sent=1', '/join?sent=1', '/join?sent=1', '/join?error=slow'], '5 links an hour per address');
@@ -468,7 +476,7 @@ test('F10, S12: after a fingerprint key rotation, email members keep their accou
   const viaEmail = async (keys, email) => {
     const env = setup({ keys });
     const b = jar();
-    const r1 = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email }, origin: ORIGIN, cookie: b.header() }), r1); b.take(r1);
+    const r1 = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email, ft: stamp(env) }, origin: ORIGIN, cookie: b.header() }), r1); b.take(r1);
     const t = new URLSearchParams(new URL(env.mail[0].link).hash.slice(1)).get('t');
     const r2 = res(); await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t }, origin: ORIGIN, cookie: b.header() }), r2); b.take(r2);
     return { b, env, location: r2.getHeader('Location') };
@@ -525,20 +533,21 @@ test('a lapsed X business badge drops back to level 1 when the member next signs
   assert.strictEqual((await me(env, g.browser)).trust_level, 1);
 });
 
-test('a level Aaron sets by hand survives the member\'s next sign-in and long sessions', async () => {
+test('a level Aaron lowers by hand survives the member\'s next sign-in, and no level is raised by hand', async () => {
   const env = setup({ accounts: { 'github:9401': { accountId: '9401', level: 1, recheckAfter: null }, 'github:9402': { accountId: '9402', level: 1, recheckAfter: null } } });
   const members = require('../db/members');
   const adminAct = (fn) => db.tx(web, { actor: 'admin', memberId: '018f3c2e-7b1a-7cde-8f00-0123456789ab' }, fn);
   const slow = await oauth(env, 'github', '9401');
   const slowId = (await me(env, slow.browser)).member_id;
-  await adminAct((t) => members.setTrustLevel(t, slowId, 0));
+  assert.strictEqual(await adminAct((t) => members.lowerTrustLevel(t, slowId, 0)), true);
   const again = await oauth(env, 'github', '9401');
   assert.strictEqual((await me(env, again.browser)).trust_level, 0, 'a demotion holds after signing in again');
   const trusted = await oauth(env, 'github', '9402');
   const trustedId = (await me(env, trusted.browser)).member_id;
-  await adminAct((t) => members.setTrustLevel(t, trustedId, 2));
+  // Oct 16, 2026: no trust levels promoted by hand. Only a verified sign-in or JEVs raises one.
+  await assert.rejects(adminAct((t) => t`update app.members set trust_level = 2 where id = ${trustedId}`), /never by hand/);
   await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${trustedId}'`);
-  assert.strictEqual((await me(env, trusted.browser)).trust_level, 2, 'a promotion holds through a long session');
+  assert.strictEqual((await me(env, trusted.browser)).trust_level, 1, 'still the level sign-in verified');
   await assert.rejects(db.tx(web, { actor: 'member', memberId: trustedId }, (t) => t`update app.members set level_set_by_admin = 3 where id = ${trustedId}`), /permission denied/);
 });
 

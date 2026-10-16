@@ -1,5 +1,6 @@
 // Sign-in for Release 2: /auth/<route>, rewritten here by vercel.json. Its writes are all same-site form POSTs:
-// starting an email link, finishing one, logging out, and (PR 8) renaming yourself or deleting your account.
+// starting an email link, finishing one, logging out, and (PR 8) renaming yourself or deleting your account. Sign-up
+// steps decline the EU, EEA, UK and Switzerland before anything is kept (PR 12, in signin/flow.js).
 // Off unless every production setting is present and the request is for dayonegreat.com itself.
 'use strict';
 
@@ -31,7 +32,9 @@ const ROUTES = {
   // PR 8: your account (F8).
   'GET account': (f, q, s) => f.account(q, s),
   'POST account/name': (f, q, s) => f.rename(q, s),
-  'POST account/delete': (f, q, s) => f.deleteAccount(q, s)
+  'POST account/delete': (f, q, s) => f.deleteAccount(q, s),
+  // PR 12: the email form's sealed time stamp (a bot check).
+  'GET form': (f, q, s) => f.formToken(q, s)
 };
 
 function plain(res, status, text) {

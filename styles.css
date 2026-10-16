@@ -439,6 +439,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 /* Sign-in (/join and /auth/email/continue) */
 .signin .notice { border-left: 3px solid var(--amber); padding: 0.6rem 0.9rem; background: var(--glow); }
 .email-signin { display: grid; gap: 0.6rem; max-width: 24rem; margin-top: 2rem; }
+/* The bot-check field: off screen, out of the tab order and hidden from screen readers, so no person meets it. */
+.hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 .email-signin label { font-family: var(--display); font-weight: 600; }
 .email-signin input {
   font: inherit; color: var(--text); background: transparent;

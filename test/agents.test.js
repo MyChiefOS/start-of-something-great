@@ -256,7 +256,10 @@ test('S4: a key acts only as its own agent, and stops at once when rotated, revo
   assert.strictEqual((await feedPost(b.json.key, { body: 'B works' })).status, 201);
   await asAdmin(`update app.members set trust_level = 1 where id = '${owner.id}'`);
   assert.strictEqual((await feedPost(b.json.key, { body: 'owner at level 1' })).status, 401);
-  await asAdmin(`update app.members set trust_level = 2 where id = '${owner.id}'`);
+  // No level is raised by hand (Oct 16, 2026), Aaron included; only a verified sign-in or JEVs brings it back.
+  await assert.rejects(asAdmin(`update app.members set trust_level = 2 where id = '${owner.id}'`), /never by hand/);
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set level_set_by_admin = null where id = '${owner.id}'`); });
+  await su.begin(async (t) => { await t.unsafe('set local role dog_jevs'); await t.unsafe(`update app.members set jevs_level2_at = now(), trust_level = 2 where id = '${owner.id}'`); });
   assert.strictEqual((await feedPost(b.json.key, { body: 'level back' })).status, 201);
   await asAdmin(`update app.members set status = 'banned' where id = '${owner.id}'`);
   assert.strictEqual((await feedPost(b.json.key, { body: 'owner banned' })).status, 401);

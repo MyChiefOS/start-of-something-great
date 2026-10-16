@@ -131,6 +131,26 @@
     if (!d.most_agents.length) most.appendChild(el('p', 'fine', 'No active agents.'));
     d.most_agents.forEach(function (o) { most.appendChild(el('p', '', o.agents + ' · ' + o.name + (o.status === 'banned' ? ' (banned)' : ''))); });
 
+    // JEVs (PR 12): the mode, the last day's decisions, and what is listed for Aaron. Numbers and IDs only.
+    var j = clear('jevs');
+    if (d.jevs) {
+      j.appendChild(el('p', '', 'Mode: ' + d.jevs.mode + (d.jevs.mode === 'shadow' ? ' (recording only; first posts are still reviewed)' : ' (carrying out its decisions)')));
+      var counts = {};
+      d.jevs.last_24h.forEach(function (c) {
+        var k = c.level + (c.effect !== 'none' ? ', ' + c.effect + (c.applied ? '' : ' (would have)') : '') + (c.error ? ', scoring error' : '');
+        counts[k] = (counts[k] || 0) + c.decisions;
+      });
+      var keys = Object.keys(counts);
+      if (!keys.length) j.appendChild(el('p', 'fine', 'No decisions in the last 24 hours.'));
+      keys.forEach(function (k) { stat(j, k, counts[k]); });
+      d.jevs.recent.slice(0, 20).forEach(function (r) {
+        var top = Object.keys(r.scores).filter(function (q) { return r.scores[q] > 0; }).sort(function (a, b) { return r.scores[b] - r.scores[a]; }).slice(0, 3)
+          .map(function (q) { return q + ' ' + r.scores[q]; }).join(', ');
+        j.appendChild(el('p', 'fine', new Date(r.at).toLocaleString() + ' · ' + r.action + ' · ' + r.level + (r.error ? ' (scoring error)' : '') + ' · ' + r.effect
+          + (r.applied ? '' : ' (not carried out)') + (top ? ' · ' + top : '') + (r.member ? ' · member ' + r.member : '')));
+      });
+    }
+
     var rep = clear('repeated');
     if (!d.repeated_texts.length) rep.appendChild(el('p', 'fine', 'No repeated text in the last 7 days.'));
     d.repeated_texts.forEach(function (r) {

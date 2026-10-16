@@ -1,0 +1,50 @@
+# JEVs question J03: email domains of well-known disposable (throwaway) email services.
+# A short list Claude wrote for Day One Great from what these services publish about themselves; domain names are
+# facts, and the list is MIT like the code. It is deliberately small: J03 is one signal among many, and a missed
+# service only means that question doesn't fire. A subdomain counts as its domain (x.mailinator.com is mailinator.com).
+# One domain per line, lower case.
+10minutemail.com
+10minutemail.net
+burnermail.io
+discard.email
+dispostable.com
+emailfake.com
+emailondeck.com
+fakeinbox.com
+fakemail.net
+getairmail.com
+getnada.com
+grr.la
+guerrillamail.biz
+guerrillamail.com
+guerrillamail.de
+guerrillamail.net
+guerrillamail.org
+guerrillamailblock.com
+inboxkitten.com
+mail.tm
+mailcatch.com
+maildrop.cc
+mailinator.com
+mailinator.net
+mailnesia.com
+mailpoof.com
+mintemail.com
+minuteinbox.com
+moakt.com
+mohmal.com
+mytemp.email
+nada.email
+sharklasers.com
+spamgourmet.com
+temp-mail.org
+tempinbox.com
+tempmail.com
+tempmailo.com
+tempr.email
+throwawaymail.com
+trashmail.com
+trashmail.de
+yopmail.com
+yopmail.fr
+yopmail.net

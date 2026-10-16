@@ -15,11 +15,12 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs'];
 // Narrow roles that only act inside their own reviewed functions (below). dog_limits (PR 6) only counts, inside the
 // two emergency-brake checks; dog_erase (PR 8) only deletes, inside the one account-deletion function.
-// dog_delegate (PR 7) only turns an approved draft into a post, inside app.approve_draft.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate'];
+// dog_delegate (PR 7) only turns an approved draft into a post, inside app.approve_draft. dog_jevs (PR 12) only gathers
+// JEVs's signals and records and carries out its decisions, inside the JEVs functions.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -48,7 +49,17 @@ const DEFINERS = {
   'app.delete_account()': 'dog_erase',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
-  'app.receipt(uuid)': 'dog_public'
+  'app.receipt(uuid)': 'dog_public',
+  // PR 12: JEVs. Its signals (counts only), its decision, the owner's answer to a challenge, sign-up marks, whether a
+  // post can be appealed, the regional gate's daily count, and the record of a settings change.
+  'app.jevs_signals(text, uuid, text, text[], bigint)': 'dog_jevs',
+  'app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint)': 'dog_jevs',
+  'app.jevs_answer(uuid, text)': 'dog_jevs',
+  'app.jevs_mark(text, text, text, uuid)': 'dog_jevs',
+  'app.jevs_mark_claim(text)': 'dog_jevs',
+  'app.jevs_appealable(uuid)': 'dog_jevs',
+  'app.region_decline(text)': 'dog_jevs',
+  'app.jevs_settings_audit()': 'dog_jevs'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -59,7 +70,8 @@ const AUDIT_POLICIES = {
   audit_select: { cmd: 'r', using: "app.actor_kind()='admin'::text", check: '' },
   audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
+  audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
+  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
@@ -131,7 +143,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -163,7 +175,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
@@ -271,7 +283,11 @@ async function problems(sql, { snapshot } = {}) {
     ['agent_rules', 'agent_rules_fill', 7, 'agent_rules_fill', 'every new rules version'],
     ['agent_drafts', 'agent_drafts_guard', 19, 'agent_drafts_guard', 'every updated draft'],
     ['agent_drafts', 'agent_drafts_fill', 7, 'agent_drafts_fill', 'every new draft'],
-    ['posts', 'posts_delegation', 7, 'posts_delegation', 'every new post']
+    ['posts', 'posts_delegation', 7, 'posts_delegation', 'every new post'],
+    // PR 12: JEVs decisions are only added; a challenge is answered once, by JEVs; settings keep their names and ranges.
+    ['jevs_decisions', 'jevs_decisions_guard', 27, 'jevs_decisions_guard', 'every updated or deleted decision'],
+    ['jevs_challenges', 'jevs_challenges_guard', 27, 'jevs_challenges_guard', 'every updated or deleted challenge'],
+    ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

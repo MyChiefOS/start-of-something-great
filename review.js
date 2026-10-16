@@ -24,7 +24,8 @@
     if (i.reports) {
       parts.push(i.reports + (i.reports === 1 ? ' report' : ' reports') + (i.reasons.length ? ' (' + i.reasons.map(function (r) { return REASON[r] || r; }).join(', ') + ')' : ''));
     }
-    if (i.classifiers && i.classifiers.length) parts.push('flagged by ' + i.classifiers.join(', '));
+    if (i.classifiers && i.classifiers.length) parts.push('flagged by ' + i.classifiers.map(function (c) { return c === 'jevs' ? 'JEVs (automatic checks)' : c; }).join(', '));
+    if (i.appealed) parts.push('the author appealed');
     return 'Why: ' + parts.join('; ') + '.';
   }
 
