@@ -82,13 +82,16 @@ async function link(t, { provider, fingerprints, keyVersion, level, sessionHash,
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     if (e.code === 'P0001' && ['taken', 'banned', 'disabled'].includes(e.message)) return { refused: e.message };
+    // Two members linking the same method at the same moment: whoever comes second finds it taken (review F4).
+    if (e.code === '23505') return { refused: 'taken' };
     throw e;
   }
 }
 
 // PR 15: the signed-in member removes one of their sign-in methods (by its ID, from their account page), from their
-// own session begun in the last 10 minutes. Never the last one. Returns { provider, trustLevel, sessionsEnded }, or
-// { refused: 'fresh' | 'not_found' | 'last' }.
+// own session begun in the last 10 minutes. Never the last one, and (review F1, seniority) only a method added after
+// the one this session signed in with. Returns { provider, trustLevel, sessionsEnded }, or
+// { refused: 'fresh' | 'not_found' | 'last' | 'senior' }.
 async function unlink(t, { identity, sessionHash }) {
   let id;
   try { id = v.uuid('identity', identity); } catch { return { refused: 'not_found' }; }
@@ -100,8 +103,15 @@ async function unlink(t, { identity, sessionHash }) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     if (e.code === 'P0001' && e.message === 'not_found') return { refused: 'not_found' };
     if (e.code === 'P0001' && e.message === 'last_method') return { refused: 'last' };
+    if (e.code === 'P0001' && e.message === 'not_senior') return { refused: 'senior' };
     throw e;
   }
+}
+
+// PR 15's review (F6): true the first time a traveller's sealed confirmation (by its nonce's SHA-256) is used.
+async function regionConfirmUse(t, tokenHash) {
+  const [r] = await t`select app.region_confirm_use(${hex('tokenHash', tokenHash)}) as ok`;
+  return r.ok === true;
 }
 
 // Whether a sign-in method already belongs to an account. Ask only after the provider (or an emailed link) has
@@ -167,4 +177,4 @@ async function deleteAccount(t) {
   }
 }
 
-module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

@@ -250,7 +250,8 @@ const stamp = (env, ageMs = 5000) => c.seal(c.subkey(env.cfg.sessionKey, 'form t
 // The full GitHub or X round trip, as a browser would do it.
 async function oauth(env, provider, account, { browser = jar(), query = '', ip } = {}) {
   const r1 = browser.take(res());
-  await env.flow.start(req('GET', '/auth/' + provider + '/start' + query, { cookie: browser.header(), ip }), r1, provider);
+  // A link starts only from our own pages (PR 15's review, F5), as the /account button does.
+  await env.flow.start(req('GET', '/auth/' + provider + '/start' + query, { cookie: browser.header(), ip, site: /link=1/.test(query) ? 'same-origin' : undefined }), r1, provider);
   browser.take(r1);
   if (r1.statusCode !== 302) return { browser, r: r1 };
   const state = new URL(r1.getHeader('Location')).searchParams.get('state');
@@ -351,7 +352,7 @@ test('linking: only while signed in, never by matching email, and never onto som
   // B tries to link A's GitHub account to B: refused.
   const b = await oauth(env, 'github', '4003');
   const steal = await oauth(env, 'github', '4001', { browser: b.browser, query: '?link=1' });
-  assert.strictEqual(steal.r.getHeader('Location'), '/join?error=taken');
+  assert.strictEqual(steal.r.getHeader('Location'), '/account?error=taken_method', 'a failed link returns to the account page (PR 15)');
   // Linking without being signed in is refused before going to the provider.
   const anon = await oauth(env, 'x', '4002', { query: '?link=1' });
   assert.strictEqual(anon.r.getHeader('Location'), '/join?error=signin');
@@ -650,7 +651,7 @@ test('PR 15: a link completes only for the session that started it, not another 
   const a = await oauth(env, 'github', '9521');
   const id = (await me(env, a.browser)).member_id;
   const r1 = res();
-  await env.flow.start(req('GET', '/auth/x/start?link=1', { cookie: a.browser.header() }), r1, 'x');
+  await env.flow.start(req('GET', '/auth/x/start?link=1', { cookie: a.browser.header(), site: 'same-origin' }), r1, 'x');
   a.browser.take(r1);
   const state = new URL(r1.getHeader('Location')).searchParams.get('state');
   const second = await oauth(env, 'github', '9521');
@@ -659,7 +660,7 @@ test('PR 15: a link completes only for the session that started it, not another 
   mixed.set('__Host-dog_oauth_x', a.browser.get('__Host-dog_oauth_x'));
   const r2 = res();
   await env.flow.callback(req('GET', '/auth/x/callback?code=' + encodeURIComponent(state + '|9522') + '&state=' + state, { cookie: mixed.header() }), r2, 'x');
-  assert.strictEqual(r2.getHeader('Location'), '/join?error=signin');
+  assert.strictEqual(r2.getHeader('Location'), '/account?error=link', 'refused, back on the account page');
   assert.strictEqual(await countIds(id), 1);
 });
 
@@ -727,4 +728,128 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   // Unlinked, that X account is a stranger again: signing in with it makes a new account, not this one.
   const back = await oauth(env, 'x', '9542');
   assert.notStrictEqual((await me(env, back.browser)).member_id, id);
+});
+
+// ---- PR 15, after its independent review (F1, F2, F4, F5, F6) ----------------------------------------------------
+const twoBrowsers = (b) => { const x = jar(); x.set(SESSION, b.get(SESSION)); return x; };
+
+test('PR 15 review F1: seniority. A session may unlink only methods linked after the one it signed in with, so an intruder who linked their own method can\'t evict the owner, and the owner can always remove the intruder', async () => {
+  const env = setup({ accounts: { 'github:9601': { accountId: '9601', level: 1, recheckAfter: null }, 'x:9602': { accountId: '9602', level: 1, recheckAfter: null },
+    'x:9603': { accountId: '9603', level: 1, recheckAfter: null } } });
+  const owner = await oauth(env, 'github', '9601');
+  const id = (await me(env, owner.browser)).member_id;
+  const shared = twoBrowsers(owner.browser); // a cookie copied within its fresh 10 minutes: owner and intruder share it
+  assert.strictEqual((await oauth(env, 'x', '9602', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/');
+  const [row] = await q(`select i.provider from app.sessions s join app.identities i on i.id = s.identity_id where s.token_hash = '${hashOf(owner.browser)}'`);
+  assert.strictEqual(row.provider, 'github', 'each session records the method it signed in with; a link doesn\'t change it');
+  const intruder = await oauth(env, 'x', '9602');
+  assert.strictEqual((await me(env, intruder.browser)).member_id, id);
+  const page = res();
+  await env.flow.account(req('GET', '/auth/account', { cookie: intruder.browser.header() }), page);
+  const ids = Object.fromEntries(JSON.parse(page.body).sign_ins.map((s) => [s.provider, s.id]));
+  const unlink = async (b, identity) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: b.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
+  assert.strictEqual(await unlink(intruder.browser, ids.github), '/account?error=senior', 'the later method can\'t remove the older one');
+  assert.strictEqual(await unlink(shared, ids.github), '/account?error=senior', 'nor can the shared session remove the method it signed in with');
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${ids.github}::uuid, ${hashOf(intruder.browser)})`), /not_senior/);
+  assert.strictEqual(await countIds(id), 2);
+  assert.strictEqual((await me(env, owner.browser)).signed_in, true, 'the owner was not signed out');
+  // The owner, signed in with the older method, removes the intruder's: the intruder's session ends.
+  const back = await oauth(env, 'github', '9601');
+  assert.strictEqual(await unlink(back.browser, ids.x), '/account?saved=unlinked');
+  assert.deepStrictEqual(await me(env, intruder.browser), { signed_in: false });
+  assert.strictEqual(await countIds(id), 1);
+  const again = await oauth(env, 'x', '9602');
+  assert.notStrictEqual((await me(env, again.browser)).member_id, id, 'the intruder\'s X no longer reaches the account');
+  // A session with no recorded method (made before this migration) can't unlink anything until it signs in again.
+  const third = await oauth(env, 'github', '9601');
+  assert.strictEqual((await oauth(env, 'x', '9603', { browser: third.browser, query: '?link=1' })).r.getHeader('Location'), '/');
+  await q(`update app.sessions set identity_id = null where token_hash = '${hashOf(third.browser)}'`);
+  const p2 = res();
+  await env.flow.account(req('GET', '/auth/account', { cookie: third.browser.header() }), p2);
+  const later = JSON.parse(p2.body).sign_ins.find((s) => s.provider === 'x');
+  assert.strictEqual(await unlink(third.browser, later.id), '/account?error=senior');
+  assert.strictEqual(await countIds(id), 2);
+});
+
+test('PR 15 review F2: the member lock comes before the session check, so a link can\'t complete from a session another link just ended', async () => {
+  const env = setup({ accounts: { 'github:9611': { accountId: '9611', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', '9611');
+  const b = await oauth(env, 'github', '9611');
+  const id = (await me(env, a.browser)).member_id;
+  const ctx = { actor: 'member', memberId: id };
+  const fp = () => c.sha256hex('race' + Math.random());
+  const call = (t, h) => t`select * from app.identity_link('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint, null::timestamptz, ${h}, null)`;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const t1 = db.tx(web, ctx, async (t) => { const r = await call(t, hashOf(a.browser)); await gate; return r; });
+  await new Promise((r) => setTimeout(r, 300));
+  const t2 = db.tx(web, ctx, (t) => call(t, hashOf(b.browser)));
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  const [r1, r2] = await Promise.allSettled([t1, t2]);
+  assert.strictEqual(r1.status, 'fulfilled');
+  assert.strictEqual(r2.status, 'rejected');
+  assert.match(r2.reason.message, /fresh_sign_in/, 'the second link finds its session gone');
+  assert.strictEqual(await countIds(id), 2);
+  assert.deepStrictEqual((await q(`select token_hash from app.sessions where member_id = '${id}'`)).map((s) => s.token_hash), [hashOf(a.browser)]);
+});
+
+test('PR 15 review F4: two members linking the same method at the same moment: the second is refused as taken, not an error', async () => {
+  const env = setup({ accounts: { 'github:9621': { accountId: '9621', level: 1, recheckAfter: null }, 'github:9622': { accountId: '9622', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', '9621');
+  const b = await oauth(env, 'github', '9622');
+  const ida = (await me(env, a.browser)).member_id;
+  const idb = (await me(env, b.browser)).member_id;
+  const same = c.sha256hex('same-x-' + Math.random());
+  const args = (br) => ({ provider: 'x', fingerprints: [same], keyVersion: 1, level: 1, sessionHash: hashOf(br) });
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const t1 = db.tx(web, { actor: 'member', memberId: ida }, async (t) => { const r = await store.link(t, args(a.browser)); await gate; return r; });
+  await new Promise((r) => setTimeout(r, 300));
+  const t2 = db.tx(web, { actor: 'member', memberId: idb }, (t) => store.link(t, args(b.browser)));
+  await new Promise((r) => setTimeout(r, 300));
+  release();
+  const [r1, r2] = await Promise.allSettled([t1, t2]);
+  assert.strictEqual(r1.status, 'fulfilled');
+  assert.strictEqual(r2.status, 'fulfilled', r2.reason && r2.reason.message);
+  assert.deepStrictEqual(r2.value, { refused: 'taken' });
+});
+
+test('PR 15 review F5: a link starts only from our own pages (Sec-Fetch-Site same-origin, and a same-origin Origin or Referer where sent)', async () => {
+  const env = setup({ accounts: { 'github:9631': { accountId: '9631', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', '9631');
+  const start = async (headers) => { const r = res(); const rq = req('GET', '/auth/x/start?link=1', { cookie: a.browser.header() }); Object.assign(rq.headers, headers); await env.flow.start(rq, r, 'x'); return r; };
+  for (const h of [{}, { 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'same-site' }, { 'sec-fetch-site': 'none' },
+    { 'sec-fetch-site': 'same-origin', origin: 'https://evil.example' }, { 'sec-fetch-site': 'same-origin', referer: 'https://evil.example/x' },
+    { 'sec-fetch-site': 'same-origin', referer: 'https://dayonegreat.com.evil.example/account' }]) {
+    const r = await start(h);
+    assert.strictEqual(r.getHeader('Location'), '/account?error=link', JSON.stringify(h));
+    assert.ok(![].concat(r.getHeader('Set-Cookie') || []).some((x) => x.startsWith('__Host-dog_oauth_')), 'no sign-in state: ' + JSON.stringify(h));
+  }
+  const ok = await start({ 'sec-fetch-site': 'same-origin', referer: ORIGIN + '/account' });
+  assert.strictEqual(ok.statusCode, 302);
+  // A plain sign-in (no link) is unchanged: it may start from anywhere, such as a bookmark.
+  const plain = res();
+  await env.flow.start(req('GET', '/auth/github/start'), plain, 'github');
+  assert.strictEqual(plain.statusCode, 302);
+});
+
+test('PR 15 review F6: a traveller\'s sealed confirmation works once; a replayed copy signs nobody in', async () => {
+  const env = setup({ accounts: { 'github:9641': { accountId: '9641', level: 1, recheckAfter: null } } });
+  await oauth(env, 'github', '9641');
+  const fr = (r) => { r.headers['x-vercel-ip-country'] = 'FR'; return r; };
+  const b = jar();
+  const r1 = res();
+  await env.flow.start(fr(req('GET', '/auth/github/start', { cookie: b.header() })), r1, 'github'); b.take(r1);
+  const state = new URL(r1.getHeader('Location')).searchParams.get('state');
+  const r2 = res();
+  await env.flow.callback(fr(req('GET', '/auth/github/callback?code=' + encodeURIComponent(state + '|9641') + '&state=' + state, { cookie: b.header() })), r2, 'github'); b.take(r2);
+  const sealed = b.get('__Host-dog_region');
+  assert.ok(sealed);
+  const press = async () => { const r = res(); await env.flow.regionContinue(fr(req('POST', '/auth/region/continue', { cookie: '__Host-dog_region=' + sealed, origin: ORIGIN, body: {} })), r); return r; };
+  const first = await press();
+  assert.ok([].concat(first.getHeader('Set-Cookie') || []).some((x) => x.startsWith(SESSION + '=') && !/Max-Age=0/.test(x)), 'the first press signs in');
+  const replay = await press();
+  assert.strictEqual(replay.getHeader('Location'), '/join?error=expired');
+  assert.ok(![].concat(replay.getHeader('Set-Cookie') || []).some((x) => x.startsWith(SESSION + '=') && !/Max-Age=0/.test(x)), 'a replay makes no session');
 });

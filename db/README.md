@@ -71,7 +71,7 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 - when it was checked
 - a keyed fingerprint of the account (HMAC-SHA256 under a key kept outside the database)
 
-Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, in the same role (see "Sign-in fixes" below).
+Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, and a traveller's confirmation a third, in the same role (see "Sign-in fixes" below).
 
 ### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
 
@@ -457,4 +457,8 @@ Migration 012. Two go-live-blocking fixes and one small one (RK57 to RK59 in RIS
 
 **The 90-day keep needs a fresh sign-in (RK59).** See "The 90-day check" above.
 
-**Still open (RK60).** A cookie stolen within 10 minutes of its sign-in can still link and unlink. Binding each session to the method it signed in with would close it; that waits for Aaron.
+**Seniority (RK60, after the review).** Each session records the method it signed in with (`sessions.identity_id`, set by `app.sign_in`; a link keeps the session's own method). `app.identity_unlink` removes only a method added after that one (by when each was added), so whoever holds the older method always wins: someone who copies a fresh cookie and links their own method can't remove the owner's, even from that copied session, and the owner, signing in with the older method, can always remove theirs, ending their sessions. A session made before 012 has no recorded method and can unlink nothing until it signs in again. /account says so, and offers an "Add GitHub" or "Add X" button for each provider not yet linked.
+
+**Also from the review.** The member's lock comes before the session check in both functions (F2). Two members linking one method at once: the second is told it is taken (F4). A link starts only from our own pages: `Sec-Fetch-Site: same-origin`, and an Origin or Referer, where sent, must be ours (F5); a failed link returns to /account with a plain message. A traveller's sealed confirmation is used once: its nonce's SHA-256 goes in `app.region_confirms` when Continue is pressed (`app.region_confirm_use`, F6, RK61).
+
+**Still open (RK62).** A fresh session from a method an intruder linked can still delete the account; the proposed fix is to allow deletion only from a session signed in with the member's oldest method.

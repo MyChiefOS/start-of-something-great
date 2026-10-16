@@ -20,6 +20,14 @@
 --   Aaron (is_admin) is unaffected.
 -- 3 (Small). Keeping an agent acting on its own at the 90-day check (reason 'reconfirmed', 011) needed no fresh
 --   sign-in. Keeping it is letting it act without approval for another 90 days, so it needs one now.
+-- After the independent review of PR 15:
+--   F1 (High), seniority: each session records the sign-in method it signed in with (sessions.identity_id), and a
+--     session may unlink only methods linked after that one. Someone who copies a fresh cookie and links their own
+--     method can never remove the owner's older one; the owner, signing in with it, can always remove theirs. No hand
+--     work for Aaron, and no email (notices stay in-app only).
+--   F2: the member's lock is taken before the session is checked, so a link or unlink can't go ahead from a session
+--     that a concurrent one has just ended.
+--   F6 (from PR 12): a traveller's sealed confirmation is single use in the database too (app.region_confirm_use).
 --
 -- How it fits: the two new functions run as dog_signin (the sign-in role, which alone may write identities and
 -- sessions), like app.sign_in. dog_signin gains only what they need: deleting an identity, and leaving the two new
@@ -33,6 +41,29 @@ alter table app.notices add constraint notices_kind_check check (kind = any (arr
   'contained', 'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert',
   'signin_linked', 'signin_unlinked']));
 
+-- ---- Which sign-in method each session signed in with (review F1: seniority) ----
+-- Set by app.sign_in and never changed; a link keeps the session's own method (the one its holder proved). A session
+-- made before this migration has none, and can't unlink anything until it signs in again.
+alter table app.sessions add column identity_id uuid references app.identities (id) on delete set null;
+create index sessions_identity on app.sessions (identity_id);
+grant insert (identity_id) on app.sessions to dog_signin;
+
+-- ---- A traveller's confirmation is used once (review F6) ----
+-- Only a SHA-256 of the random nonce in the sealed cookie, for as long as the cookie could live (10 minutes) plus a
+-- day before it is tidied away. It names nobody.
+create table app.region_confirms (
+  id uuid primary key default app.uuid_v7(),
+  token_hash text not null unique check (char_length(token_hash) = 64 and token_hash ~ '^[0-9a-f]+$'),
+  expires_at timestamptz not null
+);
+alter table app.region_confirms enable row level security;
+alter table app.region_confirms force row level security;
+create policy region_confirms_signin_select on app.region_confirms for select to dog_signin using (true);
+create policy region_confirms_signin_insert on app.region_confirms for insert to dog_signin with check (true);
+create policy region_confirms_signin_delete on app.region_confirms for delete to dog_signin using (true);
+grant select, delete on app.region_confirms to dog_signin;
+grant insert (token_hash, expires_at) on app.region_confirms to dog_signin;
+
 -- ---- What dog_signin may do in addition (inside its functions only) ----
 create policy identities_signin_delete on app.identities for delete to dog_signin using (true);
 grant delete on app.identities to dog_signin;
@@ -45,8 +76,9 @@ grant create on schema app to dog_signin;
 set local role dog_signin;
 
 -- ---- Signing in: never links any more (fix 1) ----
--- Same as 010, except that linking is refused here: it is app.identity_link's job, which makes no session. The
--- signature is unchanged (p_link_member must be null), so the callers and the coverage check's list stay the same.
+-- Same as 010, except that linking is refused here (it is app.identity_link's job, which makes no session), and the
+-- new session records the method it signed in with (review F1). The signature is unchanged (p_link_member must be
+-- null), so the callers and the coverage check's list stay the same.
 -- Raises 'banned', 'disabled' or 'region'.
 create or replace function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint,
                                        p_display_name text, p_session_hash text, p_session_days integer,
@@ -58,6 +90,7 @@ declare
   ident app.identities%rowtype;
   mem app.members%rowtype;
   fresh boolean := false;
+  used uuid;
 begin
   if p_provider is null or not (p_provider = any (array['github', 'x', 'email', 'linkedin']))
      or p_fingerprints is null or cardinality(p_fingerprints) not between 1 and 5
@@ -82,13 +115,14 @@ begin
     update app.identities i set fingerprint = p_fingerprints[1], key_version = p_key_version, level = p_level,
                                 verified_at = now(), recheck_after = p_recheck_after
       where i.id = ident.id;
+    used := ident.id;
   elsif p_region is not null then
     -- Nobody signs up from a declined region, whatever they confirm.
     raise exception 'region' using errcode = 'P0001';
   else
     insert into app.members (display_name, trust_level) values (p_display_name, p_level) returning * into mem;
     insert into app.identities (member_id, provider, fingerprint, key_version, level, recheck_after)
-      values (mem.id, p_provider, p_fingerprints[1], p_key_version, p_level, p_recheck_after);
+      values (mem.id, p_provider, p_fingerprints[1], p_key_version, p_level, p_recheck_after) returning id into used;
     fresh := true;
     insert into app.audit_log (action, subject_kind, subject_id, detail)
       values ('member.joined', 'member', mem.id, jsonb_build_object('provider', p_provider, 'level', p_level));
@@ -109,8 +143,9 @@ begin
     mem.trust_level := app.verified_level(mem.id);
   end if;
 
-  insert into app.sessions (member_id, token_hash, expires_at)
-    values (mem.id, p_session_hash, now() + make_interval(days => p_session_days));
+  -- The session records the method it signed in with (review F1: seniority).
+  insert into app.sessions (member_id, token_hash, expires_at, identity_id)
+    values (mem.id, p_session_hash, now() + make_interval(days => p_session_days), used);
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('member.signed_in', 'member', mem.id, jsonb_build_object('provider', p_provider));
   if p_region is not null then
@@ -171,15 +206,16 @@ begin
      or app.actor_kind() not in ('member', 'admin') or me is null then
     raise exception 'bad sign-in request' using errcode = '22023';
   end if;
+  -- The same lock order as deleting an account (009): the member, then sign-in methods, then the member row. The
+  -- lock comes first (review F2), so a concurrent link or unlink that ends this session is seen below.
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
   -- The member's own session, begun in the last 10 minutes (the database's clock, as for app.fresh). Another
-  -- member's session, an expired one, or an older one counts for nothing.
+  -- member's session, an expired one, an ended one, or an older one counts for nothing.
   perform 1 from app.sessions s where s.token_hash = p_session_hash and s.member_id = me and s.expires_at > now()
-    and s.created_at > now() - interval '10 minutes';
+    and s.created_at > now() - interval '10 minutes' for update;
   if not found then
     raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again, then link it within 10 minutes.';
   end if;
-  -- The same lock order as deleting an account (009): the member, then sign-in methods, then the member row.
-  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
   select * into ident from app.identities i where i.provider = p_provider and i.fingerprint = any (p_fingerprints)
     order by i.created_at limit 1 for update;
   if found and ident.member_id <> me then
@@ -233,9 +269,11 @@ $$;
 
 -- ---- Unlinking a sign-in method (fix 1) ----
 -- The same rules as linking: the member's own session, begun in the last 10 minutes. Never the last method, so
--- nobody locks themselves out. Every other session ends (so a session an intruder made with the method being removed
--- goes too), the member is told in-app, and the audit log records it. The level follows the methods that remain.
--- Raises 'fresh_sign_in', 'not_found' (no such method of theirs) or 'last_method'.
+-- nobody locks themselves out. Seniority (review F1): only a method linked after the one this session signed in with
+-- (by when each was added), so whoever holds the older method always wins. Every other session ends (so a session an
+-- intruder made with the method being removed goes too), the member is told in-app, and the audit log records it. The
+-- level follows the methods that remain.
+-- Raises 'fresh_sign_in', 'not_found' (no such method of theirs), 'last_method' or 'not_senior'.
 create function app.identity_unlink(p_identity uuid, p_session_hash text)
 returns table (provider text, trust_level smallint, sessions_ended integer)
 language plpgsql security definer set search_path = pg_catalog
@@ -243,7 +281,9 @@ as $$
 declare
   me uuid := app.current_member();
   ident app.identities%rowtype;
+  own app.identities%rowtype;
   mem app.members%rowtype;
+  sid uuid;
   n integer;
   ended integer := 0;
 begin
@@ -251,12 +291,13 @@ begin
      or app.actor_kind() not in ('member', 'admin') or me is null then
     raise exception 'bad sign-in request' using errcode = '22023';
   end if;
-  perform 1 from app.sessions s where s.token_hash = p_session_hash and s.member_id = me and s.expires_at > now()
-    and s.created_at > now() - interval '10 minutes';
+  -- The member's lock first (review F2), then the session, as for linking.
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
+  select s.identity_id into sid from app.sessions s where s.token_hash = p_session_hash and s.member_id = me and s.expires_at > now()
+    and s.created_at > now() - interval '10 minutes' for update;
   if not found then
     raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again, then unlink it within 10 minutes.';
   end if;
-  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
   perform 1 from app.identities i where i.member_id = me for update;
   select * into mem from app.members m where m.id = me and m.status = 'active' for update;
   if not found then
@@ -270,10 +311,18 @@ begin
   if n <= 1 then
     raise exception 'last_method' using errcode = 'P0001', hint = 'This is the only way you sign in; link another first.';
   end if;
+  -- Seniority: the method this session signed in with must have been added before the one being removed. A session
+  -- with no recorded method (or whose method is gone) removes nothing until its holder signs in again.
+  select * into own from app.identities i where i.id = sid and i.member_id = me;
+  if not found or (ident.created_at, ident.id) <= (own.created_at, own.id) then
+    raise exception 'not_senior' using errcode = 'P0001',
+      hint = 'Only a method added after the one you signed in with can be removed here. Sign in with your oldest method to remove this one.';
+  end if;
 
-  delete from app.identities i where i.id = ident.id;
+  -- Other sessions first, so no session ever points at the method being removed.
   delete from app.sessions s where s.member_id = me and s.token_hash <> p_session_hash;
   get diagnostics ended = row_count;
+  delete from app.identities i where i.id = ident.id;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('member.identity_unlinked', 'member', me, jsonb_build_object('provider', ident.provider, 'sessions_ended', ended));
   perform app.notify(me, 'signin_unlinked', 'A sign-in method was removed',
@@ -291,11 +340,35 @@ begin
 end
 $$;
 
+-- ---- A traveller's confirmation is used once (review F6) ----
+-- True the first time a sealed confirmation's nonce (its SHA-256) is used, false for a replay. Kept 10 minutes, the
+-- cookie's own life, and tidied a day after.
+create function app.region_confirm_use(p_token_hash text)
+returns boolean
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+  if random() < 0.05 then
+    delete from app.region_confirms x where x.expires_at < now() - interval '1 day';
+  end if;
+  insert into app.region_confirms (token_hash, expires_at) values (p_token_hash, now() + interval '10 minutes');
+  return true;
+exception when unique_violation then
+  return false;
+end
+$$;
+
 -- Only the site's role may call them; set before handing them to dog_signin, as 002 and 010 do.
-revoke execute on function app.identity_link(text, text[], smallint, smallint, timestamptz, text, text), app.identity_unlink(uuid, text) from public;
-grant execute on function app.identity_link(text, text[], smallint, smallint, timestamptz, text, text), app.identity_unlink(uuid, text) to dog_app;
+revoke execute on function app.identity_link(text, text[], smallint, smallint, timestamptz, text, text), app.identity_unlink(uuid, text),
+  app.region_confirm_use(text) from public;
+grant execute on function app.identity_link(text, text[], smallint, smallint, timestamptz, text, text), app.identity_unlink(uuid, text),
+  app.region_confirm_use(text) to dog_app;
 alter function app.identity_link(text, text[], smallint, smallint, timestamptz, text, text) owner to dog_signin;
 alter function app.identity_unlink(uuid, text) owner to dog_signin;
+alter function app.region_confirm_use(text) owner to dog_signin;
 revoke create on schema app from dog_signin;
 
 -- ---- The 90-day check needs a fresh sign-in (fix 3) ----

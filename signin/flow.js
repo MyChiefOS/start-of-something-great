@@ -19,7 +19,9 @@
 //   PR 15: linking another sign-in method needs a fresh session (begun in the last 10 minutes, by the database clock)
 //   to start, completes only for that same session, makes no new session (so a link can never make anyone fresh),
 //   ends every other session of the member and tells them in-app. A method can be unlinked from /account the same way,
-//   never the last one.
+//   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
+//   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
+//   and a traveller's sealed confirmation is used once.
 'use strict';
 
 const c = require('./crypto');
@@ -104,7 +106,8 @@ function make(deps) {
       return decline(res, country);
     }
     if (!regionKey) return h.redirect(res, '/join?error=unavailable');
-    h.addCookie(res, h.cookie(REGION, c.seal(regionKey, { a: args, c: country, x: extra, e: Date.now() + REGION_MINUTES * 60000 }), { maxAge: REGION_MINUTES * 60 }));
+    // n: a random nonce, recorded as used when Continue is pressed, so a copy of this cookie works once (review F6).
+    h.addCookie(res, h.cookie(REGION, c.seal(regionKey, { a: args, c: country, x: extra, n: c.token(32), e: Date.now() + REGION_MINUTES * 60000 }), { maxAge: REGION_MINUTES * 60 }));
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -153,6 +156,18 @@ function make(deps) {
   const REFUSED = { banned: '/join?error=unavailable', disabled: '/join?error=disabled', taken: '/join?error=taken' };
   // Linking or unlinking from a session that didn't begin in the last 10 minutes (PR 15).
   const FRESH_METHOD = '/account?error=fresh_method';
+  // A link that didn't go through returns to the account page (the member is still signed in), never /join.
+  const LINK_FAILED = '/account?error=link';
+  const LINK_REFUSED = { taken: '/account?error=taken_method' };
+
+  // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
+  // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
+  function fromOurPages(req) {
+    if (req.headers['sec-fetch-site'] !== 'same-origin') return false;
+    if (req.headers.origin !== undefined && req.headers.origin !== ORIGIN) return false;
+    const ref = req.headers.referer;
+    return ref === undefined || ref === ORIGIN || String(ref).startsWith(ORIGIN + '/');
+  }
 
   // Whether this request still carries the very session that started a link (PR 15: not merely the same member).
   function sameSession(req, me, memberId, sessionHashSealed) {
@@ -169,7 +184,7 @@ function make(deps) {
       fingerprints: args.fingerprints, keyVersion: args.keyVersion, level: args.level, recheckAfter: args.recheckAfter || null,
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
-    if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
+    if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
     if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
     return h.redirect(res, ret || '/');
@@ -192,6 +207,7 @@ function make(deps) {
       if (url.searchParams.get('link') === '1') {
         const me = await current(req);
         if (!me) return h.redirect(res, '/join?error=signin');
+        if (!fromOurPages(req)) return h.redirect(res, LINK_FAILED);
         if (me.fresh !== true) return h.redirect(res, FRESH_METHOD);
         link = { m: me.memberId, k: sessionHash(req) };
       }
@@ -211,15 +227,17 @@ function make(deps) {
       // Single use: the state cookie is cleared whatever happens next.
       h.addCookie(res, h.clear(stateCookie(provider)));
       if (!p || !creds) return h.redirect(res, '/join?error=unavailable');
-      if (url.searchParams.has('error')) return h.redirect(res, '/join?error=cancelled');
+      // A link that fails at any step returns to /account (the member is still signed in there).
+      const linking = Boolean(saved && saved.l);
+      if (url.searchParams.has('error')) return h.redirect(res, linking ? LINK_FAILED : '/join?error=cancelled');
       const code = url.searchParams.get('code');
       if (!saved || saved.p !== provider || !(saved.e > Date.now()) || !c.same(url.searchParams.get('state'), saved.s)
           || typeof code !== 'string' || code.length < 1 || code.length > 512) {
-        return h.redirect(res, '/join?error=expired');
+        return h.redirect(res, linking ? LINK_FAILED : '/join?error=expired');
       }
       let who;
       try { who = await p.identify(creds, { code, verifier: saved.v }); } catch { who = null; }
-      if (!who) return h.redirect(res, '/join?error=provider');
+      if (!who) return h.redirect(res, linking ? LINK_FAILED : '/join?error=provider');
 
       const args = { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
         level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter };
@@ -227,7 +245,7 @@ function make(deps) {
       if (saved.l) {
         // Still the same session that started the link (PR 15), not just the same member?
         const me = await current(req);
-        if (!sameSession(req, me, saved.l, saved.k)) return h.redirect(res, '/join?error=signin');
+        if (!sameSession(req, me, saved.l, saved.k)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
         if (country) return regional(res, country, { ...args, linkMember: saved.l, linkSession: saved.k }, { r: saved.r || null });
         return completeLink(req, res, me, args, saved.r);
       }
@@ -334,10 +352,12 @@ function make(deps) {
       const p = regionKey ? c.open(regionKey, h.cookies(req)[REGION]) : null;
       h.addCookie(res, h.clear(REGION));
       if (!p || !(p.e > Date.now()) || !p.a || !region.countryName(p.c)) return h.redirect(res, '/join?error=expired');
+      // Used once, in the database too (review F6): a replayed copy of the cookie signs nobody in.
+      if (!isToken(p.n) || !(await run(ANON, (t) => store.regionConfirmUse(t, c.sha256hex(p.n))))) return h.redirect(res, '/join?error=expired');
       if (p.a.linkMember) {
         // A link waiting for the traveller's confirmation (PR 15): the same session that started it, as at the callback.
         const me = await current(req);
-        if (!sameSession(req, me, p.a.linkMember, p.a.linkSession)) return h.redirect(res, '/join?error=signin');
+        if (!sameSession(req, me, p.a.linkMember, p.a.linkSession)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
         return completeLink(req, res, me, p.a, (p.x && p.x.r) || null, p.c);
       }
       const out = await finish(res, ANON, { ...p.a, region: p.c });
@@ -435,6 +455,7 @@ function make(deps) {
       const out = await run({ ...session.actorFor(who), fresh: true }, (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
       if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
+      if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
       if (out.refused) return h.redirect(res, '/account?error=unlink');
       return h.redirect(res, '/account?saved=unlinked');
     },
