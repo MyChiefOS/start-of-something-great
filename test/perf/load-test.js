@@ -1,8 +1,10 @@
 // G6 load test: thousands of simulated members and agents use a private copy of the site at once, while the break-in
-// checks (S2, S3) run alongside and must keep passing. It builds a throwaway database on TEST_DATABASE_URL's server,
+// read checks (S2, S3: nobody sees rows that aren't theirs) run alongside and must keep passing. It builds a throwaway database on TEST_DATABASE_URL's server,
 // drives the real request handlers (no network in between), and prints the timings and the result.
 // Usage: TEST_DATABASE_URL=postgres://... node test/perf/load-test.js [members] [agents] [seconds] [concurrency]
 // This measures the code and the database, not the network or Vercel; the production check runs on the preview copy.
+// It creates and drops a database and a login role, so it refuses any server but this machine's own unless
+// LOAD_TEST_ANY_HOST=1 is set (and then it requires an encrypted connection). Never point it at the preview or production.
 'use strict';
 
 const crypto = require('crypto');
@@ -33,20 +35,47 @@ function request(method, url, { cookie = '', key, json, query = {} } = {}) {
 const pct = (xs, p) => { if (!xs.length) return 0; const s = xs.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const pick = (xs) => xs[Math.floor(Math.random() * xs.length)];
 
-async function main() {
+function serverHost() {
   if (!SERVER) throw new Error('set TEST_DATABASE_URL');
+  const host = new URL(SERVER).hostname;
+  const local = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host);
+  if (!local && process.env.LOAD_TEST_ANY_HOST !== '1') throw new Error('the load test only runs against this machine (localhost); ' + host + ' refused');
+  return { local, ssl: local ? false : 'require' };
+}
+
+async function main() {
+  const { local, ssl } = serverHost();
   const NAME = 'dog_load_' + crypto.randomBytes(4).toString('hex');
   const WEB = NAME + '_web';
   const PW = crypto.randomBytes(18).toString('base64url');
   const at = (d, user, pass) => { const u = new URL(SERVER); u.pathname = '/' + d; if (user) { u.username = user; u.password = pass; } return u.toString(); };
-  const server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
+  const server = postgres(SERVER, { max: 1, ssl, onnotice: () => {} });
+  // Leftovers from an earlier run that was killed (only on this machine's own server, where nothing else lives).
+  if (local) {
+    for (const { datname } of await server`select datname from pg_database where datname like 'dog\\_load\\_%'`) {
+      if (/^dog_load_[0-9a-f]{8}$/.test(datname)) await server.unsafe(`drop database if exists ${datname} with (force)`);
+    }
+    for (const { rolname } of await server`select rolname from pg_roles where rolname like 'dog\\_load\\_%'`) {
+      if (/^dog_load_[0-9a-f]{8}_web$/.test(rolname)) await server.unsafe(`drop role if exists ${rolname}`);
+    }
+  }
+  let su, web, cleaned = false;
+  // Each step runs on its own, so one failing doesn't skip the rest; also run if the process is stopped.
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    for (const step of [() => web && web.end({ timeout: 5 }), () => su && su.end({ timeout: 5 }),
+      () => server.unsafe(`drop database if exists ${NAME} with (force)`), () => server.unsafe(`drop role if exists ${WEB}`), () => server.end({ timeout: 5 })]) {
+      try { await step(); } catch (e) { console.error('cleanup: ' + e.message); }
+    }
+  };
+  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { cleanup().finally(() => process.exit(130)); });
   await server.unsafe('create database ' + NAME);
-  const su = postgres(at(NAME), { max: 4, ssl: false, onnotice: () => {} });
-  let web;
+  su = postgres(at(NAME), { max: 4, ssl, onnotice: () => {} });
   try {
     await migrate(su);
     await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
-    web = db.connect(at(NAME, WEB, PW), { ssl: false, max: 20 });
+    web = db.connect(at(NAME, WEB, PW), local ? { ssl: false, max: 20 } : { max: 20 });
     const run = (ctx, fn) => db.tx(web, ctx, fn);
     const feed = require('../../api/feed.js');
     const agentsApi = require('../../api/agents.js');
@@ -179,11 +208,7 @@ async function main() {
     for (const v of violations.slice(0, 10)) console.log('  ' + v);
     process.exitCode = violations.length || Object.keys(errors).length ? 1 : 0;
   } finally {
-    if (web) await web.end({ timeout: 5 });
-    await su.end({ timeout: 5 });
-    await server.unsafe(`drop database if exists ${NAME} with (force)`);
-    await server.unsafe(`drop role if exists ${WEB}`);
-    await server.end({ timeout: 5 });
+    await cleanup();
   }
 }
 

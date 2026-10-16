@@ -39,7 +39,12 @@ function assets(page) {
     found.add(p);
     if (p.endsWith('.css')) {
       // A browser fetches a font only if the page uses it: the italic face only where something is set in italics.
-      const italic = /<em\b|<i\b|<cite\b|<blockquote\b|class="[^"]*\b(signoff|note)\b/.test(html);
+      // Scripts the page loads count too, since they can add italic text (review.js adds notes). This leans high: a
+      // script that merely mentions a note counts, so a page may be weighed with a font it doesn't load.
+      const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => local(m[1])).filter((f) => f && f.endsWith('.js'))
+        .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+      const italic = /<em\b|<i\b|<cite\b|<blockquote\b|class="[^"]*\b(signoff|note)\b/.test(html) ||
+        /['"`](em|i|cite|blockquote)['"`]|['"`][^'"`]*\b(signoff|note)\b[^'"`]*['"`]/.test(scripts);
       for (const m of fs.readFileSync(p, 'utf8').matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
         const f = local(m[1]);
         if (f && (italic || !/italic/.test(f))) found.add(f);
