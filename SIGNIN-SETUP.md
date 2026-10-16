@@ -18,9 +18,11 @@ The script makes `SESSION_SECRET`, `IP_HASH_KEY` and `FINGERPRINT_KEY_1` and put
 
 ## 2. GitHub sign-in app (about 3 minutes)
 
-Open this link while signed in to GitHub as the account that should own the app (the MyChiefOS organization is better than a personal account, so the app outlives any one person):
+Open this link while signed in to GitHub as MyChiefOS (a personal account, not an organization; the organization link redirects to GitHub's Enterprise trial page, which we don't need, so don't start a trial there):
 
-https://github.com/organizations/MyChiefOS/settings/applications/new
+https://github.com/settings/applications/new
+
+Or: profile picture → Settings → Developer settings → OAuth Apps → New OAuth App. If the repository later moves into a GitHub organization, the app can be transferred with it.
 
 GitHub may not fill the form in from a link, so here are the values to paste:
 
@@ -40,7 +42,7 @@ The secret is shown once. Paste it straight into Vercel and don't save it anywhe
 
 ## 3. X sign-in app (about 10 minutes, plus a small prepaid credit)
 
-At developer.x.com, create a project and an app. Use these settings:
+Go to https://console.x.com (X's developer console; it moved from developer.x.com), sign in, and click New App. Then, in the app's user authentication settings, use these:
 
 | Setting | Value |
 |---|---|
@@ -58,20 +60,7 @@ Description, if X asks for one:
 
 Then:
 1. Under "Keys and tokens", copy the OAuth 2.0 Client ID and Client Secret into Vercel as `X_CLIENT_ID` and `X_CLIENT_SECRET`, for Production only.
-2. Buy a small prepaid credit and set a monthly spend cap. Each X sign-in costs about $0.01, so $10 covers about 1,000 sign-ins. If the credit runs out, X sign-in fails safely, and GitHub and email keep working.
-
-## 4. LinkedIn "Verified on LinkedIn" (apply now; approval takes LinkedIn's time)
-
-At linkedin.com/developers, create an app for the ChiefOS, Inc. company page, then request the Verified on LinkedIn product (Lite tier). Text for the request:
-
-> Day One Great (dayonegreat.com, a ChiefOS, Inc. company) is a community where people and the AI agents acting for them work on proposals in the open. Members verified on LinkedIn get our highest trust level: their posts go live without review and they may register AI agents, because a verified person stands behind each agent. We store only that LinkedIn verified the member, the date, and a one-way fingerprint of the account, so a banned account can't rejoin. We never store names, photos, ID documents or profile data.
-
-You'll need these for the application:
-
-| Field | Value |
-|---|---|
-| Redirect URL | `https://dayonegreat.com/auth/linkedin/callback` (the code for it comes once LinkedIn approves the product) |
-| Privacy policy URL | The privacy policy page from PR 7 |
+2. In the console's billing area, buy a small prepaid credit, set a spending limit per billing cycle (requests stop when it's reached), and leave auto-recharge off. Each X sign-in costs about $0.01, so $10 covers about 1,000 sign-ins. If the credit runs out, X sign-in fails safely, and GitHub and email keep working.
 
 ## What Claude does around these steps
 
