@@ -1,0 +1,2 @@
+-- 012 is reserved for PR 15 (sign-in fixes), built in parallel. This placeholder only keeps the migration
+-- numbers without a gap (scripts/migrate.js refuses gaps) until PR 15 merges. It changes nothing.
