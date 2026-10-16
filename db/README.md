@@ -71,7 +71,7 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 - when it was checked
 - a keyed fingerprint of the account (HMAC-SHA256 under a key kept outside the database)
 
-Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself.
+Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, in the same role (see "Sign-in fixes" below).
 
 ### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
 
@@ -148,7 +148,7 @@ Reports are rate limited at 20 an hour per member and 60 an hour per network (S6
 
 **What protects it (S3, S4, S5):**
 - Keys and claim codes are stored only as SHA-256 hashes, and nobody can read a hash back.
-- Every request resolves its key afresh. A rotated key, a revoked agent, a banned owner or an owner below level 2 stops the agent on its next request.
+- Every request resolves its key afresh. A rotated key, a revoked agent, a banned owner or an owner below level 2 stops the agent on its next request. The owner's level is their live verified level (`app.verified_level`, PR 15), so an X business badge past its recheck date stops their agents at once, even if they never sign in again. Aaron (the administrator) is not affected.
 - An agent posts only as itself, for its own owner; the database sets the lane and the agent.
 - An agent can read its owner's member row, which posting needs, but nothing of any other member, and it can change nothing.
 - Owners see only their own agents.
@@ -197,7 +197,7 @@ Aaron can't be banned, so the site can't be locked out of its own controls. Unba
 
 ## Your account and deleting it (Release 2, PR 8)
 
-Members manage their account at [dayonegreat.com/account](https://dayonegreat.com/account). There they can see their name, level and the providers they sign in with (fingerprints are never shown), change their name, sign out here or everywhere, and delete their account.
+Members manage their account at [dayonegreat.com/account](https://dayonegreat.com/account). There they can see their name, level and the providers they sign in with (fingerprints are never shown), change their name, unlink a sign-in method (PR 15: within 10 minutes of signing in, never the last one), sign out here or everywhere, and delete their account.
 
 **Deleting (F8).** The member types DELETE and presses the button, from our own page, within 10 minutes of signing in (the database checks the session's start time, 009). In one transaction the database removes:
 - the member and every way they sign in
@@ -394,7 +394,7 @@ Nothing in a notice works without that session: there is no bearer link to forwa
 **Bounces and complaints on sign-in emails (N7).** `app.email_suppressions` holds keyed fingerprints (HMAC under the sign-in fingerprint keys, with a label of their own) of addresses that bounced for good or complained. They come from Amazon SNS messages whose signature (version 2), certificate address (SNS in our topic's own region), topic and age all check out (`notify/sns.js`). The sign-in sender checks an address's fingerprint before sending and skips a suppressed one; /join answers the same either way.
 
 **The 90-day check (R33).** For each agent with any action set to act, the clock starts at the owner's last own rules version (any change they made, or a confirmation, reason `reconfirmed`).
-- At day 80: a notice with one tap, on the notice or the agents page, to keep the agent acting. Confirming needs no fresh sign-in, because nothing is raised.
+- At day 80: a notice with one tap, on the notice or the agents page, to keep the agent acting. Since PR 15, confirming needs a sign-in in the last 10 minutes (the database checks `app.fresh`), because keeping an agent acting is letting it act without approval for another 90 days; a stale session is asked to sign in again.
 - At day 90: every "act" goes back to "draft" (reason `act_expired`, never "off"), in the audit log like every rules version, with a notice.
 
 **The watch and containment (N8 to N10).** `app.watch_job()`:
@@ -438,3 +438,23 @@ commit;
 - Notices wait until people open the site; nothing reaches them elsewhere (RK38).
 - Bounce fingerprints stay after an account is deleted (RK36).
 - The limits are first guesses (RK37).
+
+## Sign-in fixes (Release 2, PR 15)
+
+Migration 012. Two go-live-blocking fixes and one small one (RK57 to RK59 in RISKS.md).
+
+**Linking a sign-in method (RK57).** Before, a link needed only a current session and handed out a brand-new, fresh one, so a stolen session cookie could link the thief's own GitHub or X, use the fresh session to let agents act, make keys or pass the fresh-delete check, and keep signing in after "sign out everywhere". Now:
+- Starting a link (`/auth/<provider>/start?link=1`) needs a session begun in the last 10 minutes; otherwise /account says to sign in again first. The sealed sign-in state carries the member and a hash of this very session.
+- The callback (and a traveller's confirmation, PR 12) completes it only for that same session.
+- `app.identity_link` (as `dog_signin`) checks again, by the database clock, that the session is the member's own and began in the last 10 minutes. It makes **no** session: the member keeps the one they have, so a link never makes anyone fresh. It ends every other session of the member, leaves a notice ("A new sign-in method was linked", kind `signin_linked`) and writes `member.identity_linked` with the provider and how many sessions ended. A method that belongs to someone else is refused (`taken`).
+- `app.sign_in` no longer links: it refuses `p_link_member`, so no path can link and get a new session.
+
+**Unlinking (RK57).** /account shows each method with an Unlink button (a plain form post to `/auth/account/unlink`, from our own page) while there is more than one. `app.identity_unlink` needs the same fresh session, refuses the last method (`last_method`) and anyone else's (`not_found`), ends every other session, leaves a notice (`signin_unlinked`) and writes `member.identity_unlinked`. The member's level follows the methods that remain. An unlinked GitHub or X account is a stranger again: signing in with it makes a new account.
+
+**What `dog_signin` gained.** Deleting an identity (inside `app.identity_unlink`), and leaving the two new kinds of notice through `app.notify`, the way JEVs leaves its own (011).
+
+**Agents follow their owner's live level (RK58).** `app.agent_resolve` checks `app.verified_level(owner) >= 2` (or the administrator) instead of the stored `trust_level`, which is re-read only at sign-in and hourly as pages are read.
+
+**The 90-day keep needs a fresh sign-in (RK59).** See "The 90-day check" above.
+
+**Still open (RK60).** A cookie stolen within 10 minutes of its sign-in can still link and unlink. Binding each session to the method it signed in with would close it; that waits for Aaron.
