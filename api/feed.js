@@ -189,8 +189,11 @@ function shapeQueued(i) {
 // A reviewer's decision (SF5: one tap from the queue). Recorded in the audit log by the database (O3).
 async function decide(req, res, run, who, body) {
   if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can decide on posts.' });
+  // PR 17: every one of Aaron's controls needs a passkey check in the last 5 minutes (D5). One check covers 5 minutes
+  // of decisions, so a run through the queue on a phone is one tap of Face ID or a fingerprint.
+  if (who.stepUp !== true) return reply(res, 403, session.stepUpNeeded(who));
   try {
-    const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
+    const out = await run(session.strongActorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such post.' });
     if (out.refused === 'stale') return reply(res, 409, { error: 'That post has already been decided.' });
     return reply(res, 200, { id: body.review, decision: body.decision, status: out.status });
@@ -277,6 +280,8 @@ const DELETION_DONE = {
 };
 async function control(req, res, run, who, body) {
   if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
+  // PR 17: a passkey check in the last 5 minutes (D5); the database checks again for brakes, bans and deletion reviews.
+  if (who.stepUp !== true) return reply(res, 403, session.stepUpNeeded(who));
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
     + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
@@ -290,23 +295,23 @@ async function control(req, res, run, who, body) {
           || Object.keys(b).some((k) => !['member', 'note', ...controls.LIMITS].includes(k))) {
         return reply(res, 400, { error: usage });
       }
-      const out = await run(session.actorFor(who), (t) => controls.setBrake(t, b));
+      const out = await run(session.strongActorFor(who), (t) => controls.setBrake(t, b));
       if (out.refused) return reply(res, 404, { error: 'No such member.' });
       return reply(res, 201, { brake: out.brake, message: out.brake.member ? 'The brake is on for this owner.' : 'The brake is on for everyone.' });
     }
     if (kind === 'deletion_review') {
-      const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
+      const out = await run(session.strongActorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
       if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
       if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
       return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
     }
     if (kind === 'lift') {
-      const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
+      const ok = await run(session.strongActorFor(who), (t) => controls.lift(t, body.lift));
       return ok ? reply(res, 200, { lifted: body.lift, message: 'The brake is off.' }) : reply(res, 404, { error: 'That brake is already off, or doesn\u2019t exist.' });
     }
     const note = body.note === undefined || body.note === null ? null : body.note;
     if (note !== null && typeof note !== 'string') return reply(res, 400, { error: usage });
-    const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
+    const out = await run({ ...session.strongActorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
     if (out.refused === 'unchanged') {

@@ -22,6 +22,8 @@
 //   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
 //   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
 //   and a traveller's sealed confirmation is used once.
+//   PR 17: linking, unlinking and deleting an account also need a passkey check in the last 5 minutes (D5), on top of
+//   all of the above; a member without a passkey is sent to add one (signin/passkey.js), never to a weaker check.
 'use strict';
 
 const c = require('./crypto');
@@ -159,6 +161,8 @@ function make(deps) {
   // A link that didn't go through returns to the account page (the member is still signed in), never /join.
   const LINK_FAILED = '/account?error=link';
   const LINK_REFUSED = { taken: '/account?error=taken_method' };
+  // PR 17: linking, unlinking and deleting also need a passkey check in the last 5 minutes (D5); the database decides.
+  const STEP_UP = '/account?error=step_up#passkeys';
 
   // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
   // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
@@ -180,10 +184,11 @@ function make(deps) {
   // confirmed (country) gets the resident tag for this session, as after a sign-in.
   async function completeLink(req, res, me, args, ret, country = null) {
     const hash = sessionHash(req);
-    const out = await run({ ...session.actorFor(me), fresh: me.fresh === true }, (t) => store.link(t, { provider: args.provider,
+    const out = await run(session.strongActorFor(me), (t) => store.link(t, { provider: args.provider,
       fingerprints: args.fingerprints, keyVersion: args.keyVersion, level: args.level, recheckAfter: args.recheckAfter || null,
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
+    if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
     if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
@@ -209,6 +214,8 @@ function make(deps) {
         if (!me) return h.redirect(res, '/join?error=signin');
         if (!fromOurPages(req)) return h.redirect(res, LINK_FAILED);
         if (me.fresh !== true) return h.redirect(res, FRESH_METHOD);
+        // PR 17: a passkey check in the last 5 minutes first (checked again, by the database, when the link completes).
+        if (me.stepUp !== true) return h.redirect(res, STEP_UP);
         link = { m: me.memberId, k: sessionHash(req) };
       }
       const state = c.token(32);
@@ -429,14 +436,17 @@ function make(deps) {
       if (who.isAdmin) return h.redirect(res, '/account?error=admin');
       // Signed in within the last few minutes first (RK3), so a stolen session cookie can't even start a review.
       if (who.fresh !== true) return h.redirect(res, '/account?error=fresh');
+      // PR 17: and a passkey check in the last 5 minutes, before JEVs is even asked (the database checks again).
+      if (who.stepUp !== true) return h.redirect(res, STEP_UP);
       // JEVs checks the deletion (PR 12): low risk deletes; medium risk is confirmed by that fresh sign-in; high risk
       // (or a check that couldn't finish) deletes nothing and goes to Aaron as a deletion review (Oct 16, 2026). The
       // member is told their account was flagged; if he hasn't decided in 24 hours it is disabled, never deleted.
-      const d = await run({ ...session.actorFor(who), fresh: true },
+      const d = await run(session.strongActorFor(who),
         (t) => jevs.check(t, { action: 'account.delete', ...jevs.facts(req, config.ipKey) }));
       if (jevs.blocks(d)) return h.redirect(res, '/account?error=' + (d.effect === 'challenge' ? 'fresh' : 'review'));
-      const out = await run({ ...session.actorFor(who), fresh: true }, (t) => store.deleteAccount(t));
+      const out = await run(session.strongActorFor(who), (t) => store.deleteAccount(t));
       if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
+      if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
       if (out.refused === 'under_review') return h.redirect(res, '/account?error=review');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
@@ -451,9 +461,11 @@ function make(deps) {
       const who = await current(req);
       if (!who) return h.redirect(res, '/join?error=signin');
       if (who.fresh !== true) return h.redirect(res, FRESH_METHOD);
+      if (who.stepUp !== true) return h.redirect(res, STEP_UP);
       const body = await h.form(req);
-      const out = await run({ ...session.actorFor(who), fresh: true }, (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
+      const out = await run(session.strongActorFor(who), (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
+      if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
       if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
       if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
       if (out.refused) return h.redirect(res, '/account?error=unlink');
