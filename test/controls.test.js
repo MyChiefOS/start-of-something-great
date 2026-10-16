@@ -115,10 +115,17 @@ async function agentsApi(r) {
   await require('../api/agents.js').handle(r, out, run, CFG);
   return { status: out.statusCode, json: out.body ? JSON.parse(out.body) : null };
 }
-// An owner's new agent, made while signed in; returns its ID and key.
+// Agents start by drafting (PR 7). Tests of other behaviour let an agent act on its own first, as its owner could
+// after a fresh sign-in.
+const letAct = (sql, agentId) => sql.begin(async (t) => {
+  await t`select set_config('app.fresh', '1', true)`;
+  await t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${agentId}, 'act', 'draft', 'draft', 1000, 'owner')`;
+});
+// An owner's new agent, made while signed in and allowed to act on its own; returns its ID and key.
 async function newAgent(owner, name = 'Helper') {
   const r = await agentsApi(req('POST', { route: '', cookie: owner.cookie, origin: ORIGIN, json: { name } }));
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
+  await letAct(su, r.json.agent_id);
   return { id: r.json.agent_id, key: r.json.key };
 }
 const say = (m, body) => feedApi(req('POST', { cookie: m.cookie, origin: ORIGIN, json: { body } }));
@@ -321,7 +328,8 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.strictEqual(again.memberId, owner.id);
   const rotated = await agentsApi(req('POST', { route: 'key', cookie: '__Host-dog_session=' + fresh, origin: ORIGIN, json: { agent: a2.id } }));
   assert.strictEqual(rotated.status, 201, JSON.stringify(rotated.json));
-  assert.strictEqual((await agentSay({ key: rotated.json.key }, 'back after the appeal')).status, 201);
+  // The ban also set the agent back to drafting (PR 7), so its first words after the unban wait for the owner.
+  assert.strictEqual((await agentSay({ key: rotated.json.key }, 'back after the appeal')).status, 202);
   const unbanned = (await audit(owner.id)).filter((r) => r.action === 'member.unban');
   assert.deepStrictEqual((await q(`select note from app.admin_notes where id = '${unbanned[0].detail.note_id}'`)).map((r) => r.note), ['appeal upheld']);
 });
@@ -418,6 +426,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     const agentIds = [];
     for (const n of ['A1', 'A2']) {
       const [a] = await r2(ann.ctx, (t) => t`insert into app.agents (name) values (${n}) returning id`);
+      await letAct(s2, a.id);
       agentIds.push(a.id);
     }
     for (const b of ['Buy now!', 'buy NOW', 'something else']) await r2(ann.ctx, (t) => posts.create(t, { body: b }));

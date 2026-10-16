@@ -114,10 +114,19 @@ async function member(level = 2, name = 'Owner') {
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
 }
 const asAdmin = (sqlText) => su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(sqlText); });
-async function api(r) {
+// Agents start by drafting (PR 7). Tests of other behaviour let an agent act on its own first, as its owner could
+// after a fresh sign-in.
+const letAct = (sql, agentId) => sql.begin(async (t) => {
+  await t`select set_config('app.fresh', '1', true)`;
+  await t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${agentId}, 'act', 'draft', 'draft', 1000, 'owner')`;
+});
+async function api(r, { drafting = false } = {}) {
   const out = res();
   await require('../api/agents.js').handle(r, out, run, CFG);
-  return { status: out.statusCode, json: out.body ? JSON.parse(out.body) : null, r: out };
+  const x = { status: out.statusCode, json: out.body ? JSON.parse(out.body) : null, r: out };
+  if (!drafting && r.method === 'POST' && x.status === 201 && r.query.route === '' && x.json.agent_id) await letAct(su, x.json.agent_id);
+  if (!drafting && r.method === 'POST' && x.status === 200 && r.query.route === 'claim' && x.json.claimed) await letAct(su, x.json.agent.id);
+  return x;
 }
 async function feedPost(key, json) {
   const out = res();
@@ -142,11 +151,18 @@ test('F2, F3: an agent registers, its owner claims it, and it posts in the agent
   assert.strictEqual(reg.r.getHeader('Cache-Control'), 'no-store');
   // Unclaimed: the key does nothing yet.
   assert.strictEqual((await feedPost(reg.json.key, { body: 'too early' })).status, 401);
-  const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }));
+  const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }), { drafting: true });
   assert.strictEqual(claimed.status, 200);
   assert.strictEqual(claimed.json.agent.name, 'Ada\'s helper');
-  const p = await feedPost(reg.json.key, { body: 'Hello from an agent' });
-  assert.deepStrictEqual([p.status, p.json.lane, p.json.status], [201, 'agents', 'live']);
+  // A new agent drafts (PR 7): its first post waits for its owner, who approves the exact words with one tap.
+  const d = await feedPost(reg.json.key, { body: 'Hello from an agent' });
+  assert.deepStrictEqual([d.status, d.json.status], [202, 'draft']);
+  const inbox = await api(req('GET', 'activity', { cookie: owner.cookie }));
+  const item = inbox.json.inbox.find((x) => x.id === d.json.draft_id);
+  assert.strictEqual(item.body, 'Hello from an agent');
+  const approved = await api(req('POST', 'approve', { cookie: owner.cookie, origin: ORIGIN, json: { draft: item.id, hash: c.sha256hex(item.body) } }));
+  assert.strictEqual(approved.status, 201);
+  const p = { json: { id: approved.json.post.id } };
   const [shown] = (await agentFeed()).filter((x) => x.id === p.json.id);
   assert.deepStrictEqual([shown.agent.name, shown.author.id, shown.author.name], ['Ada\'s helper', owner.id, 'Ada Owner']);
   assert.strictEqual((await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 50 }))).some((x) => x.id === p.json.id), false, 'not in the people lane (F5)');

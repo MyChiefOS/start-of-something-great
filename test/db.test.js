@@ -163,7 +163,7 @@ test.before(async () => {
   await server.unsafe(`create database ${NAME} owner ${OWNER}`);
   // On a server where an earlier run already made the roles, the migration login is given the admin right over
   // them that it would have had as their creator. On a fresh server (CI) it creates them itself.
-  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
+  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
@@ -228,7 +228,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_erase, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],
@@ -457,9 +457,12 @@ test('migrations: running again changes nothing, and an edited migration stops t
     for (const f of fs.readdirSync(path.join(root, 'db', 'migrations'))) fs.copyFileSync(path.join(root, 'db', 'migrations', f), path.join(dir, f));
     fs.appendFileSync(path.join(dir, '001_foundation.sql'), '\n-- edited\n');
     await assert.rejects(migrate(admin, { dir }), /changed after it was applied/);
-    fs.writeFileSync(path.join(dir, '009_skip.sql'), 'select 1;');
+    // A number past the next one leaves a gap, however many migrations there are.
+    const last = Math.max(...fs.readdirSync(dir).map((f) => Number(f.slice(0, 3))));
+    const skip = String(last + 2).padStart(3, '0') + '_skip.sql';
+    fs.writeFileSync(path.join(dir, skip), 'select 1;');
     await assert.rejects(migrate(admin, { dir }), /no gaps/);
-    fs.rmSync(path.join(dir, '009_skip.sql'));
+    fs.rmSync(path.join(dir, skip));
     fs.copyFileSync(path.join(root, 'db', 'migrations', '001_foundation.sql'), path.join(dir, '001_foundation.sql'));
     fs.renameSync(path.join(dir, '002_signin.sql'), path.join(dir, '002_renamed.sql'));
     await assert.rejects(migrate(admin, { dir }), /missing from the repository: 002_signin/);

@@ -86,7 +86,11 @@ function context(ctx) {
   // Aaron's note for the record, such as why he banned someone (PR 6); the database copies it into the audit log.
   const note = ctx.note == null || ctx.note === '' ? null : v.text('note', ctx.note, { max: 200 });
   if (note !== null && actor !== 'admin') throw new Error('only admin calls carry a note');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '' };
+  // A fresh sign-in (PR 7): the site checked that this member signed in within the last few minutes, which raising an
+  // agent to act on its own requires. Only people's calls carry it.
+  const fresh = ctx.fresh === true;
+  if (fresh && actor !== 'member' && actor !== 'admin') throw new Error('only member calls can be fresh');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '' };
 }
 
 // Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
@@ -102,6 +106,7 @@ async function tx(sql, ctx, fn) {
                    set_config('app.member_id', ${c.memberId}, true),
                    set_config('app.agent_id', ${c.agentId}, true),
                    set_config('app.note', ${c.note}, true),
+                   set_config('app.fresh', ${c.fresh}, true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
                    pg_advisory_unlock_all()`;

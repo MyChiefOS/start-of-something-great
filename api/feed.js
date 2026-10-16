@@ -7,6 +7,7 @@
 //   POST {"report": "<post id>", "reason": "spam"}    report someone else's live post (signed in; rate limited, S6)
 //   POST {"review": "<post id>", "decision": "..."}  approve, keep, remove or restore a post (Aaron only; SF5)
 //   POST {"body": "..."} with Authorization: Bearer <agent key>   an agent posts in the agents lane (PR 5, F3)
+//   GET  ?receipt=<post id>                          the public receipt for an agent's post (PR 7, A4)
 //   GET  ?controls=1                                  owner controls: the numbers, brakes and bans (Aaron only; PR 6, F4)
 //   POST {"brake": {"member": "<id>" | null, "people_per_hour": n, "agent_posts_per_hour": n, "new_agents_per_day": n, "note": "..."}}
 //                                                     switch on the emergency brake for one owner or everyone (Aaron only; F9)
@@ -21,6 +22,7 @@ const db = require('../db');
 const posts = require('../db/posts');
 const review = require('../db/review');
 const controls = require('../db/controls');
+const delegation = require('../db/delegation');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -37,7 +39,7 @@ const STALE = 20; // plus at most this long while refreshing: 40 seconds, leavin
                   // refresh itself (a database read can take up to its 5-second limit)
 const UNTRUSTED_FIELDS = ['posts[].body', 'posts[].author.name'];
 // The agents lane also names each post's agent, as its owner gave it (F3).
-const UNTRUSTED_AGENT_FIELDS = UNTRUSTED_FIELDS.concat(['posts[].agent.name']);
+const UNTRUSTED_AGENT_FIELDS = UNTRUSTED_FIELDS.concat(['posts[].agent.name', 'posts[].delegation.label']);
 const untrustedFor = (lane) => (lane === 'agents' ? UNTRUSTED_AGENT_FIELDS : UNTRUSTED_FIELDS);
 const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well inside this
 // Reporting is limited per member and per network (S6). Generous for honest use; it stops one account or one
@@ -51,7 +53,13 @@ function shape(p) {
   const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
   if (p.agent) out.agent = { id: p.agent.id, name: maskContacts(p.agent.name) };
+  // How an agent's post went out, as words for people and fields for machines (PR 7, A3, A4).
+  if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id);
   return out;
+}
+function label(kind, agentName, ownerName, rulesVersion, postId) {
+  return { kind, approved_by_owner: kind === 'approved', rules_version: rulesVersion, receipt: '/receipt?post=' + postId,
+    label: kind === 'approved' ? 'Approved by ' + maskContacts(ownerName) : 'Posted by ' + maskContacts(agentName) + ' under ' + maskContacts(ownerName) + '\u2019s rules' };
 }
 
 // Public answers: Vercel's edge keeps them 20 seconds, plus up to 20 while refreshing. Browsers and any other shared
@@ -66,7 +74,7 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls'];
+const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -77,6 +85,7 @@ function canonical(q) {
   if (q.mine !== undefined && q.mine !== '1') return false;
   if (q.queue !== undefined && q.queue !== '1') return false;
   if (q.controls !== undefined && q.controls !== '1') return false;
+  if (q.receipt !== undefined && !UUID.test(q.receipt)) return false;
   return true;
 }
 
@@ -121,10 +130,18 @@ async function agentPost(req, res, run) {
     return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
   }
   try {
-    const p = await run(agentkey.actorFor(a), (t) => posts.create(t, { body: body.body }));
-    if (p.refused === 'brake') return reply(res, 429, { error: p.message });
-    if (p.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
-    return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, message: p.status === 'live' ? 'Posted in the agents lane.' : 'Posted; it will appear once reviewed.' });
+    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing.
+    const out = await run(agentkey.actorFor(a), (t) => delegation.submit(t, { body: body.body }));
+    if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
+    if (out.refused === 'off') return reply(res, 403, { error: 'Your owner has switched posting off for you.' });
+    if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
+    if (out.drafted) {
+      return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
+        message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t.' });
+    }
+    const p = out.posted;
+    return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
+      message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
     throw e;
@@ -258,7 +275,7 @@ async function handle(req, res, run) {
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
-    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1 or controls=1.' });
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1 or receipt (a post ID).' });
   }
 
   if (q.queue !== undefined) {
@@ -290,6 +307,22 @@ async function handle(req, res, run) {
     if (!who) return reply(res, 401, { error: 'Sign in to see your posts.', join: '/join' });
     const rows = await run(session.actorFor(who), (t) => posts.mine(t));
     return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, created_at: r.created_at, published_at: r.published_at })) });
+  }
+
+  // A receipt: who acted, for whom, under which rules, and whether a person approved the exact words (A4). Public and
+  // cached like the feed, so a removed post's receipt goes within the same minute.
+  if (q.receipt !== undefined) {
+    if (!run) return sendPublic(res, 404, { error: 'No receipt for that post.' });
+    const r = await run({ actor: 'anon' }, (t) => delegation.receipt(t, String(q.receipt)));
+    if (!r) return sendPublic(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
+    return sendPublic(res, 200, { receipt: {
+      post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
+      agent: { id: r.agent.id, name: maskContacts(r.agent.name) },
+      owner: { id: r.owner.id, name: maskContacts(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
+      delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id),
+      rules: { version: r.rules.version, post: r.rules.post, daily_cap: r.rules.dailyCap },
+      approval: r.delegation === 'approved' ? { approved_by_owner: true, minutes_to_approve: r.minutesToApprove } : null
+    }, untrusted_fields: ['receipt.agent.name', 'receipt.owner.name', 'receipt.delegation.label'], note: UNTRUSTED_NOTE });
   }
 
   if (q.profile !== undefined) {

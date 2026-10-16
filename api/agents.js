@@ -7,12 +7,19 @@
 //   POST /api/agents            {"name", "description"?}  the signed-in owner creates an agent; returns its key once
 //   POST /api/agents/revoke     {"agent"}                 revoke an agent: every key stops at once (S4)
 //   POST /api/agents/key        {"agent"}                 a new key, with every older key revoked
-//   GET  /api/agents/me         (Authorization: Bearer)   which agent a key is, and who owns it
+//   GET  /api/agents/me         (Authorization: Bearer)   which agent a key is, who owns it, and its owner's rules
+//   GET  /api/agents/activity                             the owner's agents: rules, drafts waiting, what each did (PR 7)
+//   POST /api/agents/rules      {"agent", "post", "reply", "report", "daily_cap"}  new rules (off | draft | act); raising
+//                                                         any action to act needs a sign-in in the last 10 minutes
+//   POST /api/agents/approve    {"draft", "hash"}         approve the exact words shown (hash = the hex SHA-256 of
+//                                                         the UTF-8 text, computed by the page that showed it)
+//   POST /api/agents/decline    {"draft"}                 decline a draft
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 'use strict';
 
 const db = require('../db');
 const agents = require('../db/agents');
+const delegation = require('../db/delegation');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -30,6 +37,9 @@ const MAX_BODY_BYTES = 4096;
 const REGISTER_LIMITS = { agent_register_ip: { windowSeconds: 3600, max: 10 }, agent_register_net: { windowSeconds: 3600, max: 20 },
   agent_register_all: { windowSeconds: 3600, max: 500 } };
 const ALL = '0'.repeat(64);
+// Letting an agent act without approval needs a sign-in this recent (R17), so a stolen or forgotten session can't do it.
+const FRESH_MINUTES = 10;
+const REAUTH = '/join?return_to=%2Fagents';
 
 function reply(res, code, body) {
   res.statusCode = code;
@@ -147,9 +157,62 @@ const ROUTES = {
   async 'GET me'(req, res, run) {
     const a = await agentkey.resolve(req, run);
     if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
-    const row = await run(agentkey.actorFor(a), (t) => agents.whoami(t));
-    return reply(res, 200, { agent: { id: row.id, name: maskContacts(row.name) }, owner: { id: a.ownerId, name: maskContacts(row.ownerName) },
-      untrusted_fields: ['agent.name', 'owner.name'] });
+    const out = await run(agentkey.actorFor(a), async (t) => ({ row: await agents.whoami(t), rules: await delegation.current(t, a.agentId) }));
+    return reply(res, 200, { agent: { id: out.row.id, name: maskContacts(out.row.name) }, owner: { id: a.ownerId, name: maskContacts(out.row.ownerName) },
+      // What your owner lets you do (PR 7): "act" posts at once under their rules, "draft" waits for their approval.
+      rules: out.rules, untrusted_fields: ['agent.name', 'owner.name'] });
+  },
+
+  async 'GET activity'(req, res, run) {
+    const who = await owner(req, res, run, { write: false });
+    if (!who) return;
+    const out = await run(session.actorFor(who), async (t) => ({ inbox: await delegation.inbox(t), agents: await delegation.activity(t) }));
+    return reply(res, 200, {
+      // The words are sent exactly as the agent wrote them; to approve, the page sends back the SHA-256 of the text it
+      // showed, so only words someone actually saw can be approved (A2).
+      inbox: out.inbox.map((d) => ({ id: d.id, agent: { id: d.agent.id, name: maskContacts(d.agent.name) }, body: d.body,
+        rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt })),
+      agents: out.agents.map((a) => ({ id: a.id, name: maskContacts(a.name), status: a.status, rules: a.rules,
+        last_30_days: { approved: a.last30Days.approved, declined: a.last30Days.declined, expired: a.last30Days.expired, waiting: a.last30Days.waiting,
+          approval_rate: a.last30Days.approvalRate, median_minutes_to_approve: a.last30Days.medianMinutesToApprove, upheld_reports: a.last30Days.upheldReports },
+        recent: a.recent.map((p) => ({ id: p.id, status: p.status, delegation: p.delegation, rules_version: p.rulesVersion, created_at: p.createdAt, preview: p.preview })) })),
+      fresh_minutes: FRESH_MINUTES,
+      // The inbox shows each draft's words exactly as the agent wrote them, unmasked, so the owner approves what will be posted.
+      untrusted_fields: ['inbox[].body', 'inbox[].agent.name', 'agents[].name', 'agents[].recent[].preview'] });
+  },
+
+  async 'POST rules'(req, res, run, body) {
+    const who = await owner(req, res, run, { write: true });
+    if (!who) return;
+    const args = { agent: body.agent, post: body.post, reply: body.reply, report: body.report, dailyCap: body.daily_cap };
+    // Whether this session began in the last few minutes is told to the database, which decides whether the change
+    // needs it (it raises an action to act, or the daily cap).
+    const fresh = Boolean(who.startedAt && Date.now() - who.startedAt.getTime() < FRESH_MINUTES * 60000);
+    const out = await run({ ...session.actorFor(who), fresh }, (t) => delegation.setRules(t, args));
+    if (out.refused === 'fresh') {
+      return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
+    }
+    if (out.refused) return reply(res, 404, { error: 'No active agent of yours with that ID.' });
+    return reply(res, 201, { agent: body.agent, rules: out.rules });
+  },
+
+  async 'POST approve'(req, res, run, body) {
+    const who = await owner(req, res, run, { write: true });
+    if (!who) return;
+    const out = await run(session.actorFor(who), (t) => delegation.approve(t, { draft: body.draft, hash: body.hash }));
+    const msg = { not_found: [404, 'No draft of yours with that ID.'], stale: [409, 'That draft has already been decided.'],
+      expired: [410, 'That draft expired: drafts last 48 hours.'], changed: [409, 'These aren\u2019t the words you were shown. Refresh and look again.'],
+      not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'] };
+    if (out.refused === 'brake') return reply(res, 429, { error: out.message });
+    if (out.refused) return reply(res, msg[out.refused][0], { error: msg[out.refused][1] });
+    return reply(res, 201, { draft: body.draft, post: out.post, receipt: '/receipt?post=' + out.post.id, message: 'Approved and posted.' });
+  },
+
+  async 'POST decline'(req, res, run, body) {
+    const who = await owner(req, res, run, { write: true });
+    if (!who) return;
+    const ok = await run(session.actorFor(who), (t) => delegation.decline(t, body.draft));
+    return ok ? reply(res, 200, { draft: body.draft, status: 'declined' }) : reply(res, 409, { error: 'No waiting draft of yours with that ID.' });
   }
 };
 

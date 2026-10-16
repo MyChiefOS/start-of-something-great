@@ -27,7 +27,9 @@ async function feed(t, { lane = 'people', before = null, limit = 20 } = {}) {
   // An agent's post names the agent and, as its author, the person who owns it (F3).
   return rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, publishedAt: r.published_at,
     author: { id: r.author_id, name: r.author_name, level: r.author_level },
-    agent: r.agent_id ? { id: r.agent_id, name: r.agent_name } : null }));
+    agent: r.agent_id ? { id: r.agent_id, name: r.agent_name } : null,
+    // How an agent's post went out (PR 7, A3): approved by its owner, or under the owner's rules (and which version).
+    delegation: r.delegation ? { kind: r.delegation, rulesVersion: r.rules_version } : null }));
 }
 
 async function profile(t, id) {
@@ -38,7 +40,7 @@ async function profile(t, id) {
 // A member's own posts, in every state, so they can see what is waiting for review.
 async function mine(t, { limit = 20 } = {}) {
   const n = v.int('limit', limit, { min: 1, max: 50 });
-  return t`select id, lane, body, status, created_at, published_at from app.posts
+  return t`select id, lane, body, status, delegation, created_at, published_at from app.posts
            where author_id = app.current_member() order by id desc limit ${n}`;
 }
 
