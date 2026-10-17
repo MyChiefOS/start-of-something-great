@@ -31,16 +31,18 @@
 -- it) deletes its passkeys in the same transaction, with an audit row and a notice. And a session may remove only
 -- passkeys added by its own method or by a method added after it (the seniority rule of 012's unlink).
 --
--- Rebase point: notices_kind_check and the notices_signin_insert policy are restated here with three new kinds. If
+-- Rebase point: notices_kind_check and the notices_signin_insert policy are restated here with the new kinds. If
 -- PR 15's fixes or PR 16 add a kind before this merges, add it to both lists below.
 
 set local role dog_owner;
 
--- ---- The three new kinds of notice ----
+-- ---- The four new kinds of notice ----
+-- passkey_offer is left by the site itself (as the member, through app.notify) once, at sign-up: "add a passkey" before
+-- the first risky step. The other three come from the sign-in functions below.
 alter table app.notices drop constraint notices_kind_check;
 alter table app.notices add constraint notices_kind_check check (kind = any (array['draft_waiting', 'draft_expired', 'report_upheld', 'brake_on',
   'contained', 'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert',
-  'signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery']));
+  'signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery', 'passkey_offer']));
 
 -- ---- When a session last passed a passkey check ----
 alter table app.sessions add column stepped_up_at timestamptz;

@@ -33,6 +33,7 @@ const store = require('../db/signin');
 const v = require('../db/validate');
 const jevs = require('../db/jevs');
 const region = require('./region');
+const passkeys = require('../db/passkeys');
 
 const session = require('./session');
 const { SESSION, isToken } = session;
@@ -131,6 +132,11 @@ function make(deps) {
       });
     } catch (e) {
       jevs.logFailure('after sign-in', e);
+    }
+    // PR 17: a new member is offered a passkey once, in-app, before their first risky step. Its own transaction, so it
+    // can never undo the sign-in or JEVs's check.
+    if (out.isNew) {
+      try { await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId }, (t) => passkeys.offer(t)); } catch (e) { jevs.logFailure('passkey offer', e); }
     }
   }
 

@@ -85,6 +85,15 @@ async function mine(t, { keys = false } = {}) {
     ...(keys ? { publicKey: r.public_key, signCount: Number(r.sign_count) } : {}) }));
 }
 
+// Once, at sign-up: a notice offering a passkey before the first risky step (in-app only, like every notice). Returns
+// false if it was already left.
+async function offer(t) {
+  const [r] = await t`select app.notify(app.current_member(), 'passkey_offer', 'Add a passkey',
+    'Riskier steps, such as letting an agent act on its own, changing how you sign in or deleting your account, ask you to confirm with a passkey: one tap with your fingerprint, face or device PIN. Add one on your account page.',
+    '/account#passkeys', 'member', app.current_member(), 'passkey:offer:' || app.current_member()::text) as ok`;
+  return r.ok === true;
+}
+
 // The signed-in member's open recovery, if any.
 async function recovery(t) {
   const [r] = await t`select id, started_at, ends_at from app.passkey_recoveries
@@ -92,4 +101,4 @@ async function recovery(t) {
   return r ? { id: r.id, startedAt: r.started_at, endsAt: r.ends_at } : null;
 }
 
-module.exports = { sessionStepUp, challenge, dropChallenge, enrol, assert, remove, recoveryStart, recoveryCancel, mine, recovery, transports, MAX_PASSKEYS, TRANSPORTS };
+module.exports = { sessionStepUp, challenge, dropChallenge, enrol, assert, remove, recoveryStart, recoveryCancel, mine, recovery, offer, transports, MAX_PASSKEYS, TRANSPORTS };

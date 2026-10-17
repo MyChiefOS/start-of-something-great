@@ -30,7 +30,10 @@ test('SF5: the review page decides each post with one tap, shows member text as 
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js), 'no dialog between the tap and the decision');
   // One button per action the API offers; the tap sends the decision.
   assert.match(js, /i\.actions\.map\(function \(a\)/);
-  assert.match(js, /JSON\.stringify\(\{ review: i\.id, decision: decision \}\)/);
+  // PR 17: through /passkey.js, which asks for a passkey check (one tap, lasting 5 minutes of decisions) only when the
+  // server says one is needed; no dialog is added between the tap and the decision.
+  assert.match(js, /window\.dogPasskey\.postJson\('\/api\/feed', \{ review: i\.id, decision: decision \}\)/);
+  assert.match(html, /<script defer src="\/passkey\.js"><\/script>\s*<script defer src="\/review\.js"><\/script>/);
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /JSON\.stringify\(\{ report: id, reason: sel\.value, note: note\.value \}\)/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(feed));

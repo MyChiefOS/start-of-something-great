@@ -191,6 +191,13 @@
     list.textContent = '';
     form.hidden = !d.can_own;
     status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk, and a verified X business or government account counts toward it.';
+    // PR 17: before the first risky step, offer a passkey (drafting never needs one).
+    if (d.can_own && d.has_passkey === false) {
+      status.appendChild(document.createTextNode((status.textContent ? ' ' : '') + 'Letting an agent act on its own asks you to confirm with a passkey. '));
+      var addPk = el('a', '', 'Add a passkey');
+      addPk.href = '/account#passkeys';
+      status.appendChild(addPk);
+    }
     d.agents.forEach(function (a) {
       var card = el('article', 'post agent');
       var meta = el('p', 'post-meta');

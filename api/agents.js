@@ -182,7 +182,8 @@ const ROUTES = {
     const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
     const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.mine(t); });
-    return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
+    // PR 17: whether the owner has a passkey yet, so the page can offer one before the first risky step.
+    return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn, has_passkey: who.passkeys > 0 });
   },
 
   async 'POST '(req, res, run, body, cfg) {

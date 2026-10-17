@@ -97,7 +97,7 @@
       }
       if (d.is_admin) { document.getElementById('delete-part').hidden = true; document.getElementById('admin-note').hidden = false; }
       document.getElementById('details').hidden = false;
-      loadPasskeys();
+      pkReady = loadPasskeys();
       guardRiskyForms();
       loadNotices();
     })
@@ -107,6 +107,7 @@
   // The list shows labels and dates only (the page is never sent a key). Adding needs a sign-in in the last 10 minutes;
   // a second one, or removing one, also a passkey check. The server decides all of it; this only asks and shows.
   var pkState = { passkeys: [], stepped_up: false, recovery: null };
+  var pkReady = Promise.resolve();
   var pkStatus = document.getElementById('passkey-status');
   function pkSay(x, fallback) {
     pkStatus.textContent = (x && x.d && (x.d.message || x.d.error)) || fallback;
@@ -160,6 +161,9 @@
   // before they go; the server refuses them without one anyway, and sends a member who has none to add one.
   function guardRiskyForms() {
     function confirmFirst() {
+      return pkReady.then(decide);
+    }
+    function decide() {
       if (pkState.stepped_up) return Promise.resolve(true);
       if (!pkState.passkeys.length) {
         pkStatus.textContent = 'This needs a passkey. Add one here first (one tap), then try again.';

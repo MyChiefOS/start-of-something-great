@@ -599,3 +599,71 @@ test('PK12: one member can\'t read, use or remove another\'s passkeys, challenge
   const pub = (await q(`select public_key from app.passkeys limit 1`))[0].public_key;
   assert.ok(!trail.includes(pub));
 });
+
+// The browser side, run for real: /passkey.js in a sandbox whose navigator.credentials is a software passkey and whose
+// fetch reaches the real handlers, so its encoding and the server's checks meet exactly as in a browser.
+function browserFor(m, device) {
+  const vm = require('vm');
+  const toBuf = (s) => { const b = Buffer.from(s, 'base64url'); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
+  const fromBuf = (ab) => Buffer.from(ab).toString('base64url');
+  const cred = (j, kind) => ({ id: j.id, rawId: toBuf(j.rawId), type: j.type, authenticatorAttachment: j.authenticatorAttachment, getClientExtensionResults: () => ({}),
+    response: kind === 'create'
+      ? { clientDataJSON: toBuf(j.response.clientDataJSON), attestationObject: toBuf(j.response.attestationObject), getTransports: () => j.response.transports }
+      : { clientDataJSON: toBuf(j.response.clientDataJSON), authenticatorData: toBuf(j.response.authenticatorData), signature: toBuf(j.response.signature), userHandle: null } });
+  const handlers = { '/auth/passkey/enrol/options': pk.enrolOptions, '/auth/passkey/enrol/finish': pk.enrolFinish,
+    '/auth/passkey/assert/options': pk.assertOptions, '/auth/passkey/assert/finish': pk.assertFinish, '/auth/passkey/remove': pk.remove };
+  const sandbox = {
+    window: { PublicKeyCredential: function () {} }, Uint8Array, String, JSON, Promise,
+    atob: (s) => Buffer.from(s, 'base64').toString('binary'), btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+    navigator: { credentials: {
+      create: async ({ publicKey }) => {
+        assert.ok(publicKey.challenge instanceof ArrayBuffer && publicKey.user.id instanceof ArrayBuffer, 'the page hands the browser bytes, not text');
+        return cred(device.create({ ...publicKey, challenge: fromBuf(publicKey.challenge) }, { origin: ORIGIN }), 'create');
+      },
+      get: async ({ publicKey }) => cred(device.get({ ...publicKey, challenge: fromBuf(publicKey.challenge) }, { origin: ORIGIN }), 'get')
+    } },
+    fetch: async (url, init) => {
+      const r = res();
+      const rq = req('POST', url, { cookie: m.cookie, json: JSON.parse(init.body) });
+      if (handlers[url]) await handlers[url](rq, r);
+      else if (url.startsWith('/api/agents/')) { rq.query = { route: url.slice('/api/agents/'.length) }; await require('../api/agents.js').handle(rq, r, run, CFG); }
+      else throw new Error('unexpected ' + url);
+      return { ok: r.statusCode < 300, status: r.statusCode, json: async () => JSON.parse(r.body) };
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root, 'passkey.js'), 'utf8'), sandbox);
+  return sandbox.window.dogPasskey;
+}
+
+test('PK2, PK3: the page\'s own passkey code adds a passkey, confirms with it, and retries a risky step once after the check', async () => {
+  const m = await person({ name: 'Browser' });
+  const browser = browserFor(m, softAuthenticator());
+  assert.strictEqual(browser.supported(), true);
+  const added = await browser.enrol('This laptop');
+  assert.deepStrictEqual([added.status, added.d.message], [201, 'Added. You’ll use it to confirm risky steps.']);
+  const agent = (await agentsApi(m, 'POST', '', { name: 'Page agent' })).json.agent_id;
+  // One call: the server asks for the passkey, the page asks the device, and the step goes ahead.
+  const r = await browser.postJson('/api/agents/rules', { agent, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 });
+  assert.deepStrictEqual([r.status, r.d.rules.post], [201, 'act']);
+  assert.strictEqual((await audits(m.id, 'passkey.used')).length, 1);
+  // A member with no passkey gets the server's answer as it is, with the way to add one: never a weaker check.
+  const none = await person({ name: 'No key in browser' });
+  const nb = browserFor(none, softAuthenticator());
+  const a2 = (await agentsApi(none, 'POST', '', { name: 'Unconfirmed' })).json.agent_id;
+  const refused = await nb.postJson('/api/agents/rules', { agent: a2, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 });
+  assert.deepStrictEqual([refused.status, refused.d.step_up.has_passkey, refused.d.step_up.enrol], [403, false, '/account#passkeys']);
+  const page = await agentsApi(none, 'GET', '');
+  assert.strictEqual(page.json.has_passkey, false, 'the agents page can offer one before the first risky step');
+});
+
+test('PK2: a new member is offered a passkey once, in-app, at sign-up', async () => {
+  ACCOUNTS['github:pk-new'] = { accountId: 'pk-new', level: 1, recheckAfter: null };
+  const first = await oauth('github', 'pk-new');
+  const id = (await sessionOf(first.cookie)).member_id;
+  await oauth('github', 'pk-new');
+  const offers = await noticesOf(id, 'passkey_offer');
+  assert.strictEqual(offers.length, 1, 'once, not at every sign-in');
+  assert.match(offers[0].body, /fingerprint, face or device PIN/);
+  assert.strictEqual((await q(`select link from app.notices where member_id = '${id}' and kind = 'passkey_offer'`))[0].link, '/account#passkeys');
+});

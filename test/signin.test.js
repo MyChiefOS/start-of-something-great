@@ -654,7 +654,8 @@ test('PR 15: a link makes no new session (no freshness), ends every other sessio
   // A minute later the session is no longer fresh: the link didn't extend it.
   await ago(a.browser, 11);
   assert.strictEqual((await db.tx(web, { actor: 'anon' }, (t) => store.sessionResolve(t, hashOf(a.browser), 7))).fresh, false);
-  const notices = await q(`select kind, title, link, subject_kind from app.notices where member_id = '${id}'`);
+  // (PR 17's one-time "add a passkey" notice at sign-up is tested in test/passkeys.test.js.)
+  const notices = await q(`select kind, title, link, subject_kind from app.notices where member_id = '${id}' and kind <> 'passkey_offer'`);
   assert.deepStrictEqual(notices.map((n) => ({ ...n })), [{ kind: 'signin_linked', title: 'A new sign-in method was linked', link: '/account', subject_kind: 'identity' }]);
   const [au] = await q(`select actor_kind, actor_id, detail from app.audit_log where action = 'member.identity_linked' and subject_id = '${id}'`);
   assert.deepStrictEqual([au.actor_kind, au.actor_id, au.detail], ['member', id, { provider: 'x', sessions_ended: 1 }]);
