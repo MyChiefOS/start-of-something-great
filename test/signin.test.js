@@ -16,6 +16,7 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
+const { stepUpFor } = require('./passkey-helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -168,10 +169,14 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel']]);
+    ['regionContinue'], ['regionCancel'],
+    // PR 17: passkeys.
+    ['passkeyList'], ['passkeyEnrolOptions'], ['passkeyEnrolFinish'], ['passkeyAssertOptions'], ['passkeyAssertFinish'], ['passkeyRemove'],
+    ['passkeyRecoveryStart'], ['passkeyRecoveryCancel']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
-      'POST region/continue', 'POST region/cancel'],
+      'POST region/continue', 'POST region/cancel', 'POST passkey/enrol/options', 'POST passkey/enrol/finish', 'POST passkey/assert/options',
+      'POST passkey/assert/finish', 'POST passkey/remove', 'POST passkey/recovery/start', 'POST passkey/recovery/cancel'],
     'only these change anything, and all are POSTs');
 });
 
@@ -247,8 +252,17 @@ function setup({ keys, accounts = {}, mail = [] } = {}) {
 }
 // The email form's sealed time stamp (PR 12 bot check), as /auth/form hands it out, opened ageMs ago.
 const stamp = (env, ageMs = 5000) => c.seal(c.subkey(env.cfg.sessionKey, 'form time'), { k: 'join', t: Date.now() - ageMs });
+// PR 17: linking and unlinking need a passkey check too. This gives the member signed in in this browser a passkey and
+// a check just passed, so the tests below keep testing PR 15's own rules (they apply in addition).
+async function stepUp(browser) {
+  const tok = browser.get(SESSION);
+  if (!tok) return;
+  const [s] = await su`select member_id from app.sessions where token_hash = ${c.sha256hex(tok)}`;
+  if (s) await stepUpFor(su, s.member_id);
+}
 // The full GitHub or X round trip, as a browser would do it.
-async function oauth(env, provider, account, { browser = jar(), query = '', ip } = {}) {
+async function oauth(env, provider, account, { browser = jar(), query = '', ip, passkey = true } = {}) {
+  if (/link=1/.test(query) && passkey) await stepUp(browser);
   const r1 = browser.take(res());
   // A link starts only from our own pages (PR 15's review, F5), as the /account button does.
   await env.flow.start(req('GET', '/auth/' + provider + '/start' + query, { cookie: browser.header(), ip, site: /link=1/.test(query) ? 'same-origin' : undefined }), r1, provider);
@@ -650,6 +664,7 @@ test('PR 15: a link completes only for the session that started it, not another 
   const env = setup({ accounts: { 'github:9521': { accountId: '9521', level: 1, recheckAfter: null }, 'x:9522': { accountId: '9522', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9521');
   const id = (await me(env, a.browser)).member_id;
+  await stepUp(a.browser);
   const r1 = res();
   await env.flow.start(req('GET', '/auth/x/start?link=1', { cookie: a.browser.header(), site: 'same-origin' }), r1, 'x');
   a.browser.take(r1);
@@ -668,7 +683,7 @@ test('PR 15: the database links only from the member\'s own fresh session, and s
   const env = setup({ accounts: { 'github:9531': { accountId: '9531', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9531');
   const id = (await me(env, a.browser)).member_id;
-  const ctx = { actor: 'member', memberId: id };
+  const ctx = { actor: 'member', memberId: id, stepUp: true }; // PR 17: with a passkey check, so PR 15's own rules decide
   const fp = () => c.sha256hex('linked' + Math.random());
   await assert.rejects(db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint,
     'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${id}::uuid, null)`), /bad sign-in request/, 'sign-in never links (it would make a fresh session)');
@@ -700,7 +715,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   assert.deepStrictEqual(signIns.map((s) => s.provider), ['github', 'x']);
   for (const s of signIns) assert.match(s.id, /^[0-9a-f-]{36}$/, 'each method has an ID to unlink it by');
   const xId = signIns.find((s) => s.provider === 'x').id;
-  const unlink = async (browser, body, opts = {}) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: browser.header(), origin: ORIGIN, body, ...opts }), r); return r.getHeader('Location'); };
+  const unlink = async (browser, body, opts = {}) => { await stepUp(browser); const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: browser.header(), origin: ORIGIN, body, ...opts }), r); return r.getHeader('Location'); };
   assert.strictEqual(await unlink(a.browser, { id: xId }, { origin: 'https://evil.example' }), '/account', 'a cross-site post changes nothing');
   assert.strictEqual(await unlink(jar(), { id: xId }), '/join?error=signin');
   await ago(a.browser, 11);
@@ -747,7 +762,7 @@ test('PR 15 review F1: seniority. A session may unlink only methods linked after
   const page = res();
   await env.flow.account(req('GET', '/auth/account', { cookie: intruder.browser.header() }), page);
   const ids = Object.fromEntries(JSON.parse(page.body).sign_ins.map((s) => [s.provider, s.id]));
-  const unlink = async (b, identity) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: b.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
+  const unlink = async (b, identity) => { await stepUp(b); const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: b.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
   assert.strictEqual(await unlink(intruder.browser, ids.github), '/account?error=senior', 'the later method can\'t remove the older one');
   assert.strictEqual(await unlink(shared, ids.github), '/account?error=senior', 'nor can the shared session remove the method it signed in with');
   await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${ids.github}::uuid, ${hashOf(intruder.browser)})`), /not_senior/);
@@ -776,7 +791,7 @@ test('PR 15 review F2: the member lock comes before the session check, so a link
   const a = await oauth(env, 'github', '9611');
   const b = await oauth(env, 'github', '9611');
   const id = (await me(env, a.browser)).member_id;
-  const ctx = { actor: 'member', memberId: id };
+  const ctx = { actor: 'member', memberId: id, stepUp: true }; // PR 17: with a passkey check, so PR 15's own rules decide
   const fp = () => c.sha256hex('race' + Math.random());
   const call = (t, h) => t`select * from app.identity_link('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint, null::timestamptz, ${h}, null)`;
   let release;
@@ -804,9 +819,9 @@ test('PR 15 review F4: two members linking the same method at the same moment: t
   const args = (br) => ({ provider: 'x', fingerprints: [same], keyVersion: 1, level: 1, sessionHash: hashOf(br) });
   let release;
   const gate = new Promise((r) => { release = r; });
-  const t1 = db.tx(web, { actor: 'member', memberId: ida }, async (t) => { const r = await store.link(t, args(a.browser)); await gate; return r; });
+  const t1 = db.tx(web, { actor: 'member', memberId: ida, stepUp: true }, async (t) => { const r = await store.link(t, args(a.browser)); await gate; return r; });
   await new Promise((r) => setTimeout(r, 300));
-  const t2 = db.tx(web, { actor: 'member', memberId: idb }, (t) => store.link(t, args(b.browser)));
+  const t2 = db.tx(web, { actor: 'member', memberId: idb, stepUp: true }, (t) => store.link(t, args(b.browser)));
   await new Promise((r) => setTimeout(r, 300));
   release();
   const [r1, r2] = await Promise.allSettled([t1, t2]);
@@ -818,6 +833,7 @@ test('PR 15 review F4: two members linking the same method at the same moment: t
 test('PR 15 review F5: a link starts only from our own pages (Sec-Fetch-Site same-origin, and a same-origin Origin or Referer where sent)', async () => {
   const env = setup({ accounts: { 'github:9631': { accountId: '9631', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9631');
+  await stepUp(a.browser);
   const start = async (headers) => { const r = res(); const rq = req('GET', '/auth/x/start?link=1', { cookie: a.browser.header() }); Object.assign(rq.headers, headers); await env.flow.start(rq, r, 'x'); return r; };
   for (const h of [{}, { 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'same-site' }, { 'sec-fetch-site': 'none' },
     { 'sec-fetch-site': 'same-origin', origin: 'https://evil.example' }, { 'sec-fetch-site': 'same-origin', referer: 'https://evil.example/x' },
