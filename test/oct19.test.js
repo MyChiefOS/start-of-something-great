@@ -186,10 +186,14 @@ test('C3: draft_proposal returns a link for a person to submit, files nothing, a
 
 test('C4: the uptime monitor confirms a failure before alerting, and reports every check', async () => {
   const uptime = require('../scripts/uptime');
-  const okFetch = async (url) => ({
-    status: 200,
-    text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : '<title>Day One Great</title>')
-  });
+  const hdr = (h) => ({ get: (k) => h[k.toLowerCase()] || null });
+  const okFetch = async (url) => (url.endsWith('/auth/github/start')
+    ? { status: 302, headers: hdr({ location: '/join?error=unavailable' }), text: async () => '' }
+    : {
+      status: 200,
+      headers: hdr({ 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'content-security-policy': "default-src 'self'" }),
+      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : '<title>Day One Great</title>')
+    });
   let waits = 0;
   const all = await uptime.checkAll(okFetch, async () => { waits++; });
   assert.ok(all.every((r) => r.ok) && waits === 0);
@@ -203,6 +207,29 @@ test('C4: the uptime monitor confirms a failure before alerting, and reports eve
   assert.deepStrictEqual(res.filter((r) => !r.ok).map((r) => r.name), ['MCP server']);
   assert.match(uptime.report(res, new Date('2026-10-20T00:00:00Z')), /\*\*DOWN\*\* \| MCP server/);
   assert.ok(read('.github/workflows/uptime.yml').includes("cron: '7,22,37,52 * * * *'"), 'runs every 15 minutes');
+});
+
+test('launch checks: the go-live gate, sign-in and security headers are watched, and a leak or a server error is caught', async () => {
+  const uptime = require('../scripts/uptime');
+  const gate = uptime.CHECKS.find((c) => c.name === 'Go-live gate');
+  const r = (status, h = {}) => ({ status, headers: { get: (k) => h[k.toLowerCase()] || null } });
+  assert.ok(gate.test(r(200), '{"posts":[]}'), 'closed or public');
+  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), '{"error":"Day One Great is in a private preview."}'), 'preview, refused and not cached');
+  assert.ok(!gate.test(r(401, { 'cache-control': 'public, max-age=0' }), '{"error":"Day One Great is in a private preview."}'), 'a cacheable refusal is a fault');
+  assert.ok(!gate.test(r(500), '{}'), 'a server error is a fault');
+  const signin = uptime.CHECKS.find((c) => c.name === 'Sign-in start');
+  assert.strictEqual(signin.init.redirect, 'manual');
+  assert.ok(signin.test(r(302, { location: 'https://github.com/login/oauth/authorize?client_id=x' })));
+  assert.ok(signin.test(r(302, { location: '/join?error=unavailable' })));
+  assert.ok(!signin.test(r(302, { location: 'https://evil.example/login/oauth/authorize?' })), 'only GitHub or our own page');
+  assert.ok(!signin.test(r(500), 'Something went wrong. Please try again.'));
+  assert.ok(signin.test(r(503), 'Sign-in is not switched on here yet.'), 'closed: the designed answer');
+  assert.ok(!signin.test(r(503), 'Service Unavailable'), 'any other 503 is a fault');
+  const heads = uptime.CHECKS.find((c) => c.name === 'Security headers');
+  assert.ok(!heads.test(r(200, { 'content-security-policy': "default-src 'self'" })), 'missing HSTS is a fault');
+  const y = read('.github/workflows/uptime.yml');
+  assert.match(y, /deployment_status:/, 'also runs after every deploy');
+  assert.match(y, /github\.event\.deployment_status\.state == 'success'/);
 });
 
 test('C4: an outage opens one issue, comments only when it changes, and recovery closes it', () => {

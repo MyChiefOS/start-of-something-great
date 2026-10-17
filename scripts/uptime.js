@@ -14,8 +14,34 @@ const CHECKS = [
     name: 'MCP server', path: '/api/mcp',
     init: { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }) },
     test: (r, t) => r.status === 200 && JSON.parse(t).id === 1
+  },
+  // Launch checks (Oct 17): also run after every production deploy (uptime.yml, deployment_status).
+  {
+    name: 'Security headers', path: '/',
+    test: (r) => r.status === 200 && /max-age=\d{7,}/.test(header(r, 'strict-transport-security')) && /default-src/.test(header(r, 'content-security-policy'))
+  },
+  {
+    // Whatever the go-live stage, the feed answers correctly: closed or public, 200 with a list of posts; in the
+    // private preview, a signed-out request is refused AND told never to be cached, so preview posts can't leak.
+    name: 'Go-live gate', path: '/api/feed',
+    test: (r, t) => {
+      if (r.status === 200) return Array.isArray(JSON.parse(t).posts);
+      if (r.status === 401) return /no-store/.test(header(r, 'cache-control')) && /private preview/.test(JSON.parse(t).error || '');
+      return false;
+    }
+  },
+  {
+    // Sign-in answers as designed: on, it sends you to GitHub (or back to /join); off (closed), it says exactly that.
+    // Any other answer, a server error above all, is a fault.
+    name: 'Sign-in start', path: '/auth/github/start', init: { redirect: 'manual' },
+    test: (r, t) => ([302, 303].includes(r.status) && /^(https:\/\/github\.com\/login\/oauth\/authorize\?|\/join\b)/.test(header(r, 'location')))
+      || (r.status === 503 && t === 'Sign-in is not switched on here yet.')
   }
 ];
+
+function header(r, name) {
+  try { return String((r.headers && typeof r.headers.get === 'function' ? r.headers.get(name) : '') || ''); } catch { return ''; }
+}
 
 async function runOnce(check, fetchImpl) {
   const started = Date.now();
