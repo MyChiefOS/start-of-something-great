@@ -91,6 +91,10 @@ async function restoreTest({ sourceUrl, sourceCa, targetUrl, log = console.log, 
       });
     }
     log('throwaway database built from ' + built.length + ' migrations');
+    // pg_dump refuses a server newer than itself; say so plainly rather than as a bare failure.
+    const dumpMajor = Number(((await exec('pg_dump', ['--version'], {})).match(/(\d+)\.\d+/) || [])[1]);
+    const [{ v }] = await source`select current_setting('server_version_num')::int / 10000 as v`;
+    if (!(dumpMajor >= v)) throw new Error('pg_dump ' + dumpMajor + ' is older than the database (' + v + '); install postgresql-client-' + v);
     const tlsEnv = sourceCa ? (fs.writeFileSync(caFile, sourceCa, { mode: 0o600 }), { PGSSLMODE: 'verify-full', PGSSLROOTCERT: caFile }) : {};
     // Connection details go in as environment variables, never on the command line, where the process list would
     // show the password. schema_migrations is already filled in by the migrations above.

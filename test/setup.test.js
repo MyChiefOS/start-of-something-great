@@ -120,6 +120,16 @@ test.after(async () => {
   }
 });
 
+// Does this password match the role's stored SCRAM hash? Checked from the hash itself, so it holds on any server,
+// including one that trusts every local connection (as the CI database does).
+async function hashMatches(password) {
+  const [row] = await server`select rolpassword from pg_authid where rolname = ${ROLE}`;
+  const m = String(row && row.rolpassword).match(/^SCRAM-SHA-256\$(\d+):([^$]+)\$([^:]+):(.+)$/);
+  if (!m) return false;
+  return s.scramVerifier(password, { salt: Buffer.from(m[2], 'base64'), iterations: Number(m[1]) }) === row.rolpassword;
+}
+// Does the server check passwords at all here? (A trusting server lets any password in.)
+async function serverChecksPasswords() { return !(await signsIn('definitely-not-the-password-' + crypto.randomBytes(6).toString('hex'))); }
 // Can the role really sign in with the password inside the address that went to Vercel?
 async function signsIn(password) {
   const c = postgres(at(SERVER, NAME, ROLE, password), { max: 1, ssl: false, onnotice: () => {}, connect_timeout: 5 });
@@ -139,9 +149,9 @@ test('database: migrations, the login role with a hashed password that really wo
   assert.strictEqual(v.env.get('DATABASE_CA').value, 'CA-PEM');
   const password = decodeURIComponent(addr.password);
   assert.ok(password.length >= 40);
-  assert.strictEqual(await signsIn(password), true, 'the role signs in with exactly the password that went to Vercel');
-  const [{ rolpassword }] = await server`select rolpassword from pg_authid where rolname = ${ROLE}`.catch(() => [{ rolpassword: null }]);
-  if (rolpassword !== null) assert.match(rolpassword, /^SCRAM-SHA-256\$4096:/, 'stored as a SCRAM hash');
+  assert.strictEqual(await hashMatches(password), true, 'the stored hash is of exactly the password that went to Vercel');
+  assert.strictEqual(await signsIn(password), true, 'and the role signs in with it');
+  const checks = await serverChecksPasswords();
   const [{ granted }] = await su`select pg_has_role(${ROLE}, 'dog_app', 'member') as granted`;
   assert.strictEqual(granted, true, 'it acts as dog_app');
   assert.deepStrictEqual(leaked(log.lines, [password, v.env.get('DATABASE_URL').value]), [], 'neither the password nor the address was logged');
@@ -150,15 +160,16 @@ test('database: migrations, the login role with a hashed password that really wo
   const v2 = fakeVercel();
   await s.stepDatabase(su, v2, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE });
   assert.strictEqual(v2.env.size, 0, 'Vercel untouched on a re-run');
-  assert.strictEqual(await signsIn(password), true);
+  assert.strictEqual(await hashMatches(password), true, 'the password is unchanged');
 
   // Rotation: a new password works, the old one stops.
   const v3 = fakeVercel();
   await s.stepDatabase(su, v3, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: true, log, migrate, check, role: ROLE });
   const fresh = decodeURIComponent(new URL(v3.env.get('DATABASE_URL').value).password);
   assert.notStrictEqual(fresh, password);
-  assert.strictEqual(await signsIn(fresh), true);
-  assert.strictEqual(await signsIn(password), false, 'the old password no longer works');
+  assert.strictEqual(await hashMatches(fresh), true, 'the new password is the one stored');
+  assert.strictEqual(await hashMatches(password), false, 'the old password no longer matches');
+  if (checks) assert.strictEqual(await signsIn(password), false, 'and, where the server checks passwords, it no longer signs in');
 });
 
 test('database: if Vercel refuses, the database password is left alone', async () => {
