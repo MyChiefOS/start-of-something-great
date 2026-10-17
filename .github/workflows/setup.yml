@@ -1,0 +1,103 @@
+# Production setup: the database, the site's login role, the sign-in keys, the go-live stage and the administrator,
+# done from GitHub so nothing runs on anyone's own computer and no secret is ever shown to a person (SETUP.md).
+# Started by hand only (Actions tab, "Production setup", Run workflow, on main). Its secrets live in the protected
+# "production" environment: only main, and only after Aaron approves the run.
+#
+# Two jobs: "plan" reads the inputs alone (no secrets, no environment) and writes what the run will do into the run's
+# summary, and refuses bad input; "setup" waits for Aaron's approval and does it. So he sees the plan before approving.
+name: Production setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: 'Steps, comma separated: database, keys, stage, admin, redeploy (always run in that order)'
+        required: true
+        default: 'database,keys,stage,redeploy'
+      stage:
+        description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
+        type: choice
+        options: [unchanged, closed, preview, public]
+        default: unchanged
+      preview_allow:
+        description: 'For the preview: who may make an account, like github:12345 (numeric account ID; see SETUP.md)'
+        required: false
+        default: ''
+      admin_member_id:
+        description: 'For the "admin" step: your member_id from https://dayonegreat.com/auth/me after signing in once'
+        required: false
+        default: ''
+      rotate_db_password:
+        description: 'Give the site''s login role a new password (and update DATABASE_URL to match)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Shares the migrations' group, so a setup and a migration run never overlap.
+  group: database-migrations
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies (no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: What this run will do (from the inputs alone; refuses bad input before anyone approves)
+        env:
+          SETUP_STEPS: ${{ inputs.steps }}
+          SETUP_STAGE: ${{ inputs.stage }}
+          SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
+          SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
+          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
+        run: |
+          node scripts/setup-production.js --plan | tee plan.txt
+          { echo '## This run will'; echo; cat plan.txt; echo; echo 'Approve the "setup" job to do it, or cancel the run.'; } >> "$GITHUB_STEP_SUMMARY"
+
+  setup:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: production
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: write # only to record EXPECTED_STAGE, the repository variable the uptime monitor checks the live stage against
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies (no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Set up production
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          MIGRATION_DATABASE_CA: ${{ secrets.MIGRATION_DATABASE_CA }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SETUP_STEPS: ${{ inputs.steps }}
+          SETUP_STAGE: ${{ inputs.stage }}
+          SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
+          SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
+          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
+        run: node scripts/setup-production.js

@@ -3,11 +3,11 @@ rules:
 # Written for this repository; MIT like the code. test/db.test.js checks the same things without Semgrep.
 - id: dayonegreat.db.no-raw-sql
   message: Raw SQL (unsafe) can put values into a query as text instead of parameters. Use a tagged template
-    (t`... ${value}`) through db/index.js. Only scripts/migrate.js may run raw SQL, and only from migration files.
+    (t`... ${value}`) through db/index.js. Only scripts/migrate.js (from migration files) and scripts/setup-production.js (fixed role and trigger statements, pinned by test/setup.test.js) may run raw SQL.
   languages: [javascript]
   severity: ERROR
   paths:
-    exclude: [scripts/migrate.js, test/]
+    exclude: [scripts/migrate.js, scripts/setup-production.js, test/]
   pattern-either:
   - pattern: $X.unsafe(...)
   - pattern: $X['unsafe'](...)
@@ -33,5 +33,5 @@ rules:
   severity: ERROR
   paths:
     include: ['*.js']
-    exclude: [db/index.js, scripts/migrate.js, test/]
+    exclude: [db/index.js, scripts/migrate.js, scripts/setup-production.js, test/]
   pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b|\bset\s+(local\s+)?(session|role|app\.)|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)

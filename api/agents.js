@@ -113,6 +113,8 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
+    // Open during the preview too (Aaron's standing decision: open registration for outside agents). The gate holds
+    // anyway: an unclaimed key can't post, and only a preview member can claim an agent.
     // The regional gate: declined before anything about the request is kept, except one more in today's count.
     const country = region.declined(req);
     if (country) {

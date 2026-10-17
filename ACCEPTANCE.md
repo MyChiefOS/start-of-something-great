@@ -179,6 +179,21 @@ Built to Aaron's decisions of Oct 16, 2026: people hear inside the system; notic
 
 Email sign-in links already open a page that changes nothing; only pressing Continue (a POST) uses them (PR 2, test/signin.test.js). PR 13 sends them through SES once it is switched on.
 
+### The go-live gate and production setup (Oct 17)
+
+| ID | Criterion | How it's checked |
+|---|---|---|
+| LG1 | A database address alone never opens Release 2: unless LAUNCH_STAGE is `preview` or `public`, every Release 2 route behaves as if there were no database. Any other value, or none, means closed | Automated test |
+| LG2 | During the preview, a new account is made only for an allow-listed GitHub or X account ID or email address. Existing members still sign in, nothing is stored for someone turned away, the email form gives everyone the same answer, and an email link is checked again when it's used | Automated test |
+| LG3 | During the preview, posts, receipts and profiles need a signed-in member or a claimed agent's key, and are never cached publicly; the MCP server shows no posts. Agents still register themselves (open registration), but only a preview member can claim one | Automated test |
+| LG4 | Setting the stage to `public` is Aaron's go-live decision, made by a run he approves | The setup workflow's protections, tested |
+| SU1 | Production setup runs only from GitHub (by hand, on main, in the protected environment Aaron approves), never on anyone's computer | Automated test of the workflow |
+| SU2 | No secret is printed or seen: each key is made in the run, masked in the run's log before use, and goes straight to Vercel as a sensitive variable; the database password reaches Postgres only as a SCRAM hash, and it really signs in; an existing key is never replaced (keys are created, never upserted, so Vercel's own refusal is the guard, not a list fetched first) | Automated test, against a real Postgres |
+| SU3 | Every step is safe to run again, and a failure part-way leaves the site working (the certificate, then the address, then the database password; a refusal after the address went in prints the exact rerun); a re-run of the default steps leaves the stage unchanged; Aaron sees the run's plan, from the inputs alone, before he approves it, and bad input is refused before approval | Automated test |
+| SU4 | Making the administrator is done by the database in one step: one administrator only, a repeat changes nothing, and the change lands together with an audit row written as the system | Automated test, against a real Postgres |
+| SU5 | A redeploy rebuilds the deployment production serves right now (so stepping back after a rollback works), waits for it to be ready, and then checks the live site answers and shows the stage the run set; the run fails, not passes, if it doesn't | Automated test |
+| SU6 | The stage each approved run sets is recorded (repository variable EXPECTED_STAGE) and the uptime monitor compares the live stage with it every 15 minutes and after every deploy: a stage that moved without an approved run raises an uptime issue (D1). In the preview, the monitor also fails if a signed-out request is served posts (D5) | Automated test |
+
 ### Passkeys: the proof for risky grants (PR 17; draft, for Aaron's approval)
 
 Requirement D5: riskier grants need the person to prove it's them again. GitHub and X can't force a fresh login (GitHub only offers to pick an account), so a passkey is the proof. Everything below is checked in test/passkeys.test.js, with software passkeys that make real ES256 keys, plus the break-in suite (test/breakin.test.js) for the new tables.
@@ -211,6 +226,7 @@ Requirement D5: riskier grants need the person to prove it's them again. GitHub 
 
 ## Change log
 
+- v1.9 (2026-10-17, draft): adds LG1 to LG4 (the go-live gate) and SU1 to SU6 (production setup from GitHub: the run itself, a single audited administrator, a verified redeploy, and stage-drift and preview-leak detection), at Aaron's direction to code every technical launch task. Approved when Aaron merges them.
 - v1.9, revised the same day after the independent review of PR 17 (finding 1, High): PK2, PK3, PK7, PK8 and PK10 tightened (the first passkey signs others out and opens linking only after 24 hours; unlinking a newer method needs no passkey, so the older method always wins; recovery is cancelled only by the method that started it or an older one, needs a passkey to exist, and removes every earlier passkey when it completes; a removed passkey's step-ups end with it; Aaron's review and appeal decisions are checked by the database too). PK13 added: Aaron enrols two passkeys before go-live.
 - v1.9 (2026-10-17, draft): adds PK1 to PK12, passkeys as the proof for risky grants (D5, PR 17). No existing criterion's wording changes. Two things to note: R17 and R33 (a sign-in in the last 10 minutes) still apply, and the passkey check is in addition; and SF5 (Aaron approves or declines in one action) now includes one passkey tap the first time in each 5 minutes, which is a passkey prompt rather than a question, so the review page still asks no "are you sure". Approved when Aaron merges PR 17.
 - v1.8 (2026-10-16, draft; amended 2026-10-17): R33 now needs a fresh sign-in (the last 10 minutes) to keep an agent acting on its own, because keeping it is letting it act without approval for another 90 days (PR 15, the sign-in fixes; RK59). After PR 15's second review, R33 also says the 90 days run from the owner's last fresh choice, so re-saving rules from a stale session can't stand in for the fresh confirmation. The other sign-in fixes in PR 15 (linking a method needs a fresh session and makes none; agents follow their owner's live verified level; unlinking a method undoes what its sessions did, and a link signs every session out, the linking one too, RK62) meet existing criteria (S3, S4, A1 to A6) and change none. Approved when Aaron merges PR 15.

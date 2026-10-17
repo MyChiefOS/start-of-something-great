@@ -22,9 +22,10 @@
 --     deleting an account, and Aaron's controls (a brake, a ban or unban, a deletion review). Drafting, lowering,
 --     approving drafts and everything else never needs it.
 --
--- How it is enforced without touching anyone else's functions: new triggers, not replaced functions. PR 16's 013
--- replaces app.agent_rules_fill, app.agent_resolve and others; replacing any of them here would undo its work when 014
--- runs after it. So every check below is a trigger of its own, and nothing that 012 or 013 defines is replaced.
+-- How it is enforced without touching anyone else's functions: new triggers, not replaced functions. PR 16's migration
+-- (015, sub-agents; 013 is the setup run's audit policy) replaces app.agent_rules_fill, app.agent_resolve and others,
+-- and runs after this one. Because every check below is a trigger of its own, 015's replacements undo nothing here,
+-- and nothing that 012, 013 or 015 defines is replaced by 014.
 --
 -- After the PR 15 review (the lead, Oct 16): whatever a linked sign-in method did dies with it. Each passkey records
 -- the method of the session that added it (identity_id); removing that method (unlinking it, or anything that deletes
@@ -140,7 +141,7 @@ drop policy notices_signin_insert on app.notices;
 create policy notices_signin_insert on app.notices for insert to dog_signin
   with check (member_id is not null and kind in ('signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery', 'passkey_counter'));
 
--- ---- The step-up checks: triggers of their own (none of 012's or 013's functions is replaced) ----
+-- ---- The step-up checks: triggers of their own (none of 012's, 013's or 015's functions is replaced) ----
 -- Each fires always, refuses with 'step_up' unless this transaction carries a passkey check from the last 5 minutes
 -- (app.step_up, set only by db/index.js from app.session_step_up), and applies only to people (members and Aaron):
 -- the site's own timers (system) and agents never carry a passkey and are never asked for one.

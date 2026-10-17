@@ -52,18 +52,28 @@ test('G1: the site reads its database address in one place, checks certificates,
   delete process.env.DATABASE_URL;
   try { await assert.rejects(db.run({ actor: 'anon' }, () => {}), /DATABASE_URL is not set/); } finally { if (saved !== undefined) process.env.DATABASE_URL = saved; }
   const readers = sourceFiles().filter((f) => /\bDATABASE_URL/.test(read(f)) && !/^(test|db\/migrations)\//.test(f));
-  assert.deepStrictEqual(readers, ['db/index.js'], 'only db/index.js may read DATABASE_URL');
+  // The setup run names DATABASE_URL only to write it to Vercel; it never reads the site's address (checked below).
+  assert.deepStrictEqual(readers.filter((f) => f !== 'scripts/setup-production.js'), ['db/index.js'], 'only db/index.js may read DATABASE_URL');
+  assert.ok(!/process\.env\.DATABASE_URL|env\.DATABASE_URL\b|env\[['"`]DATABASE_URL/.test(read('scripts/setup-production.js')), 'the setup run never reads DATABASE_URL');
+});
+
+const RAW_SQL_OK = ['scripts/migrate.js', 'scripts/setup-production.js'];
+test('no placeholder migrations: a migration file that has run anywhere can never be renamed, removed or filled in, so none is ever committed as a placeholder', () => {
+  const names = require('fs').readdirSync(require('path').join(__dirname, '..', 'db', 'migrations'));
+  assert.deepStrictEqual(names.filter((n) => /placeholder|reserved|todo|tmp|temp/i.test(n)), [], 'number real work only');
 });
 
 test('S8 code check: raw SQL, the driver, and identity or session changes appear only where allowed', () => {
   for (const f of sourceFiles().filter((x) => x.endsWith('.js') && !x.startsWith('test/'))) {
     const s = read(f);
-    if (/(\.unsafe\b|\[\s*['"`]unsafe['"`]\s*\])/.test(s)) assert.strictEqual(f, 'scripts/migrate.js', f + ' uses raw SQL; only the migration runner may');
+    // Raw SQL only in the migration runner and the production setup run (role and trigger statements can't take
+    // parameters); the setup run's statements are pinned by test/setup.test.js.
+    if (/(\.unsafe\b|\[\s*['"`]unsafe['"`]\s*\])/.test(s)) assert.ok(RAW_SQL_OK.includes(f), f + ' uses raw SQL; only the migration runner and the setup run may');
     if (/(require\(\s*['"`]postgres['"`]\s*\)|from\s+['"`]postgres['"`]|import\(\s*['"`]postgres['"`])/.test(s)) assert.strictEqual(f, 'db/index.js', f + ' loads the database driver directly; go through db/index.js');
     // Who is acting is set in exactly one place; nothing else may change it or keep state on a pooled connection.
     if (f !== 'db/index.js') {
       assert.ok(!/set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b/.test(s), f + ' sets who is acting; only db/index.js may');
-      assert.ok(!/\b(set\s+(local\s+)?(session|role|app\.)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || f === 'scripts/migrate.js', f + ' changes the session or keeps state past a transaction');
+      assert.ok(!/\b(set\s+(local\s+)?(session|role|app\.)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || RAW_SQL_OK.includes(f), f + ' changes the session or keeps state past a transaction');
     }
   }
   const rules = read('.semgrep/database.yml');
@@ -228,7 +238,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_owner, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],

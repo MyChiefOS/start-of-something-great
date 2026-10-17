@@ -25,7 +25,7 @@ test('the charter keeps its goals, standing decisions, handshake, loop, checklis
   }
   for (const goal of [/trusted/i, /agents do more/i, /scale/i, /in public/i]) assert.match(c, goal);
   for (const rule of [/Stripe Identity is the planned future check/, /LinkedIn is dropped/, /promoted by hand/, /read-only/, /go-live decision/]) assert.match(c, rule);
-  for (const rule of [/One pull request open at a time/, /are you sure\?/, /OPERATIONS\.md/, /never read keys/i, /Game-changing/]) assert.match(c, rule);
+  for (const rule of [/Pull requests queue up; Aaron merges every one, in order/, /are you sure\?/, /OPERATIONS\.md/, /never read keys/i, /Game-changing/]) assert.match(c, rule);
   for (const field of ['Loop tier', 'Goals served', 'Standing decisions touched', 'Fresh-agent review', 'Open for Aaron']) assert.ok(c.includes(field), 'footer field: ' + field);
 });
 

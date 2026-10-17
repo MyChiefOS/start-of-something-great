@@ -186,10 +186,14 @@ test('C3: draft_proposal returns a link for a person to submit, files nothing, a
 
 test('C4: the uptime monitor confirms a failure before alerting, and reports every check', async () => {
   const uptime = require('../scripts/uptime');
-  const okFetch = async (url) => ({
-    status: 200,
-    text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : '<title>Day One Great</title>')
-  });
+  const hdr = (h) => ({ get: (k) => h[k.toLowerCase()] || null });
+  const okFetch = async (url) => (url.endsWith('/auth/github/start')
+    ? { status: 302, headers: hdr({ location: '/join?error=unavailable' }), text: async () => '' }
+    : {
+      status: 200,
+      headers: hdr({ 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'content-security-policy': "default-src 'self'" }),
+      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"closed"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : '<title>Day One Great</title>')
+    });
   let waits = 0;
   const all = await uptime.checkAll(okFetch, async () => { waits++; });
   assert.ok(all.every((r) => r.ok) && waits === 0);
@@ -203,6 +207,49 @@ test('C4: the uptime monitor confirms a failure before alerting, and reports eve
   assert.deepStrictEqual(res.filter((r) => !r.ok).map((r) => r.name), ['MCP server']);
   assert.match(uptime.report(res, new Date('2026-10-20T00:00:00Z')), /\*\*DOWN\*\* \| MCP server/);
   assert.ok(read('.github/workflows/uptime.yml').includes("cron: '7,22,37,52 * * * *'"), 'runs every 15 minutes');
+});
+
+test('launch checks: the go-live gate, sign-in and security headers are watched, and a leak or a server error is caught', async () => {
+  const uptime = require('../scripts/uptime');
+  const gate = uptime.CHECKS.find((c) => c.name === 'Go-live gate');
+  const r = (status, h = {}) => ({ status, headers: { get: (k) => h[k.toLowerCase()] || null } });
+  const REFUSED = '{"error":"Day One Great is in a private preview."}';
+  assert.ok(gate.test(r(200), '{"posts":[]}'), 'closed or public');
+  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED), 'preview, refused and not cached');
+  assert.ok(!gate.test(r(401, { 'cache-control': 'public, max-age=0' }), REFUSED), 'a cacheable refusal is a fault');
+  assert.ok(!gate.test(r(500), '{}'), 'a server error is a fault');
+  // D5: once the live stage is known, only the answer that stage requires passes: a 200 in the preview is a leak.
+  assert.ok(!gate.test(r(200), '{"posts":[]}', { stage: 'preview' }), 'posts served to a signed-out visitor in the preview is a leak');
+  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED, { stage: 'preview' }));
+  assert.ok(gate.test(r(200), '{"posts":[]}', { stage: 'public' }));
+  assert.ok(!gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED, { stage: 'public' }), 'refusing everyone while public is a fault');
+  assert.ok(gate.test(r(200), '{"posts":[]}', { stage: 'closed' }));
+  // D1: the live stage is a real one and, when the last setup run recorded one, that one. The check runs before the
+  // gate check and tells it the stage.
+  const stage = uptime.CHECKS.find((c) => c.name === 'Go-live stage');
+  assert.ok(uptime.CHECKS.indexOf(stage) < uptime.CHECKS.indexOf(gate), 'the stage is learned before the gate is judged');
+  const ctx = {};
+  assert.ok(stage.test(r(200), '{"name":"Day One Great","stage":"preview"}', ctx) === (process.env.EXPECTED_STAGE ? process.env.EXPECTED_STAGE === 'preview' : true));
+  assert.strictEqual(ctx.stage, 'preview');
+  assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"open"}', {}), 'an unknown stage is a fault');
+  assert.ok(!stage.test(r(200), '{"name":"Day One Great"}', {}), 'no stage at all is a fault');
+  assert.ok(!stage.test(r(500), '{}', {}));
+  const src = read('scripts/uptime.js');
+  assert.match(src, /live === EXPECTED/, 'compares with EXPECTED_STAGE when it is set');
+  assert.match(read('.github/workflows/uptime.yml'), /EXPECTED_STAGE: \$\{\{ vars\.EXPECTED_STAGE \}\}/, 'the workflow passes the recorded stage in');
+  const signin = uptime.CHECKS.find((c) => c.name === 'Sign-in start');
+  assert.strictEqual(signin.init.redirect, 'manual');
+  assert.ok(signin.test(r(302, { location: 'https://github.com/login/oauth/authorize?client_id=x' })));
+  assert.ok(signin.test(r(302, { location: '/join?error=unavailable' })));
+  assert.ok(!signin.test(r(302, { location: 'https://evil.example/login/oauth/authorize?' })), 'only GitHub or our own page');
+  assert.ok(!signin.test(r(500), 'Something went wrong. Please try again.'));
+  assert.ok(signin.test(r(503), 'Sign-in is not switched on here yet.'), 'closed: the designed answer');
+  assert.ok(!signin.test(r(503), 'Service Unavailable'), 'any other 503 is a fault');
+  const heads = uptime.CHECKS.find((c) => c.name === 'Security headers');
+  assert.ok(!heads.test(r(200, { 'content-security-policy': "default-src 'self'" })), 'missing HSTS is a fault');
+  const y = read('.github/workflows/uptime.yml');
+  assert.match(y, /deployment_status:/, 'also runs after every deploy');
+  assert.match(y, /github\.event\.deployment_status\.state == 'success'/);
 });
 
 test('C4: an outage opens one issue, comments only when it changes, and recovery closes it', () => {

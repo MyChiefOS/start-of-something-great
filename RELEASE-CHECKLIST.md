@@ -1,41 +1,38 @@
 # Release checklist (SF6)
 
-Everything that needs Aaron for Release 2, in one place, delivered once. Claude never sees, handles or types any of the secrets below. The private preview opens Nov 6; the public release is Nov 20, only on Aaron's go-live decision.
+Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until Aaron sets the go-live stage (launch.js): `closed` (the default), `preview` (only the people he allow-lists), then `public`, which is the go-live decision. The private preview target is Nov 6 and the public release Nov 20, only on Aaron's go-live decision.
+
+Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the setup run does it), notices in-app only, and the regional gate in code.
 
 ## Decisions
 
-- [ ] Approve criteria A1 to A6 (agents acting for their owners), or say what to change. PR 7 is built to the draft.
-- [ ] Approve the F4 rewording: "No platform quotas on what members say. Disclosed, volume-based abuse limits apply to everyone, and the emergency brake stays."
-- [ ] Agent-to-agent replies in the preview: allowed, or replies to people only?
-- [ ] Supabase: remove the `ensure_rls` event trigger (recommended), or keep it as a reviewed exception.
-- [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix.
-- [ ] Passkey recovery (RISKS.md RK63, PR 17): do you want a "recovery started" email, which would be an exception to notices being in-app only? (Starting a recovery already signs out every other session, built Oct 17.)
-- [ ] Email sign-in through Amazon SES (notices are in-app only, Oct 16). Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md v1.7), and the watch's starting limits (RISKS.md RK37).
-- [ ] Email addresses for copies are new personal data (opt-in, stored sealed, deleted with the account): approve storing them (RISKS.md RK33, RK36).
+- [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix, including RK62 (who may delete an account).
+- [ ] Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md), and the watch's starting limits (RISKS.md RK37).
+- [ ] Linking a new sign-in method signs out the session that linked it (PR 15): keep it, or say so.
+- [ ] A "recovery started" email for passkeys (PR 17), which would change "notices are in-app only": yes or no.
 
 ## Accounts and settings
 
-1. [ ] **GitHub production environment** (db/README.md, step 2): create `production`, add yourself as required reviewer, allow only `main`, then add the secrets `MIGRATION_DATABASE_URL` (Supabase session pooler, port 5432) and `MIGRATION_DATABASE_CA`.
-2. [ ] **Run the migrations** on the Actions tab ("Database migrations", on `main`) and approve the run. Both steps must be green.
-3. [ ] **The site's login role** (db/README.md, step 4): create `dog_web` and set its password with `\password` in psql.
-4. [ ] **Vercel**: add `DATABASE_URL` (transaction pooler, port 6543, user `dog_web.nksagchwpyljvjiwolmp`) and `DATABASE_CA`.
-5. [ ] **Sign-in keys and apps** (SIGNIN-SETUP.md, steps 1 to 3): the three keys, the GitHub sign-in app (done Oct 16), the X sign-in app and its spend cap.
-6. [ ] **Email sending** (Amazon SES, for sign-in links only; notices stay in-app): your AWS account with SES production access, and the SPF, DKIM and DMARC records at the registrar. (Replaces LinkedIn verification: LinkedIn was dropped on Oct 16, 2026.)
-7. [ ] **Make yourself the administrator** (SIGNIN-SETUP.md, "Making Aaron the administrator").
-8. [ ] **Backups** (O2): confirm backups are on and test one restore; record it in OPERATIONS.md.
-9. [ ] **Outside uptime service** (C4): set one up for https://dayonegreat.com/api/status.
-10. [ ] **Email and timers** (EMAIL-SETUP.md): SES domain identity with DKIM, the MAIL FROM domain and DMARC records in Vercel DNS, the SNS topic (switched to SignatureVersion 2) and configuration set, production access, a sending-only IAM user, then the Vercel variables. `CRON_SECRET` is needed for the timers even before email.
-11. [ ] **GitHub housekeeping**: delete the 13 merged branches listed in OPERATIONS.md and turn on "Automatically delete head branches".
-12. [ ] **Your passkeys** (PK13, PR 17): before go-live, enrol at least two passkeys on your own account at /account, one synced (for example on your phone) and one hardware key kept somewhere else, so you always have the owner controls and the brake, even if one is lost. Record it in OPERATIONS.md.
+All from GitHub, nothing on your computer: **SETUP.md** has every step and marks each value only you can supply.
+
+1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only, and its three secrets (SETUP.md, steps 1 and 2).
+2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. You read the run's plan before approving it. The site doesn't change.
+3. [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): done Oct 16.
+4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
+5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).
+6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
+7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
+8. [ ] **Before go-live:** enrol two passkeys on your account, one synced and one hardware key (PK13, once passkeys merge).
+9. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
 
 ## Legal (Aaron approves, with legal review)
 
 - [ ] L1: terms of service, content policy and privacy policy published on the site.
-- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it, including the optional email address for notice copies (sealed, deleted with the account; a bounce fingerprint stays, RK36). db/README.md ("Your account and deleting it") lists what it must say, including the points in RISKS.md RK8 to RK10.
+- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it: JEVs's checks, the deletion review and legal hold, the traveller notice, in-app notices, and, once built, Stripe Identity's reference and result (never the images). db/README.md ("Your account and deleting it") lists what it must say, including RISKS.md RK8 to RK10.
 - [ ] The terms say owners answer for their agents and define "approved" (Delegated Agency plan).
 - [ ] L3: confirm CONTENT-LICENSE.md is current.
 
 ## Go live
 
-- [ ] Test the preview yourself (Claude has prepared it; every automated gate is green).
-- [ ] Give the go-live decision. Nothing goes public before it.
+- [ ] Test the preview yourself, with the stage at `preview` (every automated gate is green).
+- [ ] Give the go-live decision: run Production setup with the stage `public`. Nothing goes public before it.
