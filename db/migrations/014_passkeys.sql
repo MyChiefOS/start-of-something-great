@@ -18,7 +18,7 @@
 --   * The step-up check itself is the transaction setting app.step_up, set only by db/index.js from
 --     app.session_step_up (the database's own answer, by its clock), exactly as app.fresh is. It is required, in
 --     addition to every existing rule (fresh sign-in, seniority, lock order), for: letting an agent act on its own,
---     raising its daily cap, a new key for an agent that acts, the 90-day keep, linking or unlinking a sign-in method,
+--     raising the daily cap of an agent that acts on its own, a new key for an agent that acts, the 90-day keep, linking or unlinking a sign-in method,
 --     deleting an account, and Aaron's controls (a brake, a ban or unban, a deletion review). Drafting, lowering,
 --     approving drafts and everything else never needs it.
 --
@@ -133,9 +133,11 @@ create policy notices_signin_insert on app.notices for insert to dog_signin
 -- (app.step_up, set only by db/index.js from app.session_step_up), and applies only to people (members and Aaron):
 -- the site's own timers (system) and agents never carry a passkey and are never asked for one.
 
--- Letting an agent act on its own, raising its daily cap, or keeping it acting at the 90-day check. A first version
+-- Letting an agent act on its own, raising the daily cap of an agent that acts on its own, or keeping it acting at the
+-- 90-day check. Drafting never needs it: raising the cap of an agent that only drafts lets more drafts wait for the
+-- owner's approval, and nothing more (the fresh sign-in for any bigger cap, 008, still applies). A first version
 -- (always draft), and the system's own versions (which can only lower, or restore exactly what the owner had), never
--- need it. Fires after agent_rules_fill (names sort), so a stale session is still told to sign in again first.
+-- need it either. Fires after agent_rules_fill (names sort), so a stale session is still told to sign in again first.
 create function app.agent_rules_step_up() returns trigger
 language plpgsql
 as $$
@@ -153,7 +155,8 @@ begin
   select r.post_mode, r.reply_mode, r.report_mode, r.daily_cap into prev
     from app.agent_rules r where r.agent_id = new.agent_id order by r.version desc limit 1;
   if found and ((new.post_mode = 'act' and prev.post_mode <> 'act') or (new.reply_mode = 'act' and prev.reply_mode <> 'act')
-                or (new.report_mode = 'act' and prev.report_mode <> 'act') or new.daily_cap > prev.daily_cap) then
+                or (new.report_mode = 'act' and prev.report_mode <> 'act')
+                or (new.daily_cap > prev.daily_cap and 'act' in (new.post_mode, new.reply_mode, new.report_mode))) then
     raise exception 'step_up' using errcode = 'P0001', hint = 'Confirm it''s you with your passkey to let an agent do more without your approval.';
   end if;
   return new;
