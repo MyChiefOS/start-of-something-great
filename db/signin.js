@@ -131,7 +131,7 @@ async function known(t, { provider, fingerprints }) {
   return r.known === true;
 }
 
-async function sessionResolve(t, sessionHash, idleDays) {
+async function sessionResolve(t, sessionHash, idleDays, { strict = false } = {}) {
   if (typeof sessionHash !== 'string' || !HEX64.test(sessionHash)) return null;
   const days = v.int('idleDays', idleDays, { min: 1, max: 30 });
   // A page read must never fail on a race (PR 15's re-review, probe H): a deadlock, serialization failure or lock it
@@ -144,7 +144,12 @@ async function sessionResolve(t, sessionHash, idleDays) {
       break;
     } catch (e) {
       if (!BUSY.includes(e.code)) throw e;
-      if (attempt >= RESOLVE_TRIES) return null;
+      if (attempt >= RESOLVE_TRIES) {
+        // strict (sign out everywhere): a lost race must never pass for "not signed in", or the button an owner
+        // presses after a takeover would quietly end only this browser (PR 15's final re-review, probe J).
+        if (strict) { const err = new Error('the session read lost a race; try again'); err.code = 'SESSION_BUSY'; throw err; }
+        return null;
+      }
       await new Promise((ok) => setTimeout(ok, 10 + Math.floor(Math.random() * 40)));
     }
   }

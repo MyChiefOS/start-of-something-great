@@ -388,7 +388,14 @@ function make(deps) {
       const hash = sessionHash(req);
       if (hash) {
         if (everywhere) {
-          const me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS));
+          let me;
+          try {
+            me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS, { strict: true }));
+          } catch (e) {
+            // Nothing ended and the cookie stays, so the member is told to try again rather than wrongly reassured.
+            if (e && e.code === 'SESSION_BUSY') return h.redirect(res, '/account?error=busy');
+            throw e;
+          }
           if (me) await run({ actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId }, (t) => store.sessionsEndAll(t));
         }
         await run(ANON, (t) => store.sessionEnd(t, hash));

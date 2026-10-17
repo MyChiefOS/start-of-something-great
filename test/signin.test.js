@@ -1228,3 +1228,34 @@ test('PR 15 re-review: a page read that loses a race is retried, and never becom
   calls = 0;
   await assert.rejects(store.sessionResolve(flaky(1, 'XX000'), 'a'.repeat(64), 7), /lost a race/, 'anything else is still an error');
 });
+
+test('PR 15 final re-review, probe J: "sign out everywhere" never quietly ends only this browser when the session read loses its race', async () => {
+  const env = setup({ accounts: { 'github:J1': { accountId: 'J1', level: 1, recheckAfter: null } } });
+  const a = await oauth(env, 'github', 'J1');
+  const b = await oauth(env, 'github', 'J1');
+  const id = (await me(env, a.browser)).member_id;
+  const before = (await q(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n;
+  // The same flow, but every session_resolve loses a deadlock, as it would under contention; everything else is real.
+  const losing = make({ config: env.cfg, providers: {}, sendEmail: async () => {}, run: (ctx, fn) => db.tx(web, ctx, (t) => {
+    const orig = t.savepoint.bind(t);
+    t.savepoint = (f) => orig((s) => {
+      const tag = (strings, ...vals) => {
+        if (strings.join('').includes('app.session_resolve')) { const e = new Error('deadlock detected'); e.code = '40P01'; throw e; }
+        return s(strings, ...vals);
+      };
+      Object.assign(tag, s);
+      return f(tag);
+    });
+    return fn(t);
+  }) });
+  const r = res();
+  await losing.logout(req('POST', '/auth/logout-everywhere', { cookie: a.browser.header(), origin: ORIGIN }), r, true);
+  assert.strictEqual(r.getHeader('Location'), '/account?error=busy', 'the member is told to try again');
+  const after = (await q(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n;
+  assert.strictEqual(after, before, 'nothing was ended, so nothing pretends to have worked');
+  assert.strictEqual((await me(env, b.browser)).signed_in, true, 'the other device is still signed in, and the member knows to retry');
+  // Without the race, the same button ends every session.
+  const ok = res();
+  await env.flow.logout(req('POST', '/auth/logout-everywhere', { cookie: a.browser.header(), origin: ORIGIN }), ok, true);
+  assert.strictEqual((await q(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n, 0);
+});
