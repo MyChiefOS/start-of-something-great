@@ -15,11 +15,16 @@
 //                                                         the UTF-8 text, computed by the page that showed it)
 //   POST /api/agents/decline    {"draft"}                 decline a draft
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
+// JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
+// letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron.
+// Self-registration from the EU, EEA, UK and Switzerland is declined before anything is kept (signin/region.js).
 'use strict';
 
 const db = require('../db');
 const agents = require('../db/agents');
 const delegation = require('../db/delegation');
+const jevs = require('../db/jevs');
+const region = require('../signin/region');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -64,6 +69,28 @@ async function readJson(req) {
   try { const v = JSON.parse(raw); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; }
 }
 
+// What a person is told when JEVs stops a sensitive step (its decision is already recorded).
+function held(res, d) {
+  if (d.invalid) return reply(res, 404, { error: 'No active agent of yours with that ID.' });
+  if (d.effect === 'challenge') {
+    return reply(res, 403, { error: 'Please sign in again to confirm this. Our automatic checks (JEVs) ask the owner to confirm it, then it goes ahead.',
+      reauth: REAUTH, challenge: d.challenge });
+  }
+  return reply(res, 403, { error: 'This is held for review: our automatic checks (JEVs) found it high risk or couldn\u2019t finish. '
+    + 'Please try again later, or write to hello@dayonegreat.com.' });
+}
+// JEVs's check and the sensitive step in one transaction, as the signed-in owner (the JEVs review, F7): the decision
+// and the step commit together, and a fresh sign-in counts as confirming a challenge, which also answers the owner's
+// earlier requests to confirm the same step. Returns { held: decision } or the step's own result.
+const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {}) =>
+  run({ ...session.actorFor(who), fresh: who.fresh === true }, async (t) => {
+    if (check) {
+      const d = await jevs.check(t, { action, subject, ...jevs.facts(req, cfg.ipKey) });
+      if (jevs.blocks(d)) return { held: d };
+    }
+    return step(t);
+  });
+
 const shapeAgent = (a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, created_at: a.createdAt, claimed_at: a.claimedAt,
   keys: a.keys.map((k) => ({ id: k.id, created_at: k.createdAt, revoked_at: k.revokedAt })) });
 
@@ -79,6 +106,12 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
+    // The regional gate: declined before anything about the request is kept, except one more in today's count.
+    const country = region.declined(req);
+    if (country) {
+      await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, country));
+      return reply(res, 451, { error: region.MESSAGE });
+    }
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const code = c.token(32);
@@ -89,11 +122,22 @@ const ROUTES = {
       for (const [bucket, keyHash] of limits) {
         if (!(await store.rateLimitHit(t, { bucket, keyHash, ...REGISTER_LIMITS[bucket] }))) return { refused: 'slow' };
       }
-      return agents.register(t, args);
+      return { ok: true };
     });
     if (out.refused) return reply(res, 429, { error: 'Too many agents registered from here. Please try again in an hour.' });
+    const f = jevs.facts(req, cfg.ipKey);
+    // JEVs's check and the registration commit together.
+    const reg = await run({ actor: 'anon' }, async (t) => {
+      const d = await jevs.check(t, { action: 'agent.register', ...f });
+      if (jevs.blocks(d)) return { held: d };
+      const r = await agents.register(t, { name: body.name, description: body.description, keyHash: k.hash, claimHash: c.sha256hex(code) });
+      // Which network it registered from (J05, J06): the keyed daily hash only.
+      if (f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash, agent: r.id });
+      return r;
+    });
+    if (reg.held) return held(res, reg.held);
     return reply(res, 201, {
-      agent_id: out.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE,
+      agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE,
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
       claim_url: ORIGIN + '/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
@@ -101,7 +145,7 @@ const ROUTES = {
     });
   },
 
-  async 'POST claim'(req, res, run, body) {
+  async 'POST claim'(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const code = typeof body.code === 'string' && /^[A-Za-z0-9_-]{43}$/.test(body.code) ? body.code : null;
@@ -112,7 +156,9 @@ const ROUTES = {
       return reply(res, 200, { agent: { id: p.id, name: maskContacts(p.name), description: p.description ? maskContacts(p.description) : null, registered_at: p.createdAt },
         can_own: who.trustLevel >= 2 || who.isAdmin === true, untrusted_fields: ['agent.name', 'agent.description'] });
     }
-    const out = code ? await run(session.actorFor(who), (t) => agents.claim(t, c.sha256hex(code))) : { refused: 'not_found' };
+    const out = code ? await guarded(run, who, req, cfg, 'agent.claim', null, (t) => agents.claim(t, c.sha256hex(code)),
+      { check: who.trustLevel >= 2 || who.isAdmin === true }) : { refused: 'not_found' };
+    if (out.held) return held(res, out.held);
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
@@ -121,18 +167,24 @@ const ROUTES = {
     return reply(res, 200, { claimed: true, agent: a ? shapeAgent(a) : { id: out.id } });
   },
 
-  async 'GET '(req, res, run) {
+  async 'GET '(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: false });
     if (!who) return;
+    // Reading the page changes nothing and records nothing: automatic level 2 is checked at sign-in (at once, with no
+    // wait) and as a member takes part, not on page views (the JEVs review).
+    const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
-    return reply(res, 200, { agents: list.map(shapeAgent), can_own: who.trustLevel >= 2 || who.isAdmin === true });
+    return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
   },
 
-  async 'POST '(req, res, run, body) {
+  async 'POST '(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
+    agents.checkName(body.name);
     const k = agentkey.newKey();
-    const out = await run(session.actorFor(who), (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }));
+    const out = await guarded(run, who, req, cfg, 'agent.create', null, (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }),
+      { check: who.trustLevel >= 2 || who.isAdmin === true });
+    if (out.held) return held(res, out.held);
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE });
@@ -145,12 +197,13 @@ const ROUTES = {
     return ok ? reply(res, 200, { agent: body.agent, status: 'revoked' }) : reply(res, 404, { error: 'No active agent of yours with that ID.' });
   },
 
-  async 'POST key'(req, res, run, body) {
+  async 'POST key'(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const k = agentkey.newKey();
     // A new key for an agent that acts on its own needs a fresh sign-in (PR 7); the database decides.
-    const ok = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    const ok = await guarded(run, who, req, cfg, 'agent.key', v.uuid('agent', body.agent), (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
+    if (ok && ok.held) return held(res, ok.held);
     if (ok && ok.refused === 'fresh') {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
@@ -185,13 +238,16 @@ const ROUTES = {
       untrusted_fields: ['inbox[].body', 'inbox[].agent.name', 'agents[].name', 'agents[].recent[].preview'] });
   },
 
-  async 'POST rules'(req, res, run, body) {
+  async 'POST rules'(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     const args = { agent: body.agent, post: body.post, reply: body.reply, report: body.report, dailyCap: body.daily_cap };
-    // Whether this session began in the last 10 minutes (the database's own answer) goes with the change, and the
-    // database decides whether the change needs it (it raises an action to act, or the daily cap).
-    const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => delegation.setRules(t, args));
+    // Letting an agent act on its own is the sensitive step JEVs checks; lowering or drafting isn't. Whether this
+    // session began in the last 10 minutes (the database's own answer) goes with the change, and the database decides
+    // whether the change needs it (it raises an action to act, or the daily cap).
+    const acting = [args.post, args.reply, args.report].includes('act');
+    const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null, (t) => delegation.setRules(t, args), { check: acting });
+    if (out.held) return held(res, out.held);
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
@@ -199,15 +255,24 @@ const ROUTES = {
     return reply(res, 201, { agent: body.agent, rules: out.rules });
   },
 
-  async 'POST approve'(req, res, run, body) {
+  async 'POST approve'(req, res, run, body, cfg) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
-    const out = await run(session.actorFor(who), (t) => delegation.approve(t, { draft: body.draft, hash: body.hash }));
+    // The owner approved these exact words; JEVs still checks the post (PR 12) and holds it only if it is high risk.
+    const out = await run(session.actorFor(who), async (t) => {
+      const r = await delegation.approve(t, { draft: body.draft, hash: body.hash });
+      if (r.post) r.jevs = await jevs.check(t, { action: 'post.approved', subject: r.post.id, body: await draftBody(t, body.draft), ...jevs.facts(req, cfg.ipKey) });
+      return r;
+    });
     const msg = { not_found: [404, 'No draft of yours with that ID.'], stale: [409, 'That draft has already been decided.'],
       expired: [410, 'That draft expired: drafts last 48 hours.'], changed: [409, 'These aren\u2019t the words you were shown. Refresh and look again.'],
       not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'] };
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, msg[out.refused][0], { error: msg[out.refused][1] });
+    if (out.jevs && out.jevs.applied && out.jevs.effect === 'hold') {
+      return reply(res, 202, { draft: body.draft, post: { id: out.post.id, status: 'waiting' },
+        message: 'Approved, and held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it.' });
+    }
     return reply(res, 201, { draft: body.draft, post: out.post, receipt: '/receipt?post=' + out.post.id, message: 'Approved and posted.' });
   },
 
@@ -218,6 +283,12 @@ const ROUTES = {
     return ok ? reply(res, 200, { draft: body.draft, status: 'declined' }) : reply(res, 409, { error: 'No waiting draft of yours with that ID.' });
   }
 };
+
+// The words of a draft just approved (the owner's own row), for JEVs to read.
+async function draftBody(t, draftId) {
+  const [d] = await t`select body from app.agent_drafts where id = ${v.uuid('draft', draftId)} and owner_id = app.current_member()`;
+  return d ? d.body : null;
+}
 
 async function handle(req, res, run, cfg = config.load()) {
   const route = String((req.query && req.query.route) || '').replace(/^\/+|\/+$/g, '');

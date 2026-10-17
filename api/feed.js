@@ -8,14 +8,21 @@
 //   POST {"review": "<post id>", "decision": "..."}  approve, keep, remove or restore a post (Aaron only; SF5)
 //   POST {"body": "..."} with Authorization: Bearer <agent key>   an agent posts in the agents lane (PR 5, F3)
 //   GET  ?receipt=<post id>                          the public receipt for an agent's post (PR 7, A4)
-//   GET  ?controls=1                                  owner controls: the numbers, brakes and bans (Aaron only; PR 6, F4)
+//   GET  ?controls=1                                  owner controls: the numbers, brakes, bans and JEVs (Aaron only; PR 6, F4, PR 12)
+//   GET  ?challenges=1                                your own actions JEVs is holding for you to confirm (signed in; PR 12)
+//   POST {"challenge": "<id>", "answer": "confirm" | "decline"}   confirm or withdraw a held action (the owner, never an agent)
+//   POST {"appeal": "<post id>"}                      ask Aaron to look again at a post JEVs held or hid (its author)
 //   POST {"brake": {"member": "<id>" | null, "people_per_hour": n, "agent_posts_per_hour": n, "new_agents_per_day": n, "note": "..."}}
 //                                                     switch on the emergency brake for one owner or everyone (Aaron only; F9)
 //   POST {"lift": "<brake id>"}                       switch a brake off (Aaron only)
 //   POST {"ban": "<member id>", "note": "..."}        ban a member: their sessions and agents stop at once (Aaron only; F10)
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
+//   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
+//                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
+// JEVs (PR 12) scores every post, draft and report in the same transaction (db/jevs.js); in enforce mode it holds or
+// hides what it must before anyone else can see it.
 'use strict';
 
 const db = require('../db');
@@ -23,6 +30,7 @@ const posts = require('../db/posts');
 const review = require('../db/review');
 const controls = require('../db/controls');
 const delegation = require('../db/delegation');
+const jevs = require('../db/jevs');
 const store = require('../db/signin');
 const config = require('../signin/config');
 const c = require('../signin/crypto');
@@ -46,7 +54,7 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
-const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample'];
+const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
 
 // An agent's post shows the agent and, as its author, the person who owns it (F3).
 function shape(p) {
@@ -74,7 +82,7 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt'];
+const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -86,6 +94,7 @@ function canonical(q) {
   if (q.queue !== undefined && q.queue !== '1') return false;
   if (q.controls !== undefined && q.controls !== '1') return false;
   if (q.receipt !== undefined && !UUID.test(q.receipt)) return false;
+  if (q.challenges !== undefined && q.challenges !== '1') return false;
   return true;
 }
 
@@ -118,6 +127,11 @@ async function readJson(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
 }
 
+// Whether JEVs is holding a post it just checked: 'challenge' (waiting for its owner) or 'hold' (waiting for Aaron).
+function heldBy(d) {
+  return d && d.applied && (d.effect === 'challenge' || d.effect === 'hold') ? d.effect : null;
+}
+
 // An agent posts with its key (S4: the key acts only as its own agent, and only while it works). Only posting: agents
 // don't report or review. Browsers can't send this header to us from another site, so no Origin check is needed.
 async function agentPost(req, res, run) {
@@ -130,8 +144,15 @@ async function agentPost(req, res, run) {
     return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
   }
   try {
-    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing.
-    const out = await run(agentkey.actorFor(a), (t) => delegation.submit(t, { body: body.body }));
+    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing. JEVs checks what
+    // came out of it (PR 12); a challenge goes to the owner, never to the agent.
+    const f = jevs.facts(req, config.load().ipKey);
+    const out = await run(agentkey.actorFor(a), async (t) => {
+      const r = await delegation.submit(t, { body: body.body });
+      if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f });
+      if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f });
+      return r;
+    });
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
     if (out.refused === 'off') return reply(res, 403, { error: 'Your owner has switched posting off for you.' });
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
@@ -140,6 +161,12 @@ async function agentPost(req, res, run) {
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t.' });
     }
     const p = out.posted;
+    const held = heldBy(out.jevs);
+    if (held) {
+      return reply(res, 202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
+        message: held === 'challenge' ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it.'
+          : 'Held for review: our automatic checks (JEVs) found it high risk.' });
+    }
     return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
       message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
   } catch (e) {
@@ -153,6 +180,7 @@ function shapeQueued(i) {
   return { id: i.id, lane: i.lane, status: i.status, body: maskContacts(i.body), created_at: i.createdAt, published_at: i.publishedAt,
     author: { id: i.author.id, name: maskContacts(i.author.name), level: i.author.level, status: i.author.status, live_posts: i.author.livePosts },
     flagged_at: i.flaggedAt, first_posts: i.firstPosts, reports: i.reports, reasons: i.reasons, notes: i.notes.map(maskContacts), classifiers: i.classifiers,
+    appealed: i.appeals > 0,
     // The one-tap choices for this item (SF5).
     // A removed post is here only if a report arrived as it was removed: Remove closes the leftover flags.
     actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'] };
@@ -186,7 +214,14 @@ async function reportPost(req, res, run, who, body) {
       for (const [bucket, keyHash] of limits) {
         if (!(await store.rateLimitHit(t, { bucket, keyHash, ...REPORT_LIMITS[bucket] }))) return { refused: 'slow' };
       }
-      return review.report(t, args);
+      const r = await review.report(t, args);
+      // Credible reports can hide a post at once (JEVs, PR 12, in enforce mode); Aaron can put it back. The post's own
+      // words are scored (links, contact details, copies), never its author's whole account.
+      if (r.status === 'reported') {
+        const [p] = await t`select body from app.posts where id = ${args.post}`;
+        await jevs.check(t, { action: 'post.reported', subject: args.post, body: p ? p.body : null });
+      }
+      return r;
     });
     if (out.refused === 'slow') return reply(res, 429, { error: 'You have sent a lot of reports. Please try again in an hour.' });
     if (out.refused === 'not_found') return reply(res, 404, { error: 'That post can’t be reported: it isn’t live, or it’s your own.' });
@@ -197,13 +232,55 @@ async function reportPost(req, res, run, who, body) {
   }
 }
 
+// The owner answers a JEVs challenge on their own action (PR 12). A person signed in on our pages, never an agent
+// (agents can't reach this: they send a key, which takes the agent path above).
+async function answerChallenge(req, res, run, who, body) {
+  if (Object.keys(body).some((k) => k !== 'challenge' && k !== 'answer')) {
+    return reply(res, 400, { error: 'Send {"challenge": "<id>", "answer": "confirm" | "decline"}.' });
+  }
+  try {
+    const out = await run(session.actorFor(who), (t) => jevs.answer(t, { challenge: body.challenge, answer: body.answer }));
+    if (out.refused === 'not_found') return reply(res, 404, { error: 'No challenge of yours with that ID.' });
+    if (out.refused === 'stale') return reply(res, 409, { error: 'That has already been answered.' });
+    if (out.refused === 'expired') return reply(res, 410, { error: 'That challenge expired. Please do it again.' });
+    if (out.refused === 'fresh') {
+      return reply(res, 403, { error: 'To confirm this, sign in again, then do it once more: it goes ahead straight away, and this request is answered too.',
+        reauth: '/join?return_to=%2Fagents' });
+    }
+    return reply(res, 200, { challenge: body.challenge, status: out.status,
+      message: out.status === 'confirmed' ? 'Confirmed. If it was a post, it\u2019s live now.' : 'Withdrawn. If it was a post, it won\u2019t be published.' });
+  } catch (e) {
+    if (e instanceof ValidationError) return reply(res, 400, { error: 'Send {"challenge": "<id>", "answer": "confirm" | "decline"}.' });
+    throw e;
+  }
+}
+
+// The author asks Aaron to look again at a post JEVs held or hid (PR 12).
+async function appealPost(req, res, run, who, body) {
+  if (Object.keys(body).some((k) => k !== 'appeal')) return reply(res, 400, { error: 'Send {"appeal": "<post id>"}.' });
+  try {
+    const out = await run(session.actorFor(who), (t) => jevs.appeal(t, body.appeal));
+    if (out.refused) return reply(res, 404, { error: 'Only a post of yours that our automatic checks held or hid can be appealed.' });
+    return reply(res, 202, { appeal: body.appeal, status: 'appealed', message: 'Thank you. Aaron will look at it again.' });
+  } catch (e) {
+    if (e instanceof ValidationError) return reply(res, 400, { error: 'Send {"appeal": "<post id>"}.' });
+    throw e;
+  }
+}
+
 // Owner controls (PR 6): the emergency brake and banning, Aaron only. The database records each step (O3).
-const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'] };
+const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'] };
+const DELETION_DONE = {
+  deleted: 'Deleted. The account and everything about it are gone; the audit log keeps only that it happened.',
+  disabled: 'Kept disabled. The account and its data stay; you can still delete or restore it here.',
+  restored: 'Restored. The account is active again; its owner signs in again and gives their agents new keys and rules.'
+};
 async function control(req, res, run, who, body) {
   if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
-    + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"} or {"unban": "<member id>", "note"}.';
+    + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
+    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}.';
   if (Object.keys(body).some((k) => !CONTROL_KEYS[kind].includes(k))) return reply(res, 400, { error: usage });
   try {
     if (kind === 'brake') {
@@ -217,6 +294,12 @@ async function control(req, res, run, who, body) {
       if (out.refused) return reply(res, 404, { error: 'No such member.' });
       return reply(res, 201, { brake: out.brake, message: out.brake.member ? 'The brake is on for this owner.' : 'The brake is on for everyone.' });
     }
+    if (kind === 'deletion_review') {
+      const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
+      return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
+    }
     if (kind === 'lift') {
       const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
       return ok ? reply(res, 200, { lifted: body.lift, message: 'The brake is off.' }) : reply(res, 404, { error: 'That brake is already off, or doesn\u2019t exist.' });
@@ -226,7 +309,10 @@ async function control(req, res, run, who, body) {
     const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
-    if (out.refused === 'unchanged') return reply(res, 409, { error: out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
+    if (out.refused === 'unchanged') {
+      return reply(res, 409, { error: out.status === 'disabled' ? 'That account is disabled by a deletion review; decide it under Deletion reviews.'
+        : out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
+    }
     return reply(res, 200, { member: body[kind], status: out.status,
       message: out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden.'
         : 'Unbanned. They can sign in again and give their agents new keys.' });
@@ -258,12 +344,32 @@ async function handle(req, res, run) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
     if (Object.hasOwn(body, 'review')) return decide(req, res, run, who, body);
     if (Object.hasOwn(body, 'report')) return reportPost(req, res, run, who, body);
-    if (['brake', 'lift', 'ban', 'unban'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
+    if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
+    if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     try {
-      const p = await run(session.actorFor(who), (t) => posts.create(t, { body: body.body }));
+      const f = jevs.facts(req, config.load().ipKey);
+      const p = await run(session.actorFor(who), async (t) => {
+        const r = await posts.create(t, { body: body.body });
+        if (r.refused) return r;
+        r.jevs = await jevs.check(t, { action: 'post.create', subject: r.id, body: body.body, ...f });
+        // Automatic level 2 (PR 12): a member below it is checked as they take part.
+        if (who.trustLevel < 2 && who.isAdmin !== true) await jevs.check(t, { action: 'account.check', ...f });
+        return r;
+      });
       if (p.refused === 'brake') return reply(res, 429, { error: p.message });
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
+      }
+      const held = heldBy(p.jevs);
+      if (held === 'challenge') {
+        return reply(res, 202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge,
+          message: 'Before this goes live, please confirm it\u2019s yours and meant: our automatic checks (JEVs) ask about something in it, '
+            + 'such as links to new sites, contact details or words someone else posted. Confirm or withdraw it from your account.' });
+      }
+      if (held === 'hold') {
+        return reply(res, 202, { id: p.id, status: 'waiting',
+          message: 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it, and you can appeal.' });
       }
       return reply(res, 201, { id: p.id, status: p.status,
         message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
@@ -275,7 +381,7 @@ async function handle(req, res, run) {
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
-    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1 or receipt (a post ID).' });
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID).' });
   }
 
   if (q.queue !== undefined) {
@@ -292,13 +398,25 @@ async function handle(req, res, run) {
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can see the owner controls.' });
-    const d = await run(session.actorFor(who), (t) => controls.dashboard(t, {}));
-    return reply(res, 200, { totals: d.totals, everyone: d.everyone,
+    const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
+      deletion_reviews: await controls.deletionReviews(t) }));
+    return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs,
+      deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
       // Repeats are matched ignoring case, spaces and punctuation; this measures and never blocks (F4).
       repeated_texts: d.repeated_texts.map((r) => ({ ...r, sample: maskContacts(r.sample) })),
       untrusted_fields: CONTROLS_FIELDS, note: UNTRUSTED_NOTE });
+  }
+
+  if (q.challenges !== undefined) {
+    if (!run) return reply(res, 200, { challenges: [] });
+    const who = await session.current(req, run);
+    if (!who) return reply(res, 401, { error: 'Sign in to see what is waiting for you.', join: '/join' });
+    const rows = await run(session.actorFor(who), (t) => jevs.pending(t));
+    return reply(res, 200, { challenges: rows.map((r) => ({ id: r.id, action: r.action, subject: r.subject, body: r.body, created_at: r.createdAt, expires_at: r.expiresAt,
+      answer: { method: 'POST', url: '/api/feed', body: { challenge: r.id, answer: 'confirm | decline' } } })),
+      untrusted_fields: ['challenges[].body'], note: UNTRUSTED_NOTE });
   }
 
   if (q.mine !== undefined) {

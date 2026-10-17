@@ -31,8 +31,10 @@ async function emailTokenRedeem(t, { tokenHash, browserHash, confirmed }) {
   return r.status === 'ok' ? { status: 'ok', emailFingerprints: r.email_fingerprints.split(','), keyVersion: r.key_version } : { status: 'confirm' };
 }
 
-// Returns { memberId, isNew, trustLevel, isAdmin }, or { refused: 'banned' | 'taken' }.
-async function signIn(t, { provider, fingerprints, keyVersion, level, displayName, sessionHash, sessionDays, recheckAfter = null, linkMember = null }) {
+// Returns { memberId, isNew, trustLevel, isAdmin }, or { refused: 'banned' | 'disabled' | 'taken' | 'region' }.
+// region: the country a member confirmed they are travelling in (PR 12); with it, no new account is ever made
+// ('region'), and the confirmation is recorded.
+async function signIn(t, { provider, fingerprints, keyVersion, level, displayName, sessionHash, sessionDays, recheckAfter = null, linkMember = null, region = null }) {
   const fps = fingerprints.map((f) => hex('fingerprint', f));
   if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
   const args = {
@@ -43,21 +45,31 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
     session: hex('sessionHash', sessionHash),
     days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
     recheck: recheckAfter === null ? null : new Date(recheckAfter),
-    link: linkMember === null ? null : v.uuid('linkMember', linkMember)
+    link: linkMember === null ? null : v.uuid('linkMember', linkMember),
+    region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
   };
   // Two first sign-ins of the same account at the same moment: one wins, the other tries once more and finds it.
   for (let attempt = 0; ; attempt++) {
     try {
       // A savepoint, so a refusal or a lost race leaves the surrounding transaction usable.
       const [r] = await t.savepoint((s) => s`select * from app.sign_in(${args.provider}, ${s.array(fps)}::text[], ${args.keyVersion}::smallint,
-        ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, ${args.link}::uuid)`);
+        ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, ${args.link}::uuid, ${args.region})`);
       return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
     } catch (e) {
-      if (e.code === 'P0001' && (e.message === 'banned' || e.message === 'taken')) return { refused: e.message };
+      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
       if (e.code === '23505' && attempt === 0) continue;
       throw e;
     }
   }
+}
+
+// Whether a sign-in method already belongs to an account. Ask only after the provider (or an emailed link) has
+// confirmed who the person is, so the answer reaches nobody but the account holder.
+async function known(t, { provider, fingerprints }) {
+  const fps = fingerprints.map((f) => hex('fingerprint', f));
+  if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
+  const [r] = await t`select app.sign_in_known(${v.oneOf('provider', provider, ['github', 'x', 'email', 'linkedin'])}, ${t.array(fps)}::text[]) as known`;
+  return r.known === true;
 }
 
 async function sessionResolve(t, sessionHash, idleDays) {
@@ -85,8 +97,11 @@ async function account(t) {
   if (!m) return null;
   const ids = await t`select provider, level, verified_at from app.identities where member_id = app.current_member() order by created_at`;
   const [s] = await t`select count(*)::int as n from app.sessions where member_id = app.current_member()`;
+  // A deletion JEVs flagged as high risk, waiting for Aaron (PR 12).
+  const [r] = await t`select created_at from app.deletion_reviews where member_id = app.current_member() and decision is null`;
   return { memberId: m.id, displayName: m.display_name, trustLevel: m.trust_level, joined: m.created_at,
-    signIns: ids.map((i) => ({ provider: i.provider, level: i.level, verifiedAt: i.verified_at })), sessions: s.n };
+    signIns: ids.map((i) => ({ provider: i.provider, level: i.level, verifiedAt: i.verified_at })), sessions: s.n,
+    deletionReview: r ? { since: r.created_at, disablesAt: new Date(new Date(r.created_at).getTime() + 24 * 3600 * 1000) } : null };
 }
 
 // A member renames themselves (1 to 80 characters, one line).
@@ -97,7 +112,8 @@ async function rename(t, name) {
 }
 
 // F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
-// or { refused: 'not_member' | 'not_active' | 'fresh' } ('fresh': the session didn't start recently enough, RK3).
+// or { refused: 'not_member' | 'not_active' | 'fresh' | 'under_review' } ('fresh': the session didn't start recently
+// enough, RK3; 'under_review': JEVs flagged an earlier request and Aaron hasn't decided yet, PR 12).
 async function deleteAccount(t) {
   try {
     const [r] = await t.savepoint((s) => s`select * from app.delete_account()`);
@@ -105,8 +121,9 @@ async function deleteAccount(t) {
   } catch (e) {
     if (e.code === '42501' && (e.message === 'not_member' || e.message === 'not_active')) return { refused: e.message };
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
+    if (e.code === 'P0001' && e.message === 'under_review') return { refused: 'under_review' };
     throw e;
   }
 }
 
-module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

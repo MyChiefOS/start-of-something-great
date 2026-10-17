@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.4, approved by Aaron Chandler on October 14, 2026.** (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them.)
+**Status: v1.6.** v1.4 was approved by Aaron Chandler on October 14, 2026 (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them). v1.5 records his October 16 decisions. v1.6 adds JV1 to JV13 for JEVs, approved when he merges the change that adds them (PR 12).
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -80,6 +80,26 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 | F9 | **Emergency brake**: Aaron can switch on limits for one owner or for everyone, and they take effect within 1 minute | Automated test |
 | F10 | Banning an owner stops all of their agents at once, and the same X, GitHub or email account cannot sign up again | Automated test |
 
+### JEVs: the automated checks (PR 12)
+
+JEVs is the checking layer F6 and the trust levels rely on (Aaron's definition, Oct 16, 2026). What counts as done:
+
+| ID | Criterion | How it's checked |
+|---|---|---|
+| JV1 | Every risk question is in code with a stable ID (J01, J02, ...), a plain public description and a scoring function from 0 to 100; the same facts always give the same scores, and no AI decides | Automated test |
+| JV2 | The questions are published (llms.txt and db/README.md, kept the same as the code by a test); the thresholds are not in the code, live in the database, and only the database owner can change them, each change recorded | Automated test |
+| JV3 | Every scored action leaves an append-only decision: low, medium or high, the question IDs and scores that drove it, and what was done. It holds no personal data beyond what the audit log keeps (no words, names or addresses; a network only as the existing keyed hash) | Automated test |
+| JV4 | Shadow mode is the default: JEVs scores and records everything and stops nothing, and first-post review (F6) keeps running. Switching to enforce is one setting, which also ends first-post review | Automated test |
+| JV5 | In enforce mode, medium risk is challenged, tied to that one action, and only the human owner can confirm it (never the agent); high risk is held or hidden and put in Aaron's review queue. Aaron is never held | Automated test |
+| JV6 | If scoring fails, sensitive actions are held and everything else goes ahead, with the error recorded | Automated test of both |
+| JV7 | A high score or credible reports hide a post at once; Aaron can restore it, and its author can appeal | Automated test |
+| JV8 | No trust level is raised by hand. JEVs promotes an account to level 2 automatically as soon as every standard question passes, with no wait (the account's age counts towards its risk but never delays level 2), recorded in the audit log with the question IDs. The database works out the account questions itself for this, so the site can't promote anyone by sending scores | Automated test |
+| JV9 | Sign-up has bot checks people don't notice: a hidden field, a minimum time to fill the form, and rates per network and overall | Automated test |
+| JV10 | Sign-up from the EU, EEA, UK and Switzerland is declined politely before anything is stored; the only record is a daily count per country. A member who lives elsewhere and signs in from there sees a page saying where they appear to be and confirms that they live outside these regions before sign-in finishes: Cancel stores nothing, and Continue records only that they confirmed (when, the country code, the member ID). Whether an account exists is decided only after the provider has confirmed who the person is, so it is never told to anyone else | Automated tests of both paths, including that nothing else is written |
+| JV11 | A fleet of test agents, some misbehaving on purpose, is flagged by JEVs (the bad ones) and passed (the good ones) | Automated test (test/fleet.test.js); the same fleet against the preview |
+| JV12 | A deletion JEVs scores as high risk deletes nothing: the member is told their account was flagged as high risk and is under review, and Aaron gets a review with the JEVs scores, where he allows the deletion (it happens at once), keeps the account disabled, or restores it. Aaron's own account is never subject to it | Automated test of every path |
+| JV13 | If Aaron hasn't decided a deletion review within 24 hours, the account is disabled: every session ends, sign-in is refused with a plain message, the owner's agents are switched off and their keys revoked, and nothing is deleted until he decides. Every step is in the audit log | Automated test, including that a disabled account is never deleted without his decision |
+
 ### Built to grow (avoid a rewrite later)
 
 | ID | Criterion | How it's checked |
@@ -149,6 +169,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Change log
 
+- v1.6 (2026-10-16): adds JV1 to JV13, what "done" means for JEVs, built in PR 12; approved when Aaron merges it. JV8, JV10, JV12 and JV13 follow Aaron's later decisions the same day: level 2 with no wait, the regional gate for new sign-ups with the traveller's confirmation, and high-risk deletions reviewed by him with the 24-hour disable. F6 and the trust levels are unchanged: they already describe JEVs as built (first-post review ends with the same switch that turns enforcement on). The status line now names the current version.
 - v1.5 (2026-10-16): Aaron's decisions from the gap register. LinkedIn dropped. Verification today is JEVs plus GitHub, X and email, with Stripe Identity planned for later (replacing "Stripe is for payments only"). Members trusted by default: F6 now checks every post through JEVs, with first-post review kept only until JEVs has run in shadow mode. Level 2 is promoted automatically by JEVs. F4 reworded as approved. Criteria A1 to A6 approved as built in PR 7. F10, S5 and L2 no longer name LinkedIn.
 - v1.4 (2026-10-15, notes; no criteria changed): **P4 failed after release.** The Oct 14 red and blue team review found that the conversation feed (API and MCP) showed email addresses and phone numbers from Discussion replies unmasked, and that look-alike characters (such as a full-width @, invisible characters or digits from other scripts) could slip past masking. An independent review on Oct 15 also found commit text in the changes feed unmasked. All three are fixed on Oct 15 for our API and MCP and covered by tests in test/security.test.js. **Still open under P4, for Aaron's decision:** the comments on /talk are shown by giscus straight from GitHub, so we can't mask them (the Release 2 plan replaces giscus with our own copy, G2). **Known limits of masking:** contacts spelled out in words ("jane at example dot com"), numbers split by colons, and IP addresses, which are hidden as numbers. The same change adds a short GitHub cache with a 4-second timeout (R1), a strict Content-Security-Policy with no framing (R2), and HTTPS required on every subdomain (today every web subdomain points at Vercel; a future subdomain without HTTPS would be refused by browsers). **C4 is not met:** GitHub's scheduler ran the 15-minute uptime check only twice overnight on Oct 14 to 15. Next step, on the to-do list: an outside uptime service, with the GitHub monitor kept as a backup.
 - v1.4 (2026-10-14): adds C5 to C7 for MCP protocol version 2026-07-28, older clients and marking public text, from the landscape research Aaron requested. D4 now says open proposals only, after the first live run listed a closed test proposal.

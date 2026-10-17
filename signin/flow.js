@@ -9,6 +9,13 @@
 //   first, so nobody can quietly sign someone else into the asker's account.
 //   Sessions: a fresh random token at every sign-in, kept by the browser in a __Host- cookie and by us only as a
 //   SHA-256. /auth/logout and /auth/logout-all are POSTs; /auth/me says who is signed in.
+//   PR 12: the regional gate declines sign-up from the EU, EEA, UK and Switzerland before anything is stored (only a
+//   daily count per country). It decides only after the provider or the emailed link has confirmed who the person
+//   is, so whether an account exists is never told to anyone else: a new person is declined, and a member who lives
+//   elsewhere sees a confirmation page (/auth/region/continue or /cancel) before sign-in finishes (Aaron, Oct 16).
+//   The email form carries two bot checks people never notice (a field they can't see, and a sealed time stamp from
+//   /auth/form, so a form sent within a second of the page opening is turned back); a sign-up leaves JEVs's network
+//   mark, and every sign-in an account check, which can promote a member to level 2 automatically.
 'use strict';
 
 const c = require('./crypto');
@@ -16,10 +23,18 @@ const h = require('./http');
 const { ORIGIN, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES } = require('./config');
 const store = require('../db/signin');
 const v = require('../db/validate');
+const jevs = require('../db/jevs');
+const region = require('./region');
 
 const session = require('./session');
 const { SESSION, isToken } = session;
 const EMAIL_BROWSER = '__Host-dog_email';
+// A sign-in waiting for a traveller's confirmation: sealed, 10 minutes, cleared when used. Nothing is stored for it.
+const REGION = '__Host-dog_region';
+const REGION_MINUTES = 10;
+// A session whose member confirmed they live outside the declined regions: a keyed tag of the session, so JEVs's
+// region question (J13) doesn't challenge them on every post while they travel. Cleared with the session.
+const RESIDENT = jevs.RESIDENT;
 const NEW_NAME = 'New member'; // names from GitHub or X are not kept (S12); members choose their own later
 const stateCookie = (p) => '__Host-dog_oauth_' + p;
 const ANON = { actor: 'anon' };
@@ -31,32 +46,116 @@ const LIMITS = {
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
   email_all: { windowSeconds: 3600, max: 500 }
+  // There is no ceiling on all GitHub and X sign-ins together: one network could use it to lock everyone out (the
+  // JEVs review, F8). The per-network limit and the providers' own limits stand.
 };
+// The email form must have been open at least this long (a person needs longer to type or pick an address; scripts
+// send at once), and its time stamp lasts this long.
+const MIN_FILL_MS = 1000;
+const FORM_TTL_MS = 2 * 3600 * 1000;
 const ALL = '0'.repeat(64);
 
 function make(deps) {
   const { config, run, providers, sendEmail } = deps;
   const stateKey = config.sessionKey ? c.subkey(config.sessionKey, 'oauth state') : null;
+  const formKey = config.sessionKey ? c.subkey(config.sessionKey, 'form time') : null;
+  const regionKey = config.sessionKey ? c.subkey(config.sessionKey, 'region confirmation') : null;
   const keys = config.fingerprintKeys;
 
   const limited = async (bucket, keyHash) => !(await run(ANON, (t) => store.rateLimitHit(t, { bucket, keyHash, ...LIMITS[bucket] })));
   const sessionHash = session.sessionHash;
   const current = (req) => session.current(req, run);
 
-  // Signs in and sets a fresh session cookie. Returns the outcome so the caller can redirect.
+  // Signs in and sets a fresh session cookie. Returns the outcome so the caller can redirect. A traveller who just
+  // confirmed (args.region) also gets the resident tag for this session.
   async function finish(res, ctx, args) {
     const token = c.token(32);
     const out = await run(ctx, (t) => store.signIn(t, { ...args, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS }));
-    if (!out.refused) h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+    if (!out.refused) {
+      h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+      if (args.region && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+    }
     return out;
   }
+
+  // The polite refusal for a new sign-up from a declined region. Nothing is kept but one more in that country's count
+  // for today; no cookie is set.
+  async function countDecline(country) {
+    try { await run(ANON, (t) => jevs.regionDecline(t, country)); } catch { /* the count is not worth failing the answer */ }
+  }
+  async function decline(res, country) {
+    await countDecline(country);
+    res.statusCode = 451;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    res.end(region.page());
+  }
+
+  // Someone the provider (or the emailed link) has just confirmed, signing in from a declined region. A new person is
+  // declined. A member (or a signed-in member linking another method) sees the confirmation page; what the sign-in
+  // needs waits in a sealed cookie, so nothing is stored until they press Continue.
+  async function regional(res, country, args, extra) {
+    if (!args.linkMember && !(await run(ANON, (t) => store.known(t, { provider: args.provider, fingerprints: args.fingerprints })))) {
+      return decline(res, country);
+    }
+    if (!regionKey) return h.redirect(res, '/join?error=unavailable');
+    h.addCookie(res, h.cookie(REGION, c.seal(regionKey, { a: args, c: country, x: extra, e: Date.now() + REGION_MINUTES * 60000 }), { maxAge: REGION_MINUTES * 60 }));
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    res.end(region.confirmPage(country));
+  }
+
+  // After a sign-in: a new account's network mark (sign-up only, so an established member's network never counts
+  // against them; the JEVs review, F3) and an email link's marks, then JEVs's account check, which can promote the
+  // member to level 2. A failure here never undoes the sign-in; it is logged.
+  async function afterSignIn(req, out, emailToken = null, confirmed = false) {
+    try {
+      const f = { ...jevs.facts(req, config.ipKey), ...(confirmed ? { confirmed: true } : {}) };
+      await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId }, async (t) => {
+        if (emailToken) await jevs.claimMarks(t, emailToken);
+        if (out.isNew && f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash });
+        await jevs.check(t, { action: out.isNew ? 'signup' : 'account.check', ...f });
+      });
+    } catch (e) {
+      jevs.logFailure('after sign-in', e);
+    }
+  }
+
+  // An email link asked for from a declined region (see emailStart). Only for an address with an account: within the
+  // usual limits, a link without JEVs's sign-up marks. The reply is the same in every case.
+  async function regionalEmail(req, res, country, email, emailFps) {
+    const SAME = '/join?sent=region';
+    if (!(await run(ANON, (t) => store.known(t, { provider: 'email', fingerprints: emailFps })))) {
+      await countDecline(country);
+      return h.redirect(res, SAME);
+    }
+    if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFps[0]) || await limited('email_all', ALL)) {
+      return h.redirect(res, SAME);
+    }
+    let nonce = h.cookies(req)[EMAIL_BROWSER];
+    if (!isToken(nonce)) nonce = c.token(32);
+    h.addCookie(res, h.cookie(EMAIL_BROWSER, nonce, { maxAge: 20 * 60 }));
+    const token = c.token(32);
+    await run(ANON, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps, browserHash: c.sha256hex(nonce), keyVersion: keys[0].version }));
+    try { await sendEmail(email, ORIGIN + '/auth/email/continue#t=' + token); } catch { /* the reply is the same either way */ }
+    return h.redirect(res, SAME);
+  }
+
+  // Where a refused sign-in goes.
+  const REFUSED = { banned: '/join?error=unavailable', disabled: '/join?error=disabled', taken: '/join?error=taken' };
 
   return {
     async start(req, res, provider) {
       const p = providers[provider];
       const creds = config[provider];
       if (!p || !creds) return h.redirect(res, '/join?error=unavailable');
-      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return h.redirect(res, '/join?error=slow');
+      // From a declined region nothing is stored before the provider says who this is (not even a rate-limit count);
+      // the provider's own limits stand in front of its sign-in page.
+      if (!region.declined(req) && await limited('signin_ip', h.ipKey(req, config.ipKey))) return h.redirect(res, '/join?error=slow');
       const url = new URL(req.url, ORIGIN);
       // Adding a second sign-in method is only for someone already signed in, and only links after they
       // complete that provider's sign-in. A matching email address never joins two accounts.
@@ -99,10 +198,13 @@ function make(deps) {
         if (!me || me.memberId !== saved.l) return h.redirect(res, '/join?error=signin');
         ctx = { actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId };
       }
-      const out = await finish(res, ctx, { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
-        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter, linkMember: saved.l || null });
-      if (out.refused === 'banned') return h.redirect(res, '/join?error=unavailable');
-      if (out.refused === 'taken') return h.redirect(res, '/join?error=taken');
+      const args = { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
+        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter, linkMember: saved.l || null };
+      const country = region.declined(req);
+      if (country) return regional(res, country, args, { r: saved.r || null });
+      const out = await finish(res, ctx, args);
+      if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
+      await afterSignIn(req, out);
       // A fresh session replaces any older one in this browser.
       const old = sessionHash(req);
       if (old) await run(ANON, (t) => store.sessionEnd(t, old));
@@ -113,11 +215,22 @@ function make(deps) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
       if (!sendEmail) return h.redirect(res, '/join?error=email_off');
       const body = await h.form(req);
+      // Bot checks (S6, PR 12). A field people never see must be empty: if a script filled it in, it is told the
+      // link was sent and nothing is done or kept. And the form's sealed time stamp must be at least a second old.
+      if (body && typeof body.website === 'string' && body.website !== '') return h.redirect(res, '/join?sent=1');
+      const stamp = formKey && body && typeof body.ft === 'string' ? c.open(formKey, body.ft) : null;
+      const age = stamp && stamp.k === 'join' && Number.isFinite(stamp.t) ? Date.now() - stamp.t : NaN;
+      if (!(age >= 0 && age <= FORM_TTL_MS)) return h.redirect(res, '/join?error=expired');
+      if (age < MIN_FILL_MS) return h.redirect(res, '/join?error=fast');
       let email;
       try {
         email = v.text('email', body && body.email, { max: 254, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }).toLowerCase();
       } catch { return h.redirect(res, '/join?error=email'); }
       const emailFps = c.fingerprints(keys, 'email', email);
+      // From a declined region, a link goes only to an address that already has an account, and the answer is the
+      // same either way, so it tells nobody whether one exists. Nothing is stored for a new address but the count.
+      const country = region.declined(req);
+      if (country) return regionalEmail(req, res, country, email, emailFps);
       if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFps[0]) || await limited('email_all', ALL)) {
         return h.redirect(res, '/join?error=slow');
       }
@@ -126,8 +239,12 @@ function make(deps) {
       if (!isToken(nonce)) nonce = c.token(32);
       h.addCookie(res, h.cookie(EMAIL_BROWSER, nonce, { maxAge: 20 * 60 }));
       const token = c.token(32);
-      await run(ANON, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps,
-        browserHash: c.sha256hex(nonce), keyVersion: keys[0].version }));
+      await run(ANON, async (t) => {
+        await store.emailTokenIssue(t, { tokenHash: c.sha256hex(token), emailFingerprints: emailFps, browserHash: c.sha256hex(nonce), keyVersion: keys[0].version });
+        // JEVs's marks for this address (J03, J05): its domain, keyed, unless everyone uses it, and whether it is a
+        // throwaway service. They wait with the link and become the member's when it is used; never the address.
+        for (const m of jevs.emailMarks(email, config.ipKey)) await jevs.mark(t, { kind: m.kind, keyHash: m.keyHash, token: c.sha256hex(token) });
+      });
       // The link is always built from our own address, never from the request.
       const link = ORIGIN + '/auth/email/continue#t=' + token;
       try { await sendEmail(email, link); } catch { /* the reply is the same either way */ }
@@ -145,6 +262,14 @@ function make(deps) {
         + '<script src="/signin.js"></script>');
     },
 
+    // A sealed time stamp for the email form (PR 12), fetched by /join.js when the page opens. It names no one.
+    async formToken(req, res) {
+      res.statusCode = formKey ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(JSON.stringify(formKey ? { token: c.seal(formKey, { k: 'join', t: Date.now() }) } : { error: 'Sign-in is not switched on here yet.' }));
+    },
+
     async emailFinish(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
       const body = await h.form(req);
@@ -160,12 +285,44 @@ function make(deps) {
           + '<form method="post" action="/auth/email/finish"><input type="hidden" name="t" value="' + t + '"><input type="hidden" name="confirm" value="1">'
           + '<button type="submit" class="button">Yes, I asked for it</button></form>');
       }
-      const out = await finish(res, ANON, { provider: 'email', fingerprints: used.emailFingerprints, keyVersion: used.keyVersion,
-        level: 0, displayName: NEW_NAME });
+      const args = { provider: 'email', fingerprints: used.emailFingerprints, keyVersion: used.keyVersion, level: 0, displayName: NEW_NAME };
       h.addCookie(res, h.clear(EMAIL_BROWSER));
-      if (out.refused) return h.redirect(res, '/join?error=unavailable');
+      const country = region.declined(req);
+      if (country) return regional(res, country, args, { et: c.sha256hex(t) });
+      const out = await finish(res, ANON, args);
+      if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
+      await afterSignIn(req, out, c.sha256hex(t));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return h.redirect(res, '/');
+    },
+
+    // The traveller pressed Continue: sign-in finishes, recording only that they confirmed (when, the country, the
+    // member). If the account went away meanwhile, sign-in doesn't make a new one ('region').
+    async regionContinue(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');
+      const p = regionKey ? c.open(regionKey, h.cookies(req)[REGION]) : null;
+      h.addCookie(res, h.clear(REGION));
+      if (!p || !(p.e > Date.now()) || !p.a || !region.countryName(p.c)) return h.redirect(res, '/join?error=expired');
+      let ctx = ANON;
+      if (p.a.linkMember) {
+        const me = await current(req);
+        if (!me || me.memberId !== p.a.linkMember) return h.redirect(res, '/join?error=signin');
+        ctx = { actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId };
+      }
+      const out = await finish(res, ctx, { ...p.a, region: p.c });
+      if (out.refused === 'region') return decline(res, p.c);
+      if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
+      await afterSignIn(req, out, (p.x && p.x.et) || null, true);
+      // A fresh session replaces any older one in this browser, as after any sign-in.
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return h.redirect(res, (p.x && p.x.r) || '/');
+    },
+
+    // Cancel: the sealed cookie goes and nothing is stored.
+    async regionCancel(req, res) {
+      h.addCookie(res, h.clear(REGION));
       return h.redirect(res, '/');
     },
 
@@ -180,6 +337,7 @@ function make(deps) {
         await run(ANON, (t) => store.sessionEnd(t, hash));
       }
       h.addCookie(res, h.clear(SESSION));
+      h.addCookie(res, h.clear(RESIDENT));
       return h.redirect(res, '/');
     },
 
@@ -192,7 +350,8 @@ function make(deps) {
       const a = await run(session.actorFor(who), (t) => store.account(t));
       res.statusCode = 200;
       res.end(JSON.stringify({ signed_in: true, member_id: a.memberId, display_name: a.displayName, trust_level: a.trustLevel, joined: a.joined,
-        is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions }));
+        is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions,
+        deletion_review: a.deletionReview ? { since: a.deletionReview.since, disables_at: a.deletionReview.disablesAt } : null }));
     },
 
     async rename(req, res) {
@@ -218,8 +377,17 @@ function make(deps) {
       const body = await h.form(req);
       if (!body || body.confirm !== 'DELETE') return h.redirect(res, '/account?error=confirm');
       if (who.isAdmin) return h.redirect(res, '/account?error=admin');
-      const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => store.deleteAccount(t));
+      // Signed in within the last few minutes first (RK3), so a stolen session cookie can't even start a review.
+      if (who.fresh !== true) return h.redirect(res, '/account?error=fresh');
+      // JEVs checks the deletion (PR 12): low risk deletes; medium risk is confirmed by that fresh sign-in; high risk
+      // (or a check that couldn't finish) deletes nothing and goes to Aaron as a deletion review (Oct 16, 2026). The
+      // member is told their account was flagged; if he hasn't decided in 24 hours it is disabled, never deleted.
+      const d = await run({ ...session.actorFor(who), fresh: true },
+        (t) => jevs.check(t, { action: 'account.delete', ...jevs.facts(req, config.ipKey) }));
+      if (jevs.blocks(d)) return h.redirect(res, '/account?error=' + (d.effect === 'challenge' ? 'fresh' : 'review'));
+      const out = await run({ ...session.actorFor(who), fresh: true }, (t) => store.deleteAccount(t));
       if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
+      if (out.refused === 'under_review') return h.redirect(res, '/account?error=review');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
       return h.redirect(res, '/join?deleted=1');
@@ -255,4 +423,4 @@ function page(inner) {
     + '<body><main class="wrap signin">' + inner + '</main></body></html>';
 }
 
-module.exports = { make, SESSION, LIMITS };
+module.exports = { make, SESSION, LIMITS, MIN_FILL_MS, FORM_TTL_MS };

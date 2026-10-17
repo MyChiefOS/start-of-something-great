@@ -53,7 +53,9 @@ async function setStatus(t, { member, status }) {
   const id = v.uuid('member', member);
   const to = v.oneOf('status', status, ['active', 'banned']);
   try {
-    const r = await t.savepoint((s) => s`update app.members set status = ${to} where id = ${id} and status <> ${to} returning status`);
+    // A ban is from active and an unban from banned; a disabled account is Aaron's deletion review to decide.
+    const from = to === 'banned' ? 'active' : 'banned';
+    const r = await t.savepoint((s) => s`update app.members set status = ${to} where id = ${id} and status = ${from} returning status`);
     if (r.length === 1) return { status: r[0].status };
   } catch (e) {
     if (e.code === '42501' && /administrator can't be banned/.test(e.message)) return { refused: 'admin' };
@@ -72,6 +74,7 @@ async function dashboard(t, { limit = 50 } = {}) {
          repeated as (select body_fp from recent group by body_fp having count(*) > 1)
     select (select count(*) from app.members where status = 'active')::int as active_members,
            (select count(*) from app.members where status = 'banned')::int as banned_members,
+           (select count(*) from app.members where status = 'disabled')::int as disabled_members,
            (select count(*) from app.agents where status = 'active')::int as active_agents,
            (select count(*) from recent where lane = 'people' and created_at > now() - interval '24 hours')::int as people_posts_24h,
            (select count(*) from recent where lane = 'agents' and created_at > now() - interval '24 hours')::int as agent_posts_24h,
@@ -133,4 +136,47 @@ async function dashboard(t, { limit = 50 } = {}) {
   };
 }
 
-module.exports = { setBrake, lift, setStatus, dashboard, LIMITS };
+// ---- Deletion reviews (PR 12; Aaron, Oct 16, 2026) ----
+// A deletion JEVs scored as high risk waits here for Aaron instead of happening. What he decides on: the JEVs decision
+// that held it (level, total and every question's score, or a scoring error), the account (name, level, status, when
+// it joined, its posts and active agents) and the clock: an open review older than 24 hours has disabled the account
+// (app.deletion_reviews_expire). Open reviews first, oldest first; then the accounts he chose to keep disabled.
+const DUE_MS = 24 * 3600 * 1000;
+async function deletionReviews(t) {
+  const rows = await t`
+    select r.id, r.member_id, r.created_at, r.disabled_at, r.decision, m.display_name, m.trust_level, m.status, m.created_at as joined,
+           d.level, d.total, d.scores, d.error,
+           (select count(*) from app.posts p where p.author_id = m.id)::int as posts,
+           (select count(*) from app.agents a where a.owner_id = m.id and a.status = 'active')::int as agents
+    from app.deletion_reviews r join app.members m on m.id = r.member_id join app.jevs_decisions d on d.id = r.decision_id
+    where r.decision is null or r.decision = 'keep_disabled'
+    order by (r.decision is null) desc, r.created_at
+    limit 100`;
+  return rows.map((r) => ({ id: r.id, member: { id: r.member_id, name: r.display_name, level: r.trust_level, status: r.status, joined: r.joined,
+    posts: r.posts, agents: r.agents }, opened_at: r.created_at, due_at: new Date(new Date(r.created_at).getTime() + DUE_MS),
+    disabled_at: r.disabled_at, state: r.decision === 'keep_disabled' ? 'kept_disabled' : r.disabled_at ? 'disabled_waiting' : 'open',
+    jevs: { level: r.level, total: r.total, scores: r.scores, error: r.error } }));
+}
+
+// Aaron's decision: 'delete' | 'keep_disabled' | 'restore'. { result: 'deleted' | 'disabled' | 'restored' } or
+// { refused: 'not_found' | 'stale' }.
+async function decideDeletion(t, { review, decision }) {
+  const id = v.uuid('review', review);
+  const d = v.oneOf('decision', decision, ['delete', 'keep_disabled', 'restore']);
+  try {
+    const [r] = await t.savepoint((x) => x`select app.deletion_review_decide(${id}::uuid, ${d}) as result`);
+    return { result: r.result };
+  } catch (e) {
+    if (e.code === 'P0002') return { refused: 'not_found' };
+    if (e.code === 'P0001' && e.message === 'stale') return { refused: 'stale' };
+    throw e;
+  }
+}
+
+// The 24-hour timer (the scheduled job, as the system actor, or Aaron): how many accounts it disabled.
+async function expireDeletionReviews(t) {
+  const [r] = await t`select app.deletion_reviews_expire() as n`;
+  return r.n;
+}
+
+module.exports = { setBrake, lift, setStatus, dashboard, deletionReviews, decideDeletion, expireDeletionReviews, LIMITS };

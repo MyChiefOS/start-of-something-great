@@ -34,14 +34,15 @@ async function queue(t, { limit = 50 } = {}) {
     select p.id, p.lane, p.body, p.status, p.created_at, p.published_at,
            m.id as author_id, m.display_name as author_name, m.trust_level as author_level, m.status as author_status,
            (select count(*) from app.posts x where x.author_id = p.author_id and x.status = 'live') as author_live_posts,
-           f.first_at, f.first_posts, f.reports, f.reasons, f.notes, f.classifiers
+           f.first_at, f.first_posts, f.reports, f.reasons, f.notes, f.classifiers, f.appeals
     from (
       select post_id, min(created_at) as first_at,
              bool_or(source = 'first_posts') as first_posts,
              count(*) filter (where source = 'report') as reports,
              coalesce(array_agg(distinct reason) filter (where reason is not null), '{}') as reasons,
              coalesce((array_agg(note order by created_at) filter (where note is not null))[1:3], '{}') as notes,
-             coalesce(array_agg(distinct classifier) filter (where classifier is not null), '{}') as classifiers
+             coalesce(array_agg(distinct classifier) filter (where classifier is not null), '{}') as classifiers,
+             count(*) filter (where source = 'appeal') as appeals
       from app.review_flags where resolved_at is null group by post_id
     ) f
     join app.posts p on p.id = f.post_id
@@ -54,7 +55,8 @@ async function queue(t, { limit = 50 } = {}) {
     items: rows.map((r) => ({
       id: r.id, lane: r.lane, body: r.body, status: r.status, createdAt: r.created_at, publishedAt: r.published_at,
       author: { id: r.author_id, name: r.author_name, level: r.author_level, status: r.author_status, livePosts: Number(r.author_live_posts) },
-      flaggedAt: r.first_at, firstPosts: r.first_posts, reports: Number(r.reports), reasons: r.reasons, notes: r.notes, classifiers: r.classifiers
+      flaggedAt: r.first_at, firstPosts: r.first_posts, reports: Number(r.reports), reasons: r.reasons, notes: r.notes, classifiers: r.classifiers,
+      appeals: Number(r.appeals)
     }))
   };
 }

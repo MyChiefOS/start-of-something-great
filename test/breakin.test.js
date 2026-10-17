@@ -14,6 +14,7 @@ const store = require('../db/signin');
 const posts = require('../db/posts');
 const review = require('../db/review');
 const controls = require('../db/controls');
+const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
 
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -33,10 +34,11 @@ const q = (s) => su.unsafe(s);
 let A, B, BAgent, tables;
 
 // What each outsider may see: their own rows, nothing else. Any table not listed here may show them nothing.
+// jevs_settings: everyone sees the one public row, JEVs's mode (shadow or enforce); never a threshold (PR 12).
 const MAY_SEE = {
-  anon: {},
-  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1 },
-  BAgent: { members: 1, agents: 1, agent_rules: 1 }
+  anon: { jevs_settings: 1 },
+  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1 },
+  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1 }
 };
 
 async function signIn(level, name) {
@@ -64,7 +66,24 @@ test.before(async () => {
   await run(A.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${agent.id}, ${c.sha256hex('a-key')})`);
   const aAgent = { actor: 'agent', memberId: A.id, agentId: agent.id };
   await run(aAgent, (t) => t`insert into app.agent_drafts (body) values ('A draft')`);
-  const p = await run(A.ctx, (t) => posts.create(t, { body: 'A post' }));
+  // A's post goes through JEVs, which leaves a decision, a text print and a link domain (PR 12).
+  const p = await run(A.ctx, async (t) => {
+    const made = await posts.create(t, { body: 'A post that links to https://a-example.org and has enough words to leave a print' });
+    made.jevs = await jevs.check(t, { action: 'post.create', subject: made.id, body: 'A post that links to https://a-example.org and has enough words to leave a print' });
+    return made;
+  });
+  await run(A.ctx, (t) => jevs.mark(t, { kind: 'net', keyHash: c.sha256hex('A network') }));
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`insert into app.jevs_challenges (decision_id, owner_id, action, subject_kind, subject_id, expires_at)
+                    values ('${p.jevs.decision}', '${A.id}', 'post.create', 'post', '${p.id}', now() + interval '1 day')`);
+  });
+  await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
+  // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`insert into app.deletion_reviews (member_id, decision_id) values ('${A.id}', '${p.jevs.decision}')`);
+  });
   const other = await signIn(2, 'Other');
   const op = await run(other.ctx, (t) => posts.create(t, { body: 'other post' }));
   await run(A.ctx, (t) => review.report(t, { post: op.id, reason: 'spam', note: 'A reports' }));
