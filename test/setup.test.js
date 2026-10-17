@@ -18,10 +18,15 @@ function fakeVercel(existing = {}) {
   return {
     env, redeploys: 0,
     async productionNames() { return new Set(env.keys()); },
-    async set(key, value, { sensitive = true } = {}) { env.set(key, { value, type: sensitive ? 'sensitive' : 'plain' }); },
+    async set(key, value, { sensitive = true, replace = true } = {}) {
+      if (!replace && env.has(key)) return { existed: true };
+      env.set(key, { value, type: sensitive ? 'sensitive' : 'plain' });
+      return { existed: false };
+    },
     async redeploy() { this.redeploys++; return 'dpl_test'; }
   };
 }
+const masker = () => { const seen = []; const mask = (v) => seen.push(v); mask.seen = seen; return mask; };
 const logger = () => { const lines = []; const log = (m) => lines.push(String(m)); log.lines = lines; return log; };
 const leaked = (lines, values) => values.filter((v) => v && lines.some((l) => l.includes(v)));
 
@@ -43,9 +48,14 @@ test('the site’s database address is the transaction pooler on the same host, 
 
 test('keys: each is made only when missing; an existing key, FINGERPRINT_KEY_1 above all, is never replaced or logged', async () => {
   const v = fakeVercel({ FINGERPRINT_KEY_1: 'members-are-recognised-by-this' });
-  const log = logger();
-  await s.stepKeys(v, { log });
+  const log = logger(); const mask = masker();
+  const sets = [];
+  const spy = { ...v, async set(k, val, o) { sets.push({ k, replace: o && o.replace }); return v.set(k, val, o); } };
+  await s.stepKeys(spy, { log, mask });
+  assert.ok(sets.length === 4 && sets.every((x) => x.replace === false), 'every key is created, never upserted: ' + JSON.stringify(sets));
   assert.strictEqual(v.env.get('FINGERPRINT_KEY_1').value, 'members-are-recognised-by-this');
+  assert.strictEqual(mask.seen.length, 4, 'every made value was masked before use');
+  for (const k of ['SESSION_SECRET', 'IP_HASH_KEY', 'CRON_SECRET']) assert.ok(mask.seen.includes(v.env.get(k).value), k + ' masked');
   for (const k of ['SESSION_SECRET', 'IP_HASH_KEY', 'CRON_SECRET']) {
     const e = v.env.get(k);
     assert.ok(e, k + ' was set');
@@ -59,9 +69,11 @@ test('keys: each is made only when missing; an existing key, FINGERPRINT_KEY_1 a
   assert.strictEqual(JSON.stringify([...v.env]), before, 'a second run changes nothing');
 });
 
-test('stage: closed, preview or public only; the preview needs an allow-list; the stage itself is not secret', async () => {
+test('stage: unchanged leaves everything alone; closed, preview or public only; the preview needs an allow-list; the stage itself is not secret', async () => {
   const v = fakeVercel();
   const log = logger();
+  await s.stepStage(v, { stage: 'unchanged', log });
+  assert.strictEqual(v.env.size, 0, 'unchanged sets nothing');
   await assert.rejects(s.stepStage(v, { stage: 'live', log }), /closed, preview or public/);
   await assert.rejects(s.stepStage(v, { stage: 'preview', allow: 'github:aaronc', log }), /at least one entry/);
   assert.strictEqual(v.env.size, 0, 'nothing set after a refusal');
@@ -73,25 +85,66 @@ test('stage: closed, preview or public only; the preview needs an allow-list; th
   assert.strictEqual(v.env.get('LAUNCH_STAGE').value, 'public');
 });
 
-test('the Vercel client sends to the right project and team, upserts for Production only, and never echoes a value', async () => {
+test('the Vercel client sends to the right project and team, for Production only, and never echoes a value', async () => {
   const calls = [];
   const fetchImpl = async (url, opts) => {
     calls.push({ url, opts });
     if (url.includes('/v10/') && opts.method === 'GET') return { ok: true, status: 200, text: async () => JSON.stringify({ envs: [{ key: 'A', target: ['production'] }, { key: 'B', target: ['preview'] }] }) };
     if (url.includes('FAIL')) return { ok: false, status: 403, text: async () => JSON.stringify({ error: { code: 'forbidden', message: 'Not authorized' } }) };
+    const body = JSON.parse(opts.body || '{}');
+    // Vercel refuses a plain create of a key that exists (400), and, with upsert, can answer 201 with a `failed` list.
+    if (body.key === 'EXISTS' && !url.includes('upsert=true')) return { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: 'ENV_ALREADY_EXISTS', message: 'already exists' } }) };
+    if (body.key === 'EXISTS_LISTED' && !url.includes('upsert=true')) return { ok: true, status: 201, text: async () => JSON.stringify({ created: [], failed: [{ error: { code: 'ENV_ALREADY_EXISTS', message: 'already exists', key: 'EXISTS_LISTED' } }] }) };
+    if (body.key === 'HALF') return { ok: true, status: 201, text: async () => JSON.stringify({ created: [], failed: [{ error: { code: 'ENV_CONFLICT', message: 'conflict', key: 'HALF' } }] }) };
     return { ok: true, status: 200, text: async () => '{}' };
   };
   const v = s.vercel('tok_test', { fetchImpl });
   assert.deepStrictEqual([...(await v.productionNames())], ['A'], 'only Production names count');
-  await v.set('SESSION_SECRET', 'super-secret-value');
+  assert.deepStrictEqual(await v.set('SESSION_SECRET', 'super-secret-value'), { existed: false });
   const post = calls[1];
   assert.strictEqual(post.opts.method, 'POST');
   assert.match(post.url, /^https:\/\/api\.vercel\.com\/v10\/projects\/prj_cXnWySYVpJE9TVZaNPSocXMMzkZI\/env\?upsert=true&teamId=team_Hv5YS8LhIiKe06SSiDrUucd4$/);
   assert.deepStrictEqual(JSON.parse(post.opts.body), { key: 'SESSION_SECRET', value: 'super-secret-value', type: 'sensitive', target: ['production'] });
   assert.strictEqual(post.opts.headers.authorization, 'Bearer tok_test');
+  // S1: a create (replace: false) never upserts, and an existing key is reported, not replaced.
+  assert.deepStrictEqual(await v.set('NEW_KEY', 'v1', { replace: false }), { existed: false });
+  assert.match(calls[calls.length - 1].url, /\/env\?teamId=/, 'no upsert on a create');
+  assert.deepStrictEqual(await v.set('EXISTS', 'v2', { replace: false }), { existed: true });
+  assert.deepStrictEqual(await v.set('EXISTS_LISTED', 'v3', { replace: false }), { existed: true });
+  // S2: a 201 whose `failed` list isn't empty is a failure, reported without the value.
+  await assert.rejects(v.set('HALF', 'half-secret'), (e) => /did not set HALF: ENV_CONFLICT/.test(e.message) && !e.message.includes('half-secret'));
   const bad = s.vercel('tok_test', { fetchImpl, project: 'FAIL' });
   await assert.rejects(bad.set('X', 'another-secret'), (e) => /403/.test(e.message) && !e.message.includes('another-secret'));
+  await assert.rejects(bad.set('X', 'another-secret', { replace: false }), /403/, 'only "already exists" is swallowed on a create');
   assert.throws(() => s.vercel(''), /VERCEL_TOKEN/);
+});
+
+test('plan: says what a run will do from its inputs alone, and refuses bad input before anyone approves', () => {
+  const base = { SETUP_STEPS: 'database,keys,stage,redeploy', SETUP_STAGE: 'unchanged', SETUP_ROTATE_DB_PASSWORD: 'no' };
+  const lines = s.plan(base);
+  assert.strictEqual(lines.length, 4);
+  assert.match(lines[0], /^database: .*existing password is kept/);
+  assert.match(lines[1], /never replaced/);
+  assert.strictEqual(lines[2], 'stage: unchanged');
+  assert.match(s.plan({ ...base, SETUP_ROTATE_DB_PASSWORD: 'yes' })[0], /NEW password/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[2], /go-live decision/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'preview', SETUP_PREVIEW_ALLOW: 'github:1, x:2' })[2], /PREVIEW.*2 allow-listed accounts/);
+  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /at least one entry/);
+  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'open' }), /unchanged, closed, preview or public/);
+  assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'admin' }), /member_id/);
+  assert.throws(() => s.plan({ SETUP_STEPS: '' }), /nothing to do/);
+  assert.match(s.plan({ SETUP_STEPS: 'admin', SETUP_ADMIN_MEMBER_ID: '11111111-2222-3333-4444-555555555555' })[0], /^admin: make member 1111/);
+});
+
+test('masking: inside GitHub Actions every made value is reported to the runner as a mask; elsewhere nothing is written', () => {
+  const was = process.env.GITHUB_ACTIONS; const out = [];
+  const write = process.stdout.write; process.stdout.write = (c) => { out.push(String(c)); return true; };
+  try {
+    delete process.env.GITHUB_ACTIONS; s.maskInActions('quiet-value');
+    assert.deepStrictEqual(out, []);
+    process.env.GITHUB_ACTIONS = 'true'; s.maskInActions('loud-value'); s.maskInActions('');
+    assert.deepStrictEqual(out, ['::add-mask::loud-value\n']);
+  } finally { process.stdout.write = write; if (was === undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS = was; }
 });
 
 if (!SERVER) {
@@ -138,12 +191,16 @@ async function signsIn(password) {
 
 test('database: migrations, the login role with a hashed password that really works, the address in Vercel, and a passing check', async () => {
   const v = fakeVercel();
-  const log = logger();
+  const log = logger(); const mask = masker();
+  const order = [];
+  const spy = { ...v, async set(k, val, o) { order.push(k); return v.set(k, val, o); } };
   let checked = 0;
   const check = async (x) => { checked++; return require('../db/checks').problems(x, { snapshot: require('fs').readFileSync(require('path').join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#')) }); };
-  await s.stepDatabase(su, v, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE });
+  await s.stepDatabase(su, spy, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE, mask });
   assert.strictEqual(checked, 1);
+  assert.deepStrictEqual(order, ['DATABASE_CA', 'DATABASE_URL'], 'the certificate goes in before the address (S4)');
   const addr = new URL(v.env.get('DATABASE_URL').value);
+  assert.deepStrictEqual(mask.seen, [decodeURIComponent(addr.password), v.env.get('DATABASE_URL').value], 'the password and the address were masked before use');
   assert.strictEqual(addr.port, '6543');
   assert.strictEqual(v.env.get('DATABASE_URL').type, 'sensitive');
   assert.strictEqual(v.env.get('DATABASE_CA').value, 'CA-PEM');
@@ -172,6 +229,16 @@ test('database: migrations, the login role with a hashed password that really wo
   if (checks) assert.strictEqual(await signsIn(password), false, 'and, where the server checks passwords, it no longer signs in');
 });
 
+test('database: if the database refuses the new password after the address went to Vercel, the message says how to put it right', async () => {
+  const log = logger();
+  const v = fakeVercel();
+  // The same connection, except that changing the role's password fails.
+  const refusing = Object.assign((...a) => su(...a), { unsafe: async (q) => { if (/^alter role/.test(q)) throw new Error('permission denied'); return su.unsafe(q); } });
+  await assert.rejects(s.stepDatabase(refusing, v, { migrationUrl: POOLER, rotate: true, log, migrate: async () => [], check: async () => [], role: ROLE, mask: () => {} }),
+    /did not accept.*Do not redeploy.*rotate_db_password ticked/s);
+  assert.ok(v.env.get('DATABASE_URL'), 'the address had already gone in, which is what the message is about');
+});
+
 test('database: if Vercel refuses, the database password is left alone', async () => {
   const log = logger();
   const broken = { ...fakeVercel(), async set() { throw new Error('Vercel POST failed (403)'); } };
@@ -195,6 +262,17 @@ test('admin: sets exactly one active member as administrator, and refuses anythi
 test('the setup workflow starts by hand only, on main only, in the protected environment, with pinned actions and read-only rights', () => {
   const y = require('fs').readFileSync(require('path').join(__dirname, '..', '.github', 'workflows', 'setup.yml'), 'utf8');
   assert.match(y, /^on:\n  workflow_dispatch:/m, 'started by hand');
+  // S6a: a plan job with no secrets and no environment runs first and writes the plan to the run's summary; the real
+  // job needs it, so Aaron reads the plan before approving. S6b: the stage input defaults to "unchanged".
+  const [planJob, setupJob] = y.split(/^  setup:$/m);
+  assert.ok(planJob && setupJob, 'two jobs, plan then setup');
+  assert.match(planJob, /^  plan:$/m);
+  assert.ok(!/secrets\./.test(planJob), 'the plan job sees no secret');
+  assert.ok(!/^\s+environment:/m.test(planJob), 'and needs no approval');
+  assert.match(planJob, /setup-production\.js --plan/);
+  assert.match(planJob, /GITHUB_STEP_SUMMARY/);
+  assert.match(setupJob, /^    needs: plan$/m);
+  assert.match(y, /options: \[unchanged, closed, preview, public\]\n        default: unchanged/);
   assert.ok(!/^\s*(push|pull_request|pull_request_target|schedule|workflow_run):/m.test(y), 'no other trigger');
   assert.match(y, /^\s+environment: production$/m, 'the protected environment, so Aaron approves each run');
   assert.match(y, /^\s+if: github\.ref == 'refs\/heads\/main'$/m, 'main only');

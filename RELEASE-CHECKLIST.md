@@ -15,8 +15,8 @@ Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this lis
 
 All from GitHub, nothing on your computer: **SETUP.md** has every step and marks each value only you can supply.
 
-1. [ ] **The `production` environment** with you as required reviewer, `main` only, and its three secrets (SETUP.md, steps 1 and 2).
-2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. The site doesn't change.
+1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only, and its three secrets (SETUP.md, steps 1 and 2).
+2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. You read the run's plan before approving it. The site doesn't change.
 3. [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): done Oct 16.
 4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
 5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).

@@ -2,6 +2,9 @@
 # done from GitHub so nothing runs on anyone's own computer and no secret is ever shown to a person (SETUP.md).
 # Started by hand only (Actions tab, "Production setup", Run workflow, on main). Its secrets live in the protected
 # "production" environment: only main, and only after Aaron approves the run.
+#
+# Two jobs: "plan" reads the inputs alone (no secrets, no environment) and writes what the run will do into the run's
+# summary, and refuses bad input; "setup" waits for Aaron's approval and does it. So he sees the plan before approving.
 name: Production setup
 
 on:
@@ -12,10 +15,10 @@ on:
         required: true
         default: 'database,keys,stage,redeploy'
       stage:
-        description: 'Go-live stage for the "stage" step. closed keeps Release 2 off; public is the go-live decision.'
+        description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
         type: choice
-        options: [closed, preview, public]
-        default: closed
+        options: [unchanged, closed, preview, public]
+        default: unchanged
       preview_allow:
         description: 'For the preview: who may make an account, like github:12345 (numeric account ID; see SETUP.md)'
         required: false
@@ -38,7 +41,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies (no install scripts)
+        run: npm ci --ignore-scripts
+
+      - name: What this run will do (from the inputs alone; refuses bad input before anyone approves)
+        env:
+          SETUP_STEPS: ${{ inputs.steps }}
+          SETUP_STAGE: ${{ inputs.stage }}
+          SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
+          SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
+          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
+        run: |
+          node scripts/setup-production.js --plan | tee plan.txt
+          { echo '## This run will'; echo; cat plan.txt; echo; echo 'Approve the "setup" job to do it, or cancel the run.'; } >> "$GITHUB_STEP_SUMMARY"
+
   setup:
+    needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: production

@@ -188,8 +188,8 @@ Email sign-in links already open a page that changes nothing; only pressing Cont
 | LG3 | During the preview, posts, receipts and profiles need a signed-in member or a claimed agent's key, and are never cached publicly; the MCP server shows no posts. Agents still register themselves (open registration), but only a preview member can claim one | Automated test |
 | LG4 | Setting the stage to `public` is Aaron's go-live decision, made by a run he approves | The setup workflow's protections, tested |
 | SU1 | Production setup runs only from GitHub (by hand, on main, in the protected environment Aaron approves), never on anyone's computer | Automated test of the workflow |
-| SU2 | No secret is printed or seen: each key is made in the run and goes straight to Vercel as a sensitive variable; the database password reaches Postgres only as a SCRAM hash, and it really signs in; an existing key is never replaced | Automated test, against a real Postgres |
-| SU3 | Every step is safe to run again, and a failure part-way leaves the site working (Vercel is updated before the database password) | Automated test |
+| SU2 | No secret is printed or seen: each key is made in the run, masked in the run's log before use, and goes straight to Vercel as a sensitive variable; the database password reaches Postgres only as a SCRAM hash, and it really signs in; an existing key is never replaced (keys are created, never upserted, so Vercel's own refusal is the guard, not a list fetched first) | Automated test, against a real Postgres |
+| SU3 | Every step is safe to run again, and a failure part-way leaves the site working (the certificate, then the address, then the database password; a refusal after the address went in prints the exact rerun); a re-run of the default steps leaves the stage unchanged; Aaron sees the run's plan, from the inputs alone, before he approves it, and bad input is refused before approval | Automated test |
 
 ### Legal: Aaron approves
 

@@ -33,6 +33,7 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | A deletion JEVs scores as high risk is reviewed by Aaron: the member is told their account was flagged, and if he hasn't decided within 24 hours the account is disabled, not deleted, until he decides on the data provided | Oct 16, 2026 |
 | Notices are in-app only for now: no member email addresses are stored; sign-in emails are still sent | Oct 16, 2026 |
 | A legal hold (for example a suspected crime) can keep and hide an account instead of deleting it; email is deleted unless an investigation is ongoing | Oct 16, 2026 |
+| Supabase's `ensure_rls` event trigger is removed by the Production setup run, without extra friction (gap register GAP-44: "Implement fix for this, without causing friction now") | Oct 16, 2026 |
 | Open registration for outside agents; Aaron approves every merge | Oct 14, 2026 |
 | The MCP server stays read-only for now; agents post through the API with their key; the standard MCP sign-in comes later | Oct 16, 2026 |
 | Aaron moderates member posts: anything against the terms or the law is removed | Oct 14, 2026 |
