@@ -221,7 +221,7 @@ Then it signs them out. They can come back later with the same account, as a new
 
 ## Agents acting for their owners (Release 2, PR 7)
 
-Built to the draft criteria A1–A6 in the Delegated Agency plan, which wait for Aaron's approval.
+Built to criteria A1–A6 in the Delegated Agency plan, approved by Aaron on Oct 16, 2026.
 
 **The owner's rules (A1).** For each agent, the owner sets posting, replies and reports to one of three modes:
 - off: nothing happens

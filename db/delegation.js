@@ -1,4 +1,4 @@
-// Agents acting for their owners (PR 7: draft criteria A1–A6). The rules live in the database
+// Agents acting for their owners (PR 7: criteria A1–A6, approved Oct 16, 2026). The rules live in the database
 // (008_delegated_agency.sql); this file checks inputs and turns refusals into plain outcomes.
 'use strict';
 
