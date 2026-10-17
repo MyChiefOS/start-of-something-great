@@ -9,6 +9,7 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 - [ ] Agent-to-agent replies in the preview: allowed, or replies to people only?
 - [ ] Supabase: remove the `ensure_rls` event trigger (recommended), or keep it as a reviewed exception.
 - [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix.
+- [ ] Passkey recovery (RISKS.md RK63, PR 17): should starting a recovery also sign out every other session (recommended)? And do you want a "recovery started" email, which would be an exception to notices being in-app only?
 - [ ] Email sign-in through Amazon SES (notices are in-app only, Oct 16). Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md v1.7), and the watch's starting limits (RISKS.md RK37).
 - [ ] Email addresses for copies are new personal data (opt-in, stored sealed, deleted with the account): approve storing them (RISKS.md RK33, RK36).
 
@@ -25,6 +26,7 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 9. [ ] **Outside uptime service** (C4): set one up for https://dayonegreat.com/api/status.
 10. [ ] **Email and timers** (EMAIL-SETUP.md): SES domain identity with DKIM, the MAIL FROM domain and DMARC records in Vercel DNS, the SNS topic (switched to SignatureVersion 2) and configuration set, production access, a sending-only IAM user, then the Vercel variables. `CRON_SECRET` is needed for the timers even before email.
 11. [ ] **GitHub housekeeping**: delete the 13 merged branches listed in OPERATIONS.md and turn on "Automatically delete head branches".
+12. [ ] **Your passkeys** (PK13, PR 17): before go-live, enrol at least two passkeys on your own account at /account, one synced (for example on your phone) and one hardware key kept somewhere else, so you always have the owner controls and the brake, even if one is lost. Record it in OPERATIONS.md.
 
 ## Legal (Aaron approves, with legal review)
 

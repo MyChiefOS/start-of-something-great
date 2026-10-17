@@ -48,8 +48,8 @@
             <button type="button" id="passkey-add" class="button primary">Add a passkey</button>
           </p>
           <p id="passkey-status" class="fine" role="status" aria-live="polite"></p>
-          <p class="fine">Adding a passkey works within 10 minutes of signing in; adding a second one, or removing one, also asks for a passkey you already have. A check lasts 5 minutes. Your fingerprint or face never leaves your device: we keep only the passkey's public key.</p>
-          <p class="fine">Lost every passkey? <button type="button" id="passkey-recover" class="button">Start passkey recovery</button> It works within 10 minutes of signing in. For 72 hours nothing risky can be done on your account, then you can add a new passkey. Any session of yours can cancel it.</p>
+          <p class="fine">Adding a passkey works within 10 minutes of signing in; adding a second one, or removing one, also asks for a passkey you already have. A check lasts 5 minutes. Your first passkey signs out your other sessions, and a new sign-in method can be linked 24 hours after it. Your fingerprint or face never leaves your device: we keep only the passkey's public key.</p>
+          <p class="fine">Lost every passkey? <button type="button" id="passkey-recover" class="button">Start passkey recovery</button> It works within 10 minutes of signing in. For 72 hours nothing risky can be done on your account, then you can add a new passkey. Then your new passkey replaces every earlier one and signs out your other sessions. A session signed in with the method that started it, or an older one, can cancel it.</p>
         </section>
 
         <section id="notices" class="inbox" aria-labelledby="notices-heading">

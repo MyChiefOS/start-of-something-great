@@ -136,7 +136,7 @@
       rec.textContent = '';
       rec.hidden = !d.recovery;
       if (d.recovery) {
-        rec.textContent = 'Passkey recovery is under way. Until ' + new Date(d.recovery.ends_at).toLocaleString() + ' nothing risky can be done on your account; after that you can add a new passkey. If you didn’t start it, cancel it now. ';
+        rec.textContent = 'Passkey recovery is under way. Until ' + new Date(d.recovery.ends_at).toLocaleString() + ' nothing risky can be done on your account; after that you can add a new passkey. If you didn’t start it, sign in with your oldest sign-in method, sign out everywhere, and cancel it. ';
         rec.appendChild(button('Cancel recovery', 'primary', function (b) {
           window.dogPasskey.postJson('/auth/passkey/recovery/cancel', {}).then(function (x) { pkSay(x, 'That didn’t go through.'); b.disabled = false; loadPasskeys(); });
         }));
