@@ -79,6 +79,7 @@ async function main() {
     const run = (ctx, fn) => db.tx(web, ctx, fn);
     const feed = require('../../api/feed.js');
     const agentsApi = require('../../api/agents.js');
+    const { stepUpFor } = require('../passkey-helpers');
     const CFG = { ipKey: crypto.randomBytes(32) };
 
     console.log('Setting up ' + MEMBERS + ' members and ' + AGENTS + ' agents…');
@@ -90,6 +91,8 @@ async function main() {
       const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('m' + i + NAME)], keyVersion: 1,
         level, displayName: 'Member ' + i, sessionHash: c.sha256hex(token), sessionDays: 30 }));
       members[i] = { id: out.memberId, level, cookie: '__Host-dog_session=' + token };
+      // PR 17: owners who let agents act need a passkey check; given here through the test's own superuser connection.
+      if (level === 2) await stepUpFor(su, out.memberId);
     };
     for (let i = 0; i < MEMBERS; i += 50) await Promise.all(Array.from({ length: Math.min(50, MEMBERS - i) }, (_, k) => make(i + k)));
     const owners = members.filter((m) => m.level === 2);

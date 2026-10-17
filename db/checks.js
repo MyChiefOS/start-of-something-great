@@ -40,6 +40,18 @@ const DEFINERS = {
   'app.identity_unlink(uuid, text)': 'dog_signin',
   // PR 15's review (F6): a traveller's sealed confirmation is used once.
   'app.region_confirm_use(text)': 'dog_signin',
+  // PR 17: passkeys, in the sign-in role. Whether a session passed a passkey check in the last 5 minutes; a challenge
+  // (and throwing one away); adding a passkey; a passkey check; removing one; starting and cancelling recovery; and
+  // the trigger that removes a sign-in method's passkeys with it.
+  'app.session_step_up(text)': 'dog_signin',
+  'app.passkey_challenge(text, text, text)': 'dog_signin',
+  'app.passkey_challenge_drop(text, text)': 'dog_signin',
+  'app.passkey_enrol(text, text, text, text, bigint, text, text, boolean)': 'dog_signin',
+  'app.passkey_assert(text, text, text, bigint, boolean)': 'dog_signin',
+  'app.passkey_remove(text, uuid)': 'dog_signin',
+  'app.passkey_recovery_start(text)': 'dog_signin',
+  'app.passkey_recovery_cancel(text)': 'dog_signin',
+  'app.identities_passkeys()': 'dog_signin',
   // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
   // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
   'app.current_identity()': 'dog_signin',
@@ -320,7 +332,18 @@ async function problems(sql, { snapshot } = {}) {
     ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
     // PR 16: a parent's daily cap counts its whole subtree, before every new post and draft.
     ['posts', 'posts_tree_cap', 7, 'agent_tree_cap', 'every new post'],
-    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft']
+    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft'],
+    // PR 17: the passkey step-up (D5). Risky grants by people refuse without a passkey check in the last 5 minutes.
+    ['agent_rules', 'agent_rules_step_up', 7, 'agent_rules_step_up', 'every new rules version'],
+    ['agent_keys', 'agent_keys_step_up', 7, 'agent_keys_step_up', 'every new key'],
+    ['identities', 'identities_step_up', 7, 'identities_step_up', 'every newly linked sign-in method'],
+    ['members', 'members_step_up', 27, 'members_step_up', 'every updated or deleted member row'],
+    ['brakes', 'brakes_step_up', 23, 'admin_step_up', 'every new or changed brake'],
+    ['deletion_reviews', 'deletion_reviews_step_up', 19, 'admin_step_up', 'every decided deletion review'],
+    // After the PR 17 review (finding 4): Aaron's review-queue and appeal decisions are checked by the database too.
+    ['posts', 'posts_step_up', 19, 'admin_review_step_up', 'every post Aaron changes'],
+    ['review_flags', 'review_flags_step_up', 19, 'admin_review_step_up', 'every flag Aaron decides'],
+    ['containments', 'containments_step_up', 19, 'admin_review_step_up', 'every pause Aaron decides']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;
