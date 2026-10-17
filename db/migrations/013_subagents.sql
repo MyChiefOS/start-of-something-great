@@ -112,11 +112,12 @@ grant insert (expires_at) on app.agents to dog_signin;
 --   reason 'parent_lowered': its parent was lowered, so it was lowered to match (the lower of the two, per setting)
 alter table app.agent_rules drop constraint agent_rules_set_by_check;
 alter table app.agent_rules add constraint agent_rules_set_by_check check (set_by = any (array['owner', 'system', 'agent']));
+-- 012's 'signin_unlinked' (an unlinked sign-in method's raises undone, PR 15) stays, for agents and sub-agents alike.
 alter table app.agent_rules drop constraint agent_rules_reason_check;
 alter table app.agent_rules add constraint agent_rules_reason_check
   check (reason = any (array['created', 'owner', 'report_upheld', 'ban', 'disabled', 'reconfirmed', 'act_expired', 'containment',
-                             'containment_lifted', 'parent_lowered']));
-alter policy agent_rules_signin_insert on app.agent_rules with check (reason in ('created', 'ban', 'disabled', 'parent_lowered'));
+                             'containment_lifted', 'signin_unlinked', 'parent_lowered']));
+alter policy agent_rules_signin_insert on app.agent_rules with check (reason in ('created', 'ban', 'disabled', 'signin_unlinked', 'parent_lowered'));
 
 -- ---- What the narrow roles read for the tree ----
 -- dog_limits counts a tree's actions against each daily cap above it (app.agent_tree_cap).
@@ -194,7 +195,9 @@ $$;
 
 -- An agent's place in its tree never changes. Owners rename, describe and revoke their agents (005); an agent may
 -- only revoke its own direct sub-agents; the sign-in role claims (005), and stops a sub-agent only when its parent has
--- stopped (the cascade below) or its time is up (the timer).
+-- stopped (the cascade below), its time is up (the timer), or its owner, acting from their own session, unlinks a
+-- sign-in method whose sessions made or keyed an agent above it (app.identity_unlink, PR 15 with 013): the owner may
+-- revoke any of their agents anyway, so this gives the sign-in role nothing the owner didn't already have.
 create or replace function app.agents_guard() returns trigger
 language plpgsql
 as $$
@@ -214,7 +217,8 @@ begin
        is distinct from (old.owner_id, old.name, old.description, old.claimed_at, old.claim_hash, old.claim_expires_at)
        or old.status <> 'active' or old.parent_id is null
        or not ((new.status = 'revoked' and exists (select 1 from app.agents p where p.id = old.parent_id and p.status <> 'active'))
-               or (new.status = 'expired' and old.expires_at <= now())) then
+               or (new.status = 'expired' and old.expires_at <= now())
+               or (new.status = 'revoked' and app.actor_kind() in ('member', 'admin') and old.owner_id = app.current_member())) then
       raise exception 'a sub-agent stops only with its parent or when its time is up' using errcode = '42501';
     end if;
     return new;
@@ -275,7 +279,43 @@ end
 $$;
 
 
--- ---- The rules: attenuation in the database (011's version, with the parts marked 013) ----
+-- ---- What a sub-agent's authority traces to (012's agents_by, with the part marked 013) ----
+-- 012 records, on each agent, the sign-in method of the session that created or claimed it, so unlinking that method
+-- undoes it (R1). A sub-agent is made by an agent, which has no session: app.current_identity() is null for it. Its
+-- authority is its parent's, so it records its parent's: the method that created its parent, or claimed it (a
+-- sub-agent's parent's own record is inherited the same way, so the whole tree names the method at its top). It is
+-- read here, by the database, from the parent row; nothing in the request sets it. What a leaked key of the parent
+-- made is reached the other way: unlinking a method stops every sub-agent under an agent whose key it revokes
+-- (app.identity_unlink, below). A sub-agent is never claimed, so its claimed_by_identity stays null. Neither changes.
+-- (This fires before agents_fill, by name, so the parent is found as agents_fill finds it: the acting agent.)
+create or replace function app.agents_by() returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if current_user = 'dog_signin' and app.actor_kind() = 'agent' then
+      new.created_by_identity := (select coalesce(p.created_by_identity, p.claimed_by_identity) from app.agents p where p.id = app.current_agent());
+    else
+      new.created_by_identity := case when app.actor_kind() in ('member', 'admin') then app.current_identity() end;
+    end if;
+    new.claimed_by_identity := null;
+  else
+    new.created_by_identity := old.created_by_identity;
+    if old.status = 'unclaimed' and new.status = 'active' and app.actor_kind() in ('member', 'admin') then
+      new.claimed_by_identity := app.current_identity();
+    else
+      new.claimed_by_identity := old.claimed_by_identity;
+    end if;
+  end if;
+  return new;
+end
+$$;
+
+-- ---- The rules: attenuation in the database (011's version, with the parts marked 013 and PR 15's from 012) ----
+-- 012 (PR 15) changed this function too; every part of 012's is kept, marked "PR 15": who set an owner's version
+-- (by_identity, from the request's own session) and whether it restarts the 90-day clock (only with a fresh sign-in,
+-- R2); a confirmation needs a fresh sign-in; and 'signin_unlinked' is the system's and only lowers. A sub-agent's
+-- first rules (set_by 'agent') and 'parent_lowered' (the system's) are nobody's session and restart no clock.
 create or replace function app.agent_rules_fill() returns trigger
 language plpgsql
 as $$
@@ -308,8 +348,18 @@ begin
     from app.agent_rules r where r.agent_id = new.agent_id order by r.version desc limit 1;
   new.version := coalesce(prev.version, 0) + 1;
   new.created_at := now();
-  new.set_by := case when new.reason in ('report_upheld', 'ban', 'disabled', 'act_expired', 'containment', 'containment_lifted', 'parent_lowered') then 'system'
+  new.set_by := case when new.reason in ('report_upheld', 'ban', 'disabled', 'act_expired', 'containment', 'containment_lifted',
+                                         'signin_unlinked', 'parent_lowered') then 'system'
                      when new.reason = 'created' and par_id is not null then 'agent' else 'owner' end;
+  -- PR 15: who set it and whether it restarts the clock come from the database, never from the request. A first
+  -- version (an owner's all-drafts, or a sub-agent's from its parent) restarts nothing; the system's versions are
+  -- nobody's session.
+  new.by_identity := null;
+  new.restarts_clock := false;
+  if new.set_by = 'owner' and new.reason <> 'created' then
+    new.by_identity := app.current_identity();
+    new.restarts_clock := coalesce(current_setting('app.fresh', true), '') = '1';
+  end if;
   if new.reason = 'created' then
     if prev.id is not null then
       raise exception 'an agent''s first rules are set once' using errcode = '42501';
@@ -358,6 +408,10 @@ begin
        or 'act' <> all (array[prev.post_mode, prev.reply_mode, prev.report_mode]) then
       raise exception 'a confirmation keeps rules that act exactly as they are' using errcode = '42501';
     end if;
+    -- PR 15: keeping an agent acting on its own for another 90 days needs a fresh sign-in.
+    if coalesce(current_setting('app.fresh', true), '') <> '1' then
+      raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again to keep an agent acting on its own.';
+    end if;
     return new;
   end if;
   if new.reason = 'containment_lifted' then
@@ -376,8 +430,8 @@ begin
      or (rank_of ->> new.reply_mode)::int > (rank_of ->> prev.reply_mode)::int
      or (rank_of ->> new.report_mode)::int > (rank_of ->> prev.report_mode)::int
      or new.daily_cap > prev.daily_cap then
-    if new.reason in ('report_upheld', 'ban', 'disabled', 'act_expired', 'containment') then
-      raise exception 'an upheld report, a ban, a disabled account, an expiry or a containment can only lower an agent''s rules' using errcode = '42501';
+    if new.reason in ('report_upheld', 'ban', 'disabled', 'act_expired', 'containment', 'signin_unlinked') then
+      raise exception 'an upheld report, a ban, a disabled account, an expiry, a containment or an unlinked sign-in method can only lower an agent''s rules' using errcode = '42501';
     end if;
     -- While a containment is in force (until its time is up), the owner can't raise any agent's rules, existing or
     -- new: everything drafts for their approval until it ends. Lowering stays open (the notifications review,
@@ -585,7 +639,8 @@ begin
     raise exception 'parent_not_active' using errcode = '42501';
   end if;
   if p_status is distinct from 'active' or p_owner is distinct from me or (p_expires is not null and p_expires <= now())
-     or not exists (select 1 from app.members m where m.id = me and m.status = 'active' and (m.trust_level >= 2 or m.is_admin)
+     -- The owner's live verified level, as app.agent_resolve checks it (PR 15, RK58), never the level last stored.
+     or not exists (select 1 from app.members m where m.id = me and m.status = 'active' and (app.verified_level(m.id) >= 2 or m.is_admin)
                     and not app.deletion_overdue(m.id)) then
     raise exception 'parent_not_active' using errcode = '42501';
   end if;
@@ -1151,10 +1206,12 @@ set local role dog_owner;
 revoke create on schema app from dog_jevs;
 
 -- ---- Sign-in for agents: an expired sub-agent stops at once ----
--- Same as 010, and two conditions more: a sub-agent past its expiry resolves to nothing from that moment, whenever the
--- timer next runs; and so does one with any agent above it (at most 10 levels) not active or past its expiry. Revoking
--- already cascades in the same transaction (agents_cascade) and a sub-agent never outlives its parent; the second
--- condition is defence in depth (the review of PR 16, F1).
+-- Same as 012 (PR 15: the owner's live verified level, app.verified_level, not the level last stored on their row),
+-- and two conditions more: a sub-agent past its expiry resolves to nothing from that moment, whenever the timer next
+-- runs; and so does one with any agent above it (at most 10 levels) not active or past its expiry. Revoking already
+-- cascades in the same transaction (agents_cascade) and a sub-agent never outlives its parent; the second condition
+-- is defence in depth (the review of PR 16, F1). Every agent in a tree has the same owner, so a lapsed X badge stops
+-- the whole tree on its next request.
 grant create on schema app to dog_signin;
 set local role dog_signin;
 create or replace function app.agent_resolve(p_key_hash text)
@@ -1169,13 +1226,240 @@ begin
     select a.id, m.id
     from app.agent_keys k join app.agents a on a.id = k.agent_id join app.members m on m.id = a.owner_id
     where k.key_hash = p_key_hash and k.revoked_at is null and a.status = 'active' and (a.expires_at is null or a.expires_at > now())
-      and m.status = 'active' and (m.trust_level >= 2 or m.is_admin) and not app.deletion_overdue(m.id)
+      and m.status = 'active' and (app.verified_level(m.id) >= 2 or m.is_admin) and not app.deletion_overdue(m.id)
       and not exists (
         with recursive up (id, lvl) as (
           select a.parent_id, 1 where a.parent_id is not null
           union all
           select p.parent_id, up.lvl + 1 from app.agents p join up on p.id = up.id where p.parent_id is not null and up.lvl < 11)
         select 1 from up join app.agents x on x.id = up.id where x.status <> 'active' or (x.expires_at is not null and x.expires_at <= now()));
+end
+$$;
+
+-- ---- Unlinking a sign-in method reaches the sub-agent tree (012's identity_unlink, with the parts marked 013) ----
+-- Same as 012 (PR 15: the fresh session, never the last method, seniority, the chain of linked methods, every key
+-- their sessions made or of an agent they created or claimed revoked, every raise of theirs drafting again, the other
+-- sessions ended, one audit row and one notice), and the tree under what it undoes:
+--   * Stopped: every sub-agent under an agent whose key this revokes, or that one of the removed methods created or
+--     claimed. A sub-agent made with a key that a removed method's session rotated in records the agent's own method,
+--     not the key's (an agent has no session), so revoking that key alone would leave what it made running; this is
+--     the same fresh start as a new key (PR 16, RK41). The agent itself stays, with its keys revoked, as in 012.
+--   * Lowered: every sub-agent under an agent whose rules this lowers drafts again to match (the cascade,
+--     'parent_lowered', never "off"). Agents are lowered parents first, each from its current rules read afresh, so a
+--     sub-agent its parent's lowering has already lowered is never written above that.
+--   * Lock order: the member's advisory lock, sign-in methods, the member row, the session row (012, R3); then the
+--     agents it will stop, parents first (by depth, then ID), before their keys: member, agent, key, as making a
+--     sub-agent (member, agent, key) and an owner's revoke (agent, then the tree below it) take them.
+-- The audit row and the notice add how many sub-agents were stopped or lowered, only when there were any.
+create or replace function app.identity_unlink(p_identity uuid, p_session_hash text)
+returns table (provider text, trust_level smallint, sessions_ended integer, also_unlinked integer, keys_revoked integer,
+               agents_lowered integer)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  me uuid := app.current_member();
+  ident app.identities%rowtype;
+  own app.identities%rowtype;
+  mem app.members%rowtype;
+  sid uuid;
+  n integer;
+  ended integer := 0;
+  gone uuid[];
+  others text[];
+  keys integer := 0;
+  lowered integer := 0;
+  hit uuid[];
+  held uuid[];
+  stopped integer := 0;
+  sub_lowered integer := 0;
+  pl_before integer;
+  a record;
+  cur record;
+  post text;
+  rep text;
+  rpt text;
+  cap integer;
+  cap_before integer;
+  body text;
+  name_of constant jsonb := '{"github": "GitHub", "x": "X", "email": "an email address", "linkedin": "LinkedIn"}';
+  lead_of constant jsonb := '{"github": "GitHub", "x": "X", "email": "An email address", "linkedin": "LinkedIn"}';
+begin
+  if p_identity is null or p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$'
+     or app.actor_kind() not in ('member', 'admin') or me is null then
+    raise exception 'bad sign-in request' using errcode = '22023';
+  end if;
+  -- The lock order of deleting an account (009), as for linking (R3): the member's advisory lock, sign-in methods, the
+  -- member row, and the session row last. The advisory lock comes before the session check (review F2).
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
+  perform 1 from app.identities i where i.member_id = me order by i.id for update;
+  select * into mem from app.members m where m.id = me and m.status = 'active' for update;
+  if not found then
+    raise exception 'not_found' using errcode = 'P0001';
+  end if;
+  select s.identity_id into sid from app.sessions s where s.token_hash = p_session_hash and s.member_id = me and s.expires_at > now()
+    and s.created_at > now() - interval '10 minutes' for update;
+  if not found then
+    raise exception 'fresh_sign_in' using errcode = 'P0001', hint = 'Sign in again, then unlink it within 10 minutes.';
+  end if;
+  select * into ident from app.identities i where i.id = p_identity and i.member_id = me;
+  if not found then
+    raise exception 'not_found' using errcode = 'P0001';
+  end if;
+  select count(*) into n from app.identities i where i.member_id = me;
+  if n <= 1 then
+    raise exception 'last_method' using errcode = 'P0001', hint = 'This is the only way you sign in; link another first.';
+  end if;
+  -- Seniority: the method this session signed in with must have been added before the one being removed. A session
+  -- with no recorded method (or whose method is gone) removes nothing until its holder signs in again.
+  select * into own from app.identities i where i.id = sid and i.member_id = me;
+  if not found or (ident.created_at, ident.id) <= (own.created_at, own.id) then
+    raise exception 'not_senior' using errcode = 'P0001',
+      hint = 'Only a method added after the one you signed in with can be removed here. Sign in with your oldest method to remove this one.';
+  end if;
+
+  -- The method and everything its sessions linked, down the chain.
+  with recursive chain (id) as (
+    select ident.id
+    union
+    select i.id from app.identities i join chain c on i.linked_by = c.id where i.member_id = me and i.id <> own.id
+  )
+  select array_agg(c.id) into gone from chain c;
+  select coalesce(array_agg(i.provider order by i.created_at, i.id), '{}') into others
+    from app.identities i where i.id = any (gone) and i.id <> ident.id;
+
+  -- 013: the agents whose sub-agents stop: those with a key about to be revoked, and those a removed method created
+  -- or claimed. Their rows and every active agent under them are locked now, parents first, before any key.
+  select coalesce(array_agg(g.id), '{}') into hit
+    from app.agents g
+    where g.owner_id = me
+      and (g.created_by_identity = any (gone) or g.claimed_by_identity = any (gone)
+           or exists (select 1 from app.agent_keys k where k.agent_id = g.id and k.revoked_at is null and k.by_identity = any (gone)));
+  with recursive tree (id) as (
+    select g.id from app.agents g where g.id = any (hit)
+    union
+    select g.id from app.agents g join tree t on g.parent_id = t.id where g.status = 'active'
+  )
+  select coalesce(array_agg(t.id), '{}') into held from tree t;
+  perform 1 from app.agents g where g.id = any (held) and g.status = 'active' order by g.depth, g.id for no key update;
+
+  -- Agent keys made from their sessions, and every key of an agent their sessions created or claimed, whoever made
+  -- or rotated the key (the re-review, probe E: a key rotated from another session is still the agent they made).
+  -- A sub-agent's own keys are counted here only if a removed method's session made them; the rest stop with it below.
+  with revoked as (
+    update app.agent_keys k set revoked_at = now()
+      from app.agents g
+      where g.id = k.agent_id and g.owner_id = me and k.revoked_at is null
+        and (k.by_identity = any (gone) or g.created_by_identity = any (gone) or g.claimed_by_identity = any (gone))
+      returning k.id, k.by_identity, g.parent_id)
+  select count(*) filter (where r.parent_id is null or r.by_identity = any (gone)) into keys from revoked r;
+
+  -- 013: every active sub-agent under those agents stops (revoked, or expired if its time is up), and the cascade
+  -- (agents_cascade) takes each one's keys, waiting drafts and everything under it in the same transaction.
+  with recursive below (id) as (
+    select g.id from app.agents g where g.parent_id = any (hit) and g.status = 'active'
+    union
+    select g.id from app.agents g join below b on g.parent_id = b.id where g.status = 'active'
+  )
+  select count(*) into stopped from below;
+  update app.agents g set status = case when g.expires_at <= now() then 'expired' else 'revoked' end
+    where g.parent_id = any (hit) and g.status = 'active';
+
+  -- Rules they set: every action one of their versions ever raised to "act" drafts again, and the daily cap goes back
+  -- to what it was before any raise of theirs. Lower only, never "off", by the system ('signin_unlinked'). 013: parents
+  -- first, each agent's current rules read afresh (its parent's lowering may already have lowered it, 'parent_lowered'),
+  -- and the sub-agents the lowering reaches are counted.
+  select count(*) into pl_before from app.agent_rules r join app.agents g on g.id = r.agent_id
+    where g.owner_id = me and r.reason = 'parent_lowered';
+  for a in
+    select g.id as agent_id from app.agents g
+    where g.owner_id = me and g.status = 'active'
+      and exists (select 1 from app.agent_rules x where x.agent_id = g.id and x.by_identity = any (gone))
+    order by g.depth, g.id
+  loop
+    select r.version, r.post_mode, r.reply_mode, r.report_mode, r.daily_cap, r.reason into cur
+      from app.agent_rules r where r.agent_id = a.agent_id order by r.version desc limit 1;
+    post := cur.post_mode;
+    rep := cur.reply_mode;
+    rpt := cur.report_mode;
+    -- An action on "act" drafts again if any version of theirs ever raised it to "act", however it was kept since: an
+    -- owner's re-save, a confirmation or a containment's end (which restores "act" as the system's own version) can't
+    -- launder it (the re-review, probe E). A version of theirs that only kept the owner's own "act" raised nothing.
+    if post = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.post_mode = 'act' and p.post_mode <> 'act') then
+      post := 'draft';
+    end if;
+    if rep = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.reply_mode = 'act' and p.reply_mode <> 'act') then
+      rep := 'draft';
+    end if;
+    if rpt = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.report_mode = 'act' and p.report_mode <> 'act') then
+      rpt := 'draft';
+    end if;
+    select min(p.daily_cap) into cap_before
+      from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+      where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.daily_cap > p.daily_cap;
+    cap := least(cur.daily_cap, coalesce(cap_before, cur.daily_cap));
+    if (post, rep, rpt, cap) is distinct from (cur.post_mode, cur.reply_mode, cur.report_mode, cur.daily_cap) then
+      insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason)
+        values (a.agent_id, post, rep, rpt, cap, 'signin_unlinked');
+      lowered := lowered + 1;
+    elsif cur.reason = 'containment' then
+      -- Paused: nothing to lower now, but the pause's end would restore the version before it, which may be theirs.
+      -- A version of our own after the pause keeps the agent drafting until its owner raises it again.
+      insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason)
+        values (a.agent_id, post, rep, rpt, cap, 'signin_unlinked');
+      lowered := lowered + 1;
+    end if;
+  end loop;
+  select count(*) - pl_before into sub_lowered from app.agent_rules r join app.agents g on g.id = r.agent_id
+    where g.owner_id = me and r.reason = 'parent_lowered';
+
+  -- Other sessions first, so no session ever points at a method being removed; then the methods.
+  delete from app.sessions s where s.member_id = me and s.token_hash <> p_session_hash;
+  get diagnostics ended = row_count;
+  delete from app.identities i where i.id = any (gone);
+
+  insert into app.audit_log (action, subject_kind, subject_id, detail)
+    values ('member.identity_unlinked', 'member', me, jsonb_build_object('provider', ident.provider, 'sessions_ended', ended,
+            'also_unlinked', to_jsonb(others), 'keys_revoked', keys, 'agents_lowered', lowered)
+            || case when stopped > 0 then jsonb_build_object('subagents_stopped', stopped) else '{}'::jsonb end
+            || case when sub_lowered > 0 then jsonb_build_object('subagents_lowered', sub_lowered) else '{}'::jsonb end);
+  body := (lead_of ->> ident.provider) || ' can no longer sign in to your account, and every other session of yours was signed out.';
+  if cardinality(others) > 0 then
+    body := body || ' Also unlinked, because they were linked from its sessions: '
+      || (select string_agg(name_of ->> o, ', ') from unnest(others) o) || '.';
+  end if;
+  if keys > 0 then
+    body := body || ' ' || keys || case when keys = 1 then ' agent key' else ' agent keys' end
+      || ' made or claimed from those sessions ' || case when keys = 1 then 'was' else 'were' end || ' revoked.';
+  end if;
+  if lowered > 0 then
+    body := body || ' ' || lowered || case when lowered = 1 then ' agent' else ' agents' end
+      || ' that those sessions let act on ' || case when lowered = 1 then 'its' else 'their' end
+      || ' own now ' || case when lowered = 1 then 'drafts' else 'draft' end || ' for your approval again (nothing was switched off).';
+  end if;
+  if stopped > 0 then
+    body := body || ' ' || stopped || case when stopped = 1 then ' sub-agent' else ' sub-agents' end
+      || ' under those agents ' || case when stopped = 1 then 'was' else 'were' end || ' stopped.';
+  end if;
+  if sub_lowered > 0 then
+    body := body || ' ' || sub_lowered || case when sub_lowered = 1 then ' sub-agent' else ' sub-agents' end
+      || ' under them ' || case when sub_lowered = 1 then 'was' else 'were' end || ' lowered to match (nothing was switched off).';
+  end if;
+  body := body || ' Check your agents and your posts: anything else done from those sessions, such as a post or a deletion, '
+    || 'isn''t undone. If this wasn''t you, sign in again and check how you sign in on your account page.';
+  perform app.notify(me, 'signin_unlinked', 'A sign-in method was removed', body,
+    case when keys > 0 or lowered > 0 or stopped > 0 or sub_lowered > 0 then '/agents' else '/account' end, 'identity', ident.id,
+    'signin:unlinked:' || ident.id::text);
+  if app.verified_level(me) is distinct from mem.trust_level then
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('member.level_changed', 'member', me,
+              jsonb_build_object('provider', ident.provider, 'from', mem.trust_level, 'to', app.verified_level(me)));
+    update app.members m set trust_level = app.verified_level(me) where m.id = me;
+    mem.trust_level := app.verified_level(me);
+  end if;
+  return query select ident.provider, mem.trust_level, ended, cardinality(others), keys, lowered;
 end
 $$;
 set local role dog_owner;
