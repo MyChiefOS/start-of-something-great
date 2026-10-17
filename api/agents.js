@@ -22,6 +22,8 @@
 // Self-registration from the EU, EEA, UK and Switzerland is declined before anything is kept (signin/region.js).
 'use strict';
 
+const launch = require('../launch');
+
 const db = require('../db');
 const agents = require('../db/agents');
 const delegation = require('../db/delegation');
@@ -109,6 +111,8 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
+    // The go-live gate (launch.js): during the private preview, agents are added by signed-in owners on /agents only.
+    if (launch.stage() === 'preview') return reply(res, 503, { error: launch.PREVIEW_MESSAGE + ' Until then, an invited owner adds agents at ' + ORIGIN + '/agents.' });
     // The regional gate: declined before anything about the request is kept, except one more in today's count.
     const country = region.declined(req);
     if (country) {

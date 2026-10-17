@@ -24,6 +24,8 @@
 //   and a traveller's sealed confirmation is used once.
 'use strict';
 
+const launch = require('../launch');
+
 const c = require('./crypto');
 const h = require('./http');
 const { ORIGIN, SESSION_DAYS, IDLE_DAYS, STATE_MINUTES } = require('./config');
@@ -257,6 +259,11 @@ function make(deps) {
         return completeLink(req, res, me, args, saved.r);
       }
       if (country) return regional(res, country, args, { r: saved.r || null });
+      // The go-live gate (launch.js): during the preview a new account is made only for an allow-listed account ID.
+      // Existing members sign in as usual. Nothing is stored for someone turned away.
+      if (!launch.mayJoin(provider, who.accountId) && !(await run(ANON, (t) => store.known(t, { provider, fingerprints: args.fingerprints })))) {
+        return h.redirect(res, '/join?error=preview');
+      }
       const out = await finish(res, ANON, args);
       if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
       await afterSignIn(req, out);
@@ -286,6 +293,11 @@ function make(deps) {
       // same either way, so it tells nobody whether one exists. Nothing is stored for a new address but the count.
       const country = region.declined(req);
       if (country) return regionalEmail(req, res, country, email, emailFps);
+      // The go-live gate (launch.js): during the preview a link goes only to an allow-listed address or an existing
+      // member. Everyone gets the same answer, so the form can't be used to learn who is in the preview.
+      if (!launch.mayJoin('email', email) && !(await run(ANON, (t) => store.known(t, { provider: 'email', fingerprints: emailFps })))) {
+        return h.redirect(res, '/join?sent=preview');
+      }
       if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFps[0]) || await limited('email_all', ALL)) {
         return h.redirect(res, '/join?error=slow');
       }
