@@ -99,6 +99,50 @@
       .catch(function () { summary.textContent = 'The queue could not be loaded. Please try again.'; });
   }
 
-  document.getElementById('refresh').addEventListener('click', load);
+  // PR 13: paused owners and their appeals. Lift ends a pause now; Keep lets it end on time. Nothing here needs Aaron
+  // for the system to keep working: every pause lifts by itself.
+  var appealBox = document.getElementById('appeals');
+  var appealList = document.getElementById('appeal-list');
+  function loadAppeals() {
+    fetch('/api/notify/appeals', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        appealList.textContent = '';
+        appealBox.hidden = !(x.ok && x.d.containments.length);
+        if (!x.ok) return;
+        x.d.containments.forEach(function (cn) {
+          var card = el('article', 'post review-item');
+          var meta = el('p', 'post-meta');
+          meta.appendChild(el('strong', '', cn.member.name));
+          meta.appendChild(document.createTextNode(' · ' + (cn.reason === 'copies' ? cn.measured + ' copies of earlier text in an hour' : cn.measured + ' agent actions in an hour')
+            + ' (usual ' + cn.usual + ') · ends ' + new Date(cn.ends_at).toLocaleString()));
+          card.appendChild(meta);
+          card.appendChild(el('p', 'fine', cn.appeal ? 'Appealed' + (cn.appeal.note ? ': ' + cn.appeal.note : ' (no note).') : 'No appeal.'));
+          var row = el('div', 'review-actions');
+          var result = el('p', 'fine', '');
+          result.setAttribute('role', 'status');
+          var choices = cn.appeal && !cn.decision ? ['lift', 'keep'] : ['lift'];
+          var buttons = choices.map(function (d) {
+            var b = el('button', 'button' + (d === 'lift' ? ' primary' : ''), d === 'lift' ? 'Lift now' : 'Keep');
+            b.type = 'button';
+            b.addEventListener('click', function () {
+              buttons.forEach(function (y) { y.disabled = true; });
+              fetch('/api/notify/appeals', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ containment: cn.id, decision: d }) })
+                .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, d: j }; }); })
+                .then(function (y) { result.textContent = y.ok ? (d === 'lift' ? 'Lifted: their agents are back on their rules.' : 'Kept: it ends on time.') : y.d.error; buttons.forEach(function (z) { z.hidden = y.ok; z.disabled = false; }); });
+            });
+            row.appendChild(b);
+            return b;
+          });
+          card.appendChild(row);
+          card.appendChild(result);
+          appealList.appendChild(card);
+        });
+      })
+      .catch(function () { appealBox.hidden = true; });
+  }
+
+  document.getElementById('refresh').addEventListener('click', function () { load(); loadAppeals(); });
   load();
+  loadAppeals();
 })();

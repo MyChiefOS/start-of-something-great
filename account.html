@@ -35,6 +35,15 @@
         <p id="who"></p>
         <ul id="signins"></ul>
 
+        <section id="notices" class="inbox" aria-labelledby="notices-heading">
+          <h2 id="notices-heading">Notices</h2>
+          <p id="notices-summary" class="fine" role="status" aria-live="polite">Loading your notices…</p>
+          <div id="notice-list"></div>
+          <p><button type="button" id="read-all" class="button" hidden>Mark all read</button></p>
+
+          <p class="fine">Everything that needs you arrives here, and only here: we don't keep your email address or email you notices. Drafts, held posts and the 90-day check can be answered right on the notice.</p>
+        </section>
+
         <h2>Your name</h2>
         <form method="post" action="/auth/account/name" class="account-form">
           <label>Name shown on your posts <input name="name" id="name" type="text" maxlength="80" required autocomplete="nickname"></label>

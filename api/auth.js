@@ -9,12 +9,17 @@ const config = require('../signin/config');
 const { PROVIDERS } = require('../signin/providers');
 const { make } = require('../signin/flow');
 const db = require('../db');
+const notifyConfig = require('../notify/config');
+const { signinSender } = require('../notify/sender');
 
 let flow;
 function get() {
   if (!flow) {
     const cfg = config.load();
-    flow = cfg.ready && db.configured() ? make({ config: cfg, run: db.run, providers: PROVIDERS, sendEmail: cfg.email }) : null;
+    // PR 13: email links go out through Amazon SES once Aaron switches it on (EMAIL-SETUP.md), skipping addresses that
+    // bounced or complained; until then they stay off.
+    const sendEmail = db.configured() ? signinSender(notifyConfig.load(), { run: db.run, keys: cfg.fingerprintKeys }) : null;
+    flow = cfg.ready && db.configured() ? make({ config: cfg, run: db.run, providers: PROVIDERS, sendEmail }) : null;
   }
   return flow;
 }

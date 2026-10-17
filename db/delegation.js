@@ -30,6 +30,8 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
     return { rules: shapeRules(r) };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
+    // A containment is in force: nothing can be raised until it ends (011); lowering still works.
+    if (e.code === 'P0001' && e.message === 'contained') return { refused: 'contained' };
     if (e.code === '42501') return { refused: 'not_found' };
     throw e;
   }
