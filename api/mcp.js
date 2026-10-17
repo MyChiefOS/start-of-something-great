@@ -15,7 +15,8 @@ const { handshake, pages, status, getChanges, getConversation, getProposals, sea
 // The source can be swapped in tests, which plant markers in real database rows.
 let readPosts = async (a) => {
   const db = require('../db');
-  if (!db.configured()) return null;
+  // Closed, or the private preview (launch.js): the MCP server is anonymous, so it shows no posts until the site is public.
+  if (!db.configured() || require('../launch').stage() === 'preview') return null;
   return db.run({ actor: 'anon' }, (t) => require('../db/posts').feed(t, a));
 };
 // At most 30 seconds old, so a removed post is gone from agents' answers well within F7's minute.

@@ -98,7 +98,8 @@ const AUDIT_POLICIES = {
   audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
+  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
+  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
