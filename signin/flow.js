@@ -488,8 +488,9 @@ function make(deps) {
       const who = await current(req);
       if (!who) return h.redirect(res, '/join?error=signin');
       if (who.fresh !== true) return h.redirect(res, FRESH_METHOD);
-      // No passkey check (PR 17's review, 1e): PR 15's seniority rule lets a session remove only a method added after its
-      // own, so the holder of the older method can always remove a newer one, as before passkeys.
+      // No passkey check unless passkeys were added under that method (identities_passkeys, Oct 17); otherwise PR 15's
+      // seniority rule alone lets a session remove only a method added after its own, so the holder of the older method
+      // can always remove a newer one, as before passkeys (PR 17's review, 1e). The database decides either way.
       const body = await h.form(req);
       const out = await run(session.strongActorFor(who), (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);

@@ -415,6 +415,13 @@ begin
   end if;
   -- The member's lock first, as linking and unlinking take it (012, review F2).
   perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
+  -- The member row before the session row: the order every other path takes (db/README.md "Lock order"), so a ban
+  -- or a deletion at the same instant waits instead of deadlocking (the merge review of PR 17, finding 2).
+  perform 1 from app.members m where m.id = me and m.status = 'active' and not app.deletion_overdue(me) for update;
+  if not found then
+    return query select 'not_active'::text, null::uuid, false;
+    return;
+  end if;
   select * into s from app.sessions x where x.token_hash = p_session_hash and x.member_id = me and x.expires_at > now() for update;
   if not found then
     return query select 'session'::text, null::uuid, false;
@@ -424,11 +431,6 @@ begin
   get diagnostics took = row_count;
   if took = 0 then
     return query select 'challenge'::text, null::uuid, false;
-    return;
-  end if;
-  perform 1 from app.members m where m.id = me and m.status = 'active' and not app.deletion_overdue(me) for update;
-  if not found then
-    return query select 'not_active'::text, null::uuid, false;
     return;
   end if;
   if s.created_at <= now() - interval '10 minutes' then
@@ -631,6 +633,12 @@ begin
     raise exception 'bad passkey request' using errcode = '22023';
   end if;
   perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
+  -- The member row before the session row (db/README.md "Lock order"; the merge review of PR 17, finding 2).
+  perform 1 from app.members m where m.id = me and m.status = 'active' for update;
+  if not found then
+    return query select 'not_active'::text, null::timestamptz;
+    return;
+  end if;
   select * into s from app.sessions x where x.token_hash = p_session_hash and x.member_id = me and x.expires_at > now() for update;
   if not found then
     return query select 'session'::text, null::timestamptz;
@@ -638,11 +646,6 @@ begin
   end if;
   if s.created_at <= now() - interval '10 minutes' then
     return query select 'fresh'::text, null::timestamptz;
-    return;
-  end if;
-  perform 1 from app.members m where m.id = me and m.status = 'active' for update;
-  if not found then
-    return query select 'not_active'::text, null::timestamptz;
     return;
   end if;
   if exists (select 1 from app.passkey_recoveries r where r.member_id = me and r.cancelled_at is null and r.completed_at is null) then

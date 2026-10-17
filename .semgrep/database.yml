@@ -34,4 +34,4 @@ rules:
   paths:
     include: ['*.js']
     exclude: [db/index.js, scripts/migrate.js, test/]
-  pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id)\b|\bset\s+(session|local\s+role|role)\b|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)
+  pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b|\bset\s+(local\s+)?(session|role|app\.)|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)

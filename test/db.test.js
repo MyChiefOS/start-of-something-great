@@ -62,8 +62,8 @@ test('S8 code check: raw SQL, the driver, and identity or session changes appear
     if (/(require\(\s*['"`]postgres['"`]\s*\)|from\s+['"`]postgres['"`]|import\(\s*['"`]postgres['"`])/.test(s)) assert.strictEqual(f, 'db/index.js', f + ' loads the database driver directly; go through db/index.js');
     // Who is acting is set in exactly one place; nothing else may change it or keep state on a pooled connection.
     if (f !== 'db/index.js') {
-      assert.ok(!/set_config|app\.(actor|member_id|agent_id)\b/.test(s), f + ' sets who is acting; only db/index.js may');
-      assert.ok(!/\b(set\s+(session|local\s+role|role)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || f === 'scripts/migrate.js', f + ' changes the session or keeps state past a transaction');
+      assert.ok(!/set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b/.test(s), f + ' sets who is acting; only db/index.js may');
+      assert.ok(!/\b(set\s+(local\s+)?(session|role|app\.)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || f === 'scripts/migrate.js', f + ' changes the session or keeps state past a transaction');
     }
   }
   const rules = read('.semgrep/database.yml');

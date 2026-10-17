@@ -41,11 +41,17 @@ function transports(list) {
 }
 
 // Adds a passkey the site has verified. { passkeyId, recoveryCompleted } or { refused: 'session' | 'challenge' |
-// 'not_active' | 'fresh' | 'signin_again' | 'cool_off' | 'step_up' | 'too_many' | 'taken' }.
+// 'not_active' | 'fresh' | 'signin_again' | 'cool_off' | 'step_up' | 'too_many' | 'taken' | 'busy' }.
+// A lost lock race (a ban, a deletion or another passkey step on the same member at the same instant) is answered
+// as 'busy', never as an error page, the way db/signin.js answers link and unlink (the merge review of PR 17, 2).
+const BUSY = ['40P01', '40001', '55P03'];
+const busy = (e) => { if (BUSY.includes(e && e.code)) return { refused: 'busy' }; throw e; };
+
 async function enrol(t, { sessionHash, challengeHash, credentialId, publicKey, signCount, transports: tr, label, backedUp }) {
   const [r] = await t`select * from app.passkey_enrol(${hex('sessionHash', sessionHash)}, ${hex('challengeHash', challengeHash)}, ${credId(credentialId)},
     ${v.text('publicKey', publicKey, { min: 16, max: 2048, pattern: B64URL })}, ${v.int('signCount', signCount, { min: 0, max: 4294967295 })}::bigint,
-    ${transports(tr)}, ${v.text('label', label, { max: 60 })}, ${backedUp === true})`;
+    ${transports(tr)}, ${v.text('label', label, { max: 60 })}, ${backedUp === true})`.catch(busy);
+  if (r.refused) return r;
   return r.status === 'ok' ? { passkeyId: r.passkey_id, recoveryCompleted: r.recovery_completed } : { refused: r.status };
 }
 
@@ -64,9 +70,10 @@ async function remove(t, { sessionHash, passkey }) {
   return r.status;
 }
 
-// { endsAt } or { refused: 'session' | 'fresh' | 'not_active' | 'open' | 'no_passkeys' | 'signin_again' }.
+// { endsAt } or { refused: 'session' | 'fresh' | 'not_active' | 'open' | 'no_passkeys' | 'signin_again' | 'busy' }.
 async function recoveryStart(t, { sessionHash }) {
-  const [r] = await t`select * from app.passkey_recovery_start(${hex('sessionHash', sessionHash)})`;
+  const [r] = await t`select * from app.passkey_recovery_start(${hex('sessionHash', sessionHash)})`.catch(busy);
+  if (r.refused) return r;
   return r.status === 'ok' ? { endsAt: r.ends_at } : { refused: r.status };
 }
 
