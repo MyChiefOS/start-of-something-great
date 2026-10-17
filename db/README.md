@@ -462,3 +462,38 @@ Migration 012. Two go-live-blocking fixes and one small one (RK57 to RK59 in RIS
 **Also from the review.** The member's lock comes before the session check in both functions (F2). Two members linking one method at once: the second is told it is taken (F4). A link starts only from our own pages: `Sec-Fetch-Site: same-origin`, and an Origin or Referer, where sent, must be ours (F5); a failed link returns to /account with a plain message. A traveller's sealed confirmation is used once: its nonce's SHA-256 goes in `app.region_confirms` when Continue is pressed (`app.region_confirm_use`, F6, RK61).
 
 **Still open (RK62).** A fresh session from a method an intruder linked can still delete the account; the proposed fix is to allow deletion only from a session signed in with the member's oldest method.
+
+## Passkeys (Release 2, PR 17)
+
+Migration 014. Requirement D5: riskier grants need the person to prove it's them again. GitHub and X can't force a fresh login, so a passkey (WebAuthn, with the fingerprint, face or PIN check on the person's own device) is the proof. Criteria PK1 to PK12 in ACCEPTANCE.md; risks RK63 to RK67.
+
+**What is kept (`app.passkeys`).** Public keys only: the credential ID, the public key, the sign counter, transports, when it was added and last used, the member's own label, and the sign-in method of the session that added it. No private key and nothing biometric ever reaches us. A member reads only their own (row-level security); the site's role can't write any.
+
+**The check.** `/auth/passkey/...` (signin/passkey.js) asks the browser for a passkey and checks the answer with `@simplewebauthn/server` 14.0.3, pinned: the signature, the origin (`https://dayonegreat.com`), the RP ID (`dayonegreat.com`) and user verification. Then a sign-in function, as `dog_signin`, uses the challenge up, checks the passkey is the member's own and that its counter moved forward, and records `sessions.stepped_up_at` by the database clock.
+- **Challenges** (`app.passkey_challenges`): 32 random bytes, stored only as a SHA-256, for 2 minutes, bound to one session (deleted with it), used once. Postgres rather than a sealed cookie, because a cookie can be replayed until it expires unless a nonce is kept on the server anyway (PR 15's F6). A failed answer uses its challenge up too. At most 5 wait per session.
+- **The step-up** lasts 5 minutes. `app.session_step_up` gives the database's answer with the session (as `fresh` comes with `app.session_resolve`), and `db/index.js` alone turns it into the transaction setting `app.step_up`, the same way as `app.fresh`.
+
+**What needs it**, on top of every rule that was there before (fresh sign-in, seniority, the lock order, Sec-Fetch-Site):
+- letting an agent act on its own, raising the daily cap of an agent that acts, a new key for an agent that acts, keeping it acting at day 90
+- linking or unlinking a sign-in method, deleting an account
+- every one of Aaron's controls: brakes, bans and unbans, deletion reviews, the review queue, appeals
+
+Drafting never needs it. Triggers of their own (`agent_rules_step_up`, `agent_keys_step_up`, `identities_step_up`, `members_step_up`, `brakes_step_up`, `deletion_reviews_step_up`) refuse a person's change without the setting, so the database holds the line whatever the site does; the coverage check makes sure they exist and fire always. They are new triggers, not replaced functions, so nothing PR 15's 012 or PR 16's 013 defines is overwritten. The review queue and appeals are checked by the site (RK65). A member with no passkey is sent to add one: there is no weaker fallback.
+
+**Adding a passkey** needs a sign-in in the last 10 minutes. A member who already has one must pass a passkey check first, so a stolen fresh cookie can't add its holder's key; the very first one needs only the fresh sign-in (RK63). At most 10. A notice and an audit row each time. New members get a one-time in-app notice offering one.
+
+**Removing one** needs a passkey check, never removes the last one (add a new one first), and follows PR 15's seniority rule: a session may remove only a passkey added by its own sign-in method or a newer one.
+
+**Whatever a linked method did dies with it.** Removing a sign-in method (`app.identities_passkeys`, a trigger before any identity is deleted) deletes the passkeys its sessions added, in the same transaction, with an audit row and a notice. When the whole account is being deleted, the deletion's own record covers it.
+
+**Recovery** (`app.passkey_recoveries`). Lost every passkey? A sign-in in the last 10 minutes starts a 72-hour cool-off: a notice says so, every step-up already given ends, and nothing counts as one until it is over and a new passkey is added (which then needs no old one, and completes it). Any session of the member can cancel it. Starting, cancelling and completing are in the audit log.
+
+**A counter that goes backwards** (when the passkey counts at all; synced ones report 0) is refused, recorded (`passkey.counter_regression`) and told to the member. The database does this comparison under the passkey's row lock, so `@simplewebauthn/server` is given 0 as the stored counter on purpose.
+
+**What the audit log keeps:** `passkey.enrolled`, `passkey.used`, `passkey.removed` (reason `member` or `method_unlinked`), `passkey.counter_regression`, `passkey.recovery_started`, `_cancelled`, `_completed`. IDs only: never a credential ID, a public key or a label.
+
+**What `dog_signin` gained.** The three passkey tables, writing `sessions.stepped_up_at`, and leaving the four passkey kinds of notice. Nine reviewed functions, all callable only by the site's role.
+
+**Settings (Aaron; nothing secret).** None needed for production: the RP ID is `dayonegreat.com`. For a preview that has sign-in, set both `PASSKEY_RP_ID` (the preview's own host) and `PASSKEY_ORIGINS` (its exact https origins, comma-separated); a wildcard or anything malformed switches passkeys off. Sign-in itself still answers only on dayonegreat.com today, so these have no effect yet.
+
+**Known limits.** RK63 (the first passkey), RK64 (the database trusts the step-up setting from the site, like `fresh`), RK66 (the 5-minute window), RK67 (synced passkeys can't be told apart by their counter). Passkeys are a step-up only, not a way to sign in.
