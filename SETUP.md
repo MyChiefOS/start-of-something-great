@@ -62,6 +62,10 @@ Then sign in at https://dayonegreat.com/join with GitHub. Only the people on tha
 
 When you've tested the preview and decided, run **Production setup** with steps `stage,redeploy` and stage `public`. To close it again at any time, run the same steps with stage `closed`.
 
+## 7. Test that the backup really restores (O2)
+
+Run **Restore test** (Actions tab, on `main`) and approve it. It rebuilds the live data in a throwaway database inside the run, checks that every table's row count matches the live one, and runs the coverage check on the copy. The copy never leaves the run and is deleted when it ends. Separately, confirm in Supabase that daily backups are on. Record both in OPERATIONS.md.
+
 ## Later, as needed
 
 - **X sign-in:** `X_CLIENT_ID` and `X_CLIENT_SECRET` (SIGNIN-SETUP.md) **[PLACEHOLDER: from console.x.com, after you register the app and set its spending limit]**.

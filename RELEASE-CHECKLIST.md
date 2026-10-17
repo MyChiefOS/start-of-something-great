@@ -21,7 +21,7 @@ All from GitHub, nothing on your computer: **SETUP.md** has every step and marks
 4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
 5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).
 6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
-7. [ ] **Backups** (O2): confirm backups are on in Supabase and test one restore; record it in OPERATIONS.md.
+7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
 8. [ ] **Before go-live:** enrol two passkeys on your account, one synced and one hardware key (PK13, once passkeys merge).
 9. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
 
