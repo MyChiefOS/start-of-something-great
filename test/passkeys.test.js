@@ -681,3 +681,164 @@ test('PK2: a new member is offered a passkey once, in-app, at sign-up', async ()
   assert.match(offers[0].body, /fingerprint, face or device PIN/);
   assert.strictEqual((await q(`select link from app.notices where member_id = '${id}' and kind = 'passkey_offer'`))[0].link, '/account#passkeys');
 });
+
+// ---- The independent review of PR 17 (Oct 17): each probe, kept as a permanent test ----------------------------
+
+test('Review finding 1 (High): a copied fresh cookie can\'t keep the owner out; the older method and a recovery always win', async () => {
+  ACCOUNTS['github:victimA'] = { accountId: 'victimA', level: 2, recheckAfter: null };
+  ACCOUNTS['x:thiefA'] = { accountId: 'thiefA', level: 1, recheckAfter: null };
+  const g = await oauth('github', 'victimA');
+  const s = await sessionOf(g.cookie);
+  const owner = { cookie: g.cookie, id: s.member_id, hash: s.token_hash };
+  const thief = { ...owner, device: softAuthenticator() }; // the same cookie, copied within its 10 fresh minutes
+  // The owner has a second device signed in. 1c: the first passkey (here, the thief's) signs out every other session
+  // of the member, with a notice that says so.
+  const phone = await oauth('github', 'victimA');
+  assert.strictEqual((await enrol(thief, thief.device, { label: 'Thief' })).status, 201);
+  assert.strictEqual(await sessionOf(phone.cookie), undefined, 'the owner\'s other session was signed out');
+  const [added] = await noticesOf(owner.id, 'passkey_added');
+  assert.match(added.body, /every other session of yours was signed out/i);
+  assert.match(added.body, /24 hours/);
+  assert.strictEqual((await stepUp(thief, thief.device)).status, 200);
+  // 1d: no new sign-in method within 24 hours of the account's first passkey.
+  const early = await oauth('x', 'thiefA', { cookie: thief.cookie, link: true });
+  assert.strictEqual(early.start.location, '/account?error=link_wait');
+  // By the time linking opens, the copied cookie's 10 fresh minutes are long over, so it can never link a method.
+  await ageKeys(owner.id);
+  await ago(thief, 24 * 60);
+  await stepUp(thief, thief.device);
+  assert.strictEqual((await oauth('x', 'thiefA', { cookie: thief.cookie, link: true })).start.location, '/account?error=fresh_method');
+  // Suppose the thief had linked X anyway (for example with the owner's synced passkey): the rest must still hold.
+  await ago(thief, 0);
+  await stepUp(thief, thief.device);
+  assert.strictEqual((await oauth('x', 'thiefA', { cookie: thief.cookie, link: true })).done.location, '/account');
+  // The owner signs out everywhere and signs in again with GitHub, the older method.
+  await q(`delete from app.sessions where member_id = '${owner.id}'`);
+  const g2 = await oauth('github', 'victimA');
+  const s2 = await sessionOf(g2.cookie);
+  const owner2 = { cookie: g2.cookie, id: s2.member_id, hash: s2.token_hash, device: softAuthenticator() };
+  // The owner, who has no passkey of their own, starts a recovery.
+  assert.strictEqual((await pkCall('recoveryStart', owner2, {})).status, 201);
+  // 1a: the thief, signed in with the newer X method, can't cancel it, even fresh.
+  const t2 = await oauth('x', 'thiefA');
+  const ts = await sessionOf(t2.cookie);
+  const thief2 = { cookie: t2.cookie, id: ts.member_id, hash: ts.token_hash };
+  assert.strictEqual(ts.member_id, owner.id);
+  const cancel = await pkCall('recoveryCancel', thief2, {});
+  assert.deepStrictEqual([cancel.status, /oldest method/.test(cancel.json.error)], [403, true]);
+  assert.strictEqual(await run({ actor: 'member', memberId: owner.id }, (t) => passkeys.recoveryCancel(t, { sessionHash: thief2.hash })), 'senior', 'the database decides');
+  // 1e: the owner removes the thief's newer method without a passkey (PR 15's seniority rule, restored); the thief's X
+  // session ends with it.
+  const [xId] = await q(`select id from app.identities where member_id = '${owner.id}' and provider = 'x'`);
+  assert.strictEqual((await form('unlink', owner2, '/auth/account/unlink', { id: xId.id })).location, '/account?saved=unlinked');
+  assert.strictEqual(await sessionOf(thief2.cookie), undefined);
+  // 1b: after the 72 hours, the owner's new passkey completes the recovery: every earlier passkey (the thief's) goes,
+  // and every other session ends.
+  await q(`update app.passkey_recoveries set ends_at = now() - interval '1 minute' where member_id = '${owner.id}' and cancelled_at is null`);
+  const other = await oauth('github', 'victimA');
+  const done = await enrol(owner2, owner2.device, { label: 'Owner phone' });
+  assert.deepStrictEqual([done.status, done.json.recovery_completed], [201, true]);
+  assert.deepStrictEqual((await q(`select label from app.passkeys where member_id = '${owner.id}'`)).map((k) => k.label), ['Owner phone']);
+  assert.strictEqual(await sessionOf(other.cookie), undefined, 'every other session ended');
+  assert.strictEqual((await stepUp(owner2, thief.device)).status, 403, 'the thief\'s passkey no longer works');
+  assert.strictEqual((await stepUp(owner2, owner2.device)).status, 200);
+  const removed = (await audits(owner.id, 'passkey.removed')).map((x) => x.detail.reason);
+  assert.ok(removed.includes('recovery'));
+});
+
+test('Review finding 1a: a session signed in with the method that started a recovery, or an older one, can cancel it', async () => {
+  const m = await withPasskey({ name: 'Same method' });
+  const old = await again(m, { stale: true }); // the same GitHub method, on another device, signed in long ago
+  assert.strictEqual((await pkCall('recoveryStart', m, {})).status, 201);
+  assert.strictEqual((await pkCall('recoveryCancel', old, {})).status, 200);
+});
+
+test('Review finding 2: recovery can\'t start on an account with no passkey, so it never blocks adding the first one', async () => {
+  const m = await person({ name: 'No keys yet' });
+  const r = await pkCall('recoveryStart', m, {});
+  assert.strictEqual(r.status, 409);
+  assert.match(r.json.error, /no passkey to recover/);
+  assert.strictEqual(Number((await q(`select count(*) as n from app.passkey_recoveries where member_id = '${m.id}'`))[0].n), 0);
+  assert.strictEqual((await enrol(m, softAuthenticator())).status, 201, 'the first passkey is added straight away');
+});
+
+test('Review finding 1b (probe C): completing a recovery deletes every earlier passkey and ends every other session', async () => {
+  const m = await withPasskey({ name: 'Recovered' });
+  const elsewhere = await again(m);
+  await pkCall('recoveryStart', m, {});
+  await q(`update app.passkey_recoveries set ends_at = now() - interval '1 minute' where member_id = '${m.id}' and cancelled_at is null`);
+  const newer = softAuthenticator();
+  assert.strictEqual((await enrol(m, newer)).json.recovery_completed, true);
+  assert.strictEqual(Number((await q(`select count(*) as n from app.passkeys where member_id = '${m.id}'`))[0].n), 1);
+  assert.strictEqual((await stepUp(m, m.device)).status, 403, 'the lost passkey no longer works');
+  assert.strictEqual((await stepUp(m, newer)).status, 200);
+  assert.strictEqual(await sessionOf(elsewhere.cookie), undefined);
+  const [done] = await audits(m.id, 'passkey.recovery_completed');
+  assert.deepStrictEqual([done.detail.passkeys_removed, done.detail.sessions_ended], [1, 1]);
+});
+
+test('Review finding 1c: a second passkey (not the first) leaves the member\'s other sessions alone', async () => {
+  const m = await withPasskey({ name: 'Two devices' });
+  const phone = await again(m);
+  await stepUp(m, m.device);
+  assert.strictEqual((await enrol(m, softAuthenticator(), { label: 'Spare' })).status, 201);
+  assert.ok(await sessionOf(phone.cookie), 'only the first passkey (or a recovery) signs others out');
+});
+
+test('Review finding 3 (probe E): removing a passkey ends the step-ups it gave, and only those', async () => {
+  const m = await withPasskey({ name: 'Two keys' });
+  await stepUp(m, m.device);
+  const second = softAuthenticator();
+  assert.strictEqual((await enrol(m, second)).status, 201);
+  const other = await again(m);
+  assert.strictEqual((await stepUp(other, second)).status, 200);
+  const [k2] = await q(`select id from app.passkeys where member_id = '${m.id}' and credential_id = '${second.id}'`);
+  await stepUp(m, m.device);
+  assert.strictEqual((await pkCall('remove', m, { id: k2.id })).status, 200);
+  const session = require('../signin/session');
+  assert.strictEqual((await session.current(req('GET', '/', { cookie: other.cookie }), run)).stepUp, false, 'the session that key stepped up is no longer stepped up');
+  assert.strictEqual((await session.current(req('GET', '/', { cookie: m.cookie }), run)).stepUp, true, 'a step-up from another passkey stands');
+});
+
+test('Review finding 4 (probe D): Aaron\'s appeal and review decisions need the step-up in the database too; JEVs and the timers are unaffected', async () => {
+  const m = await person({ name: 'Contained' });
+  const [cn] = await q(`insert into app.containments (member_id, reason, measured, usual_x100, ends_at, appeal_note, appealed_at)
+    values ('${m.id}', 'volume', 10, 100, now() + interval '1 day', 'pls', now()) returning id`);
+  await assert.rejects(run(aaron.ctx, (t) => require('../db/notify').decideAppeal(t, { containment: cn.id, decision: 'lift' })), /step_up/);
+  const p = await run(m.ctx, (t) => posts.create(t, { body: 'a post to review' }));
+  const reporter = await person({ name: 'Reporter' });
+  await run(reporter.ctx, (t) => require('../db/review').report(t, { post: p.id, reason: 'spam' }));
+  await assert.rejects(run(aaron.ctx, (t) => require('../db/review').decide(t, { post: p.id, decision: 'remove' })), /step_up/);
+  await assert.rejects(run(aaron.ctx, (t) => t`update app.review_flags set decision = 'kept' where post_id = ${p.id}`), /step_up/);
+  assert.deepStrictEqual(await run({ ...aaron.ctx, stepUp: true }, (t) => require('../db/notify').decideAppeal(t, { containment: cn.id, decision: 'lift' })), { ok: true });
+  assert.deepStrictEqual(await run({ ...aaron.ctx, stepUp: true }, (t) => require('../db/review').decide(t, { post: p.id, decision: 'remove' })), { status: 'removed' });
+  // A pause whose time is up ends by itself, through the timers (the site itself), with no passkey anywhere.
+  const [due] = await q(`insert into app.containments (member_id, reason, measured, usual_x100, ends_at) values ('${m.id}', 'volume', 10, 100, now() + interval '1 second') returning id`);
+  await new Promise((r) => setTimeout(r, 1200));
+  await run({ actor: 'system' }, (t) => require('../db/notify').runTimers(t));
+  assert.notStrictEqual((await q(`select lifted_at from app.containments where id = '${due.id}'`))[0].lifted_at, null);
+});
+
+test('Review finding 5 (probe G): an over-long or mismatched credential ID is refused with a 400, and uses the challenge up', async () => {
+  const { isoCBOR } = require('@simplewebauthn/server/helpers');
+  const sha = (b) => crypto.createHash('sha256').update(b).digest();
+  for (const [label, len, outer] of [['too long', 1100, 'short'], ['mismatched', 32, 'other']]) {
+    const m = await person({ name: 'Bad ID ' + label });
+    const o = await pkCall('enrolOptions', m, {});
+    const { publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const jwk = publicKey.export({ format: 'jwk' });
+    const credId = crypto.randomBytes(len);
+    const cose = isoCBOR.encode(new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, 'base64url')], [-3, Buffer.from(jwk.y, 'base64url')]]));
+    const l = Buffer.alloc(2); l.writeUInt16BE(credId.length);
+    const ad = Buffer.concat([sha(Buffer.from('dayonegreat.com')), Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), l, credId, Buffer.from(cose)]);
+    const cd = Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge: o.json.options.challenge, origin: ORIGIN, crossOrigin: false }));
+    const att = isoCBOR.encode(new Map([['fmt', 'none'], ['attStmt', new Map()], ['authData', ad]]));
+    const id = outer === 'short' ? 'A'.repeat(20) : crypto.randomBytes(32).toString('base64url');
+    const r = await pkCall('enrolFinish', m, { response: { id, rawId: id, type: 'public-key', clientExtensionResults: {},
+      response: { clientDataJSON: cd.toString('base64url'), attestationObject: Buffer.from(att).toString('base64url') } } });
+    assert.strictEqual(r.status, 400, label + ': ' + JSON.stringify(r.json));
+    const left = await q(`select count(*)::int n from app.passkey_challenges c join app.sessions s on s.id = c.session_id where s.token_hash = '${m.hash}'`);
+    assert.strictEqual(left[0].n, 0, label + ': the challenge is used up');
+    assert.strictEqual(Number((await q(`select count(*) as n from app.passkeys where member_id = '${m.id}'`))[0].n), 0);
+  }
+});
