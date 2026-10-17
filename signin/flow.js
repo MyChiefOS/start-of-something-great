@@ -22,8 +22,10 @@
 //   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
 //   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
 //   and a traveller's sealed confirmation is used once.
-//   PR 17: linking, unlinking and deleting an account also need a passkey check in the last 5 minutes (D5), on top of
-//   all of the above; a member without a passkey is sent to add one (signin/passkey.js), never to a weaker check.
+//   PR 17: linking and deleting an account also need a passkey check in the last 5 minutes (D5), on top of all of the
+//   above; a member without a passkey is sent to add one (signin/passkey.js), never to a weaker check. After its review:
+//   unlinking needs only the fresh sign-in and seniority (the older method always wins, as in PR 15), and no method can be
+//   linked within 24 hours of the account's first passkey.
 'use strict';
 
 const c = require('./crypto');
@@ -169,6 +171,8 @@ function make(deps) {
   const LINK_REFUSED = { taken: '/account?error=taken_method' };
   // PR 17: linking, unlinking and deleting also need a passkey check in the last 5 minutes (D5); the database decides.
   const STEP_UP = '/account?error=step_up#passkeys';
+  // PR 17's review (1d): no new sign-in method within 24 hours of the account's first passkey.
+  const LINK_WAIT = '/account?error=link_wait';
 
   // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
   // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
@@ -195,6 +199,7 @@ function make(deps) {
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
     if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
+    if (out.refused === 'link_wait') return h.redirect(res, LINK_WAIT);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
     if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
@@ -222,6 +227,7 @@ function make(deps) {
         if (me.fresh !== true) return h.redirect(res, FRESH_METHOD);
         // PR 17: a passkey check in the last 5 minutes first (checked again, by the database, when the link completes).
         if (me.stepUp !== true) return h.redirect(res, STEP_UP);
+        if (me.linkingFrom && new Date(me.linkingFrom) > new Date()) return h.redirect(res, LINK_WAIT);
         link = { m: me.memberId, k: sessionHash(req) };
       }
       const state = c.token(32);
@@ -467,7 +473,8 @@ function make(deps) {
       const who = await current(req);
       if (!who) return h.redirect(res, '/join?error=signin');
       if (who.fresh !== true) return h.redirect(res, FRESH_METHOD);
-      if (who.stepUp !== true) return h.redirect(res, STEP_UP);
+      // No passkey check (PR 17's review, 1e): PR 15's seniority rule lets a session remove only a method added after its
+      // own, so the holder of the older method can always remove a newer one, as before passkeys.
       const body = await h.form(req);
       const out = await run(session.strongActorFor(who), (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);

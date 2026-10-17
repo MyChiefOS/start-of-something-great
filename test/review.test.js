@@ -301,7 +301,7 @@ test('only a reviewer decides: members can\'t approve, remove, close flags or re
   await assert.rejects(q(`update app.posts set status = 'live' where id = '${w.id}'`), /only a reviewer can change a post/);
   const someone = crypto.randomUUID();
   await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
     await t.unsafe(`update app.review_flags set decision = 'remove', resolved_by = '${someone}', resolved_at = now() - interval '1 day' where post_id = '${w.id}'`);
   });
   const [closed] = await q(`select resolved_by, resolved_at > now() - interval '1 minute' as fresh from app.review_flags where post_id = '${w.id}'`);

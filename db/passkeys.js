@@ -10,12 +10,13 @@ const hex = (field, s) => v.text(field, s, { max: 64, min: 64, pattern: HEX64 })
 const TRANSPORTS = ['ble', 'cable', 'hybrid', 'internal', 'nfc', 'smart-card', 'usb'];
 const MAX_PASSKEYS = 10;
 
-// Whether this session passed a passkey check in the last 5 minutes (the database's clock), how many passkeys its
-// member has, and when an open recovery's cool-off ends. Asked as someone not signed in, alongside session_resolve.
+// Whether this session passed a passkey check in the last 5 minutes (the database's clock) with a passkey that still
+// exists, how many passkeys its member has, when an open recovery's cool-off ends, and, within 24 hours of the oldest
+// passkey, when linking a sign-in method opens. Asked as someone not signed in, alongside session_resolve.
 async function sessionStepUp(t, sessionHash) {
   if (typeof sessionHash !== 'string' || !HEX64.test(sessionHash)) return null;
   const [r] = await t`select * from app.session_step_up(${sessionHash})`;
-  return r ? { stepUp: r.stepped_up === true, passkeys: r.passkeys, recoveryUntil: r.recovery_until } : null;
+  return r ? { stepUp: r.stepped_up === true, passkeys: r.passkeys, recoveryUntil: r.recovery_until, linkingFrom: r.linking_from } : null;
 }
 
 // A new challenge (its SHA-256 only) for this session: 'enrol' or 'step_up'. { expiresAt } or { refused: 'session' |
@@ -63,13 +64,14 @@ async function remove(t, { sessionHash, passkey }) {
   return r.status;
 }
 
-// { endsAt } or { refused: 'session' | 'fresh' | 'not_active' | 'open' }.
+// { endsAt } or { refused: 'session' | 'fresh' | 'not_active' | 'open' | 'no_passkeys' | 'signin_again' }.
 async function recoveryStart(t, { sessionHash }) {
   const [r] = await t`select * from app.passkey_recovery_start(${hex('sessionHash', sessionHash)})`;
   return r.status === 'ok' ? { endsAt: r.ends_at } : { refused: r.status };
 }
 
-// 'ok', 'none' (nothing open) or 'session'.
+// 'ok', 'none' (nothing open), 'session' or 'senior' (this session signed in with a newer method than the one that
+// started it).
 async function recoveryCancel(t, { sessionHash }) {
   const [r] = await t`select app.passkey_recovery_cancel(${hex('sessionHash', sessionHash)}) as status`;
   return r.status;

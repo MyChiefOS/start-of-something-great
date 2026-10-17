@@ -84,6 +84,8 @@ async function link(t, { provider, fingerprints, keyVersion, level, sessionHash,
     // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
     if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     if (e.code === 'P0001' && ['taken', 'banned', 'disabled'].includes(e.message)) return { refused: e.message };
+    // PR 17's review: no new method within 24 hours of the account's first passkey.
+    if (e.code === 'P0001' && e.message === 'passkey_new') return { refused: 'link_wait' };
     // Two members linking the same method at the same moment: whoever comes second finds it taken (review F4).
     if (e.code === '23505') return { refused: 'taken' };
     throw e;

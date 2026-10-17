@@ -27,7 +27,8 @@ async function current(req, run) {
     const who = await store.sessionResolve(t, hash, IDLE_DAYS);
     if (!who) return null;
     const s = await passkeys.sessionStepUp(t, hash);
-    return { ...who, stepUp: Boolean(s && s.stepUp), passkeys: s ? s.passkeys : 0, recoveryUntil: s ? s.recoveryUntil : null };
+    return { ...who, stepUp: Boolean(s && s.stepUp), passkeys: s ? s.passkeys : 0, recoveryUntil: s ? s.recoveryUntil : null,
+      linkingFrom: s ? s.linkingFrom : null };
   });
 }
 

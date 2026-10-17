@@ -53,13 +53,16 @@ function softAuthenticator({ uv = true } = {}) {
 
 // A passkey for this member (if they have none) and every session of theirs stepped up for the next hour. su is the
 // test's superuser connection; the site itself can never write either.
+// The passkey is dated two days back, so the 24-hour wait before linking a method (PR 17's review) has passed; each
+// session's step-up names the passkey that gave it, as a real check does.
 async function stepUpFor(su, memberId) {
-  await su`insert into app.passkeys (member_id, identity_id, credential_id, public_key, label)
-    select ${memberId}, i.id, ${b64u(crypto.randomBytes(32))}, ${b64u(crypto.randomBytes(64))}, 'Test passkey'
+  await su`insert into app.passkeys (member_id, identity_id, credential_id, public_key, label, created_at)
+    select ${memberId}, i.id, ${b64u(crypto.randomBytes(32))}, ${b64u(crypto.randomBytes(64))}, 'Test passkey', now() - interval '2 days'
     from app.identities i where i.member_id = ${memberId}
       and not exists (select 1 from app.passkeys k where k.member_id = ${memberId})
     order by i.created_at limit 1`;
-  await su`update app.sessions set stepped_up_at = now() + interval '1 hour' where member_id = ${memberId}`;
+  await su`update app.sessions set stepped_up_at = now() + interval '1 hour',
+    stepped_up_with = (select k.id from app.passkeys k where k.member_id = ${memberId} order by k.created_at limit 1) where member_id = ${memberId}`;
 }
 
 module.exports = { softAuthenticator, stepUpFor };

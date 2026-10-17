@@ -191,6 +191,8 @@ async function oauth(provider, account, { cookie = '', link = false } = {}) {
   const set = [].concat(r2.getHeader('Set-Cookie') || []).map((s) => s.split(';')[0]).find((s) => s.startsWith(SESSION + '=') && s.length > SESSION.length + 1);
   return { start: out(r1), done: out(r2), cookie: set || cookie };
 }
+// As if a day had passed since the member's passkeys were added (the 24-hour wait before linking a method).
+const ageKeys = (memberId) => q(`update app.passkeys set created_at = now() - interval '25 hours' where member_id = '${memberId}'`);
 const sessionOf = async (cookie) => (await q(`select member_id, token_hash from app.sessions where token_hash = '${c.sha256hex(cookie.split('=')[1])}'`))[0];
 
 test('S1: the database passes the coverage check with the passkey tables, and matches the reviewed snapshot', async () => {
@@ -225,7 +227,7 @@ test('PK2: adding a passkey needs a fresh sign-in (the last 10 minutes, by the d
   assert.ok(!JSON.stringify(list.json).includes(row.public_key), 'the page is never sent a public key');
   // Recorded, told, with no key material and no label in the audit log.
   const [au] = await audits(m.id, 'passkey.enrolled');
-  assert.deepStrictEqual([au.actor_kind, au.detail], ['member', { passkey: row.id, recovery: false }]);
+  assert.deepStrictEqual([au.actor_kind, au.detail], ['member', { passkey: row.id, recovery: false, sessions_ended: 0 }]);
   assert.strictEqual((await noticesOf(m.id, 'passkey_added')).length, 1);
   // A member who already has one adds another only after confirming with it, so a stolen fresh cookie can't add a key.
   const second = softAuthenticator();
@@ -276,7 +278,7 @@ test('PK3: each risky grant is refused without a passkey check in the last 5 min
   assert.deepStrictEqual([staleAsk.status, staleAsk.json.reauth], [403, '/join?return_to=%2Fagents']);
 });
 
-test('PK3: deleting an account, and linking or unlinking a sign-in method, need a passkey check too', async () => {
+test('PK3: deleting an account and linking a sign-in method need a passkey check too; unlinking a newer method needs only a fresh sign-in', async () => {
   // Deleting.
   const leaving = await withPasskey({ name: 'Leaving' });
   const ask = () => form('deleteAccount', leaving, '/auth/account/delete', { confirm: 'DELETE' });
@@ -300,17 +302,25 @@ test('PK3: deleting an account, and linking or unlinking a sign-in method, need 
   assert.strictEqual((await enrol(m, m.device)).status, 201);
   assert.strictEqual((await oauth('x', 'pk-link', { cookie: m.cookie, link: true })).start.location, '/account?error=step_up#passkeys');
   await stepUp(m, m.device);
+  // Not within 24 hours of the account's first passkey (the review, 1d), at the start and in the database.
+  assert.strictEqual((await oauth('x', 'pk-link', { cookie: m.cookie, link: true })).start.location, '/account?error=link_wait');
+  await assert.rejects(run({ actor: 'member', memberId: m.id, fresh: true, stepUp: true }, (t) => t`select * from app.identity_link('x',
+    ${t.array([c.sha256hex('early')])}::text[], 1::smallint, 1::smallint, null::timestamptz, ${m.hash}, null)`), /passkey_new/);
+  assert.match((await pkCall('list', m)).json.linking_from, /^\d{4}-/, 'the account page can say when linking opens');
+  await ageKeys(m.id);
   const linked = await oauth('x', 'pk-link', { cookie: m.cookie, link: true });
   assert.strictEqual(linked.done.location, '/account');
   assert.strictEqual(Number((await q(`select count(*) as n from app.identities where member_id = '${m.id}'`))[0].n), 2);
   // The database refuses a link without the flag, even from a fresh session.
   await assert.rejects(run({ actor: 'member', memberId: m.id, fresh: true }, (t) => t`select * from app.identity_link('x', ${t.array([c.sha256hex('another')])}::text[],
     1::smallint, 1::smallint, null::timestamptz, ${m.hash}, null)`), /step_up/);
-  // Unlinking.
+  // Unlinking a method added after this session's own needs no passkey (the review, 1e): PR 15's seniority rule and its
+  // fresh sign-in decide, so whoever holds the older method can always remove a newer one, as before passkeys.
   const [xId] = await q(`select id from app.identities where member_id = '${m.id}' and provider = 'x'`);
   await lapse(m);
-  assert.strictEqual((await form('unlink', m, '/auth/account/unlink', { id: xId.id })).location, '/account?error=step_up#passkeys');
-  await stepUp(m, m.device);
+  await ago(m, 11);
+  assert.strictEqual((await form('unlink', m, '/auth/account/unlink', { id: xId.id })).location, '/account?error=fresh_method', 'the fresh sign-in still counts');
+  await ago(m, 0);
   assert.strictEqual((await form('unlink', m, '/auth/account/unlink', { id: xId.id })).location, '/account?saved=unlinked');
 });
 
@@ -450,7 +460,8 @@ test('PK7: a sign counter that goes backwards is refused and recorded; a passkey
   assert.match(back.json.error, /copied/);
   const [au] = await audits(m.id, 'passkey.counter_regression');
   assert.deepStrictEqual(au.detail, { passkey: k.id, stored: 3, seen: 2 });
-  assert.strictEqual((await noticesOf(m.id, 'passkey_removed')).length, 1, 'the member is told');
+  assert.strictEqual((await noticesOf(m.id, 'passkey_counter')).length, 1, 'the member is told, with a notice of its own kind');
+  assert.strictEqual((await noticesOf(m.id, 'passkey_removed')).length, 0);
   assert.strictEqual((await stepUp(m, m.device, { counter: 3 })).status, 403, 'the same count again is refused too');
   assert.strictEqual((await stepUp(m, m.device, { counter: 9 })).status, 200, 'moving on works');
   const synced = await withPasskey({ name: 'Never counts' });
@@ -517,6 +528,8 @@ test('PK10: removing a passkey needs a passkey check, never removes the last one
   assert.strictEqual(await run(m.ctx, (t) => passkeys.remove(t, { sessionHash: m.hash, passkey: second.id })), 'step_up', 'the database decides');
   await stepUp(m, spare);
   assert.strictEqual((await pkCall('remove', m, { id: second.id })).status, 200);
+  assert.ok(isStepUp(await pkCall('remove', m, { id: first.id })), 'the step-up the removed passkey gave ended with it');
+  await stepUp(m, m.device);
   assert.strictEqual((await pkCall('remove', m, { id: first.id })).status, 409, 'never the last one');
   const [au] = await audits(m.id, 'passkey.removed');
   assert.deepStrictEqual(au.detail, { passkey: second.id, reason: 'member' });
@@ -531,6 +544,7 @@ test('PK11: whatever a linked method did dies with it: unlinking a method remove
   const g = await oauth('github', 'pk-owner');
   const owner = { cookie: g.cookie, id: (await sessionOf(g.cookie)).member_id, hash: (await sessionOf(g.cookie)).token_hash, device: softAuthenticator() };
   assert.strictEqual((await enrol(owner, owner.device, { label: 'GitHub-era phone' })).status, 201);
+  await ageKeys(owner.id);
   await stepUp(owner, owner.device);
   assert.strictEqual((await oauth('x', 'pk-owner', { cookie: owner.cookie, link: true })).done.location, '/account');
   // Someone signs in with X (a fresh session from the newer method). Alone, it can't add a passkey: one exists.
@@ -547,8 +561,8 @@ test('PK11: whatever a linked method did dies with it: unlinking a method remove
   const senior = await pkCall('remove', viaX, { id: keys[0].id });
   assert.strictEqual(senior.status, 403);
   assert.match(senior.json.error, /oldest method/);
-  // The owner unlinks X: the passkey added from X's session goes with it, recorded and told, in the same transaction.
-  await stepUp(owner, owner.device);
+  // The owner unlinks X (no passkey needed for a newer method): the passkey added from X's session goes with it,
+  // recorded and told, in the same transaction.
   assert.strictEqual((await form('unlink', owner, '/auth/account/unlink', { id: xIdent.id })).location, '/account?saved=unlinked');
   assert.deepStrictEqual((await q(`select label from app.passkeys where member_id = '${owner.id}'`)).map((k) => k.label), ['GitHub-era phone']);
   const gone = await audits(owner.id, 'passkey.removed');

@@ -36,13 +36,14 @@
 
 set local role dog_owner;
 
--- ---- The four new kinds of notice ----
+-- ---- The five new kinds of notice ----
 -- passkey_offer is left by the site itself (as the member, through app.notify) once, at sign-up: "add a passkey" before
--- the first risky step. The other three come from the sign-in functions below.
+-- the first risky step. The other four come from the sign-in functions below (passkey_counter: a passkey's counter went
+-- backwards, which can mean it was copied).
 alter table app.notices drop constraint notices_kind_check;
 alter table app.notices add constraint notices_kind_check check (kind = any (array['draft_waiting', 'draft_expired', 'report_upheld', 'brake_on',
   'contained', 'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert',
-  'signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery', 'passkey_offer']));
+  'signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery', 'passkey_offer', 'passkey_counter']));
 
 -- ---- When a session last passed a passkey check ----
 alter table app.sessions add column stepped_up_at timestamptz;
@@ -84,6 +85,12 @@ grant select, delete on app.passkeys to dog_signin;
 grant insert (member_id, identity_id, credential_id, public_key, sign_count, transports, label, backed_up) on app.passkeys to dog_signin;
 grant update (sign_count, last_used_at, backed_up) on app.passkeys to dog_signin;
 
+-- Which passkey gave this session its step-up (review finding 3). Removing that passkey, by any path (removed by the
+-- member, with its sign-in method, or by a completed recovery), sets it to null, and a step-up without a passkey behind
+-- it counts for nothing, so a removed key's step-ups end at once and every other session keeps its own.
+alter table app.sessions add column stepped_up_with uuid references app.passkeys (id) on delete set null;
+grant update (stepped_up_with) on app.sessions to dog_signin;
+
 -- ---- Challenges: single use, 2 minutes, one session ----
 create table app.passkey_challenges (
   id uuid primary key default app.uuid_v7(),
@@ -101,10 +108,13 @@ create policy passkey_challenges_signin_delete on app.passkey_challenges for del
 grant select, delete on app.passkey_challenges to dog_signin;
 grant insert (session_id, purpose, challenge_hash, expires_at) on app.passkey_challenges to dog_signin;
 
--- ---- Recovery: 72 hours, cancellable from any session ----
+-- ---- Recovery: 72 hours, cancellable by the method that started it or an older one ----
 create table app.passkey_recoveries (
   id uuid primary key default app.uuid_v7(),
   member_id uuid not null references app.members (id) on delete cascade,
+  -- The sign-in method of the session that started it (review finding 1a): only a session signed in with this method or
+  -- an older one can cancel it. Null if that method was removed since; then any session with a recorded method can.
+  identity_id uuid references app.identities (id) on delete set null,
   started_at timestamptz not null default now(),
   ends_at timestamptz not null,
   cancelled_at timestamptz,
@@ -122,13 +132,13 @@ create policy passkey_recoveries_signin_insert on app.passkey_recoveries for ins
 create policy passkey_recoveries_signin_update on app.passkey_recoveries for update to dog_signin using (true) with check (true);
 grant select on app.passkey_recoveries to dog_app;
 grant select on app.passkey_recoveries to dog_signin;
-grant insert (member_id, ends_at) on app.passkey_recoveries to dog_signin;
+grant insert (member_id, identity_id, ends_at) on app.passkey_recoveries to dog_signin;
 grant update (cancelled_at, completed_at) on app.passkey_recoveries to dog_signin;
 
 -- ---- The sign-in role leaves the passkey notices too (as it leaves the sign-in ones, 012) ----
 drop policy notices_signin_insert on app.notices;
 create policy notices_signin_insert on app.notices for insert to dog_signin
-  with check (member_id is not null and kind in ('signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery'));
+  with check (member_id is not null and kind in ('signin_linked', 'signin_unlinked', 'passkey_added', 'passkey_removed', 'passkey_recovery', 'passkey_counter'));
 
 -- ---- The step-up checks: triggers of their own (none of 012's or 013's functions is replaced) ----
 -- Each fires always, refuses with 'step_up' unless this transaction carries a passkey check from the last 5 minutes
@@ -184,19 +194,35 @@ $$;
 create trigger agent_keys_step_up before insert on app.agent_keys for each row execute function app.agent_keys_step_up();
 alter table app.agent_keys enable always trigger agent_keys_step_up;
 
--- Linking or unlinking a sign-in method (and deleting one with the account). Signing in (someone not signed in) is
--- untouched, so a first sign-up never needs a passkey.
+-- Linking a sign-in method. Signing in (someone not signed in) is untouched, so a first sign-up never needs a passkey.
+-- Two rules (the PR 17 review, finding 1):
+--   * a passkey check in the last 5 minutes
+--   * not within 24 hours of the account's oldest passkey being added (its first, or the one a recovery left), so a
+--     copied fresh cookie that adds the first passkey can't then link its holder's own method: by the time linking opens,
+--     its 10 minutes of freshness (which linking also needs, 012) are long over.
+-- Unlinking needs no passkey (finding 1e): PR 15's seniority rule (only a method added after the session's own) and its
+-- fresh sign-in are the protection, as they were before passkeys, so the holder of the older method can always remove a
+-- newer one. Deleting the whole account is covered by members_step_up.
 create function app.identities_step_up() returns trigger
 language plpgsql
 as $$
+declare
+  first_at timestamptz;
 begin
-  if app.actor_kind() in ('member', 'admin') and coalesce(current_setting('app.step_up', true), '') <> '1' then
-    raise exception 'step_up' using errcode = 'P0001', hint = 'Confirm it''s you with your passkey to change how you sign in.';
+  if app.actor_kind() in ('member', 'admin') then
+    if coalesce(current_setting('app.step_up', true), '') <> '1' then
+      raise exception 'step_up' using errcode = 'P0001', hint = 'Confirm it''s you with your passkey to link a sign-in method.';
+    end if;
+    select min(k.created_at) into first_at from app.passkeys k where k.member_id = new.member_id;
+    if first_at > now() - interval '24 hours' then
+      raise exception 'passkey_new' using errcode = 'P0001',
+        hint = 'A new sign-in method can be linked 24 hours after your first passkey was added.';
+    end if;
   end if;
-  return case when tg_op = 'DELETE' then old else new end;
+  return new;
 end
 $$;
-create trigger identities_step_up before insert or delete on app.identities for each row execute function app.identities_step_up();
+create trigger identities_step_up before insert on app.identities for each row execute function app.identities_step_up();
 alter table app.identities enable always trigger identities_step_up;
 
 -- Deleting an account (the member's own, or Aaron's "delete" on a deletion review), and Aaron banning, unbanning,
@@ -231,20 +257,49 @@ alter table app.brakes enable always trigger brakes_step_up;
 create trigger deletion_reviews_step_up before update on app.deletion_reviews for each row execute function app.admin_step_up();
 alter table app.deletion_reviews enable always trigger deletion_reviews_step_up;
 
+-- Aaron's review-queue decisions (posts and their flags) and appeal decisions (containments), in the database too (the
+-- review, finding 4; RK65). Only when Aaron acts: JEVs's own changes (which run as dog_jevs, inside its reviewed
+-- functions, even in his transaction), the timers (system) and a pause ending on time are never asked.
+create function app.admin_review_step_up() returns trigger
+language plpgsql
+as $$
+begin
+  if app.actor_kind() <> 'admin' or coalesce(current_setting('app.step_up', true), '') = '1' or current_user = 'dog_jevs' then
+    return new;
+  end if;
+  -- A pause whose time is up ends by itself, whoever reads the rules (liftDue); that is no decision.
+  -- (Nested: PL/pgSQL would read a containment's field on any table if the two tests were joined with "and".)
+  if tg_table_name = 'containments' then
+    if new.appeal_decision is not distinct from old.appeal_decision and (new.lifted_at is null or old.ends_at <= now()) then
+      return new;
+    end if;
+  end if;
+  raise exception 'step_up' using errcode = 'P0001', hint = 'Confirm it''s you with your passkey to decide this.';
+end
+$$;
+create trigger posts_step_up before update on app.posts for each row execute function app.admin_review_step_up();
+alter table app.posts enable always trigger posts_step_up;
+create trigger review_flags_step_up before update on app.review_flags for each row execute function app.admin_review_step_up();
+alter table app.review_flags enable always trigger review_flags_step_up;
+create trigger containments_step_up before update on app.containments for each row execute function app.admin_review_step_up();
+alter table app.containments enable always trigger containments_step_up;
+
 -- ---- The passkey functions, in the sign-in role (which alone writes sessions, identities and passkeys) ----
 -- Created as dog_owner, their callers set, then handed to dog_signin (as 012 does), so PUBLIC never keeps a right.
 
--- Whether this session passed a passkey check in the last 5 minutes (by the database clock), how many passkeys its
--- member has, and when an open recovery's cool-off ends. While a recovery is open nothing counts as a step-up, so
--- every risky grant stays blocked. Asked as someone not signed in, alongside app.session_resolve.
+-- Whether this session passed a passkey check in the last 5 minutes (by the database clock) with a passkey that still
+-- exists, how many passkeys its member has, when an open recovery's cool-off ends, and (within 24 hours of the oldest
+-- passkey) when linking a sign-in method opens. While a recovery is open nothing counts as a step-up, so every risky
+-- grant stays blocked. Asked as someone not signed in, alongside app.session_resolve.
 create function app.session_step_up(p_session_hash text)
-returns table (stepped_up boolean, passkeys integer, recovery_until timestamptz)
+returns table (stepped_up boolean, passkeys integer, recovery_until timestamptz, linking_from timestamptz)
 language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
   s app.sessions%rowtype;
   n integer;
   rec timestamptz;
+  first_at timestamptz;
 begin
   if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' then
     return;
@@ -253,9 +308,11 @@ begin
   if not found then
     return;
   end if;
-  select count(*)::int into n from app.passkeys k where k.member_id = s.member_id;
+  select count(*)::int, min(k.created_at) into n, first_at from app.passkeys k where k.member_id = s.member_id;
   select r.ends_at into rec from app.passkey_recoveries r where r.member_id = s.member_id and r.cancelled_at is null and r.completed_at is null;
-  return query select (s.stepped_up_at is not null and s.stepped_up_at > now() - interval '5 minutes' and n > 0 and rec is null), n, rec;
+  return query select (s.stepped_up_at is not null and s.stepped_up_at > now() - interval '5 minutes' and s.stepped_up_with is not null
+                       and n > 0 and rec is null), n, rec,
+    case when first_at > now() - interval '24 hours' then first_at + interval '24 hours' end;
 end
 $$;
 
@@ -328,6 +385,9 @@ $$;
 --     minutes ('step_up'), so a stolen fresh cookie can't add its holder's own key
 --   * a session from before 012 has no recorded sign-in method and must sign in again ('signin_again')
 --   * at most 10 passkeys ('too_many'); a credential already registered anywhere is 'taken'
+-- After the PR 17 review (finding 1): the account's first passkey, and the one that completes a recovery, end every
+-- other session of the member (1c), and completing a recovery also deletes every earlier passkey (1b), so whatever a
+-- copied cookie set up before is gone. Linking a sign-in method then waits 24 hours (identities_step_up, 1d).
 -- Returns the status, the new passkey's ID and whether it completed a recovery.
 create function app.passkey_enrol(p_session_hash text, p_challenge_hash text, p_credential_id text, p_public_key text, p_sign_count bigint,
                                   p_transports text, p_label text, p_backed_up boolean)
@@ -341,6 +401,8 @@ declare
   n integer;
   nid uuid;
   took integer;
+  ended integer := 0;
+  gone uuid[];
 begin
   if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or p_challenge_hash is null or p_challenge_hash !~ '^[0-9a-f]{64}$'
      or p_credential_id is null or char_length(p_credential_id) not between 16 and 1366 or p_credential_id !~ '^[A-Za-z0-9_-]+$'
@@ -384,7 +446,7 @@ begin
       return query select 'cool_off'::text, null::uuid, false;
       return;
     end if;
-  elsif n > 0 and (s.stepped_up_at is null or s.stepped_up_at <= now() - interval '5 minutes') then
+  elsif n > 0 and (s.stepped_up_at is null or s.stepped_up_at <= now() - interval '5 minutes' or s.stepped_up_with is null) then
     return query select 'step_up'::text, null::uuid, false;
     return;
   end if;
@@ -398,16 +460,34 @@ begin
   end if;
   insert into app.passkeys (member_id, identity_id, credential_id, public_key, sign_count, transports, label, backed_up)
     values (me, s.identity_id, p_credential_id, p_public_key, p_sign_count, p_transports, p_label, p_backed_up) returning id into nid;
+  if rec.id is not null then
+    -- 1b: a recovery is for lost passkeys, so every earlier one goes, whoever added it.
+    with d as (delete from app.passkeys k where k.member_id = me and k.id <> nid returning k.id) select array_agg(d.id) into gone from d;
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      select 'passkey.removed', 'member', me, jsonb_build_object('passkey', x, 'reason', 'recovery') from unnest(coalesce(gone, '{}'::uuid[])) x;
+  end if;
+  if n = 0 or rec.id is not null then
+    -- 1c: the first passkey (or the one a recovery leaves) belongs to this session alone: every other session ends.
+    delete from app.sessions x where x.member_id = me and x.id <> s.id;
+    get diagnostics ended = row_count;
+  end if;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
-    values ('passkey.enrolled', 'member', me, jsonb_build_object('passkey', nid, 'recovery', rec.id is not null));
+    values ('passkey.enrolled', 'member', me, jsonb_build_object('passkey', nid, 'recovery', rec.id is not null, 'sessions_ended', ended));
   if rec.id is not null then
     update app.passkey_recoveries r set completed_at = now() where r.id = rec.id;
     insert into app.audit_log (action, subject_kind, subject_id, detail)
-      values ('passkey.recovery_completed', 'member', me, jsonb_build_object('recovery', rec.id, 'passkey', nid));
+      values ('passkey.recovery_completed', 'member', me, jsonb_build_object('recovery', rec.id, 'passkey', nid,
+              'passkeys_removed', coalesce(cardinality(gone), 0), 'sessions_ended', ended));
   end if;
-  perform app.notify(me, 'passkey_added', 'A passkey was added to your account',
-    'A new passkey can now confirm risky steps on your account, such as letting an agent act on its own. If this wasn''t you, '
-    || 'sign in with your oldest sign-in method, remove it on your account page, and sign out everywhere.',
+  perform app.notify(me, 'passkey_added', case when rec.id is not null then 'Passkey recovery is complete' else 'A passkey was added to your account' end,
+    case when rec.id is not null then 'A new passkey was added and every earlier passkey was removed. Every other session of yours was signed out, '
+           || 'and a new sign-in method can be linked 24 hours from now. If this wasn''t you, sign in with your oldest sign-in method '
+           || 'and sign out everywhere.'
+         when n = 0 then 'Your first passkey was added. It confirms risky steps on your account, such as letting an agent act on its own. '
+           || 'Every other session of yours was signed out, and a new sign-in method can be linked 24 hours from now. If this wasn''t you, '
+           || 'sign in with your oldest sign-in method, sign out everywhere, and start passkey recovery on your account page.'
+         else 'A new passkey can now confirm risky steps on your account, such as letting an agent act on its own. If this wasn''t you, '
+           || 'sign in with your oldest sign-in method, remove it on your account page, and sign out everywhere.' end,
     '/account', 'passkey', nid, 'passkey:added:' || nid::text);
   return query select 'ok'::text, nid, rec.id is not null;
 end
@@ -458,7 +538,7 @@ begin
   if (k.sign_count > 0 or p_sign_count > 0) and p_sign_count <= k.sign_count then
     insert into app.audit_log (action, subject_kind, subject_id, detail)
       values ('passkey.counter_regression', 'member', me, jsonb_build_object('passkey', k.id, 'stored', k.sign_count, 'seen', p_sign_count));
-    perform app.notify(me, 'passkey_removed', 'A passkey check was refused',
+    perform app.notify(me, 'passkey_counter', 'A passkey check was refused',
       'One of your passkeys answered with a sign counter that went backwards, which can mean the key was copied. The check was '
       || 'refused. If you didn''t just use it on another device, remove that passkey on your account page and add a new one.',
       '/account', 'passkey', k.id, 'passkey:counter:' || k.id::text || ':' || p_sign_count::text);
@@ -466,7 +546,7 @@ begin
     return;
   end if;
   update app.passkeys x set sign_count = p_sign_count, last_used_at = now(), backed_up = p_backed_up where x.id = k.id;
-  update app.sessions x set stepped_up_at = now() where x.id = s.id;
+  update app.sessions x set stepped_up_at = now(), stepped_up_with = k.id where x.id = s.id;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('passkey.used', 'member', me, jsonb_build_object('passkey', k.id));
   return query select 'ok'::text, now() + interval '5 minutes';
@@ -476,7 +556,8 @@ $$;
 -- Removing a passkey: never silently. It needs this session's own passkey check in the last 5 minutes, never during a
 -- recovery's cool-off, never the last one (protection never quietly drops to none; add a new one first), and (the
 -- seniority rule of 012's unlink) only a passkey added by this session's own sign-in method or by one added after it.
--- The member is told, and the audit log records it.
+-- The member is told, and the audit log records it. Any step-up the removed passkey gave ends with it
+-- (sessions.stepped_up_with; the review, finding 3).
 create function app.passkey_remove(p_session_hash text, p_passkey uuid)
 returns text
 language plpgsql security definer set search_path = pg_catalog
@@ -498,7 +579,7 @@ begin
   if not found then
     return 'session';
   end if;
-  if s.stepped_up_at is null or s.stepped_up_at <= now() - interval '5 minutes' then
+  if (s.stepped_up_at is null or s.stepped_up_at <= now() - interval '5 minutes' or s.stepped_up_with is null) then
     return 'step_up';
   end if;
   if exists (select 1 from app.passkey_recoveries r where r.member_id = me and r.cancelled_at is null and r.completed_at is null) then
@@ -527,9 +608,11 @@ begin
 end
 $$;
 
--- Starting recovery after losing every passkey: from a session begun in the last 10 minutes. For 72 hours every risky
--- grant stays blocked (no session counts as stepped up, and any step-up already given ends now); then a new passkey
--- can be added without the old ones. The member is told, and any session of theirs can cancel it.
+-- Starting recovery after losing every passkey: from a session begun in the last 10 minutes, with a recorded sign-in
+-- method, on an account that has a passkey to recover (the review, finding 2: with none, there is nothing to recover and
+-- the first passkey needs no wait). For 72 hours every risky grant stays blocked (no session counts as stepped up, and
+-- any step-up already given ends now); then a new passkey can be added, which removes every earlier one. The member is
+-- told; a session signed in with the method that started it, or an older one, can cancel it (finding 1a).
 create function app.passkey_recovery_start(p_session_hash text)
 returns table (status text, ends_at timestamptz)
 language plpgsql security definer set search_path = pg_catalog
@@ -539,6 +622,7 @@ declare
   s app.sessions%rowtype;
   rid uuid;
   ends timestamptz := now() + interval '72 hours';
+  n integer;
 begin
   if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or app.actor_kind() not in ('member', 'admin') or me is null then
     raise exception 'bad passkey request' using errcode = '22023';
@@ -562,21 +646,33 @@ begin
     return query select 'open'::text, null::timestamptz;
     return;
   end if;
-  insert into app.passkey_recoveries (member_id, ends_at) values (me, ends) returning id into rid;
+  select count(*)::int into n from app.passkeys k where k.member_id = me;
+  if n = 0 then
+    return query select 'no_passkeys'::text, null::timestamptz;
+    return;
+  end if;
+  if s.identity_id is null then
+    return query select 'signin_again'::text, null::timestamptz;
+    return;
+  end if;
+  insert into app.passkey_recoveries (member_id, identity_id, ends_at) values (me, s.identity_id, ends) returning id into rid;
   update app.sessions x set stepped_up_at = null where x.member_id = me and x.stepped_up_at is not null;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('passkey.recovery_started', 'member', me, jsonb_build_object('recovery', rid));
   perform app.notify(me, 'passkey_recovery', 'Passkey recovery started',
     'Someone signed in to your account started passkey recovery. For 72 hours nothing risky can be done on your account (letting '
     || 'an agent act on its own, new keys for acting agents, sign-in changes, deleting it); after that a new passkey can be added. '
-    || 'If this wasn''t you, cancel it on your account page from any session.', '/account', 'passkey_recovery', rid,
+    || 'If this wasn''t you, sign in with your oldest sign-in method, sign out everywhere, and cancel it on your account page.',
+    '/account', 'passkey_recovery', rid,
     'passkey:recovery:' || rid::text || ':started');
   return query select 'ok'::text, ends;
 end
 $$;
 
--- Cancelling a recovery: from any session of the member, with no fresh sign-in or passkey (cancelling only ever takes
--- something away). The member is told, and the audit log records it.
+-- Cancelling a recovery: with no fresh sign-in or passkey, but (the review, finding 1a) only from a session signed in
+-- with the sign-in method that started it, or an older one, so a newer method (one an intruder linked) can never keep
+-- the owner from recovering. If the method that started it is gone, any session with a recorded method can. The member
+-- is told, and the audit log records it. Returns 'ok', 'none', 'session' or 'senior'.
 create function app.passkey_recovery_cancel(p_session_hash text)
 returns text
 language plpgsql security definer set search_path = pg_catalog
@@ -584,20 +680,29 @@ as $$
 declare
   me uuid := app.current_member();
   rid uuid;
+  sid uuid;
+  rec app.passkey_recoveries%rowtype;
+  own app.identities%rowtype;
+  starter app.identities%rowtype;
 begin
   if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or app.actor_kind() not in ('member', 'admin') or me is null then
     raise exception 'bad passkey request' using errcode = '22023';
   end if;
   perform pg_advisory_xact_lock(hashtext('dayonegreat.member'), hashtext(me::text));
-  perform 1 from app.sessions x where x.token_hash = p_session_hash and x.member_id = me and x.expires_at > now();
+  select x.identity_id into sid from app.sessions x where x.token_hash = p_session_hash and x.member_id = me and x.expires_at > now();
   if not found then
     return 'session';
   end if;
-  update app.passkey_recoveries r set cancelled_at = now()
-    where r.member_id = me and r.cancelled_at is null and r.completed_at is null returning r.id into rid;
-  if rid is null then
+  select * into rec from app.passkey_recoveries r where r.member_id = me and r.cancelled_at is null and r.completed_at is null for update;
+  if rec.id is null then
     return 'none';
   end if;
+  select * into own from app.identities i where i.id = sid and i.member_id = me;
+  select * into starter from app.identities i where i.id = rec.identity_id and i.member_id = me;
+  if own.id is null or (starter.id is not null and (own.created_at, own.id) > (starter.created_at, starter.id)) then
+    return 'senior';
+  end if;
+  update app.passkey_recoveries r set cancelled_at = now() where r.id = rec.id returning r.id into rid;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('passkey.recovery_cancelled', 'member', me, jsonb_build_object('recovery', rid));
   perform app.notify(me, 'passkey_recovery', 'Passkey recovery cancelled',

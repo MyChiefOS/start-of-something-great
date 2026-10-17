@@ -5,8 +5,9 @@
 //   POST /auth/passkey/assert/options  a challenge to confirm it's you
 //   POST /auth/passkey/assert/finish   {response}  checks it; this session counts as stepped up for 5 minutes
 //   POST /auth/passkey/remove          {id}  removes one (needs a step-up; never the last one)
-//   POST /auth/passkey/recovery/start  lost every passkey: a 72-hour cool-off, then a new one can be added
-//   POST /auth/passkey/recovery/cancel from any session of yours
+//   POST /auth/passkey/recovery/start  lost every passkey: a 72-hour cool-off, then a new one can be added, which removes
+//                                      every earlier one and signs out every other session
+//   POST /auth/passkey/recovery/cancel from a session signed in with the method that started it, or an older one
 //   GET  /auth/passkey/list            your passkeys (labels and dates only), any recovery, and this session's state
 // Every write is a JSON POST from our own pages (Origin and Sec-Fetch-Site), for the signed-in member's own session.
 // Challenges are random 32 bytes; only their SHA-256 is stored, for 2 minutes, bound to this session, used once. The
@@ -93,6 +94,7 @@ const ENROL_REFUSED = {
   fresh: [403, 'To add a passkey, sign in again first, then add it within 10 minutes.'],
   signin_again: [403, 'Please sign in again first: this session started before passkeys existed.'],
   cool_off: [403, 'Passkey recovery is under way: a new passkey can be added once the 72-hour wait is over.'],
+  bad_id: [400, 'That passkey’s ID is too long or doesn’t match what the device said.'],
   step_up: [403, 'You already have a passkey, so confirm with it first. Lost it? Start passkey recovery on this page.'],
   too_many: [409, 'You have the most passkeys an account can have (10). Remove one first.'],
   taken: [409, 'That passkey is already registered.']
@@ -141,6 +143,7 @@ function make({ run, rp = relyingParty() }) {
         passkeys: out.keys.map((k) => ({ id: k.id, label: k.label, created_at: k.createdAt, last_used_at: k.lastUsedAt, synced: k.backedUp })),
         recovery: out.recovery ? { started_at: out.recovery.startedAt, ends_at: out.recovery.endsAt } : null,
         stepped_up: who.stepUp === true, fresh: who.fresh === true, max: store.MAX_PASSKEYS,
+        linking_from: who.linkingFrom ? new Date(who.linkingFrom).toISOString() : null,
         untrusted_fields: ['passkeys[].label']
       });
     },
@@ -185,6 +188,14 @@ function make({ run, rp = relyingParty() }) {
       if (!info || info.userVerified !== true) {
         await drop(req, who, hash);
         return reply(res, 400, { error: 'That passkey couldn’t be checked (wrong site, no verification on the device, or a broken answer). Please try again.' });
+      }
+      // The credential ID the device attested: at most 1023 bytes (the WebAuthn limit, and what the database holds), and
+      // the same as the ID the browser sent alongside it (the review, finding 5). Otherwise refused, and the challenge used up.
+      const credId = info.credential.id;
+      if (typeof credId !== 'string' || !/^[A-Za-z0-9_-]{16,1364}$/.test(credId) || Buffer.from(credId, 'base64url').length > 1023
+          || credId !== body.response.id) {
+        await drop(req, who, hash);
+        return reply(res, ENROL_REFUSED.bad_id[0], { error: ENROL_REFUSED.bad_id[1] });
       }
       const out = await run(session.actorFor(who), (t) => store.enrol(t, { sessionHash: session.sessionHash(req), challengeHash: hash,
         credentialId: info.credential.id, publicKey: isoBase64URL.fromBuffer(info.credential.publicKey), signCount: info.credential.counter,
@@ -262,6 +273,8 @@ function make({ run, rp = relyingParty() }) {
       const out = await run(session.actorFor(who), (t) => store.recoveryStart(t, { sessionHash: session.sessionHash(req) }));
       if (out.refused === 'fresh') return reply(res, 403, { error: 'To start passkey recovery, sign in again first, then start it within 10 minutes.', reauth: REAUTH });
       if (out.refused === 'open') return reply(res, 409, { error: 'Passkey recovery is already under way.' });
+      if (out.refused === 'no_passkeys') return reply(res, 409, { error: 'You have no passkey to recover: add one instead, straight away.' });
+      if (out.refused === 'signin_again') return reply(res, 403, { error: 'Please sign in again first: this session started before passkeys existed.', reauth: REAUTH });
       if (out.refused) return reply(res, 403, { error: 'Passkey recovery can’t be started on this account right now.' });
       return reply(res, 201, { recovery: { ends_at: out.endsAt },
         message: 'Recovery started. Risky steps are blocked until ' + new Date(out.endsAt).toISOString() + '; then you can add a new passkey. Any session of yours can cancel it.' });
@@ -272,6 +285,9 @@ function make({ run, rp = relyingParty() }) {
       if (!who) return;
       const status = await run(session.actorFor(who), (t) => store.recoveryCancel(t, { sessionHash: session.sessionHash(req) }));
       if (status === 'none') return reply(res, 404, { error: 'No passkey recovery is under way.' });
+      if (status === 'senior') {
+        return reply(res, 403, { error: 'This session signed in with a sign-in method added after the one that started the recovery, so it can’t cancel it. Sign in with your oldest method to cancel it.' });
+      }
       if (status !== 'ok') return reply(res, 401, { error: 'Sign in first.' });
       return reply(res, 200, { cancelled: true, message: 'Cancelled. Your passkeys work as before.' });
     }

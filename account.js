@@ -26,7 +26,8 @@
     'error=link': 'That sign-in method wasn’t linked: the sign-in was cancelled, took too long, or didn’t start from this page. Please try again from here.',
     'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.',
     // PR 17: risky steps also need a passkey check in the last 5 minutes.
-    'error=step_up': 'Nothing was changed: confirm it’s you with your passkey first (or add one below), then try again.'
+    'error=step_up': 'Nothing was changed: confirm it’s you with your passkey first (or add one below), then try again.',
+    'error=link_wait': 'Nothing was linked: to keep your account safe, a new sign-in method can be linked 24 hours after your first passkey was added. Please try again then.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };
@@ -157,7 +158,7 @@
     b.disabled = true;
     window.dogPasskey.postJson('/auth/passkey/recovery/start', {}).then(function (x) { pkSay(x, 'That didn’t go through.'); b.disabled = false; loadPasskeys(); });
   });
-  // The risky forms and links on this page (deleting, unlinking, adding a sign-in method) confirm with a passkey just
+  // The risky forms and links on this page (deleting, adding a sign-in method) confirm with a passkey just
   // before they go; the server refuses them without one anyway, and sends a member who has none to add one.
   function guardRiskyForms() {
     function confirmFirst() {
@@ -172,7 +173,8 @@
       }
       return window.dogPasskey.stepUp().then(function (u) { if (!u.ok) pkSay(u, 'The passkey check didn’t go through.'); else pkState.stepped_up = true; return u.ok; });
     }
-    document.querySelectorAll('form[action="/auth/account/delete"], form[action="/auth/account/unlink"]').forEach(function (f) {
+    // Unlinking needs no passkey: the older sign-in method always wins (PR 15's rule).
+    document.querySelectorAll('form[action="/auth/account/delete"]').forEach(function (f) {
       f.addEventListener('submit', function (e) {
         if (f.dataset.confirmed === '1') return;
         e.preventDefault();

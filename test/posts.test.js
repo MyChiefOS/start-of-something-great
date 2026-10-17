@@ -110,7 +110,7 @@ async function member(level = 1, name = 'New member') {
 // A reviewer always acts under their member ID, which closed flags record.
 const REVIEWER = crypto.randomUUID();
 const asReviewer = (sqlText) => su.begin(async (t) => {
-  await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${REVIEWER}, true)`;
+  await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${REVIEWER}, true), set_config('app.step_up', '1', true)`;
   await t.unsafe(sqlText);
 });
 const approve = (id) => asReviewer(`update app.posts set status = 'live' where id = '${id}'`);

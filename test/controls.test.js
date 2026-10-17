@@ -266,7 +266,7 @@ test('F9: only Aaron sees or sets brakes; a brake request must name its scope; a
   // Not even by switching it off and loosening it in the same step.
   await assert.rejects(run(aaron.ctx, (t) => t`update app.brakes set lifted_at = now(), member_id = null where id = ${on.brake.id}`), /permission denied|switched off/);
   await assert.rejects(su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
     await t`update app.brakes set lifted_at = now(), people_per_hour = 1000 where id = ${on.brake.id}`;
   }), /a brake can only be switched off/);
   // Switching off records who did it, so even the owner can't do it without saying who is acting.
@@ -390,7 +390,7 @@ test('F10: Aaron can\'t be banned, members can\'t ban, and bans need a real memb
   const m = await member(2, 'Would-be banner');
   assert.strictEqual((await control({ ban: aaron.id })).status, 409);
   await assert.rejects(su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
     await t`update app.members set status = 'banned' where id = ${aaron.id}`;
   }), /administrator can't be banned/, 'not even directly');
   assert.strictEqual((await control({ ban: aaron.id }, m)).status, 403);

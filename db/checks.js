@@ -321,10 +321,14 @@ async function problems(sql, { snapshot } = {}) {
     // PR 17: the passkey step-up (D5). Risky grants by people refuse without a passkey check in the last 5 minutes.
     ['agent_rules', 'agent_rules_step_up', 7, 'agent_rules_step_up', 'every new rules version'],
     ['agent_keys', 'agent_keys_step_up', 7, 'agent_keys_step_up', 'every new key'],
-    ['identities', 'identities_step_up', 15, 'identities_step_up', 'every new or removed sign-in method'],
+    ['identities', 'identities_step_up', 7, 'identities_step_up', 'every newly linked sign-in method'],
     ['members', 'members_step_up', 27, 'members_step_up', 'every updated or deleted member row'],
     ['brakes', 'brakes_step_up', 23, 'admin_step_up', 'every new or changed brake'],
-    ['deletion_reviews', 'deletion_reviews_step_up', 19, 'admin_step_up', 'every decided deletion review']
+    ['deletion_reviews', 'deletion_reviews_step_up', 19, 'admin_step_up', 'every decided deletion review'],
+    // After the PR 17 review (finding 4): Aaron's review-queue and appeal decisions are checked by the database too.
+    ['posts', 'posts_step_up', 19, 'admin_review_step_up', 'every post Aaron changes'],
+    ['review_flags', 'review_flags_step_up', 19, 'admin_review_step_up', 'every flag Aaron decides'],
+    ['containments', 'containments_step_up', 19, 'admin_review_step_up', 'every pause Aaron decides']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;
