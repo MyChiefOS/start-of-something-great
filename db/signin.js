@@ -5,6 +5,10 @@
 const v = require('./validate');
 
 const HEX64 = /^[0-9a-f]{64}$/;
+// A link or unlink that lost a race it can't wait out (a deadlock, a serialization failure, a lock it couldn't get):
+// nothing was changed, and trying again works. A clean refusal, never an error page (PR 15's second review, R3).
+const BUSY = ['40P01', '40001', '55P03'];
+const RESOLVE_TRIES = 3;
 const hex = (field, s) => v.text(field, s, { max: 64, min: 64, pattern: HEX64 });
 
 async function rateLimitHit(t, { bucket, keyHash, windowSeconds, max }) {
@@ -65,7 +69,7 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
 // PR 15: the signed-in member links another sign-in method, from their own session (sessionHash), which must have
 // begun in the last 10 minutes (the database decides, by its own clock). No session is made, so a link never makes
 // anyone fresh; every other session of the member ends, and they get a notice. region: as for signIn.
-// Returns { memberId, trustLevel, isAdmin, linked, sessionsEnded }, or { refused: 'fresh' | 'taken' | 'banned' | 'disabled' }.
+// Returns { memberId, trustLevel, isAdmin, linked, sessionsEnded }, or { refused: 'fresh' | 'taken' | 'banned' | 'disabled' | 'busy' }.
 async function link(t, { provider, fingerprints, keyVersion, level, sessionHash, recheckAfter = null, region = null }) {
   const fps = fingerprints.map((f) => hex('fingerprint', f));
   if (fps.length < 1 || fps.length > 5) throw new v.ValidationError('fingerprints', 'must have 1 to 5 entries');
@@ -88,21 +92,24 @@ async function link(t, { provider, fingerprints, keyVersion, level, sessionHash,
     if (e.code === 'P0001' && e.message === 'passkey_new') return { refused: 'link_wait' };
     // Two members linking the same method at the same moment: whoever comes second finds it taken (review F4).
     if (e.code === '23505') return { refused: 'taken' };
+    if (BUSY.includes(e.code)) return { refused: 'busy' };
     throw e;
   }
 }
 
 // PR 15: the signed-in member removes one of their sign-in methods (by its ID, from their account page), from their
 // own session begun in the last 10 minutes. Never the last one, and (review F1, seniority) only a method added after
-// the one this session signed in with. Returns { provider, trustLevel, sessionsEnded }, or
-// { refused: 'fresh' | 'not_found' | 'last' | 'senior' }.
+// the one this session signed in with. What the method's sessions did goes with it (the second review, R1).
+// Returns { provider, trustLevel, sessionsEnded, alsoUnlinked, keysRevoked, agentsLowered }, or
+// { refused: 'fresh' | 'not_found' | 'last' | 'senior' | 'busy' }.
 async function unlink(t, { identity, sessionHash }) {
   let id;
   try { id = v.uuid('identity', identity); } catch { return { refused: 'not_found' }; }
   const sh = hex('sessionHash', sessionHash);
   try {
     const [r] = await t.savepoint((s) => s`select * from app.identity_unlink(${id}::uuid, ${sh})`);
-    return { provider: r.provider, trustLevel: r.trust_level, sessionsEnded: r.sessions_ended };
+    return { provider: r.provider, trustLevel: r.trust_level, sessionsEnded: r.sessions_ended, alsoUnlinked: r.also_unlinked,
+      keysRevoked: r.keys_revoked, agentsLowered: r.agents_lowered };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
@@ -110,6 +117,7 @@ async function unlink(t, { identity, sessionHash }) {
     if (e.code === 'P0001' && e.message === 'not_found') return { refused: 'not_found' };
     if (e.code === 'P0001' && e.message === 'last_method') return { refused: 'last' };
     if (e.code === 'P0001' && e.message === 'not_senior') return { refused: 'senior' };
+    if (BUSY.includes(e.code)) return { refused: 'busy' };
     throw e;
   }
 }
@@ -129,9 +137,28 @@ async function known(t, { provider, fingerprints }) {
   return r.known === true;
 }
 
-async function sessionResolve(t, sessionHash, idleDays) {
+async function sessionResolve(t, sessionHash, idleDays, { strict = false } = {}) {
   if (typeof sessionHash !== 'string' || !HEX64.test(sessionHash)) return null;
-  const [r] = await t`select * from app.session_resolve(${sessionHash}, ${v.int('idleDays', idleDays, { min: 1, max: 30 })}::integer)`;
+  const days = v.int('idleDays', idleDays, { min: 1, max: 30 });
+  // A page read must never fail on a race (PR 15's re-review, probe H): a deadlock, serialization failure or lock it
+  // couldn't get is retried, each in its own savepoint, after a short random wait. If every try loses, this one
+  // request is treated as not signed in (the cookie is kept, and the next request tries again), never an error page.
+  let r;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      [r] = await t.savepoint((s) => s`select * from app.session_resolve(${sessionHash}, ${days}::integer)`);
+      break;
+    } catch (e) {
+      if (!BUSY.includes(e.code)) throw e;
+      if (attempt >= RESOLVE_TRIES) {
+        // strict (sign out everywhere): a lost race must never pass for "not signed in", or the button an owner
+        // presses after a takeover would quietly end only this browser (PR 15's final re-review, probe J).
+        if (strict) { const err = new Error('the session read lost a race; try again'); err.code = 'SESSION_BUSY'; throw err; }
+        return null;
+      }
+      await new Promise((ok) => setTimeout(ok, require('crypto').randomInt(10, 50)));
+    }
+  }
   // fresh: this session began in the last 10 minutes, by the database's clock (PR 7: letting an agent do more on its
   // own needs a fresh sign-in).
   return r ? { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, displayName: r.display_name, fresh: r.fresh === true } : null;

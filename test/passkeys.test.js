@@ -191,6 +191,14 @@ async function oauth(provider, account, { cookie = '', link = false } = {}) {
   const set = [].concat(r2.getHeader('Set-Cookie') || []).map((s) => s.split(';')[0]).find((s) => s.startsWith(SESSION + '=') && s.length > SESSION.length + 1);
   return { start: out(r1), done: out(r2), cookie: set || cookie };
 }
+// PR 15 final: a link signs every session of the member out, this one too. Signs in again with the given method and
+// carries the new session on the same object, so a test continues as the person would after signing back in.
+async function signBackIn(m, provider, account) {
+  const o = await oauth(provider, account);
+  const s = await sessionOf(o.cookie);
+  m.cookie = o.cookie; m.hash = s.token_hash;
+  return m;
+}
 // As if a day had passed since the member's passkeys were added (the 24-hour wait before linking a method).
 const ageKeys = (memberId) => q(`update app.passkeys set created_at = now() - interval '25 hours' where member_id = '${memberId}'`);
 const sessionOf = async (cookie) => (await q(`select member_id, token_hash from app.sessions where token_hash = '${c.sha256hex(cookie.split('=')[1])}'`))[0];
@@ -309,8 +317,9 @@ test('PK3: deleting an account and linking a sign-in method need a passkey check
   assert.match((await pkCall('list', m)).json.linking_from, /^\d{4}-/, 'the account page can say when linking opens');
   await ageKeys(m.id);
   const linked = await oauth('x', 'pk-link', { cookie: m.cookie, link: true });
-  assert.strictEqual(linked.done.location, '/account');
+  assert.strictEqual(linked.done.location, '/join?linked=1'); // PR 15 final: a link signs every session out
   assert.strictEqual(Number((await q(`select count(*) as n from app.identities where member_id = '${m.id}'`))[0].n), 2);
+  await signBackIn(m, 'github', 'pk-link');
   // The database refuses a link without the flag, even from a fresh session.
   await assert.rejects(run({ actor: 'member', memberId: m.id, fresh: true }, (t) => t`select * from app.identity_link('x', ${t.array([c.sha256hex('another')])}::text[],
     1::smallint, 1::smallint, null::timestamptz, ${m.hash}, null)`), /step_up/);
@@ -548,7 +557,8 @@ test('PK11: whatever a linked method did dies with it: unlinking a method remove
   assert.strictEqual((await enrol(owner, owner.device, { label: 'GitHub-era phone' })).status, 201);
   await ageKeys(owner.id);
   await stepUp(owner, owner.device);
-  assert.strictEqual((await oauth('x', 'pk-owner', { cookie: owner.cookie, link: true })).done.location, '/account');
+  assert.strictEqual((await oauth('x', 'pk-owner', { cookie: owner.cookie, link: true })).done.location, '/join?linked=1'); // PR 15 final: a link signs every session out
+  await signBackIn(owner, 'github', 'pk-owner');
   // Someone signs in with X (a fresh session from the newer method). Alone, it can't add a passkey: one exists.
   const xs = await oauth('x', 'pk-owner');
   const viaX = { cookie: xs.cookie, id: owner.id, hash: (await sessionOf(xs.cookie)).token_hash, device: softAuthenticator() };
@@ -717,7 +727,7 @@ test('Review finding 1 (High): a copied fresh cookie can\'t keep the owner out; 
   // Suppose the thief had linked X anyway (for example with the owner's synced passkey): the rest must still hold.
   await ago(thief, 0);
   await stepUp(thief, thief.device);
-  assert.strictEqual((await oauth('x', 'thiefA', { cookie: thief.cookie, link: true })).done.location, '/account');
+  assert.strictEqual((await oauth('x', 'thiefA', { cookie: thief.cookie, link: true })).done.location, '/join?linked=1'); // PR 15 final: a link signs every session out
   // The owner signs out everywhere and signs in again with GitHub, the older method.
   await q(`delete from app.sessions where member_id = '${owner.id}'`);
   const g2 = await oauth('github', 'victimA');
@@ -875,7 +885,7 @@ test('A copied fresh cookie can\'t strip passkeys by unlinking the method they w
   assert.strictEqual((await enrol(owner, owner.device, { label: 'First' })).status, 201);
   await ageKeys(owner.id);
   await stepUp(owner, owner.device);
-  assert.strictEqual((await oauth('x', 'pk-strip', { cookie: owner.cookie, link: true })).done.location, '/account');
+  assert.strictEqual((await oauth('x', 'pk-strip', { cookie: owner.cookie, link: true })).done.location, '/join?linked=1'); // PR 15 final: a link signs every session out
   const xs = await oauth('x', 'pk-strip');
   const viaX = { cookie: xs.cookie, id: owner.id, hash: (await sessionOf(xs.cookie)).token_hash };
   await stepUp(viaX, owner.device);
@@ -911,7 +921,7 @@ test('No lockout: an owner without a passkey facing a method that holds passkeys
   assert.strictEqual((await enrol(intruder, intruder.device)).status, 201);
   await ageKeys(intruder.id);
   await stepUp(intruder, intruder.device);
-  assert.strictEqual((await oauth('x', 'pk-lock', { cookie: intruder.cookie, link: true })).done.location, '/account');
+  assert.strictEqual((await oauth('x', 'pk-lock', { cookie: intruder.cookie, link: true })).done.location, '/join?linked=1'); // PR 15 final: a link signs every session out
   const [xId] = await q(`select id from app.identities where member_id = '${intruder.id}' and provider = 'x'`);
   await q(`update app.passkeys set identity_id = '${xId.id}' where member_id = '${intruder.id}'`);
   // The owner signs in with GitHub (the older method): unlinking X needs a passkey they don't have...

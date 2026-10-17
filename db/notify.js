@@ -66,11 +66,12 @@ async function reconfirm(t, { agent, version }) {
   }
 }
 
-// When each of the owner's agents that acts on its own was last confirmed, and when it needs confirming (R33).
+// When each of the owner's agents that acts on its own was last confirmed, and when it needs confirming (R33): the
+// owner's last choice made with a fresh sign-in (PR 15's second review, R2), not any save.
 async function actClock(t, agentIds) {
   if (!agentIds.length) return new Map();
   const rows = await t`select agent_id, max(created_at) as since from app.agent_rules
-                       where agent_id in ${t(agentIds)} and set_by = 'owner' group by agent_id`;
+                       where agent_id in ${t(agentIds)} and set_by = 'owner' and restarts_clock group by agent_id`;
   return new Map(rows.map((r) => [r.agent_id, r.since]));
 }
 

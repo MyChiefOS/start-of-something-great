@@ -16,7 +16,7 @@ function sessionHash(req) {
   return isToken(tok) ? c.sha256hex(tok) : null;
 }
 
-// { memberId, trustLevel, isAdmin, displayName, fresh, stepUp, passkeys, recoveryUntil } or null.
+// { memberId, trustLevel, isAdmin, displayName, fresh, sessionHash, stepUp, passkeys, recoveryUntil } or null.
 // PR 17: stepUp is the database's own answer (by its clock) to whether this session passed a passkey check in the last
 // 5 minutes, with no recovery open; passkeys is how many the member has. Both come in the same transaction as the
 // session itself.
@@ -27,13 +27,14 @@ async function current(req, run) {
     const who = await store.sessionResolve(t, hash, IDLE_DAYS);
     if (!who) return null;
     const s = await passkeys.sessionStepUp(t, hash);
-    return { ...who, stepUp: Boolean(s && s.stepUp), passkeys: s ? s.passkeys : 0, recoveryUntil: s ? s.recoveryUntil : null,
+    return { ...who, sessionHash: hash, stepUp: Boolean(s && s.stepUp), passkeys: s ? s.passkeys : 0, recoveryUntil: s ? s.recoveryUntil : null,
       linkingFrom: s ? s.linkingFrom : null };
   });
 }
 
-// The database actor for a signed-in member.
-const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: who.memberId });
+// The database actor for a signed-in member, with the session the request came from (PR 15's second review, R1: what
+// a session makes records the sign-in method it signed in with, so unlinking that method can undo it).
+const actorFor = (who) => ({ actor: who.isAdmin ? 'admin' : 'member', memberId: who.memberId, session: who.sessionHash || null });
 // The same, carrying the session's fresh sign-in and passkey step-up (both the database's own answers), for the steps
 // whose rules ask for them. The database decides; this only passes on what it said.
 const strongActorFor = (who) => ({ ...actorFor(who), fresh: who.fresh === true, stepUp: who.stepUp === true });

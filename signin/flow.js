@@ -168,7 +168,7 @@ function make(deps) {
   const FRESH_METHOD = '/account?error=fresh_method';
   // A link that didn't go through returns to the account page (the member is still signed in), never /join.
   const LINK_FAILED = '/account?error=link';
-  const LINK_REFUSED = { taken: '/account?error=taken_method' };
+  const LINK_REFUSED = { taken: '/account?error=taken_method', busy: '/account?error=busy' };
   // PR 17: linking, unlinking and deleting also need a passkey check in the last 5 minutes (D5); the database decides.
   const STEP_UP = '/account?error=step_up#passkeys';
   // PR 17's review (1d): no new sign-in method within 24 hours of the account's first passkey.
@@ -189,8 +189,9 @@ function make(deps) {
     return Boolean(me && now && me.memberId === memberId && c.same(now, sessionHashSealed));
   }
 
-  // PR 15: finishes a link for the signed-in member, from the session they started it in. No session cookie is set:
-  // they keep the session they have, and every other session of theirs ends (the database does both). A traveller who
+  // PR 15: finishes a link for the signed-in member, from the session they started it in. No session cookie is set,
+  // and once a method is added every session of theirs ends, this one too (the re-review, R4): the browser is signed
+  // out and sent to /join to sign in again. Verifying again a method that is already theirs keeps the session. A traveller who
   // confirmed (country) gets the resident tag for this session, as after a sign-in.
   async function completeLink(req, res, me, args, ret, country = null) {
     const hash = sessionHash(req);
@@ -201,8 +202,14 @@ function make(deps) {
     if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
     if (out.refused === 'link_wait') return h.redirect(res, LINK_WAIT);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
-    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
+    // A new method ended every session of the member, this one too (PR 15's re-review, R4): this browser signs in
+    // again, with whichever method they like, and the join page says why.
+    if (out.linked) {
+      h.addCookie(res, h.clear(SESSION));
+      return h.redirect(res, '/join?linked=1');
+    }
+    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     return h.redirect(res, ret || '/');
   }
 
@@ -400,7 +407,14 @@ function make(deps) {
       const hash = sessionHash(req);
       if (hash) {
         if (everywhere) {
-          const me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS));
+          let me;
+          try {
+            me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS, { strict: true }));
+          } catch (e) {
+            // Nothing ended and the cookie stays, so the member is told to try again rather than wrongly reassured.
+            if (e && e.code === 'SESSION_BUSY') return h.redirect(res, '/account?error=busy');
+            throw e;
+          }
           if (me) await run({ actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId }, (t) => store.sessionsEndAll(t));
         }
         await run(ANON, (t) => store.sessionEnd(t, hash));
@@ -467,7 +481,8 @@ function make(deps) {
 
     // PR 15: unlink one of your sign-in methods. A form on /account, from our own pages, signed in within the last 10
     // minutes (the database decides, by its clock); never the last method. Every other session of yours ends, and you
-    // get a notice.
+    // get a notice. What that method's sessions did goes with it (the second review, R1): the methods they linked, the
+    // agent keys they made, and the agents they let act on their own (back to drafting).
     async unlink(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/account');
       const who = await current(req);
@@ -481,6 +496,7 @@ function make(deps) {
       if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
       if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
       if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
+      if (out.refused === 'busy') return h.redirect(res, '/account?error=busy');
       if (out.refused) return h.redirect(res, '/account?error=unlink');
       return h.redirect(res, '/account?saved=unlinked');
     },

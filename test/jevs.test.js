@@ -1145,7 +1145,9 @@ test('regional gate, members travelling: a confirmation page first; Cancel store
   assert.match(linkAsk.body, /You appear to be in Switzerland\./);
   const linked = res();
   await env.flow.regionContinue(formReq('/auth/region/continue', {}, { country: 'CH', cookie: session + '; ' + cookieOf(linkAsk, '__Host-dog_region') }), linked);
-  assert.strictEqual(linked.getHeader('Location'), '/');
+  // Linked, and like every link it signs the member out everywhere, here too (PR 15's re-review, R4).
+  assert.strictEqual(linked.getHeader('Location'), '/join?linked=1');
+  assert.ok(setCookies(linked).some((x) => x.startsWith('__Host-dog_session=') && /Max-Age=0/.test(x)), 'the session cookie is cleared');
   assert.strictEqual((await q(`select count(*)::int as n from app.identities where member_id = '${mem.id}'`))[0].n, 2);
   const logout = res();
   await env.flow.logout(formReq('/auth/logout', {}, { cookie: session }), logout);

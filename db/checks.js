@@ -52,6 +52,9 @@ const DEFINERS = {
   'app.passkey_recovery_start(text)': 'dog_signin',
   'app.passkey_recovery_cancel(text)': 'dog_signin',
   'app.identities_passkeys()': 'dog_signin',
+  // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
+  // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
+  'app.current_identity()': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',
