@@ -18,8 +18,8 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 2. [ ] **Run the migrations** on the Actions tab ("Database migrations", on `main`) and approve the run. Both steps must be green.
 3. [ ] **The site's login role** (db/README.md, step 4): create `dog_web` and set its password with `\password` in psql.
 4. [ ] **Vercel**: add `DATABASE_URL` (transaction pooler, port 6543, user `dog_web.nksagchwpyljvjiwolmp`) and `DATABASE_CA`.
-5. [ ] **Sign-in keys and apps** (SIGNIN-SETUP.md, steps 1 to 3): the three keys, the GitHub sign-in app, the X sign-in app and its spend cap.
-6. [ ] **LinkedIn verification** (SIGNIN-SETUP.md, step 4): apply now; approval takes LinkedIn's time.
+5. [ ] **Sign-in keys and apps** (SIGNIN-SETUP.md, steps 1 to 3): the three keys, the GitHub sign-in app (done Oct 16), the X sign-in app and its spend cap.
+6. [ ] **Email sending** (Amazon SES, for sign-in links only; notices stay in-app): your AWS account with SES production access, and the SPF, DKIM and DMARC records at the registrar. (Replaces LinkedIn verification: LinkedIn was dropped on Oct 16, 2026.)
 7. [ ] **Make yourself the administrator** (SIGNIN-SETUP.md, "Making Aaron the administrator").
 8. [ ] **Backups** (O2): confirm backups are on and test one restore; record it in OPERATIONS.md.
 9. [ ] **Outside uptime service** (C4): set one up for https://dayonegreat.com/api/status.

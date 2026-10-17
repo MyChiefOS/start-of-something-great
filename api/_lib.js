@@ -95,7 +95,7 @@ const status = {
       { name: 'Research section and Working Paper No. 1 published', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
       { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
-      { name: 'Block EU, EEA, UK and Swiss traffic at the Vercel firewall', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Release 2 public (full production system)' },
+      { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
       { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Independent review' }
     ]
   },
