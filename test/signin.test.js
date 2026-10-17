@@ -351,7 +351,7 @@ test('linking: only while signed in, never by matching email, and never onto som
   const a = await oauth(env, 'github', '4001');
   const memberA = (await q(`select member_id from app.sessions where token_hash = '${c.sha256hex(a.browser.get(SESSION))}'`))[0].member_id;
   const linked = await oauth(env, 'x', '4002', { browser: a.browser, query: '?link=1' });
-  assert.strictEqual(linked.r.getHeader('Location'), '/');
+  assert.strictEqual(linked.r.getHeader('Location'), '/join?linked=1', 'a link signs this browser out too (PR 15 re-review, R4)');
   const [ids] = await q(`select count(*)::int as n from app.identities where member_id = '${memberA}'`);
   assert.strictEqual(ids.n, 2, 'X is now a second way into the same account');
   // B tries to link A's GitHub account to B: refused.
@@ -527,6 +527,7 @@ test('a lapsed X business badge drops back to level 1 at the next sign-in, and d
   const id = (await me(env, x.browser)).member_id;
   assert.strictEqual((await me(env, x.browser)).trust_level, 2);
   await oauth(env, 'github', '9202', { browser: x.browser, query: '?link=1' });
+  await oauth(env, 'x', '9201', { browser: x.browser }); // a link signs everyone out (R4): sign in again
   await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
   await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${id}'`);
   assert.strictEqual((await me(env, x.browser)).trust_level, 1, 'the long session sees the lapse');
@@ -540,6 +541,7 @@ test('a lapsed X business badge drops back to level 1 when the member next signs
   const x = await oauth(env, 'x', '9211');
   const id = (await me(env, x.browser)).member_id;
   await oauth(env, 'github', '9212', { browser: x.browser, query: '?link=1' });
+  await oauth(env, 'x', '9211', { browser: x.browser }); // a link signs everyone out (R4): sign in again
   assert.strictEqual((await me(env, x.browser)).trust_level, 2, 'still level 2 while the badge is current');
   await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
   const g = await oauth(env, 'github', '9212');
@@ -622,33 +624,38 @@ test('PR 15: starting a link needs a fresh sign-in, so an older (or stolen) sess
   // Signed in again (fresh), the same member can link.
   const again = await oauth(env, 'github', '9501', { browser: a.browser });
   const ok = await oauth(env, 'x', '9502', { browser: again.browser, query: '?link=1' });
-  assert.strictEqual(ok.r.getHeader('Location'), '/');
+  assert.strictEqual(ok.r.getHeader('Location'), '/join?linked=1');
   assert.strictEqual(await countIds(id), 2);
 });
 
-test('PR 15: a link makes no new session (no freshness), ends every other session of the member, and leaves a notice and an audit row', async () => {
+test('PR 15: a link makes no new session (no freshness) and, once a method is added, ends every session of the member, the linking one too (re-review R4), with a notice and an audit row', async () => {
   const env = setup({ accounts: { 'github:9511': { accountId: '9511', level: 1, recheckAfter: null }, 'x:9512': { accountId: '9512', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9511');
   const otherDevice = await oauth(env, 'github', '9511');
   const id = (await me(env, a.browser)).member_id;
-  const token = a.browser.get(SESSION);
   await ago(a.browser, 9);
-  const [before] = await q(`select created_at from app.sessions where token_hash = '${hashOf(a.browser)}'`);
   const linked = await oauth(env, 'x', '9512', { browser: a.browser, query: '?link=1&return_to=/account' });
-  assert.strictEqual(linked.r.getHeader('Location'), '/account');
-  assert.strictEqual(linked.browser.get(SESSION), token, 'the browser keeps the session it had: no new session is made');
-  assert.ok(![].concat(linked.r.getHeader('Set-Cookie') || []).some((x) => x.startsWith(SESSION + '=')), 'no session cookie is set');
-  const sessions = await q(`select token_hash, created_at from app.sessions where member_id = '${id}'`);
-  assert.deepStrictEqual(sessions.map((s) => s.token_hash), [hashOf(a.browser)], 'every other session of the member ended');
-  assert.strictEqual(+sessions[0].created_at, +before.created_at, 'the session\'s start time, which decides freshness, is unchanged');
+  assert.strictEqual(linked.r.getHeader('Location'), '/join?linked=1', 'sent to sign in again, with a note saying why');
+  const cookies = [].concat(linked.r.getHeader('Set-Cookie') || []);
+  assert.ok(cookies.some((x) => x.startsWith(SESSION + '=') && /Max-Age=0/.test(x)), 'this browser\'s session cookie is cleared');
+  assert.ok(!cookies.some((x) => x.startsWith(SESSION + '=') && !/Max-Age=0/.test(x)), 'no session is made');
+  assert.strictEqual((await q(`select token_hash from app.sessions where member_id = '${id}'`)).length, 0, 'every session of the member ended, this one too');
+  assert.deepStrictEqual(await me(env, a.browser), { signed_in: false });
   assert.deepStrictEqual(await me(env, otherDevice.browser), { signed_in: false });
-  // A minute later the session is no longer fresh: the link didn't extend it.
-  await ago(a.browser, 11);
-  assert.strictEqual((await db.tx(web, { actor: 'anon' }, (t) => store.sessionResolve(t, hashOf(a.browser), 7))).fresh, false);
-  const notices = await q(`select kind, title, link, subject_kind from app.notices where member_id = '${id}'`);
-  assert.deepStrictEqual(notices.map((n) => ({ ...n })), [{ kind: 'signin_linked', title: 'A new sign-in method was linked', link: '/account', subject_kind: 'identity' }]);
+  const join = fs.readFileSync(path.join(root, 'join.js'), 'utf8');
+  assert.match(join, /linked: 'Linked\. To keep your account safe, adding a sign-in method signs you out everywhere, here too\. Sign in again with any of your sign-in methods\.'/);
+  // Either method signs in again.
+  for (const [p, acct] of [['github', '9511'], ['x', '9512']]) assert.strictEqual((await me(env, (await oauth(env, p, acct)).browser)).member_id, id);
+  const notices = await q(`select kind, title, body, link, subject_kind from app.notices where member_id = '${id}'`);
+  assert.deepStrictEqual(notices.map((n) => [n.kind, n.title, n.link, n.subject_kind]), [['signin_linked', 'A new sign-in method was linked', '/account', 'identity']]);
+  assert.match(notices[0].body, /^X can now sign in to your account\. To keep your account safe, every session of yours was signed out, the one that linked it too, so sign in again with whichever method you like\./);
   const [au] = await q(`select actor_kind, actor_id, detail from app.audit_log where action = 'member.identity_linked' and subject_id = '${id}'`);
-  assert.deepStrictEqual([au.actor_kind, au.actor_id, au.detail], ['member', id, { provider: 'x', sessions_ended: 1 }]);
+  assert.deepStrictEqual([au.actor_kind, au.actor_id, au.detail], ['member', id, { provider: 'x', sessions_ended: 2 }]);
+  // Verifying again a method that is already theirs adds nothing and signs nobody out.
+  const b = await oauth(env, 'github', '9511');
+  const again = await oauth(env, 'x', '9512', { browser: b.browser, query: '?link=1' });
+  assert.strictEqual(again.r.getHeader('Location'), '/');
+  assert.strictEqual((await me(env, b.browser)).signed_in, true);
 });
 
 test('PR 15: a link completes only for the session that started it, not another session of the same member', async () => {
@@ -697,6 +704,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   const a = await oauth(env, 'github', '9541');
   const id = (await me(env, a.browser)).member_id;
   await oauth(env, 'x', '9542', { browser: a.browser, query: '?link=1' });
+  await oauth(env, 'github', '9541', { browser: a.browser }); // a link signs everyone out (R4): sign in again
   assert.strictEqual((await me(env, a.browser)).trust_level, 2);
   const otherDevice = await oauth(env, 'github', '9541');
   const page = res();
@@ -744,9 +752,11 @@ test('PR 15 review F1: seniority. A session may unlink only methods linked after
   const owner = await oauth(env, 'github', '9601');
   const id = (await me(env, owner.browser)).member_id;
   const shared = twoBrowsers(owner.browser); // a cookie copied within its fresh 10 minutes: owner and intruder share it
-  assert.strictEqual((await oauth(env, 'x', '9602', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/');
-  const [row] = await q(`select i.provider from app.sessions s join app.identities i on i.id = s.identity_id where s.token_hash = '${hashOf(owner.browser)}'`);
-  assert.strictEqual(row.provider, 'github', 'each session records the method it signed in with; a link doesn\'t change it');
+  assert.strictEqual((await oauth(env, 'x', '9602', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/join?linked=1');
+  assert.deepStrictEqual(await me(env, shared), { signed_in: false }, 'the copied cookie died with the link (R4)');
+  const ownerAgain = await oauth(env, 'github', '9601');
+  const [row] = await q(`select i.provider from app.sessions s join app.identities i on i.id = s.identity_id where s.token_hash = '${hashOf(ownerAgain.browser)}'`);
+  assert.strictEqual(row.provider, 'github', 'each session records the method it signed in with');
   const intruder = await oauth(env, 'x', '9602');
   assert.strictEqual((await me(env, intruder.browser)).member_id, id);
   const page = res();
@@ -754,10 +764,10 @@ test('PR 15 review F1: seniority. A session may unlink only methods linked after
   const ids = Object.fromEntries(JSON.parse(page.body).sign_ins.map((s) => [s.provider, s.id]));
   const unlink = async (b, identity) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: b.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
   assert.strictEqual(await unlink(intruder.browser, ids.github), '/account?error=senior', 'the later method can\'t remove the older one');
-  assert.strictEqual(await unlink(shared, ids.github), '/account?error=senior', 'nor can the shared session remove the method it signed in with');
+  assert.strictEqual(await unlink(shared, ids.github), '/join?error=signin', 'and the copied session is gone');
   await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${ids.github}::uuid, ${hashOf(intruder.browser)})`), /not_senior/);
   assert.strictEqual(await countIds(id), 2);
-  assert.strictEqual((await me(env, owner.browser)).signed_in, true, 'the owner was not signed out');
+  assert.strictEqual((await me(env, ownerAgain.browser)).signed_in, true, 'the intruder\'s refused attempts signed the owner out of nothing');
   // The owner, signed in with the older method, removes the intruder's: the intruder's session ends.
   const back = await oauth(env, 'github', '9601');
   assert.strictEqual(await unlink(back.browser, ids.x), '/account?saved=unlinked');
@@ -767,7 +777,8 @@ test('PR 15 review F1: seniority. A session may unlink only methods linked after
   assert.notStrictEqual((await me(env, again.browser)).member_id, id, 'the intruder\'s X no longer reaches the account');
   // A session with no recorded method (made before this migration) can't unlink anything until it signs in again.
   const third = await oauth(env, 'github', '9601');
-  assert.strictEqual((await oauth(env, 'x', '9603', { browser: third.browser, query: '?link=1' })).r.getHeader('Location'), '/');
+  assert.strictEqual((await oauth(env, 'x', '9603', { browser: third.browser, query: '?link=1' })).r.getHeader('Location'), '/join?linked=1');
+  await oauth(env, 'github', '9601', { browser: third.browser });
   await q(`update app.sessions set identity_id = null where token_hash = '${hashOf(third.browser)}'`);
   const p2 = res();
   await env.flow.account(req('GET', '/auth/account', { cookie: third.browser.header() }), p2);
@@ -796,7 +807,7 @@ test('PR 15 review F2: the member lock comes before the session check, so a link
   assert.strictEqual(r2.status, 'rejected');
   assert.match(r2.reason.message, /fresh_sign_in/, 'the second link finds its session gone');
   assert.strictEqual(await countIds(id), 2);
-  assert.deepStrictEqual((await q(`select token_hash from app.sessions where member_id = '${id}'`)).map((s) => s.token_hash), [hashOf(a.browser)]);
+  assert.strictEqual((await q(`select token_hash from app.sessions where member_id = '${id}'`)).length, 0, 'the first link ended every session, its own too (R4)');
 });
 
 test('PR 15 review F4: two members linking the same method at the same moment: the second is refused as taken, not an error', async () => {
@@ -884,7 +895,7 @@ test('PR 15 second review R1 (probes A and C): unlinking a method undoes what it
   assert.ok((await runAs(await as(owner.browser), (t) => delegation.setRules(t, { agent: mine.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
   // An intruder copies the owner's fresh cookie, links their own GitHub with it, then signs in with that GitHub.
   const shared = twoBrowsers(owner.browser);
-  assert.strictEqual((await oauth(env, 'github', '9702', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/');
+  assert.strictEqual((await oauth(env, 'github', '9702', { browser: shared, query: '?link=1' })).r.getHeader('Location'), '/join?linked=1');
   const intruder = await oauth(env, 'github', '9702');
   assert.strictEqual((await me(env, intruder.browser)).member_id, id);
   // From that session: a new agent with a key, raised to act; and the owner's agent re-saved with its cap raised.
@@ -895,7 +906,7 @@ test('PR 15 second review R1 (probes A and C): unlinking a method undoes what it
   assert.ok((await runAs(await as(intruder.browser), (t) => delegation.setRules(t, { agent: mine.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 200 }))).rules);
   // Probe C: the intruder's fresh session links yet another GitHub (which ends the owner's sessions), and from a
   // session of that one claims an outside agent whose key the intruder holds.
-  assert.strictEqual((await oauth(env, 'github', '9703', { browser: intruder.browser, query: '?link=1' })).r.getHeader('Location'), '/');
+  assert.strictEqual((await oauth(env, 'github', '9703', { browser: intruder.browser, query: '?link=1' })).r.getHeader('Location'), '/join?linked=1');
   assert.deepStrictEqual(await me(env, owner.browser), { signed_in: false });
   const deeper = await oauth(env, 'github', '9703');
   const outsideKey = c.sha256hex('outside-key-' + Math.random());
@@ -923,7 +934,7 @@ test('PR 15 second review R1 (probes A and C): unlinking a method undoes what it
   assert.deepStrictEqual(await latest(mine.id), { post_mode: 'act', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' });
   // One audit row and one notice say exactly what was undone, and send the owner to their agents.
   const au = await q(`select detail from app.audit_log where action = 'member.identity_unlinked' and subject_id = '${id}'`);
-  assert.deepStrictEqual(au.map((x) => x.detail), [{ provider: 'github', sessions_ended: 2, also_unlinked: ['github'], keys_revoked: 2, agents_lowered: 2 }]);
+  assert.deepStrictEqual(au.map((x) => x.detail), [{ provider: 'github', sessions_ended: 1, also_unlinked: ['github'], keys_revoked: 2, agents_lowered: 2 }]);
   const ns = await q(`select title, body, link from app.notices where member_id = '${id}' and kind = 'signin_unlinked'`);
   assert.strictEqual(ns.length, 1);
   assert.strictEqual(ns[0].link, '/agents');
@@ -934,7 +945,7 @@ test('PR 15 second review R1 (probes A and C): unlinking a method undoes what it
     + 'If this wasn\'t you, sign in again and check how you sign in on your account page.');
   // The notice about the link now says what unlinking does, and what it doesn't.
   const [ln] = await q(`select body from app.notices where member_id = '${id}' and kind = 'signin_linked' order by created_at limit 1`);
-  assert.match(ln.body, /revokes any agent key made with it, puts any agent it let act on its own back to drafting/);
+  assert.match(ln.body, /revokes the keys of any agent made with it, puts anything it let act on its own back to drafting/);
   assert.match(ln.body, /isn't undone\.$/);
   // The record: the key names the method of the session that made it (the intruder's first GitHub, now gone).
   const [rec] = await q(`select by_identity from app.agent_keys where key_hash = '${keyHash}'`);
@@ -946,6 +957,7 @@ test('PR 15 second review R1: an agent paused by a containment when the method i
   const owner = await oauth(env, 'x', '9741');
   const id = (await me(env, owner.browser)).member_id;
   await oauth(env, 'github', '9742', { browser: twoBrowsers(owner.browser), query: '?link=1' });
+  await oauth(env, 'x', '9741', { browser: owner.browser }); // the link signed the owner out too (R4)
   const intruder = await oauth(env, 'github', '9742');
   const ag = await runAs(await as(owner.browser), (t) => agents.create(t, { name: 'paused', description: null, keyHash: c.sha256hex('p' + Math.random()) }));
   assert.ok((await runAs(await as(intruder.browser), (t) => delegation.setRules(t, { agent: ag.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
@@ -976,6 +988,10 @@ test('PR 15 second review R1: the method a session made things with is read by t
   await assert.rejects(runAs({ actor: 'anon', session: hashOf(a.browser) }, async () => {}), /only member calls carry a session/);
   await assert.rejects(runAs({ actor: 'member', memberId: ida, session: 'not-a-hash' }, async () => {}), /session must be a session hash/);
   const ag = await runAs(await as(a.browser), (t) => agents.create(t, { name: 'rec', description: null, keyHash: c.sha256hex('rec' + Math.random()) }));
+  const [made] = await q(`select created_by_identity from app.agents where id = '${ag.id}'`);
+  assert.strictEqual(made.created_by_identity, own.identity_id, 'an agent records the method of the session that created it');
+  await assert.rejects(runAs(await as(a.browser), (t) => t`insert into app.agents (name, created_by_identity) values ('w', null)`), /permission denied/);
+  await assert.rejects(runAs(await as(a.browser), (t) => t`update app.agents set created_by_identity = null where id = ${ag.id}`), /permission denied/);
   await assert.rejects(runAs(await as(a.browser), (t) => t`insert into app.agent_keys (agent_id, key_hash, by_identity) values (${ag.id}, ${c.sha256hex('z' + Math.random())}, null)`), /permission denied/);
   await assert.rejects(runAs(await as(a.browser), (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason, restarts_clock)
     values (${ag.id}, 'draft', 'draft', 'draft', 20, 'owner', true)`), /permission denied/);
@@ -1049,6 +1065,7 @@ test('PR 15 second review R3 (probe B): a link or an unlink at the same moment a
   assert.deepStrictEqual(linked, { refused: 'banned' });
   const b = await oauth(env, 'github', '9732');
   await oauth(env, 'x', '9733', { browser: b.browser, query: '?link=1' });
+  await oauth(env, 'github', '9732', { browser: b.browser }); // a link signs everyone out (R4): sign in again
   const bid = (await me(env, b.browser)).member_id;
   const [xid] = await q(`select id from app.identities where member_id = '${bid}' and provider = 'x'`);
   const unlinked = await race(b.browser, (t) => store.unlink(t, { identity: xid.id, sessionHash: hashOf(b.browser) }));
@@ -1073,4 +1090,97 @@ test('PR 15 second review R3: a deadlock or serialization failure left in a link
   assert.strictEqual(r.getHeader('Location'), '/account?error=busy');
   const page = fs.readFileSync(path.join(root, 'account.js'), 'utf8');
   assert.match(page, /'error=busy': 'Nothing was changed: something else was changing your account at the same moment\. Please try again\.'/);
+});
+
+// ---- PR 15, after its re-review (probes E, E3, G) ------------------------------------------------------------------
+// An owner on X (level 2); an intruder copies the owner's fresh cookie, links their own GitHub with it, and signs in
+// with that GitHub.
+async function takeover(tag) {
+  const env = setup({ accounts: { ['x:' + tag + 'o']: { accountId: tag + 'o', level: 2, recheckAfter: null }, ['github:' + tag + 'g']: { accountId: tag + 'g', level: 1, recheckAfter: null } } });
+  const owner = await oauth(env, 'x', tag + 'o');
+  const id = (await me(env, owner.browser)).member_id;
+  const shared = twoBrowsers(owner.browser);
+  const copied = shared.get(SESSION);
+  const linked = await oauth(env, 'github', tag + 'g', { browser: shared, query: '?link=1' });
+  // The intruder keeps the copied cookie whatever the response says to do with it.
+  shared.set(SESSION, copied);
+  const intruder = await oauth(env, 'github', tag + 'g');
+  return { env, owner, id, shared, intruder, linked };
+}
+// A database call as a browser's session, as the probes made it (the session hash goes with it whether or not the
+// session still exists, so this is what a site would send).
+const viaSession = (browser, id, extra = {}) => ({ actor: 'member', memberId: id, session: hashOf(browser), ...extra });
+const unlinkAs = async (env, browser, identity) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: browser.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
+const githubOf = async (id) => (await q(`select id from app.identities where member_id = '${id}' and provider = 'github'`))[0].id;
+// A containment starts (the watch does this when agents post far too much), ends by itself a moment later, and the
+// owner's next read lifts it, which restores "act" as the system's own version (011).
+async function containmentCycle(id, browser) {
+  await runAs({ actor: 'system' }, (t) => t`insert into app.containments (member_id, reason, measured, usual_x100, ends_at)
+    values (${id}, 'volume', 999, 100, now() + interval '1 second')`);
+  await new Promise((r) => setTimeout(r, 1500));
+  await runAs(viaSession(browser, id), (t) => notices.liftDue(t));
+}
+
+test('PR 15 re-review (probe E): the cascade can\'t be escaped by rotating the key from another session or by hiding the raise behind a containment\'s end', async () => {
+  const { env, id, shared, intruder } = await takeover('9801');
+  await q(`update app.sessions set created_at = now() - interval '20 minutes' where token_hash = '${hashOf(shared)}'`);
+  const k1 = c.sha256hex('e-k1-' + Math.random());
+  const k2 = c.sha256hex('e-k2-' + Math.random());
+  const made = await runAs(viaSession(intruder.browser, id), (t) => agents.create(t, { name: 'e', description: null, keyHash: k1 }));
+  // The key is rotated from the copied session, which signed in with the owner's own X, while the agent only drafts
+  // (no fresh sign-in needed): K2 is not the intruder method's key.
+  assert.strictEqual(await runAs(viaSession(shared, id), (t) => agents.rotate(t, { agent: made.id, keyHash: k2 })), true);
+  assert.ok((await runAs(viaSession(intruder.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'act', report: 'draft', dailyCap: 20 }))).rules);
+  await containmentCycle(id, intruder.browser);
+  assert.deepStrictEqual({ ...(await latest(made.id)), set_by: undefined }, { post_mode: 'act', reply_mode: 'act', report_mode: 'draft', daily_cap: 20, reason: 'containment_lifted', set_by: undefined });
+  assert.strictEqual(await resolves(k2), true);
+  const back = await oauth(env, 'x', '9801o');
+  assert.strictEqual(await unlinkAs(env, back.browser, await githubOf(id)), '/account?saved=unlinked');
+  assert.strictEqual(await resolves(k2), false, 'every key of an agent the removed method created is revoked, whoever made or rotated it');
+  assert.strictEqual(await resolves(k1), false);
+  assert.deepStrictEqual(await latest(made.id), { post_mode: 'draft', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' },
+    'what the removed method ever raised drafts again, even after the system restored it');
+});
+
+test('PR 15 re-review (probe E3): a raise kept only by a containment\'s end, or by an owner\'s re-save, still drafts again on unlink; the owner\'s own raise doesn\'t', async () => {
+  const { env, id, intruder } = await takeover('9811');
+  const back0 = await oauth(env, 'x', '9811o');
+  const theirs = await runAs(viaSession(intruder.browser, id), (t) => agents.create(t, { name: 'e3', description: null, keyHash: c.sha256hex('e3' + Math.random()) }));
+  const ours = await runAs(viaSession(back0.browser, id), (t) => agents.create(t, { name: 'ours', description: null, keyHash: c.sha256hex('o3' + Math.random()) }));
+  assert.ok((await runAs(viaSession(intruder.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: theirs.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
+  // On the owner's own agent the intruder raises "reply"; the owner's raise of "post" comes first.
+  assert.ok((await runAs(viaSession(back0.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: ours.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
+  assert.ok((await runAs(viaSession(intruder.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: ours.id, post: 'act', reply: 'act', report: 'draft', dailyCap: 20 }))).rules);
+  // The owner, not noticing, re-saves the same rules: that kept the intruder's raise, but raised nothing itself.
+  assert.ok((await runAs(viaSession(back0.browser, id), (t) => delegation.setRules(t, { agent: ours.id, post: 'act', reply: 'act', report: 'draft', dailyCap: 20 }))).rules);
+  await containmentCycle(id, intruder.browser);
+  assert.strictEqual((await latest(theirs.id)).reason, 'containment_lifted');
+  const back = await oauth(env, 'x', '9811o');
+  assert.strictEqual(await unlinkAs(env, back.browser, await githubOf(id)), '/account?saved=unlinked');
+  assert.deepStrictEqual(await latest(theirs.id), { post_mode: 'draft', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' });
+  assert.deepStrictEqual(await latest(ours.id), { post_mode: 'act', reply_mode: 'draft', report_mode: 'draft', daily_cap: 20, reason: 'signin_unlinked', set_by: 'system' },
+    'the intruder\'s raise of reply is undone; the owner\'s own raise of post stands');
+});
+
+test('PR 15 re-review (probe G): a link ends the session that made it, so a copied cookie dies at the moment it is used to take an account over', async () => {
+  const { env, id, owner, shared, linked } = await takeover('9821');
+  assert.strictEqual(linked.r.getHeader('Location'), '/join?linked=1');
+  // The copied cookie is the owner's own session: both are signed out, by design, and the owner is told why.
+  for (const b of [shared, owner.browser]) { // the same session: the owner's own, and the intruder's copy of it
+    assert.deepStrictEqual(await me(env, b), { signed_in: false });
+    assert.strictEqual(await whoOf(b), null, 'no API request can use it any more');
+  }
+  assert.strictEqual((await q(`select 1 from app.sessions where token_hash = '${hashOf(shared)}'`)).length, 0);
+  // Days later it is still dead: nothing made "from" it can be attributed to the owner's method.
+  const kh = c.sha256hex('g' + Math.random());
+  const made = await runAs(viaSession(shared, id), (t) => agents.create(t, { name: 'g', description: null, keyHash: kh }));
+  const [k] = await q(`select by_identity from app.agent_keys where key_hash = '${kh}'`);
+  assert.strictEqual(k.by_identity, null, 'an ended session names no method');
+  assert.ok(made.id);
+  // The owner signs in again with X, as the notice says, and the account page explains the sign-out.
+  const back = await oauth(env, 'x', '9821o');
+  assert.strictEqual((await me(env, back.browser)).member_id, id);
+  const [n] = await q(`select body from app.notices where member_id = '${id}' and kind = 'signin_linked'`);
+  assert.match(n.body, /every session of yours was signed out, the one that linked it too/);
+  assert.match(fs.readFileSync(path.join(root, 'account.html'), 'utf8'), /Adding one signs you out everywhere, this browser too, so you sign in again with any of your methods/);
 });
