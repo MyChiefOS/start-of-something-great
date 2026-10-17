@@ -192,7 +192,7 @@ test('C4: the uptime monitor confirms a failure before alerting, and reports eve
     : {
       status: 200,
       headers: hdr({ 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'content-security-policy': "default-src 'self'" }),
-      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : '<title>Day One Great</title>')
+      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"closed"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : '<title>Day One Great</title>')
     });
   let waits = 0;
   const all = await uptime.checkAll(okFetch, async () => { waits++; });
@@ -213,10 +213,30 @@ test('launch checks: the go-live gate, sign-in and security headers are watched,
   const uptime = require('../scripts/uptime');
   const gate = uptime.CHECKS.find((c) => c.name === 'Go-live gate');
   const r = (status, h = {}) => ({ status, headers: { get: (k) => h[k.toLowerCase()] || null } });
+  const REFUSED = '{"error":"Day One Great is in a private preview."}';
   assert.ok(gate.test(r(200), '{"posts":[]}'), 'closed or public');
-  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), '{"error":"Day One Great is in a private preview."}'), 'preview, refused and not cached');
-  assert.ok(!gate.test(r(401, { 'cache-control': 'public, max-age=0' }), '{"error":"Day One Great is in a private preview."}'), 'a cacheable refusal is a fault');
+  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED), 'preview, refused and not cached');
+  assert.ok(!gate.test(r(401, { 'cache-control': 'public, max-age=0' }), REFUSED), 'a cacheable refusal is a fault');
   assert.ok(!gate.test(r(500), '{}'), 'a server error is a fault');
+  // D5: once the live stage is known, only the answer that stage requires passes: a 200 in the preview is a leak.
+  assert.ok(!gate.test(r(200), '{"posts":[]}', { stage: 'preview' }), 'posts served to a signed-out visitor in the preview is a leak');
+  assert.ok(gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED, { stage: 'preview' }));
+  assert.ok(gate.test(r(200), '{"posts":[]}', { stage: 'public' }));
+  assert.ok(!gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED, { stage: 'public' }), 'refusing everyone while public is a fault');
+  assert.ok(gate.test(r(200), '{"posts":[]}', { stage: 'closed' }));
+  // D1: the live stage is a real one and, when the last setup run recorded one, that one. The check runs before the
+  // gate check and tells it the stage.
+  const stage = uptime.CHECKS.find((c) => c.name === 'Go-live stage');
+  assert.ok(uptime.CHECKS.indexOf(stage) < uptime.CHECKS.indexOf(gate), 'the stage is learned before the gate is judged');
+  const ctx = {};
+  assert.ok(stage.test(r(200), '{"name":"Day One Great","stage":"preview"}', ctx) === (process.env.EXPECTED_STAGE ? process.env.EXPECTED_STAGE === 'preview' : true));
+  assert.strictEqual(ctx.stage, 'preview');
+  assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"open"}', {}), 'an unknown stage is a fault');
+  assert.ok(!stage.test(r(200), '{"name":"Day One Great"}', {}), 'no stage at all is a fault');
+  assert.ok(!stage.test(r(500), '{}', {}));
+  const src = read('scripts/uptime.js');
+  assert.match(src, /live === EXPECTED/, 'compares with EXPECTED_STAGE when it is set');
+  assert.match(read('.github/workflows/uptime.yml'), /EXPECTED_STAGE: \$\{\{ vars\.EXPECTED_STAGE \}\}/, 'the workflow passes the recorded stage in');
   const signin = uptime.CHECKS.find((c) => c.name === 'Sign-in start');
   assert.strictEqual(signin.init.redirect, 'manual');
   assert.ok(signin.test(r(302, { location: 'https://github.com/login/oauth/authorize?client_id=x' })));

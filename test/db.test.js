@@ -233,7 +233,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_owner, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],
