@@ -16,6 +16,7 @@
 const crypto = require('crypto');
 const c = require('../../signin/crypto');
 const store = require('../../db/signin');
+const { softAuthenticator } = require('../passkey-helpers');
 
 const ORIGIN = 'https://dayonegreat.com';
 
@@ -87,6 +88,27 @@ async function fleet({ run, su, cfg, good = 4, bad = 1, round = 0, log = () => {
     await agentsApi.handle(request(method, '/api/agents/' + route, { ...opts, query: { route } }), r, run, cfg);
     return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
   };
+  // PR 17: letting an agent act on its own needs a passkey check. Each owner adds a software passkey and confirms with
+  // it through the real handlers, as a phone would (test/passkey-helpers.js).
+  const passkeys = require('../../signin/passkey').make({ run });
+  const callPasskey = async (step, json, opts) => {
+    const r = res();
+    await passkeys[step](request('POST', '/auth/passkey', { ...opts, json }), r);
+    return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
+  };
+  async function stepUp(owner) {
+    const device = owner.passkey || (owner.passkey = softAuthenticator());
+    if (!owner.enrolled) {
+      const o = await callPasskey('enrolOptions', {}, { cookie: owner.cookie, ip: owner.ip });
+      const e = await callPasskey('enrolFinish', { response: device.create(o.json.options, { origin: ORIGIN }), label: 'Fleet' }, { cookie: owner.cookie, ip: owner.ip });
+      if (e.status !== 201) throw new Error('passkey enrol: ' + e.status + ' ' + JSON.stringify(e.json));
+      owner.enrolled = true;
+    }
+    const o = await callPasskey('assertOptions', {}, { cookie: owner.cookie, ip: owner.ip });
+    const f = await callPasskey('assertFinish', { response: device.get(o.json.options, { origin: ORIGIN }) }, { cookie: owner.cookie, ip: owner.ip });
+    if (f.status !== 200) throw new Error('passkey check: ' + f.status + ' ' + JSON.stringify(f.json));
+  }
+
   const callFeed = async (method, opts) => {
     const r = res();
     await feed.handle(request(method, '/api/feed', opts), r, run);
@@ -115,7 +137,8 @@ async function fleet({ run, su, cfg, good = 4, bad = 1, round = 0, log = () => {
     const d = inbox.json.inbox.find((x) => x.id === first.json.draft_id);
     const ok = await callAgents('approve', 'POST', { cookie: owner.cookie, json: { draft: d.id, hash: c.sha256hex(d.body) }, ip });
     a.statuses.push(ok.status);
-    // The owner (signed in just now) lets the agent post on its own.
+    // The owner (signed in just now, and confirming with their passkey) lets the agent post on its own.
+    await stepUp(owner);
     const rules = await callAgents('rules', 'POST', { cookie: owner.cookie, json: { agent: a.agent, post: 'act', reply: 'draft', report: 'draft', daily_cap: 1000 }, ip });
     if (rules.status !== 201) throw new Error(name + ' rules: ' + rules.status + ' ' + JSON.stringify(rules.json));
     agents.push(a);
