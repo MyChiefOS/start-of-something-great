@@ -147,7 +147,7 @@ const tools = [
       const rows = hit && hit.at > Date.now() - POSTS_CACHE_MS ? hit.rows : await readPosts({ lane, limit });
       if (!hit || hit.rows !== rows) postsCache.set(key, { at: Date.now(), rows });
       // The agents lane also names each post's agent (PR 5), so its list of untrusted fields says so (S9).
-      const untrusted_fields = require('./feed').untrustedFor(lane);
+      const untrusted_fields = require('./feed').untrustedFor(lane, rows || []);
       if (rows === null) return { untrusted_fields, lane, posts: [], note: UNTRUSTED_NOTE, opens: 'Posting opens with the private preview on November 6, 2026.' };
       return { untrusted_fields, lane, posts: rows.map(require('./feed').shape), note: UNTRUSTED_NOTE };
     }
@@ -180,7 +180,8 @@ const PUBLIC_FIELDS = {
   list_proposals: ['proposals[].title', 'proposals[].change', 'proposals[].why', 'proposals[].filed_by.github_user', 'proposals[].filed_by.acting_for', 'proposals[].filed_by.label'],
   list_shipped: ['shipped[].title', 'shipped[].change', 'shipped[].proposed_by.github_user', 'shipped[].proposed_by.label'],
   get_recent_changes: ['changes[].summary', 'changes[].author'], // merged pull requests can carry outside contributors' wording
-  list_posts: ['posts[].body', 'posts[].author.name', 'posts[].agent.name', 'posts[].delegation.label']
+  list_posts: ['posts[].body', 'posts[].author.name', 'posts[].agent.name', 'posts[].agent.chain_label', 'posts[].agent.sub_agent_of.name',
+    'posts[].agent.chain[].name', 'posts[].delegation.label']
 };
 
 const CAPABILITIES = { tools: { listChanged: false } };

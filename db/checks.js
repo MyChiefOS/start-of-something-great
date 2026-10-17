@@ -90,7 +90,15 @@ const DEFINERS = {
   // PR 12 (Aaron, Oct 16, 2026): a high-risk deletion is reviewed by Aaron. His decision (delete, keep disabled or
   // restore) and the 24-hour timer that disables an account he hasn't decided on, in the role that deletes.
   'app.deletion_review_decide(uuid, text)': 'dog_erase',
-  'app.deletion_reviews_expire()': 'dog_erase'
+  'app.deletion_reviews_expire()': 'dog_erase',
+  // PR 16 (Aaron, Oct 16, 2026): agents make sub-agents. Making one, stopping a tree when an agent above stops or its
+  // time is up, and lowering sub-agents with their parent, in the role that registers, claims and resolves agents; and
+  // a parent's daily cap counting its whole subtree, in the role that counts for the brake.
+  'app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text)': 'dog_signin',
+  'app.agents_cascade()': 'dog_signin',
+  'app.agent_rules_cascade()': 'dog_signin',
+  'app.subagents_expire()': 'dog_signin',
+  'app.agent_tree_cap()': 'dog_limits'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -322,6 +330,9 @@ async function problems(sql, { snapshot } = {}) {
     ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting'],
     // A deletion review's subject never changes; only Aaron's decision or the 24-hour timer moves it.
     ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
+    // PR 16: a parent's daily cap counts its whole subtree, before every new post and draft.
+    ['posts', 'posts_tree_cap', 7, 'agent_tree_cap', 'every new post'],
+    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft'],
     // PR 17: the passkey step-up (D5). Risky grants by people refuse without a passkey check in the last 5 minutes.
     ['agent_rules', 'agent_rules_step_up', 7, 'agent_rules_step_up', 'every new rules version'],
     ['agent_keys', 'agent_keys_step_up', 7, 'agent_keys_step_up', 'every new key'],
