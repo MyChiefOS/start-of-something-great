@@ -71,9 +71,12 @@ jobs:
   setup:
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment: production
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: write # only to record EXPECTED_STAGE, the repository variable the uptime monitor checks the live stage against
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -91,6 +94,7 @@ jobs:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
           MIGRATION_DATABASE_CA: ${{ secrets.MIGRATION_DATABASE_CA }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SETUP_STEPS: ${{ inputs.steps }}
           SETUP_STAGE: ${{ inputs.stage }}
           SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
