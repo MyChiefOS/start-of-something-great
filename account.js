@@ -1,4 +1,5 @@
-// /account (PR 8): your name, how you sign in, signing out, and deleting your account (F8).
+// /account (PR 8): your name, how you sign in, signing out, and deleting your account (F8). PR 15: unlinking a
+// sign-in method, with a form per method (never the last one; the server checks that the session is fresh).
 // The forms post to /auth/... themselves; this only fills in the page and shows what happened. Text is set with
 // textContent, never as HTML.
 (function () {
@@ -15,7 +16,15 @@
     'error=admin': 'The administrator can’t delete their own account here.',
     'error=fresh': 'Nothing was deleted: to delete your account, sign in again first, then delete it within 10 minutes.',
     'error=gone': 'That account can’t be deleted right now: it isn’t active.',
-    'error=review': REVIEW
+    'error=review': REVIEW,
+    'saved=unlinked': 'Unlinked. That method no longer signs in to your account, and every other session of yours was signed out. Anything its sessions linked is unlinked, agent keys made from them are revoked, and agents they let act on their own draft for your approval again: your notices say exactly what changed.',
+    'error=busy': 'Nothing was changed: something else was changing your account at the same moment. Please try again.',
+    'error=fresh_method': 'Nothing was changed: to link or unlink a sign-in method, sign in again first, then do it within 10 minutes.',
+    'error=last_method': 'Nothing was changed: that is the only way you sign in. Link another method first.',
+    'error=unlink': 'Nothing was changed: that sign-in method isn’t yours or is already gone.',
+    'error=senior': 'Nothing was changed: from this session you can remove only a method added after the one you signed in with. To remove an older one, sign in with your oldest method first.',
+    'error=link': 'That sign-in method wasn’t linked: the sign-in was cancelled, took too long, or didn’t start from this page. Please try again from here.',
+    'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };
@@ -39,14 +48,44 @@
       }
       var d = x.d;
       msg.textContent = note || 'Signed in as ' + d.display_name + '.';
-      if (q.get('error') === 'fresh') {
+      if (q.get('error') === 'fresh' || q.get('error') === 'fresh_method' || q.get('error') === 'senior') {
         var again = el('a', '', 'Sign in again');
         again.href = '/join?return_to=%2Faccount';
         msg.after(again);
       }
       document.getElementById('who').textContent = 'Level ' + d.trust_level + ' · joined ' + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id;
       var list = document.getElementById('signins');
-      d.sign_ins.forEach(function (s) { list.appendChild(el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')')); });
+      d.sign_ins.forEach(function (s) {
+        var li = el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')');
+        // An Unlink form for each method while there is more than one: a plain same-site POST. /account is served
+        // form-action 'self' (vercel.json; guarded by test/security.test.js, which also covers forms built here).
+        if (d.sign_ins.length > 1 && s.id) {
+          var f = el('form', 'inline-form');
+          f.method = 'post';
+          f.action = '/auth/account/unlink';
+          var hid = el('input');
+          hid.type = 'hidden'; hid.name = 'id'; hid.value = s.id;
+          var b = el('button', 'button', 'Unlink');
+          b.type = 'submit';
+          f.appendChild(hid);
+          f.appendChild(b);
+          li.appendChild(document.createTextNode(' '));
+          li.appendChild(f);
+        }
+        list.appendChild(li);
+      });
+      // PR 15: a button to add each provider not linked yet. It is a plain link from this page (a link must start
+      // from our own pages), and comes back here.
+      var have = d.sign_ins.map(function (s) { return s.provider; });
+      var add = document.getElementById('add-methods');
+      ['github', 'x'].forEach(function (p) {
+        if (have.indexOf(p) >= 0) return;
+        var a = el('a', 'button', 'Add ' + PROVIDER[p]);
+        a.href = '/auth/' + p + '/start?link=1&return_to=%2Faccount';
+        add.appendChild(a);
+        add.appendChild(document.createTextNode(' '));
+      });
+      add.hidden = !add.childNodes.length;
       document.getElementById('name').value = d.display_name;
       document.getElementById('sessions').textContent = d.sessions + (d.sessions === 1 ? ' session open' : ' sessions open');
       if (d.deletion_review) {
@@ -90,6 +129,9 @@
   // What a one-tap answer says back, then the inbox again.
   function answered(out, x) {
     out.textContent = x.d.message || x.d.error || (x.ok ? 'Done.' : 'That didn’t go through. Please try again.');
+    // PR 15: keeping an agent acting on its own needs a fresh sign-in; offer one.
+    // It comes back to this page (the API's own link returns to /agents).
+    if (!x.ok && x.d.reauth) { var again = el('a', '', 'Sign in again'); again.href = '/join?return_to=%2Faccount'; out.appendChild(document.createTextNode(' ')); out.appendChild(again); }
     if (x.ok) setTimeout(loadNotices, 1200);
   }
 

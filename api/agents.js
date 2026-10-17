@@ -14,7 +14,8 @@
 //   POST /api/agents/approve    {"draft", "hash"}         approve the exact words shown (hash = the hex SHA-256 of
 //                                                         the UTF-8 text, computed by the page that showed it)
 //   POST /api/agents/decline    {"draft"}                 decline a draft
-//   POST /api/agents/reconfirm  {"agent", "version"}      keep an agent acting on its own for another 90 days (R33, PR 13)
+//   POST /api/agents/reconfirm  {"agent", "version"}      keep an agent acting on its own for another 90 days (R33, PR 13);
+//                                                         needs a sign-in in the last 10 minutes (PR 15)
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
 // letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron.
@@ -299,11 +300,16 @@ const ROUTES = {
   },
 
   // R33: keep an agent acting on its own for another 90 days. The rules version shown must still be the current one.
+  // PR 15: keeping it acting is letting it act without approval for another 90 days, so it needs a sign-in in the last
+  // 10 minutes, like raising it to act; the database decides.
   async 'POST reconfirm'(req, res, run, body) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
-    const out = await run(session.actorFor(who), (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
+    const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No active agent of yours with that ID.' });
+    if (out.refused === 'fresh') {
+      return reply(res, 403, { error: 'To keep an agent acting on its own, sign in again first (within the last ' + FRESH_MINUTES + ' minutes), then tap Keep once more.', reauth: REAUTH });
+    }
     if (out.refused === 'changed') return reply(res, 409, { error: 'Its rules changed since this page loaded. Refresh and look again.' });
     if (out.refused) return reply(res, 409, { error: 'This agent doesn’t act on its own, so there is nothing to keep.' });
     return reply(res, 201, { agent: body.agent, rules_version: out.version, message: 'Kept. It goes on acting on its own for another 90 days.' });

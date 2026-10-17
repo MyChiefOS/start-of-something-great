@@ -32,7 +32,16 @@ test('the account page: private, forms post to our own sign-in routes, deleting 
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function/.test(js));
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js));
   const { ROUTES } = require('../api/auth.js');
-  for (const r of ['GET account', 'POST account/name', 'POST account/delete']) assert.ok(ROUTES[r], r);
+  for (const r of ['GET account', 'POST account/name', 'POST account/delete', 'POST account/unlink']) assert.ok(ROUTES[r], r);
+  // PR 15: each sign-in method gets an Unlink form, built without HTML strings, posting to our own sign-in route.
+  assert.match(js, /f\.action = '\/auth\/account\/unlink'/);
+  assert.match(js, /f\.method = 'post'/);
+  assert.match(js, /d\.sign_ins\.length > 1/, 'never offered for the only method');
+  // PR 15's review: a button to add each provider not yet linked (a link from our own page), and the inbox's
+  // "Sign in again" returns to /account.
+  assert.match(js, /'\/auth\/' \+ p \+ '\/start\?link=1&return_to=%2Faccount'/);
+  assert.match(js, /'\/join\?return_to=%2Faccount'/);
+  for (const k of ['error=link', 'error=taken_method', 'error=senior']) assert.ok(js.includes("'" + k + "'"), k);
 });
 
 if (!SERVER) {

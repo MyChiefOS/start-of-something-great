@@ -163,6 +163,14 @@ test('R2: every page whose forms post without a script is served a policy that l
     const route = '/' + f.replace(/\.html$/, '').replace(/^index$/, '');
     assert.ok(selfSources.includes(route), f + ' posts forms but ' + route + " isn't served form-action 'self'");
   }
+  // Forms a page's own script builds and lets post natively (PR 15: /account's Unlink forms) count the same.
+  for (const f of htmlPages()) {
+    const js = path.join(root, f.replace(/\.html$/, '.js'));
+    if (!fs.existsSync(js) || !/\.action = '\//.test(fs.readFileSync(js, 'utf8'))) continue;
+    const route = '/' + f.replace(/\.html$/, '').replace(/^index$/, '');
+    assert.ok(selfSources.includes(route), f.replace(/\.html$/, '.js') + ' builds forms that post but ' + route + " isn't served form-action 'self'");
+  }
+  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /\.action = '\/auth\/account\/unlink'/, 'the Unlink form is one of them');
 });
 
 test('R3: every kind of invisible character, odd separator and non-ASCII digit is caught (review, Oct 15)', () => {

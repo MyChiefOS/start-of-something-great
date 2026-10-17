@@ -991,7 +991,10 @@ const cookieOf = (r, name) => { const x = setCookies(r).find((k) => k.startsWith
 // GitHub or X from start to callback, from a country, with the browser's cookies. Returns both responses.
 async function oauthFlow(env, provider, account, { country = 'US', ip = '192.0.2.88', cookie = '', query = '' } = {}) {
   const r1 = res();
-  await env.flow.start(getReq('/auth/' + provider + '/start' + query, { country, ip, cookie }), r1, provider);
+  const startReq = getReq('/auth/' + provider + '/start' + query, { country, ip, cookie });
+  // A link starts only from our own pages (PR 15), as the /account button does.
+  if (/link=1/.test(query)) startReq.headers['sec-fetch-site'] = 'same-origin';
+  await env.flow.start(startReq, r1, provider);
   const loc = r1.getHeader('Location');
   if (!/^https:/.test(loc)) return { r1, r2: null };
   const state = new URL(loc).searchParams.get('state');
@@ -1137,7 +1140,9 @@ test('regional gate, members travelling: a confirmation page first; Cancel store
   assert.match(linkAsk.body, /You appear to be in Switzerland\./);
   const linked = res();
   await env.flow.regionContinue(formReq('/auth/region/continue', {}, { country: 'CH', cookie: session + '; ' + cookieOf(linkAsk, '__Host-dog_region') }), linked);
-  assert.strictEqual(linked.getHeader('Location'), '/');
+  // Linked, and like every link it signs the member out everywhere, here too (PR 15's re-review, R4).
+  assert.strictEqual(linked.getHeader('Location'), '/join?linked=1');
+  assert.ok(setCookies(linked).some((x) => x.startsWith('__Host-dog_session=') && /Max-Age=0/.test(x)), 'the session cookie is cleared');
   assert.strictEqual((await q(`select count(*)::int as n from app.identities where member_id = '${mem.id}'`))[0].n, 2);
   const logout = res();
   await env.flow.logout(formReq('/auth/logout', {}, { cookie: session }), logout);

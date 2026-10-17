@@ -172,7 +172,13 @@ test('the log transport sends nothing and logs no address or words; sign-in emai
   const a = ncfg.suppressionPrints(k2, ' Ada@Example.com ');
   assert.deepStrictEqual(a, ncfg.suppressionPrints(k2, 'ada@example.com'));
   assert.strictEqual(a.length, 2);
-  assert.ok(a.every((f) => /^[0-9a-f]{64}$/.test(f) && !f.includes('ada')));
+  // Keyed, so never the address in a readable form: not its hex, and not its plain (unkeyed) SHA-256. (Not "doesn't
+  // contain 'ada'": a, d and a are hex digits, so a random fingerprint contains them about 1.5% of the time, which made
+  // this test fail now and then.)
+  const plain = 'ada@example.com';
+  const plainHex = Buffer.from(plain).toString('hex');
+  const plainSha = crypto.createHash('sha256').update(plain).digest('hex');
+  assert.ok(a.every((f) => /^[0-9a-f]{64}$/.test(f) && !f.includes(plainHex) && f !== plainSha));
   assert.notDeepStrictEqual(a[1], require('../signin/crypto').fingerprints(deps.keys, 'email', 'ada@example.com')[0], 'a label of its own, never a sign-in fingerprint');
 });
 

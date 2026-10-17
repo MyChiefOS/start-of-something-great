@@ -14,11 +14,12 @@
     email_off: 'Sign-in by email isn\u2019t switched on yet. Please use GitHub or X for now.',
     deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.',
     fast: 'That was quick! Please press the button once more.',
+    linked: 'Linked. To keep your account safe, adding a sign-in method signs you out everywhere, here too. Sign in again with any of your sign-in methods.',
     disabled: 'This account is disabled while a request to delete it is reviewed. Nothing has been deleted. If it\u2019s restored, you can sign in again.',
     region: 'Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland, so we can\u2019t sign you up. '
       + 'If this address already has an account, we\u2019ve sent it a sign-in link; you\u2019ll be asked to confirm where you live before you\u2019re signed in.'
   };
-  var key = q.get('sent') === '1' ? 'sent' : q.get('sent') === 'region' ? 'region' : q.get('deleted') === '1' ? 'deleted' : q.get('error');
+  var key = q.get('sent') === '1' ? 'sent' : q.get('sent') === 'region' ? 'region' : q.get('deleted') === '1' ? 'deleted' : q.get('linked') === '1' ? 'linked' : q.get('error');
   var el = document.getElementById('message');
   if (el && key && text[key]) { el.textContent = text[key]; el.hidden = false; }
 })();

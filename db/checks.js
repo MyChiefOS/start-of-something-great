@@ -35,6 +35,14 @@ const DEFINERS = {
   'app.sign_in_known(text, text[])': 'dog_signin',
   'app.session_resolve(text, integer)': 'dog_signin',
   'app.session_end(text)': 'dog_signin',
+  // PR 15: linking and unlinking a sign-in method, from the member's own fresh session, making no session.
+  'app.identity_link(text, text[], smallint, smallint, timestamp with time zone, text, text)': 'dog_signin',
+  'app.identity_unlink(uuid, text)': 'dog_signin',
+  // PR 15's review (F6): a traveller's sealed confirmation is used once.
+  'app.region_confirm_use(text)': 'dog_signin',
+  // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
+  // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
+  'app.current_identity()': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',

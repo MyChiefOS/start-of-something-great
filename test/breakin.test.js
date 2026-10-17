@@ -94,6 +94,8 @@ test.before(async () => {
   await run({ actor: 'anon' }, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex('tok'), emailFingerprints: [c.sha256hex('a@example.com')],
     browserHash: c.sha256hex('browser'), keyVersion: 1 }));
   await run({ actor: 'anon' }, (t) => store.rateLimitHit(t, { bucket: 'breakin', keyHash: c.sha256hex('a'), windowSeconds: 60, max: 5 }));
+  // PR 15's review (F6): a used traveller confirmation.
+  await run({ actor: 'anon' }, (t) => store.regionConfirmUse(t, c.sha256hex('a traveller nonce')));
   // PR 13: A's notices (the brake and the draft above left some), a suppressed sign-in address and a containment.
   await run({ actor: 'system' }, (t) => t`insert into app.email_suppressions (address_fp, reason) values (${c.sha256hex('gone@example.com')}, 'bounce')`);
   await run({ actor: 'system' }, (t) => t`insert into app.containments (member_id, reason, measured, usual_x100, ends_at) values (${A.id}, 'volume', 600, 0, now() + interval '1 day')`);

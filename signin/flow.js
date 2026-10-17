@@ -16,6 +16,12 @@
 //   The email form carries two bot checks people never notice (a field they can't see, and a sealed time stamp from
 //   /auth/form, so a form sent within a second of the page opening is turned back); a sign-up leaves JEVs's network
 //   mark, and every sign-in an account check, which can promote a member to level 2 automatically.
+//   PR 15: linking another sign-in method needs a fresh session (begun in the last 10 minutes, by the database clock)
+//   to start, completes only for that same session, makes no new session (so a link can never make anyone fresh),
+//   ends every other session of the member and tells them in-app. A method can be unlinked from /account the same way,
+//   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
+//   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
+//   and a traveller's sealed confirmation is used once.
 'use strict';
 
 const c = require('./crypto');
@@ -94,13 +100,14 @@ function make(deps) {
 
   // Someone the provider (or the emailed link) has just confirmed, signing in from a declined region. A new person is
   // declined. A member (or a signed-in member linking another method) sees the confirmation page; what the sign-in
-  // needs waits in a sealed cookie, so nothing is stored until they press Continue.
+  // (or the link) needs waits in a sealed cookie, so nothing is stored until they press Continue.
   async function regional(res, country, args, extra) {
     if (!args.linkMember && !(await run(ANON, (t) => store.known(t, { provider: args.provider, fingerprints: args.fingerprints })))) {
       return decline(res, country);
     }
     if (!regionKey) return h.redirect(res, '/join?error=unavailable');
-    h.addCookie(res, h.cookie(REGION, c.seal(regionKey, { a: args, c: country, x: extra, e: Date.now() + REGION_MINUTES * 60000 }), { maxAge: REGION_MINUTES * 60 }));
+    // n: a random nonce, recorded as used when Continue is pressed, so a copy of this cookie works once (review F6).
+    h.addCookie(res, h.cookie(REGION, c.seal(regionKey, { a: args, c: country, x: extra, n: c.token(32), e: Date.now() + REGION_MINUTES * 60000 }), { maxAge: REGION_MINUTES * 60 }));
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -147,6 +154,48 @@ function make(deps) {
 
   // Where a refused sign-in goes.
   const REFUSED = { banned: '/join?error=unavailable', disabled: '/join?error=disabled', taken: '/join?error=taken' };
+  // Linking or unlinking from a session that didn't begin in the last 10 minutes (PR 15).
+  const FRESH_METHOD = '/account?error=fresh_method';
+  // A link that didn't go through returns to the account page (the member is still signed in), never /join.
+  const LINK_FAILED = '/account?error=link';
+  const LINK_REFUSED = { taken: '/account?error=taken_method', busy: '/account?error=busy' };
+
+  // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
+  // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
+  function fromOurPages(req) {
+    if (req.headers['sec-fetch-site'] !== 'same-origin') return false;
+    if (req.headers.origin !== undefined && req.headers.origin !== ORIGIN) return false;
+    const ref = req.headers.referer;
+    return ref === undefined || ref === ORIGIN || String(ref).startsWith(ORIGIN + '/');
+  }
+
+  // Whether this request still carries the very session that started a link (PR 15: not merely the same member).
+  function sameSession(req, me, memberId, sessionHashSealed) {
+    const now = sessionHash(req);
+    return Boolean(me && now && me.memberId === memberId && c.same(now, sessionHashSealed));
+  }
+
+  // PR 15: finishes a link for the signed-in member, from the session they started it in. No session cookie is set,
+  // and once a method is added every session of theirs ends, this one too (the re-review, R4): the browser is signed
+  // out and sent to /join to sign in again. Verifying again a method that is already theirs keeps the session. A traveller who
+  // confirmed (country) gets the resident tag for this session, as after a sign-in.
+  async function completeLink(req, res, me, args, ret, country = null) {
+    const hash = sessionHash(req);
+    const out = await run({ ...session.actorFor(me), fresh: me.fresh === true }, (t) => store.link(t, { provider: args.provider,
+      fingerprints: args.fingerprints, keyVersion: args.keyVersion, level: args.level, recheckAfter: args.recheckAfter || null,
+      sessionHash: hash, region: country }));
+    if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
+    if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
+    await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
+    // A new method ended every session of the member, this one too (PR 15's re-review, R4): this browser signs in
+    // again, with whichever method they like, and the join page says why.
+    if (out.linked) {
+      h.addCookie(res, h.clear(SESSION));
+      return h.redirect(res, '/join?linked=1');
+    }
+    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
+    return h.redirect(res, ret || '/');
+  }
 
   return {
     async start(req, res, provider) {
@@ -159,16 +208,20 @@ function make(deps) {
       const url = new URL(req.url, ORIGIN);
       // Adding a second sign-in method is only for someone already signed in, and only links after they
       // complete that provider's sign-in. A matching email address never joins two accounts.
+      // PR 15: and only from a fresh session (begun in the last 10 minutes), so a stolen or forgotten session cookie
+      // can't link its holder's own GitHub or X. The link is bound to this very session, sealed with the state.
       let link = null;
       if (url.searchParams.get('link') === '1') {
         const me = await current(req);
         if (!me) return h.redirect(res, '/join?error=signin');
-        link = me.memberId;
+        if (!fromOurPages(req)) return h.redirect(res, LINK_FAILED);
+        if (me.fresh !== true) return h.redirect(res, FRESH_METHOD);
+        link = { m: me.memberId, k: sessionHash(req) };
       }
       const state = c.token(32);
       const { verifier, challenge } = c.pkce();
       const sealed = c.seal(stateKey, { p: provider, s: state, v: verifier, r: h.returnPath(url.searchParams.get('return_to')),
-        l: link, e: Date.now() + STATE_MINUTES * 60000 });
+        l: link ? link.m : null, k: link ? link.k : null, e: Date.now() + STATE_MINUTES * 60000 });
       h.addCookie(res, h.cookie(stateCookie(provider), sealed, { maxAge: STATE_MINUTES * 60 }));
       return h.redirect(res, p.authorizeUrl(creds, { state, challenge }), 302);
     },
@@ -181,28 +234,30 @@ function make(deps) {
       // Single use: the state cookie is cleared whatever happens next.
       h.addCookie(res, h.clear(stateCookie(provider)));
       if (!p || !creds) return h.redirect(res, '/join?error=unavailable');
-      if (url.searchParams.has('error')) return h.redirect(res, '/join?error=cancelled');
+      // A link that fails at any step returns to /account (the member is still signed in there).
+      const linking = Boolean(saved && saved.l);
+      if (url.searchParams.has('error')) return h.redirect(res, linking ? LINK_FAILED : '/join?error=cancelled');
       const code = url.searchParams.get('code');
       if (!saved || saved.p !== provider || !(saved.e > Date.now()) || !c.same(url.searchParams.get('state'), saved.s)
           || typeof code !== 'string' || code.length < 1 || code.length > 512) {
-        return h.redirect(res, '/join?error=expired');
+        return h.redirect(res, linking ? LINK_FAILED : '/join?error=expired');
       }
       let who;
       try { who = await p.identify(creds, { code, verifier: saved.v }); } catch { who = null; }
-      if (!who) return h.redirect(res, '/join?error=provider');
+      if (!who) return h.redirect(res, linking ? LINK_FAILED : '/join?error=provider');
 
-      let ctx = ANON;
-      if (saved.l) {
-        // Still the same person who started the link?
-        const me = await current(req);
-        if (!me || me.memberId !== saved.l) return h.redirect(res, '/join?error=signin');
-        ctx = { actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId };
-      }
       const args = { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
-        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter, linkMember: saved.l || null };
+        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter };
       const country = region.declined(req);
+      if (saved.l) {
+        // Still the same session that started the link (PR 15), not just the same member?
+        const me = await current(req);
+        if (!sameSession(req, me, saved.l, saved.k)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
+        if (country) return regional(res, country, { ...args, linkMember: saved.l, linkSession: saved.k }, { r: saved.r || null });
+        return completeLink(req, res, me, args, saved.r);
+      }
       if (country) return regional(res, country, args, { r: saved.r || null });
-      const out = await finish(res, ctx, args);
+      const out = await finish(res, ANON, args);
       if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
       await afterSignIn(req, out);
       // A fresh session replaces any older one in this browser.
@@ -304,13 +359,15 @@ function make(deps) {
       const p = regionKey ? c.open(regionKey, h.cookies(req)[REGION]) : null;
       h.addCookie(res, h.clear(REGION));
       if (!p || !(p.e > Date.now()) || !p.a || !region.countryName(p.c)) return h.redirect(res, '/join?error=expired');
-      let ctx = ANON;
+      // Used once, in the database too (review F6): a replayed copy of the cookie signs nobody in.
+      if (!isToken(p.n) || !(await run(ANON, (t) => store.regionConfirmUse(t, c.sha256hex(p.n))))) return h.redirect(res, '/join?error=expired');
       if (p.a.linkMember) {
+        // A link waiting for the traveller's confirmation (PR 15): the same session that started it, as at the callback.
         const me = await current(req);
-        if (!me || me.memberId !== p.a.linkMember) return h.redirect(res, '/join?error=signin');
-        ctx = { actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId };
+        if (!sameSession(req, me, p.a.linkMember, p.a.linkSession)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
+        return completeLink(req, res, me, p.a, (p.x && p.x.r) || null, p.c);
       }
-      const out = await finish(res, ctx, { ...p.a, region: p.c });
+      const out = await finish(res, ANON, { ...p.a, region: p.c });
       if (out.refused === 'region') return decline(res, p.c);
       if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
       await afterSignIn(req, out, (p.x && p.x.et) || null, true);
@@ -331,7 +388,14 @@ function make(deps) {
       const hash = sessionHash(req);
       if (hash) {
         if (everywhere) {
-          const me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS));
+          let me;
+          try {
+            me = await run(ANON, (t) => store.sessionResolve(t, hash, IDLE_DAYS, { strict: true }));
+          } catch (e) {
+            // Nothing ended and the cookie stays, so the member is told to try again rather than wrongly reassured.
+            if (e && e.code === 'SESSION_BUSY') return h.redirect(res, '/account?error=busy');
+            throw e;
+          }
           if (me) await run({ actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId }, (t) => store.sessionsEndAll(t));
         }
         await run(ANON, (t) => store.sessionEnd(t, hash));
@@ -350,7 +414,7 @@ function make(deps) {
       const a = await run(session.actorFor(who), (t) => store.account(t));
       res.statusCode = 200;
       res.end(JSON.stringify({ signed_in: true, member_id: a.memberId, display_name: a.displayName, trust_level: a.trustLevel, joined: a.joined,
-        is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions,
+        is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ id: i.id, provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions,
         deletion_review: a.deletionReview ? { since: a.deletionReview.since, disables_at: a.deletionReview.disablesAt } : null }));
     },
 
@@ -391,6 +455,25 @@ function make(deps) {
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
       return h.redirect(res, '/join?deleted=1');
+    },
+
+    // PR 15: unlink one of your sign-in methods. A form on /account, from our own pages, signed in within the last 10
+    // minutes (the database decides, by its clock); never the last method. Every other session of yours ends, and you
+    // get a notice. What that method's sessions did goes with it (the second review, R1): the methods they linked, the
+    // agent keys they made, and the agents they let act on their own (back to drafting).
+    async unlink(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/account');
+      const who = await current(req);
+      if (!who) return h.redirect(res, '/join?error=signin');
+      if (who.fresh !== true) return h.redirect(res, FRESH_METHOD);
+      const body = await h.form(req);
+      const out = await run({ ...session.actorFor(who), fresh: true }, (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
+      if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
+      if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
+      if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
+      if (out.refused === 'busy') return h.redirect(res, '/account?error=busy');
+      if (out.refused) return h.redirect(res, '/account?error=unlink');
+      return h.redirect(res, '/account?saved=unlinked');
     },
 
     async me(req, res) {

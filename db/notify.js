@@ -43,7 +43,8 @@ async function markRead(t, { ids = null, all = false } = {}) {
 }
 
 // ---- Keeping an agent acting on its own (R33), from the agents page ----
-// The rules version the owner saw must still be the current one. { version } or { refused }.
+// The rules version the owner saw must still be the current one, and (PR 15) the owner must have signed in within the
+// last 10 minutes: the call carries fresh, and the database decides. { version } or { refused }.
 async function reconfirm(t, { agent, version }) {
   const id = v.uuid('agent', agent);
   const ver = v.int('version', version, { min: 1, max: 1000000 });
@@ -58,15 +59,17 @@ async function reconfirm(t, { agent, version }) {
     return { version: n.version };
   } catch (e) {
     if (e.code === '42501') return { refused: 'not_acting' };
+    if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
     throw e;
   }
 }
 
-// When each of the owner's agents that acts on its own was last confirmed, and when it needs confirming (R33).
+// When each of the owner's agents that acts on its own was last confirmed, and when it needs confirming (R33): the
+// owner's last choice made with a fresh sign-in (PR 15's second review, R2), not any save.
 async function actClock(t, agentIds) {
   if (!agentIds.length) return new Map();
   const rows = await t`select agent_id, max(created_at) as since from app.agent_rules
-                       where agent_id in ${t(agentIds)} and set_by = 'owner' group by agent_id`;
+                       where agent_id in ${t(agentIds)} and set_by = 'owner' and restarts_clock group by agent_id`;
   return new Map(rows.map((r) => [r.agent_id, r.since]));
 }
 
