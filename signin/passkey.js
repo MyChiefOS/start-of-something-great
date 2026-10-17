@@ -97,7 +97,8 @@ const ENROL_REFUSED = {
   bad_id: [400, 'That passkey’s ID is too long or doesn’t match what the device said.'],
   step_up: [403, 'You already have a passkey, so confirm with it first. Lost it? Start passkey recovery on this page.'],
   too_many: [409, 'You have the most passkeys an account can have (10). Remove one first.'],
-  taken: [409, 'That passkey is already registered.']
+  taken: [409, 'That passkey is already registered.'],
+  busy: [503, 'Your account is busy with another change. Please try again in a moment.']
 };
 const ASSERT_REFUSED = {
   session: [401, 'Sign in again, then confirm it’s you.'],
@@ -276,6 +277,7 @@ function make({ run, rp = relyingParty() }) {
       if (out.refused === 'open') return reply(res, 409, { error: 'Passkey recovery is already under way.' });
       if (out.refused === 'no_passkeys') return reply(res, 409, { error: 'You have no passkey to recover: add one instead, straight away.' });
       if (out.refused === 'signin_again') return reply(res, 403, { error: 'Please sign in again first: this session started before passkeys existed.', reauth: REAUTH });
+      if (out.refused === 'busy') return reply(res, 503, { error: 'Your account is busy with another change. Please try again in a moment.' });
       if (out.refused) return reply(res, 403, { error: 'Passkey recovery can’t be started on this account right now.' });
       return reply(res, 201, { recovery: { ends_at: out.endsAt },
         message: 'Recovery started. Risky steps are blocked until ' + new Date(out.endsAt).toISOString() + '; then you can add a new passkey. Any session of yours can cancel it.' });
