@@ -150,7 +150,7 @@ async function sessionResolve(t, sessionHash, idleDays, { strict = false } = {})
         if (strict) { const err = new Error('the session read lost a race; try again'); err.code = 'SESSION_BUSY'; throw err; }
         return null;
       }
-      await new Promise((ok) => setTimeout(ok, 10 + Math.floor(Math.random() * 40)));
+      await new Promise((ok) => setTimeout(ok, require('crypto').randomInt(10, 50)));
     }
   }
   // fresh: this session began in the last 10 minutes, by the database's clock (PR 7: letting an agent do more on its
