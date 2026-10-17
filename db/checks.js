@@ -40,6 +40,9 @@ const DEFINERS = {
   'app.identity_unlink(uuid, text)': 'dog_signin',
   // PR 15's review (F6): a traveller's sealed confirmation is used once.
   'app.region_confirm_use(text)': 'dog_signin',
+  // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
+  // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
+  'app.current_identity()': 'dog_signin',
   'app.feed(text, uuid, integer)': 'dog_public',
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',
