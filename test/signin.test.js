@@ -1184,3 +1184,47 @@ test('PR 15 re-review (probe G): a link ends the session that made it, so a copi
   assert.match(n.body, /every session of yours was signed out, the one that linked it too/);
   assert.match(fs.readFileSync(path.join(root, 'account.html'), 'utf8'), /Adding one signs you out everywhere, this browser too, so you sign in again with any of your methods/);
 });
+
+test('PR 15 re-review (probe H): a page read that lowers a lapsed badge takes the member row before the session, so it can\'t deadlock with a link at the same moment', async () => {
+  const env = setup({ accounts: { 'x:9831': { accountId: '9831', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() } } });
+  const a = await oauth(env, 'x', '9831');
+  const id = (await me(env, a.browser)).member_id;
+  assert.strictEqual((await me(env, a.browser)).trust_level, 2);
+  // The X badge has lapsed and the session hasn't been seen for two hours, so the next read refreshes it and lowers
+  // the level (writing both rows); the session is still fresh enough to link from.
+  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
+  await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where token_hash = '${hashOf(a.browser)}'`);
+  // T0 holds the session row, so the read queues on it first; then the link takes the member row and queues on the
+  // session too. Released, the old order (session, then member) and the link's (member, then session) deadlocked.
+  let release0; const gate0 = new Promise((r) => { release0 = r; });
+  let locked; const isLocked = new Promise((r) => { locked = r; });
+  const t0 = su.begin(async (t) => { await t.unsafe(`select 1 from app.sessions where token_hash = '${hashOf(a.browser)}' for update`); locked(); await gate0; });
+  await isLocked;
+  const read = runAs({ actor: 'anon' }, (t) => store.sessionResolve(t, hashOf(a.browser), 7));
+  await new Promise((r) => setTimeout(r, 300));
+  const link = runAs({ actor: 'member', memberId: id }, (t) => store.link(t, { provider: 'github', fingerprints: [c.sha256hex('h' + Math.random())], keyVersion: 1, level: 1, sessionHash: hashOf(a.browser) }));
+  await new Promise((r) => setTimeout(r, 300));
+  release0();
+  const out = await Promise.allSettled([t0, read, link]);
+  for (const o of out) assert.strictEqual(o.status, 'fulfilled', o.reason && (o.reason.code + ' ' + o.reason.message));
+  assert.ok(out[1].value && out[1].value.memberId === id, 'the page read signed the member in: ' + JSON.stringify(out[1].value));
+  assert.strictEqual(out[1].value.trustLevel, 1, 'and lowered the lapsed level');
+  assert.strictEqual(out[2].value.linked, true, 'the link went through, not "try again": ' + JSON.stringify(out[2].value));
+  assert.strictEqual((await q(`select trust_level from app.members where id = '${id}'`))[0].trust_level, 1);
+});
+
+test('PR 15 re-review: a page read that loses a race is retried, and never becomes an error page', async () => {
+  let calls = 0;
+  const row = { member_id: crypto.randomUUID(), trust_level: 1, is_admin: false, display_name: 'z', fresh: false };
+  const flaky = (fails, code = '40P01') => ({ savepoint: async () => { calls++; if (calls <= fails) throw Object.assign(new Error('lost a race'), { code }); return [row]; } });
+  calls = 0;
+  assert.strictEqual((await store.sessionResolve(flaky(2), 'a'.repeat(64), 7)).memberId, row.member_id, 'two lost races, then it reads');
+  assert.strictEqual(calls, 3);
+  for (const code of ['40P01', '40001', '55P03']) {
+    calls = 0;
+    assert.strictEqual(await store.sessionResolve(flaky(99, code), 'a'.repeat(64), 7), null, code + ': every try lost, so not signed in for this one request');
+    assert.strictEqual(calls, 3, 'three tries, no more');
+  }
+  calls = 0;
+  await assert.rejects(store.sessionResolve(flaky(1, 'XX000'), 'a'.repeat(64), 7), /lost a race/, 'anything else is still an error');
+});

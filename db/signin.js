@@ -8,6 +8,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 // A link or unlink that lost a race it can't wait out (a deadlock, a serialization failure, a lock it couldn't get):
 // nothing was changed, and trying again works. A clean refusal, never an error page (PR 15's second review, R3).
 const BUSY = ['40P01', '40001', '55P03'];
+const RESOLVE_TRIES = 3;
 const hex = (field, s) => v.text(field, s, { max: 64, min: 64, pattern: HEX64 });
 
 async function rateLimitHit(t, { bucket, keyHash, windowSeconds, max }) {
@@ -132,7 +133,21 @@ async function known(t, { provider, fingerprints }) {
 
 async function sessionResolve(t, sessionHash, idleDays) {
   if (typeof sessionHash !== 'string' || !HEX64.test(sessionHash)) return null;
-  const [r] = await t`select * from app.session_resolve(${sessionHash}, ${v.int('idleDays', idleDays, { min: 1, max: 30 })}::integer)`;
+  const days = v.int('idleDays', idleDays, { min: 1, max: 30 });
+  // A page read must never fail on a race (PR 15's re-review, probe H): a deadlock, serialization failure or lock it
+  // couldn't get is retried, each in its own savepoint, after a short random wait. If every try loses, this one
+  // request is treated as not signed in (the cookie is kept, and the next request tries again), never an error page.
+  let r;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      [r] = await t.savepoint((s) => s`select * from app.session_resolve(${sessionHash}, ${days}::integer)`);
+      break;
+    } catch (e) {
+      if (!BUSY.includes(e.code)) throw e;
+      if (attempt >= RESOLVE_TRIES) return null;
+      await new Promise((ok) => setTimeout(ok, 10 + Math.floor(Math.random() * 40)));
+    }
+  }
   // fresh: this session began in the last 10 minutes, by the database's clock (PR 7: letting an agent do more on its
   // own needs a fresh sign-in).
   return r ? { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, displayName: r.display_name, fresh: r.fresh === true } : null;

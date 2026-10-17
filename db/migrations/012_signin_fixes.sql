@@ -47,6 +47,7 @@
 --   R3 (Low): link and unlink take their locks in the order deleting an account (009) and a ban (006) use: the
 --     member's advisory lock, sign-in methods, the member row, and only then the session row. A link or unlink at the
 --     same moment as a ban waits instead of deadlocking; any serialization failure left is a clean "try again".
+--     Reading a session (app.session_resolve) takes the member row before the session row too (the re-review, probe H).
 --
 -- How it fits: the two new functions run as dog_signin (the sign-in role, which alone may write identities and
 -- sessions), like app.sign_in. dog_signin gains only what they need: deleting an identity, and leaving the two new
@@ -274,6 +275,45 @@ begin
     from app.agent_keys k join app.agents a on a.id = k.agent_id join app.members m on m.id = a.owner_id
     where k.key_hash = p_key_hash and k.revoked_at is null and a.status = 'active'
       and m.status = 'active' and (app.verified_level(m.id) >= 2 or m.is_admin) and not app.deletion_overdue(m.id);
+end
+$$;
+
+-- ---- Reading a session: the member row before the session row (the re-review, probe H) ----
+-- Same as 010, except for the order of locks in the hourly refresh, the only time it writes. 010 updated the session
+-- row and then, if an X badge had lapsed, the member row: the reverse of every other path that writes both (a ban,
+-- deleting an account, linking and unlinking all take the member row first), so a page read at the same moment as a
+-- link or unlink could deadlock. Now it locks the member row first, then reads the session again (it may have ended
+-- meanwhile), then writes both, in one transaction, so the refresh and the lowered level still commit together.
+create or replace function app.session_resolve(p_session_hash text, p_idle_days integer)
+returns table (member_id uuid, trust_level smallint, is_admin boolean, display_name text, fresh boolean)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  s app.sessions%rowtype;
+begin
+  if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or p_idle_days is null or p_idle_days not between 1 and 30 then
+    return;
+  end if;
+  select * into s from app.sessions x where x.token_hash = p_session_hash;
+  if not found or s.expires_at <= now() or s.last_seen_at <= now() - make_interval(days => p_idle_days) then
+    return;
+  end if;
+  if s.last_seen_at < now() - interval '1 hour' then
+    -- The member row first, as everywhere else; then the session again, by its own row, in case it ended meanwhile.
+    perform 1 from app.members m where m.id = s.member_id for update;
+    update app.sessions x set last_seen_at = now() where x.id = s.id and x.expires_at > now();
+    if not found then
+      return;
+    end if;
+    if exists (select 1 from app.members m where m.id = s.member_id and m.trust_level > app.verified_level(m.id)) then
+      insert into app.audit_log (action, subject_kind, subject_id, detail)
+        select 'member.level_changed', 'member', m.id, jsonb_build_object('reason', 'recheck_lapsed', 'from', m.trust_level, 'to', app.verified_level(m.id))
+        from app.members m where m.id = s.member_id;
+      update app.members m set trust_level = app.verified_level(m.id) where m.id = s.member_id;
+    end if;
+  end if;
+  return query select m.id, m.trust_level, m.is_admin, m.display_name, s.created_at > now() - interval '10 minutes'
+    from app.members m where m.id = s.member_id and m.status = 'active' and not app.deletion_overdue(m.id);
 end
 $$;
 set local role dog_owner;
