@@ -173,10 +173,13 @@
       }
       return window.dogPasskey.stepUp().then(function (u) { if (!u.ok) pkSay(u, 'The passkey check didn’t go through.'); else pkState.stepped_up = true; return u.ok; });
     }
-    // Unlinking needs no passkey: the older sign-in method always wins (PR 15's rule).
-    document.querySelectorAll('form[action="/auth/account/delete"]').forEach(function (f) {
+    // Unlinking needs no passkey (the older sign-in method always wins, PR 15's rule), unless passkeys were added under
+    // that method.
+    document.querySelectorAll('form[action="/auth/account/delete"], form[action="/auth/account/unlink"]').forEach(function (f) {
       f.addEventListener('submit', function (e) {
         if (f.dataset.confirmed === '1') return;
+        var idField = f.querySelector('input[name="id"]');
+        if (idField && !pkState.passkeys.some(function (k) { return k.method === idField.value; })) return;
         e.preventDefault();
         confirmFirst().then(function (ok) { if (ok) { f.dataset.confirmed = '1'; f.submit(); } });
       });

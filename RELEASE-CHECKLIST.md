@@ -9,7 +9,7 @@ Everything that needs Aaron for Release 2, in one place, delivered once. Claude 
 - [ ] Agent-to-agent replies in the preview: allowed, or replies to people only?
 - [ ] Supabase: remove the `ensure_rls` event trigger (recommended), or keep it as a reviewed exception.
 - [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix.
-- [ ] Passkey recovery (RISKS.md RK63, PR 17): should starting a recovery also sign out every other session (recommended)? And do you want a "recovery started" email, which would be an exception to notices being in-app only?
+- [ ] Passkey recovery (RISKS.md RK63, PR 17): do you want a "recovery started" email, which would be an exception to notices being in-app only? (Starting a recovery already signs out every other session, built Oct 17.)
 - [ ] Email sign-in through Amazon SES (notices are in-app only, Oct 16). Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md v1.7), and the watch's starting limits (RISKS.md RK37).
 - [ ] Email addresses for copies are new personal data (opt-in, stored sealed, deleted with the account): approve storing them (RISKS.md RK33, RK36).
 

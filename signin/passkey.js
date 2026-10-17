@@ -140,7 +140,8 @@ function make({ run, rp = relyingParty() }) {
       if (!who) return;
       const out = await run(session.actorFor(who), async (t) => ({ keys: await store.mine(t), recovery: await store.recovery(t) }));
       return reply(res, 200, {
-        passkeys: out.keys.map((k) => ({ id: k.id, label: k.label, created_at: k.createdAt, last_used_at: k.lastUsedAt, synced: k.backedUp })),
+        // method: the sign-in method it was added under, so the page knows which unlinks need a passkey check.
+        passkeys: out.keys.map((k) => ({ id: k.id, label: k.label, created_at: k.createdAt, last_used_at: k.lastUsedAt, synced: k.backedUp, method: k.identityId })),
         recovery: out.recovery ? { started_at: out.recovery.startedAt, ends_at: out.recovery.endsAt } : null,
         stepped_up: who.stepUp === true, fresh: who.fresh === true, max: store.MAX_PASSKEYS,
         linking_from: who.linkingFrom ? new Date(who.linkingFrom).toISOString() : null,

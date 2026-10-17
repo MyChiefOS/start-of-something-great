@@ -498,8 +498,10 @@ test('PK8: recovery: a fresh sign-in starts a 72-hour cool-off with a notice, ri
   const [n] = await noticesOf(m.id, 'passkey_recovery');
   assert.match(n.body, /72 hours/);
   // Any session, even an old one, can cancel it; then the passkey works again.
-  assert.strictEqual((await pkCall('recoveryCancel', old, {})).status, 200);
-  assert.strictEqual((await pkCall('recoveryCancel', old, {})).status, 404);
+  const later = await again(m, { stale: true }); // starting it signed the others out; this one signed in since, long ago
+  assert.strictEqual(await sessionOf(old.cookie), undefined, 'starting it signed out every other session');
+  assert.strictEqual((await pkCall('recoveryCancel', later, {})).status, 200);
+  assert.strictEqual((await pkCall('recoveryCancel', later, {})).status, 404);
   assert.strictEqual((await stepUp(m, m.device)).status, 200);
   assert.strictEqual((await agentsApi(m, 'POST', 'rules', { agent, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 })).status, 201);
   // Started again and left to run: still blocked when the 72 hours are over, until a new passkey is added, which
@@ -561,8 +563,12 @@ test('PK11: whatever a linked method did dies with it: unlinking a method remove
   const senior = await pkCall('remove', viaX, { id: keys[0].id });
   assert.strictEqual(senior.status, 403);
   assert.match(senior.json.error, /oldest method/);
-  // The owner unlinks X (no passkey needed for a newer method): the passkey added from X's session goes with it,
-  // recorded and told, in the same transaction.
+  // The owner unlinks X: a passkey was added under it, so this needs a passkey check (Oct 17); the passkey added from X's
+  // session goes with it, recorded and told, in the same transaction.
+  await lapse(owner);
+  assert.strictEqual((await form('unlink', owner, '/auth/account/unlink', { id: xIdent.id })).location, '/account?error=step_up#passkeys');
+  assert.strictEqual(Number((await q(`select count(*) as n from app.passkeys where member_id = '${owner.id}'`))[0].n), 2, 'a refused unlink removes nothing');
+  await stepUp(owner, owner.device);
   assert.strictEqual((await form('unlink', owner, '/auth/account/unlink', { id: xIdent.id })).location, '/account?saved=unlinked');
   assert.deepStrictEqual((await q(`select label from app.passkeys where member_id = '${owner.id}'`)).map((k) => k.label), ['GitHub-era phone']);
   const gone = await audits(owner.id, 'passkey.removed');
@@ -748,8 +754,8 @@ test('Review finding 1 (High): a copied fresh cookie can\'t keep the owner out; 
 
 test('Review finding 1a: a session signed in with the method that started a recovery, or an older one, can cancel it', async () => {
   const m = await withPasskey({ name: 'Same method' });
-  const old = await again(m, { stale: true }); // the same GitHub method, on another device, signed in long ago
   assert.strictEqual((await pkCall('recoveryStart', m, {})).status, 201);
+  const old = await again(m, { stale: true }); // the same GitHub method, on another device, signing in after it started
   assert.strictEqual((await pkCall('recoveryCancel', old, {})).status, 200);
 });
 
@@ -764,8 +770,8 @@ test('Review finding 2: recovery can\'t start on an account with no passkey, so 
 
 test('Review finding 1b (probe C): completing a recovery deletes every earlier passkey and ends every other session', async () => {
   const m = await withPasskey({ name: 'Recovered' });
-  const elsewhere = await again(m);
   await pkCall('recoveryStart', m, {});
+  const elsewhere = await again(m);
   await q(`update app.passkey_recoveries set ends_at = now() - interval '1 minute' where member_id = '${m.id}' and cancelled_at is null`);
   const newer = softAuthenticator();
   assert.strictEqual((await enrol(m, newer)).json.recovery_completed, true);
@@ -841,4 +847,81 @@ test('Review finding 5 (probe G): an over-long or mismatched credential ID is re
     assert.strictEqual(left[0].n, 0, label + ': the challenge is used up');
     assert.strictEqual(Number((await q(`select count(*) as n from app.passkeys where member_id = '${m.id}'`))[0].n), 0);
   }
+});
+
+// ---- After the review, Oct 17: recovery signs others out; unlinking a method with passkeys under it needs a check ----
+
+test('Recovery signs out every other session when it starts, so a copied cookie can\'t cancel it', async () => {
+  const m = await withPasskey({ name: 'Copied' });
+  const copied = await again(m, { stale: true }); // the same method, copied long ago
+  const r = await pkCall('recoveryStart', m, {});
+  assert.strictEqual(r.status, 201);
+  assert.strictEqual(await sessionOf(copied.cookie), undefined, 'the copied session is gone');
+  assert.strictEqual((await pkCall('recoveryCancel', copied, {})).status, 401, 'so it can\'t cancel the recovery');
+  const [n] = await noticesOf(m.id, 'passkey_recovery');
+  assert.match(n.body, /every other session of yours was signed out/);
+  const [au] = await audits(m.id, 'passkey.recovery_started');
+  assert.strictEqual(au.detail.sessions_ended, 1);
+  assert.ok(await sessionOf(m.cookie), 'the session that started it stays');
+});
+
+test('A copied fresh cookie can\'t strip passkeys by unlinking the method they were added under', async () => {
+  ACCOUNTS['email:pk-strip'] = { accountId: 'pk-strip', level: 1, recheckAfter: null };
+  ACCOUNTS['github:pk-strip'] = { accountId: 'pk-strip', level: 1, recheckAfter: null };
+  // The member's oldest method is GitHub; they later link X and add their only passkey while signed in with X.
+  const g = await oauth('github', 'pk-strip');
+  const owner = { cookie: g.cookie, id: (await sessionOf(g.cookie)).member_id, hash: (await sessionOf(g.cookie)).token_hash, device: softAuthenticator() };
+  ACCOUNTS['x:pk-strip'] = { accountId: 'pk-strip', level: 1, recheckAfter: null };
+  assert.strictEqual((await enrol(owner, owner.device, { label: 'First' })).status, 201);
+  await ageKeys(owner.id);
+  await stepUp(owner, owner.device);
+  assert.strictEqual((await oauth('x', 'pk-strip', { cookie: owner.cookie, link: true })).done.location, '/account');
+  const xs = await oauth('x', 'pk-strip');
+  const viaX = { cookie: xs.cookie, id: owner.id, hash: (await sessionOf(xs.cookie)).token_hash };
+  await stepUp(viaX, owner.device);
+  const xDevice = softAuthenticator();
+  assert.strictEqual((await enrol(viaX, xDevice, { label: 'Added under X' })).status, 201);
+  // Make the X-era passkey the only one: the owner removes the first one (added under GitHub) from the X session? It
+  // can't (seniority), so the owner does it from GitHub.
+  const g2 = await oauth('github', 'pk-strip');
+  const ownerG = { cookie: g2.cookie, id: owner.id, hash: (await sessionOf(g2.cookie)).token_hash };
+  await stepUp(ownerG, owner.device);
+  const [firstKey] = await q(`select id from app.passkeys where member_id = '${owner.id}' and label = 'First'`);
+  assert.strictEqual((await pkCall('remove', ownerG, { id: firstKey.id })).status, 200);
+  // Now someone copies a fresh GitHub cookie (the older method) and tries to unlink X, which would take the only passkey.
+  const thief = { ...ownerG };
+  await lapse(owner);
+  const [xId] = await q(`select id from app.identities where member_id = '${owner.id}' and provider = 'x'`);
+  assert.strictEqual((await form('unlink', thief, '/auth/account/unlink', { id: xId.id })).location, '/account?error=step_up#passkeys');
+  assert.deepStrictEqual((await q(`select label from app.passkeys where member_id = '${owner.id}'`)).map((k) => k.label), ['Added under X'], 'nothing was stripped');
+  assert.strictEqual(Number((await q(`select count(*) as n from app.identities where member_id = '${owner.id}'`))[0].n), 2);
+  // The database decides, not only the page.
+  await assert.rejects(run({ actor: 'member', memberId: owner.id, fresh: true }, (t) => t`select * from app.identity_unlink(${xId.id}::uuid, ${thief.hash})`), /step_up/);
+  // The owner, with their passkey, can.
+  await stepUp(ownerG, xDevice);
+  assert.strictEqual((await form('unlink', ownerG, '/auth/account/unlink', { id: xId.id })).location, '/account?saved=unlinked');
+});
+
+test('No lockout: an owner without a passkey facing a method that holds passkeys recovers, then unlinks it with no check', async () => {
+  ACCOUNTS['github:pk-lock'] = { accountId: 'pk-lock', level: 1, recheckAfter: null };
+  ACCOUNTS['x:pk-lock'] = { accountId: 'pk-lock', level: 1, recheckAfter: null };
+  const g = await oauth('github', 'pk-lock');
+  const intruder = { cookie: g.cookie, id: (await sessionOf(g.cookie)).member_id, hash: (await sessionOf(g.cookie)).token_hash, device: softAuthenticator() };
+  // Suppose an intruder's passkeys sit under a method they linked (X), and the owner has no passkey of their own.
+  assert.strictEqual((await enrol(intruder, intruder.device)).status, 201);
+  await ageKeys(intruder.id);
+  await stepUp(intruder, intruder.device);
+  assert.strictEqual((await oauth('x', 'pk-lock', { cookie: intruder.cookie, link: true })).done.location, '/account');
+  const [xId] = await q(`select id from app.identities where member_id = '${intruder.id}' and provider = 'x'`);
+  await q(`update app.passkeys set identity_id = '${xId.id}' where member_id = '${intruder.id}'`);
+  // The owner signs in with GitHub (the older method): unlinking X needs a passkey they don't have...
+  const o = await oauth('github', 'pk-lock');
+  const owner = { cookie: o.cookie, id: intruder.id, hash: (await sessionOf(o.cookie)).token_hash, device: softAuthenticator() };
+  assert.strictEqual((await form('unlink', owner, '/auth/account/unlink', { id: xId.id })).location, '/account?error=step_up#passkeys');
+  // ...so they recover: the intruder's sessions end at once, and 72 hours later the new passkey removes the old ones.
+  assert.strictEqual((await pkCall('recoveryStart', owner, {})).status, 201);
+  assert.strictEqual(await sessionOf(intruder.cookie), undefined);
+  await q(`update app.passkey_recoveries set ends_at = now() - interval '1 minute' where member_id = '${owner.id}' and cancelled_at is null`);
+  assert.strictEqual((await enrol(owner, owner.device)).json.recovery_completed, true);
+  assert.strictEqual((await form('unlink', owner, '/auth/account/unlink', { id: xId.id })).location, '/account?saved=unlinked', 'no passkey sits under X any more');
 });

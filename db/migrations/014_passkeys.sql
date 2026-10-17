@@ -612,7 +612,9 @@ $$;
 -- method, on an account that has a passkey to recover (the review, finding 2: with none, there is nothing to recover and
 -- the first passkey needs no wait). For 72 hours every risky grant stays blocked (no session counts as stepped up, and
 -- any step-up already given ends now); then a new passkey can be added, which removes every earlier one. The member is
--- told; a session signed in with the method that started it, or an older one, can cancel it (finding 1a).
+-- told; a session signed in with the method that started it, or an older one, can cancel it (finding 1a). Every other
+-- session of the member is signed out in the same transaction, so a copied cookie (which shares the owner's method) can
+-- never cancel a recovery its owner started from a fresh sign-in.
 create function app.passkey_recovery_start(p_session_hash text)
 returns table (status text, ends_at timestamptz)
 language plpgsql security definer set search_path = pg_catalog
@@ -623,6 +625,7 @@ declare
   rid uuid;
   ends timestamptz := now() + interval '72 hours';
   n integer;
+  ended integer := 0;
 begin
   if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' or app.actor_kind() not in ('member', 'admin') or me is null then
     raise exception 'bad passkey request' using errcode = '22023';
@@ -656,11 +659,14 @@ begin
     return;
   end if;
   insert into app.passkey_recoveries (member_id, identity_id, ends_at) values (me, s.identity_id, ends) returning id into rid;
+  delete from app.sessions x where x.member_id = me and x.id <> s.id;
+  get diagnostics ended = row_count;
   update app.sessions x set stepped_up_at = null where x.member_id = me and x.stepped_up_at is not null;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
-    values ('passkey.recovery_started', 'member', me, jsonb_build_object('recovery', rid));
+    values ('passkey.recovery_started', 'member', me, jsonb_build_object('recovery', rid, 'sessions_ended', ended));
   perform app.notify(me, 'passkey_recovery', 'Passkey recovery started',
-    'Someone signed in to your account started passkey recovery. For 72 hours nothing risky can be done on your account (letting '
+    'Someone signed in to your account started passkey recovery, and every other session of yours was signed out. For 72 hours '
+    || 'nothing risky can be done on your account (letting '
     || 'an agent act on its own, new keys for acting agents, sign-in changes, deleting it); after that a new passkey can be added. '
     || 'If this wasn''t you, sign in with your oldest sign-in method, sign out everywhere, and cancel it on your account page.',
     '/account', 'passkey_recovery', rid,
@@ -713,7 +719,11 @@ end
 $$;
 
 -- "Whatever a linked method did dies with it": removing a sign-in method removes the passkeys its sessions added, in
--- the same transaction. When it happens while the member is still signed in (an unlink), the audit log records each
+-- the same transaction. Removing a method that has passkeys under it needs a passkey check (the lead, Oct 17): otherwise
+-- a copied fresh cookie from an older method could strip an account's passkeys and add its own first one. There is no
+-- exception for "no other passkey would remain": that case is exactly the stripping one, and the owner it would help
+-- (with no passkey of their own, facing an intruder's method) recovers instead, since completing a recovery removes
+-- every earlier passkey, after which the method unlinks with no check. When it happens while the member is still signed in (an unlink), the audit log records each
 -- one and the member is told; when it is part of deleting the whole account (every session is already gone), the
 -- account's own deletion record covers it and nothing is left behind.
 create function app.identities_passkeys() returns trigger
@@ -722,6 +732,11 @@ as $$
 declare
   ids uuid[];
 begin
+  if app.actor_kind() in ('member', 'admin') and coalesce(current_setting('app.step_up', true), '') <> '1'
+     and exists (select 1 from app.passkeys k where k.identity_id = old.id) then
+    raise exception 'step_up' using errcode = 'P0001',
+      hint = 'Passkeys were added while signed in with this method; confirm with a passkey to remove it.';
+  end if;
   with gone as (delete from app.passkeys k where k.identity_id = old.id returning k.id)
   select array_agg(g.id) into ids from gone g;
   if ids is not null and exists (select 1 from app.sessions s where s.member_id = old.member_id) then
