@@ -180,7 +180,7 @@ Built to Aaron's decisions of Oct 16, 2026: people hear inside the system; notic
 
 ### Sub-agents (PR 16; draft, for Aaron's approval)
 
-Built to Aaron's decision of Oct 16, 2026: "Agents need to bring up sub-agents all of the time; we should support that." No human step makes a sub-agent; every safeguard is automatic and enforced by the database (013_subagents.sql). Modelled on RFC 8693's "act" claim and the IETF agent delegation-chain drafts: a child's authority is the meet of its parent's and what it asks for, it never outlives its parent, and depth is bounded. Every criterion is checked by test/subagents.test.js.
+Built to Aaron's decision of Oct 16, 2026: "Agents need to bring up sub-agents all of the time; we should support that." No human step makes a sub-agent; every safeguard is automatic and enforced by the database (015_subagents.sql). Modelled on RFC 8693's "act" claim and the IETF agent delegation-chain drafts: a child's authority is the meet of its parent's and what it asks for, it never outlives its parent, and depth is bounded. Every criterion is checked by test/subagents.test.js.
 
 | ID | Criterion | How it's checked |
 |---|---|---|

@@ -815,3 +815,48 @@ test('re-review N1: deleting the account while a sub-agent is being made never d
   assert.strictEqual((await q(`select count(*)::int as n from app.members where id = '${owner.id}'`))[0].n, 0);
   assert.strictEqual((await q(`select count(*)::int as n from app.agents where id = '${lead.id}' or parent_id = '${lead.id}'`))[0].n, 0);
 });
+
+test('PR 15 with 013: unlinking a sign-in method stops every sub-agent under the agents its sessions made, in the same transaction, and says how many', async () => {
+  // The owner signs in with GitHub (the older method), links X from that fresh session, then signs in with X.
+  const owner = await member(2, 'Grace');
+  const ghHash = c.sha256hex(owner.cookie.split('=')[1]);
+  const xFp = c.sha256hex(crypto.randomUUID());
+  const linked = await run({ ...owner.ctx, session: ghHash, fresh: true }, (t) => store.link(t, { provider: 'x', fingerprints: [xFp], keyVersion: 1, level: 2, sessionHash: ghHash }));
+  assert.strictEqual(linked.linked, true, JSON.stringify(linked));
+  // The link signed every session out (PR 15 final); sign in again with each method.
+  const session = async (provider, fp) => {
+    const token = c.token(32);
+    const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider, fingerprints: [fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    assert.strictEqual(out.memberId, owner.id);
+    return { ...owner, cookie: '__Host-dog_session=' + token, hash: c.sha256hex(token) };
+  };
+  const [ghFp] = (await q(`select fingerprint from app.identities where member_id = '${owner.id}' and provider = 'github'`)).map((r) => r.fingerprint);
+  const viaGithub = await session('github', ghFp);
+  const viaX = await session('x', xFp);
+  // From the X session: an agent, with a sub-agent and a sub-sub-agent under it. From GitHub: an agent of the owner's own.
+  const theirs = await newAgent(viaX, 'From X');
+  const w1 = await spawn(theirs, { name: 'Worker' });
+  const w2 = await spawn(w1, { name: 'Helper' });
+  const mine = await newAgent(viaGithub, 'From GitHub');
+  const m1 = await spawn(mine, { name: 'Keeper' });
+  assert.deepStrictEqual(await Promise.all([theirs.id, w1.id, w2.id, mine.id, m1.id].map(statusOf)), ['active', 'active', 'active', 'active', 'active']);
+  // The owner, from the GitHub session (older, so allowed), unlinks X.
+  const [xId] = await q(`select id from app.identities where member_id = '${owner.id}' and provider = 'x'`);
+  const out = await run({ ...owner.ctx, session: viaGithub.hash, fresh: true }, (t) => store.unlink(t, { identity: xId.id, sessionHash: viaGithub.hash }));
+  assert.strictEqual(out.refused, undefined, JSON.stringify(out));
+  // Every sub-agent under the X-made agent stopped; the GitHub-made tree is untouched; nothing sits above its parent.
+  assert.deepStrictEqual(await Promise.all([w1.id, w2.id].map(statusOf)), ['revoked', 'revoked'], 'the whole subtree under the X-made agent stopped');
+  assert.deepStrictEqual(await Promise.all([mine.id, m1.id].map(statusOf)), ['active', 'active'], 'the owner\'s own tree is untouched');
+  assert.strictEqual((await me(w2)).status, 401, 'a stopped sub-agent\'s key no longer works');
+  assert.strictEqual((await me(m1)).status, 200);
+  assert.deepStrictEqual(await aboveParents(), []);
+  // The record says how many sub-agents stopped, in the same audit row as the unlink.
+  const [au] = await q(`select detail from app.audit_log where action = 'member.identity_unlinked' and subject_id = '${owner.id}'`);
+  assert.strictEqual(au.detail.provider, 'x');
+  assert.strictEqual(au.detail.subagents_stopped, 2, JSON.stringify(au.detail));
+  assert.ok(au.detail.keys_revoked >= 1, 'the X-made agent\'s own key was revoked: ' + JSON.stringify(au.detail));
+  // Each stopped sub-agent is recorded as revoked by the cascade (the sign-in role acting for the owner), with its parent.
+  const marks = await q(`select subject_id, detail from app.audit_log where action = 'agent.revoke' and subject_id in ('${w1.id}', '${w2.id}') order by at`);
+  assert.deepStrictEqual(marks.map((m) => [m.subject_id, m.detail.from, m.detail.to, m.detail.cascade, m.detail.parent]).sort(),
+    [[w1.id, 'active', 'revoked', true, theirs.id], [w2.id, 'active', 'revoked', true, w1.id]].sort());
+});

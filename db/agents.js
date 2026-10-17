@@ -156,7 +156,7 @@ async function whoami(t) {
 }
 
 // ---- Sub-agents (PR 16): an agent makes its own, with no human step ----
-// The database decides everything that matters (013_subagents.sql): the owner (always the parent's), the depth limit,
+// The database decides everything that matters (015_subagents.sql): the owner (always the parent's), the depth limit,
 // the hourly rates, the expiry (never after the parent's) and rules no higher than the parent's. This checks inputs and
 // turns refusals into plain outcomes. rules: { post, reply, report, daily_cap }, each optional. draftOnly: JEVs found
 // the creation medium risk (enforce mode), so every "act" becomes "draft".

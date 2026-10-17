@@ -1,4 +1,4 @@
--- 013 Sub-agents (Release 2, PR 16).
+-- 015 Sub-agents (Release 2, PR 16). Numbered 015 because 013 (the setup run's audit policy, PR #33) and 014 (passkeys, PR 17) merge first.
 -- Aaron's decision (Oct 16, 2026): "Agents need to bring up sub-agents all of the time; we should support that."
 -- It replaces "no sub-delegation" (R22 / C9 in the Delegated Agency plan). Agents create sub-agents through the API
 -- with no human step; each stays bound to the same owner, gets the same or narrower permissions, expires by default,
