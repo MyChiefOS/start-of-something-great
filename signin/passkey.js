@@ -178,7 +178,7 @@ function make({ run, rp = relyingParty() }) {
       if (!hash) return reply(res, 400, { error: 'That answer doesn’t carry one of our challenges.' });
       let info;
       try {
-        const out = await swa.verifyRegistrationResponse({ response: body.response, expectedChallenge: (x) => c.sha256hex(x) === hash,
+        const out = await swa.verifyRegistrationResponse({ response: body.response, expectedChallenge: (x) => c.same(c.sha256hex(x), hash),
           expectedOrigin: rp.origins, expectedRPID: rp.rpID, requireUserVerification: true, supportedAlgorithmIDs: ALGORITHMS });
         info = out.verified ? out.registrationInfo : null;
       } catch { info = null; }
@@ -224,7 +224,7 @@ function make({ run, rp = relyingParty() }) {
         try {
           // The stored counter is given as 0 on purpose: the database compares counters itself, under the passkey's row
           // lock, and records a counter that went backwards (a copied key) before refusing it.
-          const out = await swa.verifyAuthenticationResponse({ response: body.response, expectedChallenge: (x) => c.sha256hex(x) === hash,
+          const out = await swa.verifyAuthenticationResponse({ response: body.response, expectedChallenge: (x) => c.same(c.sha256hex(x), hash),
             expectedOrigin: rp.origins, expectedRPID: rp.rpID, requireUserVerification: true,
             credential: { id: key.credentialId, publicKey: isoBase64URL.toBuffer(key.publicKey), counter: 0, transports: key.transports } });
           info = out.verified && out.authenticationInfo.userVerified === true ? out.authenticationInfo : null;

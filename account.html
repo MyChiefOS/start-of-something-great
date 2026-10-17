@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/styles.css">
   <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <script defer src="/passkey.js"></script>
   <script defer src="/account.js"></script>
 </head>
 <body>
@@ -36,6 +37,20 @@
         <ul id="signins"></ul>
         <p id="add-methods" hidden></p>
         <p class="fine">Adding or removing a sign-in method works only within 10 minutes of signing in, and either one signs out every other session of yours and leaves a notice here. You can remove only a method added after the one you signed in with, so whoever holds your oldest method always keeps the account.</p>
+
+        <section id="passkeys" aria-labelledby="passkeys-heading">
+          <h2 id="passkeys-heading">Passkeys</h2>
+          <p id="passkey-offer" class="dek" hidden>Add a passkey: one tap with your fingerprint, face or device PIN. You'll use it to confirm risky steps, such as letting an agent act on its own, changing how you sign in, or deleting your account.</p>
+          <p id="passkey-recovery" class="dek" role="status" hidden></p>
+          <ul id="passkey-list"></ul>
+          <p>
+            <label>Name for this passkey <input id="passkey-label" type="text" maxlength="60" autocomplete="off" placeholder="My phone"></label>
+            <button type="button" id="passkey-add" class="button primary">Add a passkey</button>
+          </p>
+          <p id="passkey-status" class="fine" role="status" aria-live="polite"></p>
+          <p class="fine">Adding a passkey works within 10 minutes of signing in; adding a second one, or removing one, also asks for a passkey you already have. A check lasts 5 minutes. Your fingerprint or face never leaves your device: we keep only the passkey's public key.</p>
+          <p class="fine">Lost every passkey? <button type="button" id="passkey-recover" class="button">Start passkey recovery</button> It works within 10 minutes of signing in. For 72 hours nothing risky can be done on your account, then you can add a new passkey. Any session of yours can cancel it.</p>
+        </section>
 
         <section id="notices" class="inbox" aria-labelledby="notices-heading">
           <h2 id="notices-heading">Notices</h2>

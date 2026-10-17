@@ -1,5 +1,6 @@
 // /account (PR 8): your name, how you sign in, signing out, and deleting your account (F8). PR 15: unlinking a
 // sign-in method, with a form per method (never the last one; the server checks that the session is fresh).
+// PR 17: passkeys (add, list, remove, recovery), and a passkey check before the risky forms here (/passkey.js).
 // The forms post to /auth/... themselves; this only fills in the page and shows what happened. Text is set with
 // textContent, never as HTML.
 (function () {
@@ -23,7 +24,9 @@
     'error=unlink': 'Nothing was changed: that sign-in method isn’t yours or is already gone.',
     'error=senior': 'Nothing was changed: from this session you can remove only a method added after the one you signed in with. To remove an older one, sign in with your oldest method first.',
     'error=link': 'That sign-in method wasn’t linked: the sign-in was cancelled, took too long, or didn’t start from this page. Please try again from here.',
-    'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.'
+    'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.',
+    // PR 17: risky steps also need a passkey check in the last 5 minutes.
+    'error=step_up': 'Nothing was changed: confirm it’s you with your passkey first (or add one below), then try again.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };
@@ -94,9 +97,91 @@
       }
       if (d.is_admin) { document.getElementById('delete-part').hidden = true; document.getElementById('admin-note').hidden = false; }
       document.getElementById('details').hidden = false;
+      loadPasskeys();
+      guardRiskyForms();
       loadNotices();
     })
     .catch(function () { msg.textContent = 'Your account could not be loaded. Please try again.'; });
+
+  // ---- Passkeys (PR 17): the proof risky steps need (D5) ----
+  // The list shows labels and dates only (the page is never sent a key). Adding needs a sign-in in the last 10 minutes;
+  // a second one, or removing one, also a passkey check. The server decides all of it; this only asks and shows.
+  var pkState = { passkeys: [], stepped_up: false, recovery: null };
+  var pkStatus = document.getElementById('passkey-status');
+  function pkSay(x, fallback) {
+    pkStatus.textContent = (x && x.d && (x.d.message || x.d.error)) || fallback;
+    if (x && x.d && x.d.reauth) { var again = el('a', '', 'Sign in again'); again.href = '/join?return_to=%2Faccount'; pkStatus.appendChild(document.createTextNode(' ')); pkStatus.appendChild(again); }
+  }
+  function loadPasskeys() {
+    return fetch('/auth/passkey/list', { headers: { Accept: 'application/json' } }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return;
+      pkState = d;
+      var list = document.getElementById('passkey-list');
+      list.textContent = '';
+      d.passkeys.forEach(function (k) {
+        var li = el('li', '', k.label + ' · added ' + new Date(k.created_at).toLocaleDateString() + (k.last_used_at ? ' · last used ' + new Date(k.last_used_at).toLocaleString() : ' · not used yet'));
+        if (d.passkeys.length > 1) {
+          li.appendChild(document.createTextNode(' '));
+          li.appendChild(button('Remove', '', function (b) {
+            window.dogPasskey.postJson('/auth/passkey/remove', { id: k.id }).then(function (x) { pkSay(x, 'That didn’t go through.'); b.disabled = false; loadPasskeys(); });
+          }));
+        }
+        list.appendChild(li);
+      });
+      // Offered as soon as someone has signed in, before their first risky step.
+      document.getElementById('passkey-offer').hidden = d.passkeys.length > 0 || Boolean(d.recovery);
+      var rec = document.getElementById('passkey-recovery');
+      rec.textContent = '';
+      rec.hidden = !d.recovery;
+      if (d.recovery) {
+        rec.textContent = 'Passkey recovery is under way. Until ' + new Date(d.recovery.ends_at).toLocaleString() + ' nothing risky can be done on your account; after that you can add a new passkey. If you didn’t start it, cancel it now. ';
+        rec.appendChild(button('Cancel recovery', 'primary', function (b) {
+          window.dogPasskey.postJson('/auth/passkey/recovery/cancel', {}).then(function (x) { pkSay(x, 'That didn’t go through.'); b.disabled = false; loadPasskeys(); });
+        }));
+      }
+      document.getElementById('passkey-recover').hidden = Boolean(d.recovery);
+    }).catch(function () {});
+  }
+  document.getElementById('passkey-add').addEventListener('click', function () {
+    var b = this;
+    b.disabled = true;
+    var label = document.getElementById('passkey-label').value.trim() || 'Passkey';
+    // A second passkey needs a check with one you have first.
+    var first = pkState.passkeys.length > 0 && !pkState.stepped_up && !pkState.recovery ? window.dogPasskey.stepUp() : Promise.resolve({ ok: true });
+    first.then(function (u) { return u.ok ? window.dogPasskey.enrol(label) : u; })
+      .then(function (x) { pkSay(x, x.ok ? 'Added.' : 'That passkey wasn’t added.'); b.disabled = false; loadPasskeys(); });
+  });
+  document.getElementById('passkey-recover').addEventListener('click', function () {
+    var b = this;
+    b.disabled = true;
+    window.dogPasskey.postJson('/auth/passkey/recovery/start', {}).then(function (x) { pkSay(x, 'That didn’t go through.'); b.disabled = false; loadPasskeys(); });
+  });
+  // The risky forms and links on this page (deleting, unlinking, adding a sign-in method) confirm with a passkey just
+  // before they go; the server refuses them without one anyway, and sends a member who has none to add one.
+  function guardRiskyForms() {
+    function confirmFirst() {
+      if (pkState.stepped_up) return Promise.resolve(true);
+      if (!pkState.passkeys.length) {
+        pkStatus.textContent = 'This needs a passkey. Add one here first (one tap), then try again.';
+        document.getElementById('passkeys').scrollIntoView();
+        return Promise.resolve(false);
+      }
+      return window.dogPasskey.stepUp().then(function (u) { if (!u.ok) pkSay(u, 'The passkey check didn’t go through.'); else pkState.stepped_up = true; return u.ok; });
+    }
+    document.querySelectorAll('form[action="/auth/account/delete"], form[action="/auth/account/unlink"]').forEach(function (f) {
+      f.addEventListener('submit', function (e) {
+        if (f.dataset.confirmed === '1') return;
+        e.preventDefault();
+        confirmFirst().then(function (ok) { if (ok) { f.dataset.confirmed = '1'; f.submit(); } });
+      });
+    });
+    document.querySelectorAll('#add-methods a').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        confirmFirst().then(function (ok) { if (ok) location.href = a.href; });
+      });
+    });
+  }
 
   // ---- Notices (PR 13): every notice lands here, in-app only ----
   // One tap answers a notice right here, through the same APIs the agents page and the feed use, from this signed-in
@@ -154,7 +239,7 @@
       var a = ctx.activity && ctx.activity.agents.find(function (x) { return x.id === n.subject.id; });
       if (!a || !a.acting_alone || !a.rules) return null;
       box.appendChild(button('Keep it acting on its own', 'primary', function (b) {
-        postJson('/api/agents/reconfirm', { agent: a.id, version: a.rules.version }).then(function (x) { answered(out, x); b.disabled = x.ok; });
+        window.dogPasskey.postJson('/api/agents/reconfirm', { agent: a.id, version: a.rules.version }).then(function (x) { answered(out, x); b.disabled = x.ok; });
       }));
     } else if (n.kind === 'challenge' && n.subject && n.subject.kind === 'challenge') {
       var c = ctx.challenges && ctx.challenges.find(function (x) { return x.id === n.subject.id; });
