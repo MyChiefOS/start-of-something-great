@@ -27,6 +27,8 @@ Nothing here is tied to one provider: it runs the same on Supabase or Neon.
 
 ## Setting it up (Aaron; Claude never sees these values)
 
+**Use SETUP.md.** The Production setup workflow does steps 2 to 5 below from GitHub, with nothing on your computer, and keeps Release 2 closed until you choose the go-live stage. The manual steps stay here for reference.
+
 1. **Create the database project** with the provider you approve.
 2. **Add the migration address to GitHub, locked to `main` and to your approval.** This address can change anything in the database, so it lives in a protected environment, not a plain repository secret:
    1. Go to repository Settings, then Environments. Create `production`.

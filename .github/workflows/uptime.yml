@@ -6,6 +6,8 @@ on:
   schedule:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
+  # And right after every successful production deploy (Oct 17): the go-live gate, sign-in and headers included.
+  deployment_status:
 
 permissions:
   contents: read
@@ -17,6 +19,8 @@ concurrency:
 
 jobs:
   check:
+    # Deploys: only a successful Production deployment; every other deployment event is skipped.
+    if: github.event_name != 'deployment_status' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
