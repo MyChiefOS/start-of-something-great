@@ -175,8 +175,9 @@ function make(deps) {
     return Boolean(me && now && me.memberId === memberId && c.same(now, sessionHashSealed));
   }
 
-  // PR 15: finishes a link for the signed-in member, from the session they started it in. No session cookie is set:
-  // they keep the session they have, and every other session of theirs ends (the database does both). A traveller who
+  // PR 15: finishes a link for the signed-in member, from the session they started it in. No session cookie is set,
+  // and once a method is added every session of theirs ends, this one too (the re-review, R4): the browser is signed
+  // out and sent to /join to sign in again. Verifying again a method that is already theirs keeps the session. A traveller who
   // confirmed (country) gets the resident tag for this session, as after a sign-in.
   async function completeLink(req, res, me, args, ret, country = null) {
     const hash = sessionHash(req);
@@ -185,8 +186,14 @@ function make(deps) {
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
-    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
+    // A new method ended every session of the member, this one too (PR 15's re-review, R4): this browser signs in
+    // again, with whichever method they like, and the join page says why.
+    if (out.linked) {
+      h.addCookie(res, h.clear(SESSION));
+      return h.redirect(res, '/join?linked=1');
+    }
+    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, hash), { maxAge: SESSION_DAYS * 86400 }));
     return h.redirect(res, ret || '/');
   }
 

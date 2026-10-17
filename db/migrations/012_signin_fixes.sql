@@ -31,13 +31,19 @@
 -- After the second review of PR 15:
 --   R1 (Medium), revoke on unlink: whatever a linked method's sessions did dies with it. Agent keys, owner-set rules
 --     versions and links record the method of the session that made them (read by the database from the request's
---     own session, app.current_identity). Unlinking method M, in the same transaction: every agent key made (or agent
---     claimed) from a session of M is revoked; every action a session of M raised to "act" goes back to "draft"
---     (never "off"), and a daily cap it raised goes back; every method M's sessions linked is unlinked too, and so on down the
+--     own session, app.current_identity). Unlinking method M, in the same transaction: every agent key made from a
+--     session of M is revoked, and every key of an agent a session of M created or claimed, whoever made the key; every
+--     action a version of M's ever raised to "act" goes back to "draft" (never "off"), however it was kept or restored
+--     since, and a daily cap it raised goes back; every method M's sessions linked is unlinked too, and so on down the
 --     chain; and the sessions of all of them end. One audit row and one notice say exactly what was undone.
+--     (After the re-review, probe E: undoing only the version that last switched an action to "act", or only the keys
+--     M's sessions made, could be escaped by a re-save, a containment's end, or a key rotated from another session.)
 --   R2 (Medium): the 90-day clock (R33) restarts only on an owner's save made with a fresh sign-in (a fresh
 --     re-confirm, a raise, or a first switch to act). A save without one that leaves actions on act is still allowed,
 --     but no longer moves the clock (agent_rules.restarts_clock).
+--   R4 (the re-review, probe G; the lead's decision, pending Aaron): a link ends the session that made it too, so the
+--     member signs in again with whichever method they like. A copied session cookie dies at the moment it is used to
+--     take an account over.
 --   R3 (Low): link and unlink take their locks in the order deleting an account (009) and a ban (006) use: the
 --     member's advisory lock, sign-in methods, the member row, and only then the session row. A link or unlink at the
 --     same moment as a ban waits instead of deadlocking; any serialization failure left is a clean "try again".
@@ -67,11 +73,13 @@ grant insert (identity_id) on app.sessions to dog_signin;
 -- versions are never changed, and the record should outlive the method it names.
 --   identities.linked_by:         the method of the session that linked this one (null for the one an account began with)
 --   agent_keys.by_identity:       the method of the session that made the key (null for a key an agent made itself)
+--   agents.created_by_identity:   the method of the session that created the agent (null for one that registered itself)
 --   agents.claimed_by_identity:   the method of the session that claimed the agent (its key was made by the agent)
 --   agent_rules.by_identity:      the method of the session that set an owner's rules version
 -- And R2: whether an owner's version restarts the 90-day clock (R33): only one saved with a fresh sign-in.
 alter table app.identities add column linked_by uuid;
 alter table app.agent_keys add column by_identity uuid;
+alter table app.agents add column created_by_identity uuid;
 alter table app.agents add column claimed_by_identity uuid;
 alter table app.agent_rules add column by_identity uuid;
 alter table app.agent_rules add column restarts_clock boolean not null default false;
@@ -117,25 +125,29 @@ $$;
 create trigger agent_keys_by before insert or update on app.agent_keys for each row execute function app.agent_keys_by();
 alter table app.agent_keys enable always trigger agent_keys_by;
 
--- An agent records the method of the session that claimed it (a claim, through app.agent_claim, is the only way an
--- unclaimed agent becomes active), and that never changes.
-create function app.agents_claimed_by() returns trigger
+-- An agent records the method of the session that created it, or that claimed it (a claim, through app.agent_claim,
+-- is the only way an unclaimed agent becomes active), and neither ever changes.
+create function app.agents_by() returns trigger
 language plpgsql
 as $$
 begin
   if tg_op = 'INSERT' then
+    new.created_by_identity := case when app.actor_kind() in ('member', 'admin') then app.current_identity() end;
     new.claimed_by_identity := null;
-  elsif old.status = 'unclaimed' and new.status = 'active' and app.actor_kind() in ('member', 'admin') then
-    new.claimed_by_identity := app.current_identity();
   else
-    new.claimed_by_identity := old.claimed_by_identity;
+    new.created_by_identity := old.created_by_identity;
+    if old.status = 'unclaimed' and new.status = 'active' and app.actor_kind() in ('member', 'admin') then
+      new.claimed_by_identity := app.current_identity();
+    else
+      new.claimed_by_identity := old.claimed_by_identity;
+    end if;
   end if;
   return new;
 end
 $$;
-create trigger agents_claimed_by before insert or update on app.agents for each row execute function app.agents_claimed_by();
-alter table app.agents enable always trigger agents_claimed_by;
-revoke execute on function app.agent_keys_by(), app.agents_claimed_by() from public;
+create trigger agents_by before insert or update on app.agents for each row execute function app.agents_by();
+alter table app.agents enable always trigger agents_by;
+revoke execute on function app.agent_keys_by(), app.agents_by() from public;
 
 -- ---- A traveller's confirmation is used once (review F6) ----
 -- Only a SHA-256 of the random nonce in the sealed cookie, for as long as the cookie could live (10 minutes) plus a
@@ -266,10 +278,12 @@ end
 $$;
 set local role dog_owner;
 
--- ---- Linking a sign-in method (fix 1) ----
+-- ---- Linking a sign-in method (fix 1; the re-review, R4) ----
 -- For the signed-in member the transaction acts as, from their own session (p_session_hash), which must have begun
--- within the last 10 minutes by the database clock. It makes no session: the member keeps the one they have, and
--- every other session of theirs ends. The member is told in-app and the audit log records it.
+-- within the last 10 minutes by the database clock. It makes no session, and once a method is added every session of
+-- the member ends, the one that linked it too (R4): the member signs in again with whichever method they like, so a
+-- copied cookie used to link can do nothing more. The member is told in-app and the audit log records it. Verifying
+-- again a method that is already theirs changes no session.
 --   p_region: the country a traveller confirmed they are signing in from (010), recorded as at sign-in.
 -- Returns the member, whether a method was added (false: it was already theirs, and is verified again) and how many
 -- sessions ended. Raises 'fresh_sign_in', 'taken' (the method belongs to someone else), 'banned' or 'disabled'.
@@ -337,19 +351,21 @@ begin
     insert into app.identities (member_id, provider, fingerprint, key_version, level, recheck_after, linked_by)
       values (me, p_provider, p_fingerprints[1], p_key_version, p_level, p_recheck_after, sid) returning id into nid;
     added := true;
-    -- Whoever linked it keeps only the session they linked from; every other session of the member ends.
-    delete from app.sessions s where s.member_id = me and s.token_hash <> p_session_hash;
+    -- Every session of the member ends, the one that linked it too (R4): they sign in again with whichever method
+    -- they like, so a copied session cookie can't go on after it has been used to link.
+    delete from app.sessions s where s.member_id = me;
     get diagnostics ended = row_count;
     insert into app.audit_log (action, subject_kind, subject_id, detail)
       values ('member.identity_linked', 'member', me, jsonb_build_object('provider', p_provider, 'sessions_ended', ended));
     -- What the owner can do about it, and what that undoes (R1); what it can't undo is in RISKS.md (RK62).
     perform app.notify(me, 'signin_linked', 'A new sign-in method was linked',
       case p_provider when 'github' then 'GitHub' when 'x' then 'X' when 'email' then 'An email address' else 'A sign-in method' end
-      || ' can now sign in to your account, and every other session of yours was signed out. If this wasn''t you, sign in '
-      || 'with the method you have had longest and unlink it on your account page. That signs out everyone who used it, '
-      || 'revokes any agent key made with it, puts any agent it let act on its own back to drafting for your approval, '
-      || 'and unlinks anything it linked. Then check your agents and your posts: anything else it did, such as a post or '
-      || 'a deletion, isn''t undone.', '/account', 'identity', nid, 'signin:linked:' || nid::text);
+      || ' can now sign in to your account. To keep your account safe, every session of yours was signed out, the one '
+      || 'that linked it too, so sign in again with whichever method you like. If this wasn''t you, sign in with the '
+      || 'method you have had longest and unlink it on your account page. That signs out everyone who used it, revokes '
+      || 'the keys of any agent made with it, puts anything it let act on its own back to drafting for your approval, and '
+      || 'unlinks anything it linked. Then check your agents and your posts: anything else it did, such as a post or a '
+      || 'deletion, isn''t undone.', '/account', 'identity', nid, 'signin:linked:' || nid::text);
   end if;
 
   if app.verified_level(mem.id) is distinct from mem.trust_level then
@@ -374,10 +390,12 @@ $$;
 -- Revoke on unlink (R1): whatever the method's sessions did dies with it, in this same transaction:
 --   * the methods its sessions linked are unlinked too, and the ones theirs linked, down the chain (never the method
 --     this session signed in with: seniority puts it before all of them);
---   * every agent key made, and every agent claimed, from a session of any of them is revoked;
---   * every action that a rules version from such a session raised to "act" (and is still on "act" since) goes back
---     to "draft", never "off"; a daily cap such a version raised goes back to what it was before; and an agent paused
---     by a containment gets a version too, so the pause's end can't restore what that method set;
+--   * every agent key made from a session of any of them is revoked, and every key of an agent such a session
+--     created or claimed, whoever made or rotated the key;
+--   * every action that a rules version from such a session ever raised to "act" goes back to "draft", never "off",
+--     however it was kept since (an owner's re-save, a confirmation, a containment's end); a daily cap such a version
+--     raised goes back to what it was before; and an agent paused by a containment gets a version too, so the pause's
+--     end can't restore what that method set;
 --   * every other session of the member ends, theirs included.
 -- One audit row and one notice say exactly what was undone. The level follows the methods that remain.
 -- Raises 'fresh_sign_in', 'not_found' (no such method of theirs, or the account isn't active), 'last_method' or
@@ -452,17 +470,18 @@ begin
   select coalesce(array_agg(i.provider order by i.created_at, i.id), '{}') into others
     from app.identities i where i.id = any (gone) and i.id <> ident.id;
 
-  -- Agent keys made, or agents claimed, from their sessions.
+  -- Agent keys made from their sessions, and every key of an agent their sessions created or claimed, whoever made
+  -- or rotated the key (the re-review, probe E: a key rotated from another session is still the agent they made).
   with revoked as (
     update app.agent_keys k set revoked_at = now()
       from app.agents g
       where g.id = k.agent_id and g.owner_id = me and k.revoked_at is null
-        and (k.by_identity = any (gone) or g.claimed_by_identity = any (gone))
+        and (k.by_identity = any (gone) or g.created_by_identity = any (gone) or g.claimed_by_identity = any (gone))
       returning k.id)
   select count(*) into keys from revoked;
 
-  -- Rules they set: back to drafting wherever one of their versions keeps "act" in force, and the daily cap back to
-  -- what it was before any raise of theirs. Lower only, never "off", by the system ('signin_unlinked').
+  -- Rules they set: every action one of their versions ever raised to "act" drafts again, and the daily cap goes back
+  -- to what it was before any raise of theirs. Lower only, never "off", by the system ('signin_unlinked').
   for a in
     select distinct on (r.agent_id) r.agent_id, r.version, r.post_mode, r.reply_mode, r.report_mode, r.daily_cap, r.reason
     from app.agent_rules r join app.agents g on g.id = r.agent_id
@@ -473,18 +492,19 @@ begin
     post := a.post_mode;
     rep := a.reply_mode;
     rpt := a.report_mode;
-    -- An action on "act" was raised by them if the version that last switched it to "act" is theirs. (A version of
-    -- theirs that only kept an owner's "act" as it was, or re-confirmed it, raised nothing, and the owner's choice stands.)
-    if post = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.post_mode <> 'act'), 0) + 1) then
+    -- An action on "act" drafts again if any version of theirs ever raised it to "act", however it was kept since: an
+    -- owner's re-save, a confirmation or a containment's end (which restores "act" as the system's own version) can't
+    -- launder it (the re-review, probe E). A version of theirs that only kept the owner's own "act" raised nothing.
+    if post = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.post_mode = 'act' and p.post_mode <> 'act') then
       post := 'draft';
     end if;
-    if rep = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.reply_mode <> 'act'), 0) + 1) then
+    if rep = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.reply_mode = 'act' and p.reply_mode <> 'act') then
       rep := 'draft';
     end if;
-    if rpt = 'act' and exists (select 1 from app.agent_rules x where x.agent_id = a.agent_id and x.by_identity = any (gone)
-         and x.version = coalesce((select max(y.version) from app.agent_rules y where y.agent_id = a.agent_id and y.report_mode <> 'act'), 0) + 1) then
+    if rpt = 'act' and exists (select 1 from app.agent_rules x join app.agent_rules p on p.agent_id = x.agent_id and p.version = x.version - 1
+         where x.agent_id = a.agent_id and x.by_identity = any (gone) and x.report_mode = 'act' and p.report_mode <> 'act') then
       rpt := 'draft';
     end if;
     select min(p.daily_cap) into cap_before

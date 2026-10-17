@@ -105,7 +105,12 @@ test('sealed state can\'t be read or changed, and fingerprints depend on the key
   const raw = Buffer.from(s, 'base64url'); raw[raw.length - 1] ^= 1;
   assert.strictEqual(c.open(k, raw.toString('base64url')), null, 'a changed cookie is refused');
   assert.strictEqual(c.open(c.subkey(key(), 'oauth state'), s), null, 'another key can\'t open it');
-  assert.ok(!s.includes('abc'));
+  // Encrypted, so the contents can't be read from it. Checked with a long value: a 3-letter one like 'abc' turns up
+  // in random base64url text now and then, which made this test fail by chance.
+  const secret = 'state-value-that-must-never-appear-in-the-cookie';
+  const sealed = c.seal(k, { s: secret });
+  assert.ok(!sealed.includes(secret) && !Buffer.from(sealed, 'base64url').includes(Buffer.from(secret)));
+  assert.ok(!sealed.includes(Buffer.from(JSON.stringify({ s: secret })).toString('base64url').slice(0, 40)), 'not merely encoded');
   const k1 = { version: 1, key: crypto.randomBytes(32) }, k2 = { version: 2, key: crypto.randomBytes(32) };
   const [a, b] = c.fingerprints([k2, k1], 'github', '12345');
   assert.notStrictEqual(a, b);
