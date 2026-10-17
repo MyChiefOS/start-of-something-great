@@ -52,18 +52,23 @@ test('G1: the site reads its database address in one place, checks certificates,
   delete process.env.DATABASE_URL;
   try { await assert.rejects(db.run({ actor: 'anon' }, () => {}), /DATABASE_URL is not set/); } finally { if (saved !== undefined) process.env.DATABASE_URL = saved; }
   const readers = sourceFiles().filter((f) => /\bDATABASE_URL/.test(read(f)) && !/^(test|db\/migrations)\//.test(f));
-  assert.deepStrictEqual(readers, ['db/index.js'], 'only db/index.js may read DATABASE_URL');
+  // The setup run names DATABASE_URL only to write it to Vercel; it never reads the site's address (checked below).
+  assert.deepStrictEqual(readers.filter((f) => f !== 'scripts/setup-production.js'), ['db/index.js'], 'only db/index.js may read DATABASE_URL');
+  assert.ok(!/process\.env\.DATABASE_URL|env\.DATABASE_URL\b|env\[['"`]DATABASE_URL/.test(read('scripts/setup-production.js')), 'the setup run never reads DATABASE_URL');
 });
 
+const RAW_SQL_OK = ['scripts/migrate.js', 'scripts/setup-production.js'];
 test('S8 code check: raw SQL, the driver, and identity or session changes appear only where allowed', () => {
   for (const f of sourceFiles().filter((x) => x.endsWith('.js') && !x.startsWith('test/'))) {
     const s = read(f);
-    if (/(\.unsafe\b|\[\s*['"`]unsafe['"`]\s*\])/.test(s)) assert.strictEqual(f, 'scripts/migrate.js', f + ' uses raw SQL; only the migration runner may');
+    // Raw SQL only in the migration runner and the production setup run (role and trigger statements can't take
+    // parameters); the setup run's statements are pinned by test/setup.test.js.
+    if (/(\.unsafe\b|\[\s*['"`]unsafe['"`]\s*\])/.test(s)) assert.ok(RAW_SQL_OK.includes(f), f + ' uses raw SQL; only the migration runner and the setup run may');
     if (/(require\(\s*['"`]postgres['"`]\s*\)|from\s+['"`]postgres['"`]|import\(\s*['"`]postgres['"`])/.test(s)) assert.strictEqual(f, 'db/index.js', f + ' loads the database driver directly; go through db/index.js');
     // Who is acting is set in exactly one place; nothing else may change it or keep state on a pooled connection.
     if (f !== 'db/index.js') {
       assert.ok(!/set_config|app\.(actor|member_id|agent_id)\b/.test(s), f + ' sets who is acting; only db/index.js may');
-      assert.ok(!/\b(set\s+(session|local\s+role|role)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || f === 'scripts/migrate.js', f + ' changes the session or keeps state past a transaction');
+      assert.ok(!/\b(set\s+(session|local\s+role|role)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || RAW_SQL_OK.includes(f), f + ' changes the session or keeps state past a transaction');
     }
   }
   const rules = read('.semgrep/database.yml');

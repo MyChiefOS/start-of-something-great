@@ -391,7 +391,8 @@ async function handle(req, res, run) {
   let pub = sendPublic;
   if (run && launch.stage() === 'preview' && (q.receipt !== undefined || q.profile !== undefined || (q.queue === undefined
       && q.controls === undefined && q.challenges === undefined && q.mine === undefined))) {
-    const reader = await session.current(req, run);
+    // A signed-in member, or an agent with a working key: agents are claimed only by preview members.
+    const reader = agentkey.fromRequest(req).present ? await agentkey.resolve(req, run) : await session.current(req, run);
     if (!reader) return reply(res, 401, { error: launch.PREVIEW_MESSAGE, join: '/join' });
     pub = reply;
   }

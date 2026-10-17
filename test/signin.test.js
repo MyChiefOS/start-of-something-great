@@ -1313,8 +1313,39 @@ test('launch gate: during the preview the email form answers everyone alike and 
     assert.strictEqual(mail.length, 0, 'no email to someone not in the preview');
     assert.strictEqual(await tokens(), before, 'no link was stored for them');
     const invited = await post('Invited@Example.com');
-    assert.strictEqual(invited.getHeader('Location'), '/join?sent=1');
+    assert.strictEqual(invited.getHeader('Location'), '/join?sent=preview', 'the very same answer as for a stranger');
     assert.strictEqual(mail.length, 1);
     assert.strictEqual(mail[0].to, 'invited@example.com');
   });
+});
+
+test('launch gate: an email link sent while public, or while on the list, makes no new account once that has changed', async () => {
+  const mail = [];
+  const env = setup({ mail });
+  const ask = async (email) => {
+    const b = jar(); const r = res();
+    await env.flow.emailStart(req('POST', '/auth/email/start', { body: { ft: stamp(env), email }, origin: ORIGIN, cookie: b.header() }), r);
+    b.take(r);
+    return b;
+  };
+  const use = async (b) => {
+    const t = mail[mail.length - 1].link.split('#t=')[1];
+    const r = res();
+    await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t }, origin: ORIGIN, cookie: b.header() }), r);
+    b.take(r);
+    return r;
+  };
+  const members = async () => (await q('select count(*)::int as n from app.members'))[0].n;
+  const b1 = await inStage({ LAUNCH_STAGE: 'public', LAUNCH_PREVIEW_ALLOW: '' }, () => ask('early@example.com'));
+  const before = await members();
+  const r1 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: '' }, () => use(b1));
+  assert.strictEqual(r1.getHeader('Location'), '/join?error=preview', 'sent while public, used during the preview');
+  assert.strictEqual(await members(), before, 'no account was made');
+  const b2 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:listed@example.com' }, () => ask('listed@example.com'));
+  const r2 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: '' }, () => use(b2));
+  assert.strictEqual(r2.getHeader('Location'), '/join?error=preview', 'sent while listed, used after coming off the list');
+  const b3 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:kept@example.com' }, () => ask('kept@example.com'));
+  const r3 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:kept@example.com' }, () => use(b3));
+  assert.strictEqual(r3.getHeader('Location'), '/', 'still listed: signed in');
+  assert.strictEqual(await members(), before + 1);
 });

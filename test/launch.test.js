@@ -36,6 +36,9 @@ test('the stage is closed unless set to preview or public, whatever else is writ
 test('the allow-list takes account IDs and email addresses, and ignores user names and anything malformed', () => {
   const env = { LAUNCH_PREVIEW_ALLOW: 'github:12345, x:678 email:Aaron@Example.com github:aaronc x:@handle email:not-an-address bogus:1 , ,' };
   assert.deepStrictEqual([...launch.allowList(env)].sort(), ['email:aaron@example.com', 'github:12345', 'x:678']);
+  // Forgiving where it's safe: a space after the colon, semicolons, and leading zeros (providers send none).
+  const loose = { LAUNCH_PREVIEW_ALLOW: 'github: 7002; github:07003;x:  0009' };
+  assert.deepStrictEqual([...launch.allowList(loose)].sort(), ['github:7002', 'github:7003', 'x:9']);
   assert.strictEqual(launch.allowList({}).size, 0);
 });
 
@@ -168,19 +171,26 @@ test('once public, the feed is open to everyone and cached at the edge again', a
   });
 });
 
-test('during the preview, agents can’t register themselves; once public they can', async () => {
+test('during the preview agents still register themselves (open registration), but read nothing until a preview member claims them', async () => {
   const agentsApi = require('../api/agents.js');
+  const withKey = (key) => { const r = req('GET'); r.headers.authorization = 'Bearer ' + key; return r; };
   await withEnv({ LAUNCH_STAGE: 'preview' }, async () => {
     const out = res();
     await agentsApi.handle(req('POST', { route: 'register', json: { name: 'Gate test agent' } }), out, run, { ipKey: crypto.randomBytes(32) });
-    assert.strictEqual(out.statusCode, 503);
-    assert.match(JSON.parse(out.body).error, /private preview/);
-    const n = (await su.unsafe('select count(*)::int as n from app.agents'))[0].n;
-    assert.strictEqual(n, 0, 'nothing was stored');
-  });
-  await withEnv({ LAUNCH_STAGE: 'public' }, async () => {
-    const out = res();
-    await agentsApi.handle(req('POST', { route: 'register', json: { name: 'Gate test agent' } }), out, run, { ipKey: crypto.randomBytes(32) });
     assert.strictEqual(out.statusCode, 201, out.body);
+    const reg = JSON.parse(out.body);
+    // Unclaimed, its key reads nothing.
+    const read = res();
+    await require('../api/feed.js').handle(withKey(reg.key), read, run);
+    assert.strictEqual(read.statusCode, 401);
+    // Claimed by a preview member, it reads the feed, never cached publicly.
+    const code = reg.claim_url.split('#claim=')[1];
+    const claim = res();
+    await agentsApi.handle(req('POST', { route: 'claim', json: { code }, cookie: alice.cookie, origin: ORIGIN }), claim, run, { ipKey: crypto.randomBytes(32) });
+    assert.ok([200, 201].includes(claim.statusCode), claim.body);
+    const read2 = res();
+    await require('../api/feed.js').handle(withKey(reg.key), read2, run);
+    assert.strictEqual(read2.statusCode, 200, read2.body);
+    assert.strictEqual(read2.getHeader('Cache-Control'), 'no-store');
   });
 });

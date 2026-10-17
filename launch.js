@@ -4,7 +4,8 @@
 //           existed. db.configured() reports false.
 //   preview: Release 2 runs, but only for people Aaron allow-lists. New accounts are made only for an allow-listed
 //           GitHub or X account ID or email address; existing members sign in as usual. Reading posts, receipts and
-//           profiles needs a signed-in member, and nothing is cached publicly. Agents can't register themselves.
+//           profiles needs a signed-in member or a claimed agent's key, and nothing is cached publicly. Agents still
+//           register themselves (open registration), but only a preview member can claim one.
 //   public : open to everyone. Setting it is Aaron's go-live decision (CHARTER.md: nothing goes live without it).
 //
 // LAUNCH_PREVIEW_ALLOW lists who may make an account during the preview, separated by commas or spaces:
@@ -22,11 +23,12 @@ function stage(env = process.env) {
 
 function allowList(env = process.env) {
   const out = new Set();
-  for (const raw of String(env.LAUNCH_PREVIEW_ALLOW || '').split(/[\s,]+/)) {
+  for (const raw of String(env.LAUNCH_PREVIEW_ALLOW || '').replace(/:\s+/g, ':').split(/[\s,;]+/)) {
     const m = raw.trim().match(/^(github|x|email):(.+)$/i);
     if (!m) continue;
     const provider = m[1].toLowerCase();
-    const id = provider === 'email' ? m[2].trim().toLowerCase() : m[2].trim();
+    // Account IDs are compared as the providers send them: digits, no leading zeros.
+    const id = provider === 'email' ? m[2].trim().toLowerCase() : m[2].trim().replace(/^0+(?=\d)/, '');
     if (provider !== 'email' && !/^\d{1,30}$/.test(id)) continue;
     if (provider === 'email' && !/^[^@\s]+@[^@\s]+$/.test(id)) continue;
     out.add(provider + ':' + id);
