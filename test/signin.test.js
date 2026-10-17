@@ -437,7 +437,7 @@ test('F10: a banned member can\'t sign back in with the same account, and their 
   const a = await oauth(env, 'github', '5001');
   // Banning is Aaron's (PR 6 adds the button); here the test acts as an administrator.
   await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`;
     await t.unsafe(`update app.members set status = 'banned' where id = (select member_id from app.sessions where token_hash = '${c.sha256hex(a.browser.get(SESSION))}')`);
   });
   assert.deepStrictEqual(await me(env, a.browser), { signed_in: false });
@@ -495,7 +495,7 @@ test('F10, S12: after a fingerprint key rotation, email members keep their accou
   assert.strictEqual((await me(later.env, later.b)).member_id, id, 'the same account after the rotation');
   const banned = await viaEmail([k1], 'gone@example.com');
   const bannedId = (await me(banned.env, banned.b)).member_id;
-  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
+  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
   const back = await viaEmail([k2, k1], 'gone@example.com');
   assert.strictEqual(back.location, '/join?error=unavailable', 'still banned after the rotation');
 });

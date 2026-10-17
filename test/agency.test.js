@@ -3,6 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -72,7 +73,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id };
+  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -84,13 +85,15 @@ test.after(async () => {
 });
 
 // A member with a session; { stale: true } makes the session an hour old (not a fresh sign-in).
-async function member(level = 2, name = 'Owner', { stale = false } = {}) {
+// PR 17: with a passkey and a passkey check already passed, unless { stepUp: false }, so these tests keep testing their own rules.
+async function member(level = 2, name = 'Owner', { stale = false, stepUp = true } = {}) {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  if (stepUp) await stepUpFor(su, out.memberId);
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp } };
 }
 async function api(r) {
   const out = res();

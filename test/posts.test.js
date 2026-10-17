@@ -3,6 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -102,7 +103,8 @@ async function member(level = 1, name = 'New member') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: level === 0 ? 'email' : 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
 }
 // Changing a post's status is a reviewer's decision (PR 4), even for the database superuser.
 // A reviewer always acts under their member ID, which closed flags record.
@@ -192,7 +194,7 @@ test('S2: the public feed shows only live posts by active members, a page at a t
   assert.strictEqual(prof.livePosts, 5);
   assert.strictEqual((await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'agents', limit: 50 }))).length, 0, 'the agents lane is separate (F5)');
   // A banned member's posts leave the feed.
-  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${a.id}'`); });
+  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${a.id}'`); });
   const after = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 50 }));
   assert.ok(!after.some((p) => ids.includes(p.id)));
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, a.id)), null);

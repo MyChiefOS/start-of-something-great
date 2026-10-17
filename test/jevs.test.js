@@ -6,6 +6,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -182,7 +183,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member({ level: 2, name: 'Aaron' });
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
-  aaron.ctx = { actor: 'admin', memberId: aaron.id };
+  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
 });
 const aaronCookie = () => aaron.cookie;
 // Audit rows written in one transaction share one time, and their order within it isn't fixed (UUIDv7s made in the
@@ -231,7 +232,8 @@ async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (ageDays) await q(`update app.members set created_at = now() - interval '${ageDays} days' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
-  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
+  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
 }
 function httpReq(method, url, { cookie = '', json, key, query = {}, ip = '203.0.113.60', country = 'US' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': ip };
