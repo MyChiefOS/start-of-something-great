@@ -65,8 +65,10 @@ function fromEnv() {
   return shared;
 }
 
-// Whether a database address is set (without reading or checking it here).
-const configured = () => Boolean(process.env.DATABASE_URL);
+// Whether Release 2 runs: a database address is set (without reading or checking it here) AND Aaron has opened the
+// gate (LAUNCH_STAGE is preview or public, launch.js). While closed, every route behaves as if there were no
+// database, so setting up the database can never open the site by itself.
+const configured = () => Boolean(process.env.DATABASE_URL) && require('../launch').stage() !== 'closed';
 
 // What the site's functions call: db.run({ actor: 'member', memberId }, (t) => members.get(t, id)).
 const run = async (ctx, fn) => tx(fromEnv(), ctx, fn);
