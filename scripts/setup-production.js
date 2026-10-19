@@ -12,8 +12,13 @@
 //             An existing key is never replaced: members are recognised by FINGERPRINT_KEY_1.
 //   stage     LAUNCH_STAGE (closed, preview or public; "unchanged", the default, leaves it alone) and, for the
 //             preview, LAUNCH_PREVIEW_ALLOW.
-//   admin     makes SETUP_ADMIN_MEMBER_ID the administrator (after Aaron has signed in once and read it at /auth/me).
-//   redeploy  redeploys the current production build, so Vercel's new settings take effect.
+//   admin     makes SETUP_ADMIN_MEMBER_ID the administrator (after Aaron has signed in once and read it at /auth/me);
+//             refuses if someone else already is (one administrator), and writes an audit row.
+//   redeploy  redeploys the deployment production currently serves (so it works after a rollback too), waits for it
+//             to be ready, then checks the live site answers and, if the stage was set in this run, shows it.
+//
+// The stage step also records the stage as the repository variable EXPECTED_STAGE (GITHUB_TOKEN, actions: write), so
+// the uptime monitor can tell when the live stage drifts from the last approved run (D1).
 //
 // Settings it reads (placeholders until Aaron adds them; see SETUP.md):
 //   secrets  MIGRATION_DATABASE_URL, MIGRATION_DATABASE_CA, VERCEL_TOKEN
@@ -99,14 +104,62 @@ function vercel(token, { fetchImpl = fetch, project = VERCEL_PROJECT, team = VER
       }
       return { existed: false };
     },
-    async redeploy() {
+    // The deployment production serves right now: the project's production target, which is what a rollback moves,
+    // so a redeploy after a rollback rebuilds the rolled-back code, not the newest build (RK68, S5).
+    async currentProduction() {
+      const p = await call('GET', '/v9/projects/' + project);
+      const t = p.targets && p.targets.production;
+      if (t && (t.id || t.uid)) return { uid: t.id || t.uid, name: t.name || p.name };
       const list = await call('GET', '/v6/deployments?projectId=' + project + '&target=production&state=READY&limit=1');
       const d = (list.deployments || [])[0];
       if (!d) throw new Error('no ready production deployment to redeploy');
+      return { uid: d.uid, name: d.name };
+    },
+    async redeploy() {
+      const d = await this.currentProduction();
       const out = await call('POST', '/v13/deployments', { name: d.name, deploymentId: d.uid, target: 'production' });
       return out.id || out.uid;
+    },
+    // Waits until a deployment is ready (or has failed), so the run reports what really happened.
+    async waitReady(id, { timeoutMs = 10 * 60 * 1000, everyMs = 10000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+      const until = Date.now() + timeoutMs;
+      for (;;) {
+        const d = await call('GET', '/v13/deployments/' + id);
+        const state = d.readyState || d.state;
+        if (state === 'READY') return d;
+        if (['ERROR', 'CANCELED'].includes(state)) throw new Error('the redeploy ' + state.toLowerCase() + ' (' + id + '); the previous deployment is still serving');
+        if (Date.now() > until) throw new Error('the redeploy is still building after ' + Math.round(timeoutMs / 60000) + ' minutes; check it in Vercel before running again');
+        await sleep(everyMs);
+      }
     }
   };
+}
+
+// ---- GitHub, through its REST API with the run's own token: records the stage the last approved run set, as the
+// repository variable EXPECTED_STAGE, which the uptime monitor compares with the live site (D1).
+function github(token, repo, { fetchImpl = fetch } = {}) {
+  const call = async (method, path, body) => {
+    const r = await fetchImpl('https://api.github.com/repos/' + repo + path, {
+      method, headers: { authorization: 'Bearer ' + token, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' }, body: body ? JSON.stringify(body) : undefined });
+    if (!r.ok && r.status !== 404) throw new Error('GitHub ' + method + ' ' + path + ' failed (' + r.status + ')');
+    return r.status;
+  };
+  return {
+    async setVariable(name, value) {
+      const st = await call('PATCH', '/actions/variables/' + name, { name, value });
+      if (st === 404) await call('POST', '/actions/variables', { name, value });
+    }
+  };
+}
+
+// After a redeploy: the live site answers, and shows the stage this run set (if it set one). Read through a unique
+// address so no cache answers for the previous deployment.
+async function verifyLive({ site, stage, fetchImpl = fetch, tag }) {
+  const r = await fetchImpl(site + '/api/status?after=' + encodeURIComponent(tag || Date.now()), { headers: { 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(15000) });
+  if (r.status !== 200) throw new Error('after the redeploy the site answered ' + r.status + ' at /api/status');
+  const body = JSON.parse(await r.text());
+  if (stage && body.stage !== stage) throw new Error('after the redeploy the site reports stage "' + body.stage + '", not "' + stage + '"; Vercel may still be switching, check again in a minute, and do not open anything until it matches');
+  return body.stage;
 }
 
 // ---- The steps.
@@ -166,7 +219,7 @@ async function stepKeys(v, { log, mask = maskInActions }) {
 
 // 'unchanged' (the workflow's default) leaves the stage exactly as it is, so a re-run of the default steps can never
 // move the site forwards or backwards by accident (S6b).
-async function stepStage(v, { stage, allow, log }) {
+async function stepStage(v, { stage, allow, log, gh = null }) {
   const { STAGES, allowList } = require('../launch');
   if (stage === 'unchanged' || stage === '') { log('LAUNCH_STAGE: unchanged'); return; }
   if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed, preview or public');
@@ -178,19 +231,29 @@ async function stepStage(v, { stage, allow, log }) {
   }
   await v.set('LAUNCH_STAGE', stage, { sensitive: false });
   log('LAUNCH_STAGE: ' + stage);
+  if (gh) {
+    try { await gh.setVariable('EXPECTED_STAGE', stage); log('EXPECTED_STAGE: ' + stage + ' (recorded in GitHub for the uptime monitor)'); }
+    catch (e) { log('EXPECTED_STAGE: could not be recorded (' + e.message + '). Set the repository variable EXPECTED_STAGE to ' + stage + ' by hand (Settings, Secrets and variables, Actions), or the uptime monitor will report the stage as drifted'); }
+  }
 }
 
 async function stepAdmin(sql, { memberId, log }) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memberId || '')) {
     throw new Error('SETUP_ADMIN_MEMBER_ID must be your member_id from https://dayonegreat.com/auth/me after signing in once');
   }
-  const n = await sql.begin(async (t) => {
-    await t`set local role dog_owner`;
-    const r = await t`update app.members set is_admin = true where id = ${memberId} and status = 'active'`;
-    return r.count;
-  });
-  if (n !== 1) throw new Error('no active member with that ID; nothing changed');
-  log('administrator: set');
+  // The database does it (migration 013, app.set_administrator): one administrator, a second call for the same
+  // member changes nothing, and the change and its audit row ('admin.set', as the system) land together (S8).
+  let outcome;
+  try {
+    outcome = await sql.begin(async (t) => {
+      await t`set local role dog_owner`;
+      const [{ set_administrator }] = await t`select app.set_administrator(${memberId})`;
+      return set_administrator;
+    });
+  } catch (e) {
+    throw new Error(/already the administrator|no active member/.test(e.message) ? e.message : 'could not set the administrator (' + e.message + ')');
+  }
+  log(outcome === 'already' ? 'administrator: already this member; nothing changed' : 'administrator: set, and recorded in the audit log');
 }
 
 function steps(list) {
@@ -235,6 +298,9 @@ async function main(env = process.env, deps = {}) {
   if (!todo.length) throw new Error('nothing to do: set SETUP_STEPS');
   plan(env); // the same input checks the plan job ran, in case the run was started another way
   const v = deps.vercel || vercel(env.VERCEL_TOKEN);
+  const gh = deps.github || (env.GITHUB_TOKEN && env.GITHUB_REPOSITORY ? github(env.GITHUB_TOKEN, env.GITHUB_REPOSITORY) : null);
+  const site = env.SITE_URL || 'https://dayonegreat.com';
+  const stageSet = todo.includes('stage') ? String(env.SETUP_STAGE || 'unchanged').trim().toLowerCase() : 'unchanged';
   let sql = deps.sql || null;
   const needsDb = todo.includes('database') || todo.includes('admin');
   if (needsDb && !sql) {
@@ -255,9 +321,16 @@ async function main(env = process.env, deps = {}) {
         await stepDatabase(sql, v, { migrationUrl: env.MIGRATION_DATABASE_URL, ca: env.MIGRATION_DATABASE_CA, rotate: env.SETUP_ROTATE_DB_PASSWORD === 'yes', log, migrate: deps.migrate || migrate, check });
       }
       if (s === 'keys') await stepKeys(v, { log });
-      if (s === 'stage') await stepStage(v, { stage: String(env.SETUP_STAGE || 'unchanged').trim().toLowerCase(), allow: env.SETUP_PREVIEW_ALLOW, log });
+      if (s === 'stage') await stepStage(v, { stage: stageSet, allow: env.SETUP_PREVIEW_ALLOW, log, gh });
       if (s === 'admin') await stepAdmin(sql, { memberId: String(env.SETUP_ADMIN_MEMBER_ID || '').trim(), log });
-      if (s === 'redeploy') log('redeploy started: ' + await v.redeploy());
+      if (s === 'redeploy') {
+        const id = await v.redeploy();
+        log('redeploy started: ' + id);
+        await v.waitReady(id);
+        log('redeploy ready');
+        const live = await (deps.verifyLive || verifyLive)({ site, stage: stageSet === 'unchanged' ? null : stageSet, tag: id });
+        log('live site answers; stage: ' + live);
+      }
     }
   } finally {
     if (sql && !deps.sql) await sql.end({ timeout: 5 });
@@ -272,4 +345,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, plan, steps, scramVerifier, siteDatabaseUrl, vercel, stepDatabase, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };
+module.exports = { main, plan, steps, scramVerifier, siteDatabaseUrl, vercel, github, verifyLive, stepDatabase, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };

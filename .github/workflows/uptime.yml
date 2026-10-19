@@ -33,4 +33,6 @@ jobs:
       - name: Check the site, API and MCP server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Set by the Production setup run's stage step; the live stage must match it (D1).
+          EXPECTED_STAGE: ${{ vars.EXPECTED_STAGE }}
         run: node scripts/uptime.js
