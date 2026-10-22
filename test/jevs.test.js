@@ -6,6 +6,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -182,7 +183,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member({ level: 2, name: 'Aaron' });
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
-  aaron.ctx = { actor: 'admin', memberId: aaron.id };
+  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
 });
 const aaronCookie = () => aaron.cookie;
 // Audit rows written in one transaction share one time, and their order within it isn't fixed (UUIDv7s made in the
@@ -231,7 +232,8 @@ async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (ageDays) await q(`update app.members set created_at = now() - interval '${ageDays} days' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
-  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
+  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
 }
 function httpReq(method, url, { cookie = '', json, key, query = {}, ip = '203.0.113.60', country = 'US' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': ip };
@@ -645,7 +647,8 @@ async function riskyMember(env, name, account) {
   const [m] = await q(`select member_id as id from app.sessions where token_hash = '${c.sha256hex(cookie.split('=')[1])}'`);
   await run({ actor: 'member', memberId: m.id }, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
   await q(`update app.identities set level = 0 where member_id = '${m.id}'`);
-  return { id: m.id, cookie, ctx: { actor: 'member', memberId: m.id }, account };
+  await stepUpFor(su, m.id); // PR 17: deleting needs a passkey check too
+  return { id: m.id, cookie, ctx: { actor: 'member', memberId: m.id, stepUp: true }, account };
 }
 async function askToDelete(env, who) {
   const r = res();
@@ -1135,7 +1138,9 @@ test('regional gate, members travelling: a confirmation page first; Cancel store
   await env.flow.regionContinue(formReq('/auth/region/continue', {}, { country: 'DE', cookie: cookieOf(deFinish, '__Host-dog_region') }), deGo);
   assert.strictEqual(deGo.getHeader('Location'), '/');
   assert.ok(cookieOf(deGo, '__Host-dog_session'));
-  // A signed-in member linking another sign-in method from a declined region confirms too, then it is linked.
+  // A signed-in member linking another sign-in method from a declined region confirms too, then it is linked (PR 17:
+  // after a passkey check).
+  await stepUpFor(su, (await su`select member_id from app.sessions where token_hash = ${c.sha256hex(session.split('=')[1])}`)[0].member_id);
   const { r2: linkAsk } = await oauthFlow(env, 'github', '7202', { country: 'CH', query: '?link=1', cookie: session });
   assert.match(linkAsk.body, /You appear to be in Switzerland\./);
   const linked = res();

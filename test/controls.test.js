@@ -3,6 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -85,7 +86,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 6 });
   aaron = await member(1, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id };
+  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -103,7 +104,8 @@ async function member(level = 2, name = 'Owner') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  return { id: out.memberId, fp, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
+  return { id: out.memberId, fp, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
 }
 async function feedApi(r) {
   const out = res();
@@ -264,7 +266,7 @@ test('F9: only Aaron sees or sets brakes; a brake request must name its scope; a
   // Not even by switching it off and loosening it in the same step.
   await assert.rejects(run(aaron.ctx, (t) => t`update app.brakes set lifted_at = now(), member_id = null where id = ${on.brake.id}`), /permission denied|switched off/);
   await assert.rejects(su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
     await t`update app.brakes set lifted_at = now(), people_per_hour = 1000 where id = ${on.brake.id}`;
   }), /a brake can only be switched off/);
   // Switching off records who did it, so even the owner can't do it without saying who is acting.
@@ -388,7 +390,7 @@ test('F10: Aaron can\'t be banned, members can\'t ban, and bans need a real memb
   const m = await member(2, 'Would-be banner');
   assert.strictEqual((await control({ ban: aaron.id })).status, 409);
   await assert.rejects(su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true)`;
+    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
     await t`update app.members set status = 'banned' where id = ${aaron.id}`;
   }), /administrator can't be banned/, 'not even directly');
   assert.strictEqual((await control({ ban: aaron.id }, m)).status, 403);
@@ -420,7 +422,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     };
     const boss = await mk('Boss');
     await s2.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.id}'`); });
-    const bossCtx = { actor: 'admin', memberId: boss.id };
+    const bossCtx = { actor: 'admin', memberId: boss.id, stepUp: true };
     const ann = await mk('Ann'), ben = await mk('Ben'), quiet = await mk('Quiet');
     // Ann: 2 agents; 3 people posts (two the same text apart from case and punctuation), 4 agent posts.
     const agentIds = [];

@@ -32,8 +32,8 @@
   function decide(card, i, decision, buttons, result) {
     buttons.forEach(function (b) { b.disabled = true; });
     result.textContent = 'Saving…';
-    fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ review: i.id, decision: decision }) })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
+    // PR 17: a passkey check covers 5 minutes of decisions; /passkey.js asks for it when needed and tries again.
+    window.dogPasskey.postJson('/api/feed', { review: i.id, decision: decision })
       .then(function (x) {
         if (!x.ok) {
           result.textContent = x.d.error || 'That didn’t go through.';
@@ -127,8 +127,7 @@
             b.type = 'button';
             b.addEventListener('click', function () {
               buttons.forEach(function (y) { y.disabled = true; });
-              fetch('/api/notify/appeals', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ containment: cn.id, decision: d }) })
-                .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, d: j }; }); })
+              window.dogPasskey.postJson('/api/notify/appeals', { containment: cn.id, decision: d })
                 .then(function (y) { result.textContent = y.ok ? (d === 'lift' ? 'Lifted: their agents are back on their rules.' : 'Kept: it ends on time.') : y.d.error; buttons.forEach(function (z) { z.hidden = y.ok; z.disabled = false; }); });
             });
             row.appendChild(b);

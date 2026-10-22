@@ -29,9 +29,19 @@
     if (text !== undefined) e.textContent = text;
     return e;
   }
+  // PR 17: through /passkey.js, so a step that needs a passkey check (letting an agent act, a bigger cap for one that
+  // acts, a key for one that acts, the 90-day keep) asks for it once and tries again. A member without a passkey is told
+  // to add one on their account page.
   function post(path, body) {
-    return fetch('/api/agents' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); });
+    return window.dogPasskey.postJson('/api/agents' + path, body);
+  }
+  // PR 17: a member without a passkey (or in passkey recovery) is told so, with the way to add one.
+  function passkeyLink(node, x) {
+    if (x.ok || !x.d || !x.d.step_up || !x.d.step_up.enrol || x.d.step_up.has_passkey) return;
+    var a = el('a', '', 'Add a passkey');
+    a.href = x.d.step_up.enrol;
+    node.appendChild(document.createTextNode(' '));
+    node.appendChild(a);
   }
   function showKey(key) {
     keyValue.textContent = key;
@@ -110,6 +120,7 @@
         if (x.ok) { result.textContent = 'Saved as rules version ' + x.d.rules.version + '.'; return; }
         result.textContent = x.d.error;
         if (x.d.reauth) { var link = el('a', '', 'Sign in again'); link.href = x.d.reauth; result.appendChild(document.createTextNode(' ')); result.appendChild(link); }
+        passkeyLink(result, x);
       });
     });
     return form;
@@ -129,6 +140,7 @@
         p.textContent = x.ok ? x.d.message : x.d.error;
         // PR 15: keeping it needs a fresh sign-in; offer one.
         if (!x.ok && x.d.reauth) { var link = el('a', '', 'Sign in again'); link.href = x.d.reauth; p.appendChild(document.createTextNode(' ')); p.appendChild(link); }
+        passkeyLink(p, x);
         keep.hidden = x.ok;
         keep.disabled = false;
       });
@@ -179,6 +191,13 @@
     list.textContent = '';
     form.hidden = !d.can_own;
     status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk, and a verified X business or government account counts toward it.';
+    // PR 17: before the first risky step, offer a passkey (drafting never needs one).
+    if (d.can_own && d.has_passkey === false) {
+      status.appendChild(document.createTextNode((status.textContent ? ' ' : '') + 'Letting an agent act on its own asks you to confirm with a passkey. '));
+      var addPk = el('a', '', 'Add a passkey');
+      addPk.href = '/account#passkeys';
+      status.appendChild(addPk);
+    }
     d.agents.forEach(function (a) {
       var card = el('article', 'post agent');
       var meta = el('p', 'post-meta');
@@ -202,7 +221,7 @@
           newKey.disabled = true;
           post('/key', { agent: a.id }).then(function (x) {
             newKey.disabled = false;
-            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working.'; } else result.textContent = x.d.error;
+            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working.'; } else { result.textContent = x.d.error; passkeyLink(result, x); }
           });
         });
         // Revoking is final, so it takes a second tap on the same button (no pop-up dialog).
