@@ -376,6 +376,12 @@ test('PK3: every one of Aaron\'s controls needs a passkey check: brakes, bans, d
   const active = await person({ name: 'Still active' });
   await assert.rejects(run({ ...aaron.ctx, note: 'x' }, (t) => controls.setStatus(t, { member: active.id, status: 'banned' })), /step_up/);
   await assert.rejects(run(aaron.ctx, (t) => controls.decideDeletion(t, { review: review.id, decision: 'restore' })), /step_up/);
+  // Security batch 1's review, finding 1: "delete", the one that can't be undone, too; and the flag alone, without
+  // Aaron's session having passed a check, is not enough.
+  await assert.rejects(run(aaron.ctx, (t) => controls.decideDeletion(t, { review: review.id, decision: 'delete' })), /step_up/);
+  await lapse(aaron);
+  await assert.rejects(run({ ...aaron.ctx, stepUp: true }, (t) => controls.decideDeletion(t, { review: review.id, decision: 'delete' })), /step_up/);
+  assert.strictEqual(Number((await q(`select count(*) as n from app.members where id = (select member_id from app.deletion_reviews where id = '${review.id}')`))[0].n), 1, 'nothing was deleted');
   // Aaron renaming himself is not a control.
   assert.strictEqual(await run(aaron.ctx, (t) => store.rename(t, 'Aaron')), true);
 });

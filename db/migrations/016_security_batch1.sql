@@ -148,8 +148,9 @@ declare
 begin
   -- A member's own deletion runs inside app.delete_account (owned by dog_erase), which checks the step-up and the
   -- 24-hour wait up front, while the member's session still exists: the deletion ends every session before it reaches
-  -- this row. No other path acts as dog_erase.
-  if current_user = 'dog_erase' then
+  -- this row. Only that path is skipped. Aaron's decisions on a deletion review (app.deletion_review_decide, also owned
+  -- by dog_erase) are checked here, against his own session, which the deletion leaves alone.
+  if current_user = 'dog_erase' and app.actor_kind() = 'member' then
     return case when tg_op = 'DELETE' then old else new end;
   end if;
   if app.actor_kind() in ('member', 'admin')
@@ -180,7 +181,8 @@ declare
 begin
   -- 016: the step-up is checked against the request's own session. When the whole account is being deleted, every
   -- session of the member is already gone (app.erase_member ends them first), and that deletion was checked up front:
-  -- app.delete_account for the member's own, and Aaron's own session through members_step_up for a deletion review.
+  -- app.delete_account for the member's own, and members_step_up (against Aaron's own session) for his "delete" on a
+  -- deletion review.
   if app.actor_kind() in ('member', 'admin') and exists (select 1 from app.passkeys k where k.identity_id = old.id)
      and exists (select 1 from app.sessions s where s.member_id = old.member_id) and app.step_up_check(false) <> 'ok' then
     raise exception 'step_up' using errcode = 'P0001',
