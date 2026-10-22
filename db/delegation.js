@@ -34,6 +34,8 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
     if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     // A containment is in force: nothing can be raised until it ends (011); lowering still works.
     if (e.code === 'P0001' && e.message === 'contained') return { refused: 'contained' };
+    // A sub-agent is never allowed more than the agent above it (PR 16); lowering always works.
+    if (e.code === 'P0001' && e.message === 'above_parent') return { refused: 'above_parent' };
     if (e.code === '42501') return { refused: 'not_found' };
     throw e;
   }
@@ -102,7 +104,12 @@ async function decline(t, draft) {
 
 // What each of the owner's agents did (R36), and how far the owner trusted it, over the last 30 days.
 async function activity(t) {
-  const agents = await t`select id, name, status from app.agents where owner_id = app.current_member() order by id desc limit 200`;
+  // The agents the owner made or claimed first, in their own part of the query, so a busy tree of sub-agents never
+  // pushes them off (the review of PR 16, F3); then sub-agents still running or made in the last week.
+  const agents = await t`(select id, name, status from app.agents where owner_id = app.current_member() and parent_id is null order by id desc limit 300)
+                         union all
+                         (select id, name, status from app.agents where owner_id = app.current_member() and parent_id is not null
+                            and (status = 'active' or created_at > now() - interval '7 days') order by id desc limit 300)`;
   if (!agents.length) return [];
   const ids = agents.map((a) => a.id);
   const rules = await t`select distinct on (agent_id) * from app.agent_rules where agent_id in ${t(ids)} order by agent_id, version desc`;
@@ -136,7 +143,10 @@ async function activity(t) {
 async function receipt(t, postId) {
   const [r] = await t`select * from app.receipt(${v.uuid('post', postId)}::uuid)`;
   if (!r) return null;
-  return { post: { id: r.post_id, publishedAt: r.published_at }, agent: { id: r.agent_id, name: r.agent_name }, owner: { id: r.owner_id, name: r.owner_name },
+  // A sub-agent's receipt names the agents above it, nearest first (PR 16).
+  return { post: { id: r.post_id, publishedAt: r.published_at },
+    agent: { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name, active: x.active !== false })) },
+    owner: { id: r.owner_id, name: r.owner_name },
     delegation: r.delegation, rules: { version: r.rules_version, post: r.post_mode, dailyCap: r.daily_cap },
     minutesToApprove: r.minutes_to_approve };
 }

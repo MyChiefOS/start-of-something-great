@@ -30,8 +30,8 @@ const MIGRATION = fs.readFileSync(path.join(root, 'db', 'migrations', '010_jevs.
 
 // ---- Without a database: the questions, the lists, the text checks, the regional list ----
 
-test('JEVs questions: stable IDs J01 to J14, each with a public title and description, scoring 0 to 100', () => {
-  assert.deepStrictEqual(jevs.QUESTIONS.map((q) => q.id), Array.from({ length: 14 }, (_, i) => 'J' + String(i + 1).padStart(2, '0')));
+test('JEVs questions: stable IDs J01 to J15, each with a public title and description, scoring 0 to 100', () => {
+  assert.deepStrictEqual(jevs.QUESTIONS.map((q) => q.id), Array.from({ length: 15 }, (_, i) => 'J' + String(i + 1).padStart(2, '0')));
   for (const q of jevs.QUESTIONS) {
     assert.ok(q.title.length >= 4 && q.title.length <= 60, q.id + ' title');
     assert.ok(q.description.length >= 40, q.id + ' needs a plain description');
