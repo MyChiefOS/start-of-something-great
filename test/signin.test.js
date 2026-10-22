@@ -16,7 +16,7 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-const { stepUpFor } = require('./passkey-helpers');
+const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -265,6 +265,18 @@ async function stepUp(browser) {
   const [s] = await su`select member_id from app.sessions where token_hash = ${c.sha256hex(tok)}`;
   if (s) await stepUpFor(su, s.member_id);
 }
+// An administrator for tests that act as one straight in the database: a real member whose session passed a passkey
+// check, because since security batch 1 the database checks the step-up against that session.
+let adminCtx;
+async function admin() {
+  if (!adminCtx) {
+    const env = setup({ accounts: { 'github:99001': { accountId: '99001', name: 'Admin', level: 2, recheckAfter: null } } });
+    const a = await oauth(env, 'github', '99001');
+    await stepUp(a.browser);
+    adminCtx = { memberId: (await me(env, a.browser)).member_id, session: hashOf(a.browser) };
+  }
+  return adminCtx;
+}
 // The full GitHub or X round trip, as a browser would do it.
 async function oauth(env, provider, account, { browser = jar(), query = '', ip, passkey = true } = {}) {
   if (/link=1/.test(query) && passkey) await stepUp(browser);
@@ -456,7 +468,7 @@ test('F10: a banned member can\'t sign back in with the same account, and their 
   const a = await oauth(env, 'github', '5001');
   // Banning is Aaron's (PR 6 adds the button); here the test acts as an administrator.
   await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`;
+    await actAsAdmin(t, await admin());
     await t.unsafe(`update app.members set status = 'banned' where id = (select member_id from app.sessions where token_hash = '${c.sha256hex(a.browser.get(SESSION))}')`);
   });
   assert.deepStrictEqual(await me(env, a.browser), { signed_in: false });
@@ -514,7 +526,7 @@ test('F10, S12: after a fingerprint key rotation, email members keep their accou
   assert.strictEqual((await me(later.env, later.b)).member_id, id, 'the same account after the rotation');
   const banned = await viaEmail([k1], 'gone@example.com');
   const bannedId = (await me(banned.env, banned.b)).member_id;
-  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
+  const boss = await admin(); await su.begin(async (t) => { await actAsAdmin(t, boss); await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
   const back = await viaEmail([k2, k1], 'gone@example.com');
   assert.strictEqual(back.location, '/join?error=unavailable', 'still banned after the rotation');
 });
@@ -696,7 +708,8 @@ test('PR 15: the database links only from the member\'s own fresh session, and s
   const env = setup({ accounts: { 'github:9531': { accountId: '9531', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '9531');
   const id = (await me(env, a.browser)).member_id;
-  const ctx = { actor: 'member', memberId: id, stepUp: true }; // PR 17: with a passkey check, so PR 15's own rules decide
+  await stepUp(a.browser);
+  const ctx = { actor: 'member', memberId: id, stepUp: true, session: hashOf(a.browser) }; // PR 17: with a passkey check, so PR 15's own rules decide
   const fp = () => c.sha256hex('linked' + Math.random());
   await assert.rejects(db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint,
     'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${id}::uuid, null)`), /bad sign-in request/, 'sign-in never links (it would make a fresh session)');
@@ -808,7 +821,8 @@ test('PR 15 review F2: the member lock comes before the session check, so a link
   const a = await oauth(env, 'github', '9611');
   const b = await oauth(env, 'github', '9611');
   const id = (await me(env, a.browser)).member_id;
-  const ctx = { actor: 'member', memberId: id, stepUp: true }; // PR 17: with a passkey check, so PR 15's own rules decide
+  await stepUp(a.browser);
+  const ctx = { actor: 'member', memberId: id, stepUp: true, session: hashOf(a.browser) }; // PR 17: with a passkey check, so PR 15's own rules decide
   const fp = () => c.sha256hex('race' + Math.random());
   const call = (t, h) => t`select * from app.identity_link('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint, null::timestamptz, ${h}, null)`;
   let release;
@@ -834,11 +848,12 @@ test('PR 15 review F4: two members linking the same method at the same moment: t
   const idb = (await me(env, b.browser)).member_id;
   const same = c.sha256hex('same-x-' + Math.random());
   const args = (br) => ({ provider: 'x', fingerprints: [same], keyVersion: 1, level: 1, sessionHash: hashOf(br) });
+  await stepUp(a.browser); await stepUp(b.browser);
   let release;
   const gate = new Promise((r) => { release = r; });
-  const t1 = db.tx(web, { actor: 'member', memberId: ida, stepUp: true }, async (t) => { const r = await store.link(t, args(a.browser)); await gate; return r; });
+  const t1 = db.tx(web, { actor: 'member', memberId: ida, stepUp: true, session: hashOf(a.browser) }, async (t) => { const r = await store.link(t, args(a.browser)); await gate; return r; });
   await new Promise((r) => setTimeout(r, 300));
-  const t2 = db.tx(web, { actor: 'member', memberId: idb, stepUp: true }, (t) => store.link(t, args(b.browser)));
+  const t2 = db.tx(web, { actor: 'member', memberId: idb, stepUp: true, session: hashOf(b.browser) }, (t) => store.link(t, args(b.browser)));
   await new Promise((r) => setTimeout(r, 300));
   release();
   const [r1, r2] = await Promise.allSettled([t1, t2]);
@@ -897,7 +912,8 @@ const runAs = (ctx, fn) => db.tx(web, ctx, fn);
 // Who a browser is, exactly as every API handler finds it (session.current), and the actor it acts as.
 const whoOf = async (browser) => session.current(req('GET', '/api/agents', { cookie: browser.header() }), runAs);
 // PR 17: with a passkey check passed (stepUp), so these tests keep testing PR 15's own rules, which apply in addition.
-const as = async (browser) => { const w = await whoOf(browser); return { ...session.actorFor(w), fresh: w.fresh === true, stepUp: true }; };
+// stepUp: true is made real (security batch 1 checks it against the session), so these tests keep testing their own rules.
+const as = async (browser) => { await stepUp(browser); const w = await whoOf(browser); return { ...session.actorFor(w), fresh: w.fresh === true, stepUp: true }; };
 const latest = async (agent) => ({ ...(await q(`select post_mode, reply_mode, report_mode, daily_cap, reason, set_by from app.agent_rules
   where agent_id = '${agent}' order by version desc limit 1`))[0] });
 const resolves = async (keyHash) => Boolean(await runAs({ actor: 'anon' }, (t) => agents.resolve(t, keyHash)));
@@ -1123,6 +1139,9 @@ async function takeover(tag) {
   // The intruder keeps the copied cookie whatever the response says to do with it.
   shared.set(SESSION, copied);
   const intruder = await oauth(env, 'github', tag + 'g');
+  // The probes give these sessions a passkey check (stepUp: true); since security batch 1 the database checks it against
+  // the session, so it is made real here, and PR 15's own rules still decide.
+  await stepUp(intruder.browser);
   return { env, owner, id, shared, intruder, linked };
 }
 // A database call as a browser's session, as the probes made it (the session hash goes with it whether or not the
@@ -1164,6 +1183,7 @@ test('PR 15 re-review (probe E): the cascade can\'t be escaped by rotating the k
 test('PR 15 re-review (probe E3): a raise kept only by a containment\'s end, or by an owner\'s re-save, still drafts again on unlink; the owner\'s own raise doesn\'t', async () => {
   const { env, id, intruder } = await takeover('9811');
   const back0 = await oauth(env, 'x', '9811o');
+  await stepUp(back0.browser); // the owner's own passkey check, real since security batch 1
   const theirs = await runAs(viaSession(intruder.browser, id), (t) => agents.create(t, { name: 'e3', description: null, keyHash: c.sha256hex('e3' + Math.random()) }));
   const ours = await runAs(viaSession(back0.browser, id), (t) => agents.create(t, { name: 'ours', description: null, keyHash: c.sha256hex('o3' + Math.random()) }));
   assert.ok((await runAs(viaSession(intruder.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: theirs.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
@@ -1207,6 +1227,7 @@ test('PR 15 re-review (probe G): a link ends the session that made it, so a copi
 test('PR 15 re-review (probe H): a page read that lowers a lapsed badge takes the member row before the session, so it can\'t deadlock with a link at the same moment', async () => {
   const env = setup({ accounts: { 'x:9831': { accountId: '9831', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() } } });
   const a = await oauth(env, 'x', '9831');
+  await stepUp(a.browser); // the link below needs a passkey check (PR 17), checked against this session
   const id = (await me(env, a.browser)).member_id;
   assert.strictEqual((await me(env, a.browser)).trust_level, 2);
   // The X badge has lapsed and the session hasn't been seen for two hours, so the next read refreshes it and lowers
@@ -1221,7 +1242,7 @@ test('PR 15 re-review (probe H): a page read that lowers a lapsed badge takes th
   await isLocked;
   const read = runAs({ actor: 'anon' }, (t) => store.sessionResolve(t, hashOf(a.browser), 7));
   await new Promise((r) => setTimeout(r, 300));
-  const link = runAs({ actor: 'member', memberId: id, stepUp: true }, (t) => store.link(t, { provider: 'github', fingerprints: [c.sha256hex('h' + Math.random())], keyVersion: 1, level: 1, sessionHash: hashOf(a.browser) }));
+  const link = runAs({ actor: 'member', memberId: id, stepUp: true, session: hashOf(a.browser) }, (t) => store.link(t, { provider: 'github', fingerprints: [c.sha256hex('h' + Math.random())], keyVersion: 1, level: 1, sessionHash: hashOf(a.browser) }));
   await new Promise((r) => setTimeout(r, 300));
   release0();
   const out = await Promise.allSettled([t0, read, link]);

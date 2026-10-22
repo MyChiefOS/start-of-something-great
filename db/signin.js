@@ -196,7 +196,7 @@ async function rename(t, name) {
 }
 
 // F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
-// or { refused: 'not_member' | 'not_active' | 'fresh' | 'under_review' } ('fresh': the session didn't start recently
+// or { refused: 'not_member' | 'not_active' | 'fresh' | 'step_up' | 'delete_wait' | 'under_review' } ('fresh': the session didn't start recently
 // enough, RK3; 'under_review': JEVs flagged an earlier request and Aaron hasn't decided yet, PR 12).
 async function deleteAccount(t) {
   try {
@@ -208,6 +208,8 @@ async function deleteAccount(t) {
     // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
     if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     if (e.code === 'P0001' && e.message === 'under_review') return { refused: 'under_review' };
+    // Security batch 1 (RK62): not within 24 hours of the account's first passkey.
+    if (e.code === 'P0001' && e.message === 'passkey_new') return { refused: 'delete_wait' };
     throw e;
   }
 }

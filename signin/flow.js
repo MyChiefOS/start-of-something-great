@@ -184,6 +184,8 @@ function make(deps) {
   const STEP_UP = '/account?error=step_up#passkeys';
   // PR 17's review (1d): no new sign-in method within 24 hours of the account's first passkey.
   const LINK_WAIT = '/account?error=link_wait';
+  // Security batch 1 (RK62): no deleting your own account within 24 hours of its first passkey either.
+  const DELETE_WAIT = '/account?error=delete_wait';
 
   // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
   // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
@@ -494,6 +496,9 @@ function make(deps) {
       if (who.fresh !== true) return h.redirect(res, '/account?error=fresh');
       // PR 17: and a passkey check in the last 5 minutes, before JEVs is even asked (the database checks again).
       if (who.stepUp !== true) return h.redirect(res, STEP_UP);
+      // Security batch 1 (RK62): and not within 24 hours of the account's first passkey, the same wait as linking, so a
+      // stolen cookie that adds its own passkey can't delete the account at once (the database checks again).
+      if (who.linkingFrom && new Date(who.linkingFrom) > new Date()) return h.redirect(res, DELETE_WAIT);
       // JEVs checks the deletion (PR 12): low risk deletes; medium risk is confirmed by that fresh sign-in; high risk
       // (or a check that couldn't finish) deletes nothing and goes to Aaron as a deletion review (Oct 16, 2026). The
       // member is told their account was flagged; if he hasn't decided in 24 hours it is disabled, never deleted.
@@ -503,6 +508,7 @@ function make(deps) {
       const out = await run(session.strongActorFor(who), (t) => store.deleteAccount(t));
       if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
       if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
+      if (out.refused === 'delete_wait') return h.redirect(res, DELETE_WAIT);
       if (out.refused === 'under_review') return h.redirect(res, '/account?error=review');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));

@@ -63,7 +63,8 @@ test.before(async () => {
   const aaron = await signIn(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
   // PR 17: Aaron's controls need a passkey check.
-  const admin = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  await stepUpFor(su, aaron.id);
+  const admin = { actor: 'admin', memberId: aaron.id, stepUp: true, session: aaron.sessionHash };
   // Member A, with something in every table.
   A = await signIn(2, 'Member A');
   const [agent] = await run(A.ctx, (t) => t`insert into app.agents (name) values ('A agent') returning id`);

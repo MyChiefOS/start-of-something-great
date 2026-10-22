@@ -85,7 +85,7 @@ test.before(async () => {
   flow = make({ config: cfg, run, providers: {}, sendEmail: null });
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -103,7 +103,7 @@ async function member(level = 2, name = 'Member') {
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, fp, cookie: SESSION + '=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, fp, cookie: SESSION + '=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 const count = async (sqlText) => Number((await q(sqlText))[0].n);
 async function everything(id) {

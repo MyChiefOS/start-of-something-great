@@ -73,7 +73,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -93,7 +93,7 @@ async function member(level = 2, name = 'Owner', { stale = false, stepUp = true 
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
   if (stepUp) await stepUpFor(su, out.memberId);
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp, session: c.sha256hex(token) } };
 }
 async function api(r) {
   const out = res();

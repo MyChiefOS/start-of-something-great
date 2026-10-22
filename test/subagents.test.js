@@ -86,7 +86,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true }; // PR 17: Aaron's controls need a passkey check
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check // PR 17: Aaron's controls need a passkey check
   await asOwner(QUIET_WATCH);
 });
 test.after(async () => {
@@ -107,7 +107,7 @@ async function member(level = 2, name = 'Owner') {
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   await stepUpFor(su, out.memberId);
-  return { id: out.memberId, name, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, name, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 function res() {
   const r = { statusCode: 200, headers: {}, body: '', headersSent: false };

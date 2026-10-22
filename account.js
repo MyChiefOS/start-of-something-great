@@ -28,7 +28,8 @@
     'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.',
     // PR 17: risky steps also need a passkey check in the last 5 minutes.
     'error=step_up': 'Nothing was changed: confirm it’s you with your passkey first (or add one below), then try again.',
-    'error=link_wait': 'Nothing was linked: to keep your account safe, a new sign-in method can be linked 24 hours after your first passkey was added. Please try again then.'
+    'error=link_wait': 'Nothing was linked: to keep your account safe, a new sign-in method can be linked 24 hours after your first passkey was added. Please try again then.',
+    'error=delete_wait': 'Nothing was deleted: to keep your account safe, it can be deleted 24 hours after your first passkey was added. Please try again then.'
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };

@@ -101,7 +101,7 @@ test.before(async () => {
   pk = passkey.make({ run });
   aaron = await person({ name: 'Aaron' });
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id };
+  aaron.ctx = { actor: 'admin', memberId: aaron.id, session: aaron.hash };
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -139,7 +139,7 @@ async function person({ name = 'Member', stale = false, fp = c.sha256hex(crypto.
     displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${o.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
-  return { id: o.memberId, fp, cookie: SESSION + '=' + token, hash: c.sha256hex(token), ctx: { actor: 'member', memberId: o.memberId } };
+  return { id: o.memberId, fp, cookie: SESSION + '=' + token, hash: c.sha256hex(token), ctx: { actor: 'member', memberId: o.memberId, session: c.sha256hex(token) } };
 }
 // Another session for the same member (another device).
 async function again(m, { stale = false } = {}) {
@@ -295,6 +295,12 @@ test('PK3: deleting an account and linking a sign-in method need a passkey check
     'refused before JEVs is even asked, so a stolen cookie can\'t start a deletion review');
   assert.deepStrictEqual(await run({ ...leaving.ctx, fresh: true }, (t) => store.deleteAccount(t)), { refused: 'step_up' }, 'the database refuses too');
   await stepUp(leaving, leaving.device);
+  // Security batch 1 (RK62): not within 24 hours of the account's first passkey, on the page and in the database, and
+  // refused before JEVs is asked.
+  assert.strictEqual((await ask()).location, '/account?error=delete_wait');
+  assert.deepStrictEqual(await run({ ...leaving.ctx, fresh: true, stepUp: true }, (t) => store.deleteAccount(t)), { refused: 'delete_wait' }, 'the database refuses too');
+  assert.strictEqual(Number((await q(`select count(*) as n from app.jevs_decisions where member_id = '${leaving.id}' and action = 'account.delete'`))[0].n), 0);
+  await ageKeys(leaving.id);
   assert.strictEqual((await ask()).location, '/join?deleted=1');
   assert.strictEqual(Number((await q(`select count(*) as n from app.passkeys where member_id = '${leaving.id}'`))[0].n), 0, 'the passkey goes with the account');
   // Linking: GitHub first, then X.
@@ -312,7 +318,7 @@ test('PK3: deleting an account and linking a sign-in method need a passkey check
   await stepUp(m, m.device);
   // Not within 24 hours of the account's first passkey (the review, 1d), at the start and in the database.
   assert.strictEqual((await oauth('x', 'pk-link', { cookie: m.cookie, link: true })).start.location, '/account?error=link_wait');
-  await assert.rejects(run({ actor: 'member', memberId: m.id, fresh: true, stepUp: true }, (t) => t`select * from app.identity_link('x',
+  await assert.rejects(run({ actor: 'member', memberId: m.id, fresh: true, stepUp: true, session: m.hash }, (t) => t`select * from app.identity_link('x',
     ${t.array([c.sha256hex('early')])}::text[], 1::smallint, 1::smallint, null::timestamptz, ${m.hash}, null)`), /passkey_new/);
   assert.match((await pkCall('list', m)).json.linking_from, /^\d{4}-/, 'the account page can say when linking opens');
   await ageKeys(m.id);
@@ -826,6 +832,10 @@ test('Review finding 4 (probe D): Aaron\'s appeal and review decisions need the 
   await run(reporter.ctx, (t) => require('../db/review').report(t, { post: p.id, reason: 'spam' }));
   await assert.rejects(run(aaron.ctx, (t) => require('../db/review').decide(t, { post: p.id, decision: 'remove' })), /step_up/);
   await assert.rejects(run(aaron.ctx, (t) => t`update app.review_flags set decision = 'kept' where post_id = ${p.id}`), /step_up/);
+  // Security batch 1 (RK64): the flag alone is no longer enough; the database checks Aaron's session passed a passkey check.
+  await lapse(aaron);
+  await assert.rejects(run({ ...aaron.ctx, stepUp: true }, (t) => require('../db/review').decide(t, { post: p.id, decision: 'remove' })), /step_up/, 'the flag without a real check');
+  assert.strictEqual((await stepUp(aaron, aaron.device)).status, 200);
   assert.deepStrictEqual(await run({ ...aaron.ctx, stepUp: true }, (t) => require('../db/notify').decideAppeal(t, { containment: cn.id, decision: 'lift' })), { ok: true });
   assert.deepStrictEqual(await run({ ...aaron.ctx, stepUp: true }, (t) => require('../db/review').decide(t, { post: p.id, decision: 'remove' })), { status: 'removed' });
   // A pause whose time is up ends by itself, through the timers (the site itself), with no passkey anywhere.

@@ -183,7 +183,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member({ level: 2, name: 'Aaron' });
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
 });
 const aaronCookie = () => aaron.cookie;
 // Audit rows written in one transaction share one time, and their order within it isn't fixed (UUIDv7s made in the
@@ -233,7 +233,7 @@ async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale
   if (ageDays) await q(`update app.members set created_at = now() - interval '${ageDays} days' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
   await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, fp, provider: prov, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 function httpReq(method, url, { cookie = '', json, key, query = {}, ip = '203.0.113.60', country = 'US' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': ip };
@@ -648,7 +648,7 @@ async function riskyMember(env, name, account) {
   await run({ actor: 'member', memberId: m.id }, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
   await q(`update app.identities set level = 0 where member_id = '${m.id}'`);
   await stepUpFor(su, m.id); // PR 17: deleting needs a passkey check too
-  return { id: m.id, cookie, ctx: { actor: 'member', memberId: m.id, stepUp: true }, account };
+  return { id: m.id, cookie, ctx: { actor: 'member', memberId: m.id, stepUp: true, session: c.sha256hex(cookie.split('=')[1]) }, account };
 }
 async function askToDelete(env, who) {
   const r = res();

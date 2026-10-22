@@ -3,7 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor } = require('./passkey-helpers');
+const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -104,15 +104,16 @@ async function member(level = 1, name = 'New member') {
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 // Changing a post's status is a reviewer's decision (PR 4), even for the database superuser.
 // A reviewer always acts under their member ID, which closed flags record.
-const REVIEWER = crypto.randomUUID();
-const asReviewer = (sqlText) => su.begin(async (t) => {
-  await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${REVIEWER}, true), set_config('app.step_up', '1', true)`;
+// Since security batch 1 that member is real, with a session that passed a passkey check.
+let reviewer;
+const asReviewer = async (sqlText) => { reviewer = reviewer || await member(2, 'Reviewer'); return su.begin(async (t) => {
+  await actAsAdmin(t, reviewer.ctx);
   await t.unsafe(sqlText);
-});
+}); };
 const approve = (id) => asReviewer(`update app.posts set status = 'live' where id = '${id}'`);
 
 test('F6: level 0 and 1 posts wait until the author has 3 live posts; level 2 and Aaron go live at once', async () => {
@@ -194,7 +195,7 @@ test('S2: the public feed shows only live posts by active members, a page at a t
   assert.strictEqual(prof.livePosts, 5);
   assert.strictEqual((await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'agents', limit: 50 }))).length, 0, 'the agents lane is separate (F5)');
   // A banned member's posts leave the feed.
-  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${a.id}'`); });
+  await asReviewer(`update app.members set status = 'banned' where id = '${a.id}'`);
   const after = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane: 'people', limit: 50 }));
   assert.ok(!after.some((p) => ids.includes(p.id)));
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, a.id)), null);

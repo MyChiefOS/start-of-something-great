@@ -70,7 +70,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
   await asOwner(QUIET_WATCH);
   cert = fx.makeCert();
 });
@@ -89,7 +89,7 @@ async function member(level = 2, name = 'Owner') {
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 async function agentOf(owner, name = 'Helper', { act = false } = {}) {
   const [a] = await run(owner.ctx, (t) => t`insert into app.agents (name) values (${name}) returning id`);

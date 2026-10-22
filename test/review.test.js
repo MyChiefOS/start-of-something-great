@@ -3,7 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor } = require('./passkey-helpers');
+const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -98,7 +98,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
   aaron = await member(1, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { actor: 'admin', memberId: aaron.id, stepUp: true };
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -116,7 +116,7 @@ async function member(level = 1, name = 'New member') {
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
 const queue = () => run(aaron.ctx, (t) => review.queue(t, { limit: 100 }));
 const inQueue = async (id) => (await queue()).items.find((i) => i.id === id);
@@ -265,7 +265,7 @@ test('reports: only someone else\'s live post, once per member; reporting can\'t
   // A banned member's live posts are hidden like any other: reporting one looks the same as a post that doesn't exist.
   const banned = await member(2);
   const hidden = await run(banned.ctx, (t) => posts.create(t, { body: 'by a banned member' }));
-  await su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true), set_config('app.step_up', '1', true)`; await t.unsafe(`update app.members set status = 'banned' where id = '${banned.id}'`); });
+  await su.begin(async (t) => { await actAsAdmin(t, aaron.ctx); await t.unsafe(`update app.members set status = 'banned' where id = '${banned.id}'`); });
   assert.deepStrictEqual(await run(other.ctx, (t) => review.report(t, { post: hidden.id, reason: 'spam' })), refused, 'banned author');
   assert.strictEqual((await run(other.ctx, (t) => t`select id from app.posts where id = ${hidden.id}`)).length, 0, 'members don\'t read other members\' posts directly');
   // Someone not signed in can't report, even straight to the table.
@@ -301,7 +301,7 @@ test('only a reviewer decides: members can\'t approve, remove, close flags or re
   await assert.rejects(q(`update app.posts set status = 'live' where id = '${w.id}'`), /only a reviewer can change a post/);
   const someone = crypto.randomUUID();
   await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${aaron.id}, true), set_config('app.step_up', '1', true)`;
+    await actAsAdmin(t, aaron.ctx);
     await t.unsafe(`update app.review_flags set decision = 'remove', resolved_by = '${someone}', resolved_at = now() - interval '1 day' where post_id = '${w.id}'`);
   });
   const [closed] = await q(`select resolved_by, resolved_at > now() - interval '1 minute' as fresh from app.review_flags where post_id = '${w.id}'`);

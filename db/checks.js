@@ -52,6 +52,9 @@ const DEFINERS = {
   'app.passkey_recovery_start(text)': 'dog_signin',
   'app.passkey_recovery_cancel(text)': 'dog_signin',
   'app.identities_passkeys()': 'dog_signin',
+  // 016 (RK64): the step-up bound to the request's own session. It answers only about the transaction's own session, so
+  // every role that writes on a person's behalf may ask (the step-up triggers run as whichever of them is writing).
+  'app.step_up_check(boolean)': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits' },
   // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
   // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
   'app.current_identity()': 'dog_signin',
@@ -289,9 +292,10 @@ async function problems(sql, { snapshot } = {}) {
     if (f.definer) {
       if (!Object.hasOwn(DEFINERS, f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
       else {
-        if (f.owner !== DEFINERS[f.signature]) add(f.name + ' must be owned by ' + DEFINERS[f.signature] + ', not ' + f.owner + ' (S1)');
+        const want = typeof DEFINERS[f.signature] === 'string' ? { owner: DEFINERS[f.signature], callers: 'dog_app' } : DEFINERS[f.signature];
+        if (f.owner !== want.owner) add(f.name + ' must be owned by ' + want.owner + ', not ' + f.owner + ' (S1)');
         if (f.config !== 'search_path=pg_catalog') add(f.name + ' must fix its search path to pg_catalog (S1)');
-        if (f.callers.join() !== 'dog_app') add(f.name + ' may be called only by dog_app, not ' + (f.callers.join(', ') || 'nobody') + ' (S1)');
+        if ([...f.callers].sort().join() !== want.callers) add(f.name + ' may be called only by ' + want.callers + ', not ' + (f.callers.join(', ') || 'nobody') + ' (S1)');
       }
     } else if (f.owner !== 'dog_owner') add(f.name + ' is owned by ' + f.owner + '; everything in app belongs to dog_owner (S1)');
   }

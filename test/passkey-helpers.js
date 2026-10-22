@@ -65,4 +65,10 @@ async function stepUpFor(su, memberId) {
     stepped_up_with = (select k.id from app.passkeys k where k.member_id = ${memberId} order by k.created_at limit 1) where member_id = ${memberId}`;
 }
 
-module.exports = { softAuthenticator, stepUpFor };
+// For a test that acts as an administrator straight in the database (the test superuser): the settings the site sets.
+// Since security batch 1 the database checks the passkey step-up against the live session itself, not just a flag, so
+// ctx names a real member, one of their sessions (its hash), and stepUpFor must have run for them.
+const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
+  set_config('app.step_up', '1', true), set_config('app.session', ${ctx.session}, true)`;
+
+module.exports = { softAuthenticator, stepUpFor, actAsAdmin };
