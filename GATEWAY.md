@@ -23,8 +23,8 @@ Agents, controls, notifications, deletion and the timers stay switched off in sl
 
 | Setting | Slice 1 |
 |---|---|
-| Database login | Supabase gives it to the gateway (`SUPABASE_DB_URL`); it goes through the transaction pooler; never in Vercel |
-| Session, network and fingerprint keys | Made inside the database with `gen_random_bytes` and kept in Supabase Vault (encrypted on disk and in backups; the encryption key is kept outside the database by Supabase). Readable only by the gateway's login. Nobody sees them |
+| Database login | Requests go through the narrow login `dog_web`, whose password is made inside the database and kept in Vault; Supabase's main login is used only at start-up to read it; never in Vercel |
+| Session, network and fingerprint keys | Made inside the database with `gen_random_bytes` and kept in Supabase Vault (encrypted on disk and in backups; the encryption key is kept outside the database by Supabase). Read once by the gateway at start-up. Nobody sees them |
 | GitHub keys | Stay in Vercel, where Aaron put them. The Vercel side seals its short-lived sign-in cookie with a key derived from the GitHub secret it already has, so it needs no new setting |
 | GitHub client ID (public) | Read from the live sign-in link and written into the gateway's settings |
 | Go-live stage | In the database. Starts at `preview` with only Aaron (GitHub ID 304218593) allowed; Claude changes it only on Aaron's words, recorded in OPERATIONS.md |
@@ -32,9 +32,13 @@ Agents, controls, notifications, deletion and the timers stay switched off in sl
 
 ## Migration 017 (in the database)
 
-1. The database works out who is acting from the session or agent-key fingerprint itself, instead of trusting the caller (security review, finding 3).
-2. Grants the site role to the gateway's login, so it can switch to it (checked: only the setup workflow granted it before).
-3. Keys in Vault, generated in place; the go-live stage and the allow-list as database settings.
+1. On Supabase, makes the narrow login `dog_web` (it can only become the site role), with a random password generated inside the database and stored straight into Vault. The gateway uses Supabase's main login once, at start-up, to read that password and the keys from Vault, and serves every request through `dog_web`. The coverage check (S1) stays as strict as before. Tested Oct 23 on a fresh server as a non-superuser admin, with a stand-in Vault: the narrow login signs in and becomes the site role, is refused the owner role, the coverage check passes, and a second run replaces nothing.
+2. Makes the session, network and fingerprint keys the same way, in Vault, once, never replaced.
+3. Anywhere without Vault (the tests; a database the protected workflow sets up) it does nothing.
+
+Deferred, with the reason: the security review's "the database works out who is acting itself" fix. It mattered most when a site on Vercel would hold a database login. In this design only the gateway, inside Supabase, holds one, so it protects much less here, and it touches every timer and notification path. It comes back with the slice that moves the timers.
+
+The protected setup workflow's `database` and `keys` steps are retired by this design: running them would replace the narrow login's password and cut off the gateway.
 
 ## Checked before anyone uses it (health checks report; nothing blocks on its own)
 
