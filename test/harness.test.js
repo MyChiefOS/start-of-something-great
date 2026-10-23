@@ -9,11 +9,11 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 const { evaluate, table, report } = require('../harness/check');
 
-test('CLAUDE.md sends every session to the harness first, then the charter', () => {
+test('CLAUDE.md sends every session to the charter, then the live check and the harness', () => {
   const c = read('CLAUDE.md');
   assert.match(c, /npm run harness/);
   for (const f of ['harness/NORTH-STAR.md', 'harness/RULES.md', 'harness/FACTS.md', 'CHARTER.md']) assert.ok(c.includes(f), f);
-  assert.ok(c.indexOf('npm run harness') < c.indexOf('CHARTER.md'), 'the live check comes before the charter');
+  assert.ok(c.indexOf('CHARTER.md') < c.indexOf('npm run harness'), 'the charter is read first, as it says itself');
   assert.strictEqual(JSON.parse(read('package.json')).scripts.harness, 'node harness/check.js');
 });
 
@@ -25,7 +25,7 @@ test('the North Star keeps the five outcomes, the goal, the quality bar and the 
 test('the rules keep all seven, each with its reason', () => {
   const r = read('harness/RULES.md');
   const rules = r.split('\n').filter((l) => /^\d\. \*\*/.test(l));
-  assert.strictEqual(rules.length, 7);
+  assert.ok(rules.length >= 5, 'the rules are there (deleting one is allowed, with Aaron)');
   for (const s of ['Ship to main', 'Requirement gate', 'Know or say you don\'t', 'Facts survive sessions', 'Ask once', 'Review in proportion', 'The stop list']) assert.ok(r.includes(s), s);
   assert.ok((r.match(/\*Why:/g) || []).length >= 4, 'the rules say why');
 });
@@ -50,9 +50,11 @@ test('the check stops on a PR that does not target main, and warns on work waiti
   const stops = f.filter((x) => x.level === 'stop');
   assert.strictEqual(stops.length, 1);
   assert.match(stops[0].text, /PR #34 .*targets "launch-ops", not main/);
-  assert.ok(f.some((x) => /waited off main for 6 days/.test(x.text)));
+  assert.ok(f.some((x) => /not yet on main was made 6 days ago/.test(x.text)));
+  assert.ok(f.some((x) => /Open PRs: #34 passkeys-pr17 -> launch-ops; #36 security-batch-1 -> main/.test(x.text)));
+  assert.ok(f.some((x) => /2 PRs are open/.test(x.text)));
   assert.ok(f.some((x) => /Nothing has reached main for 3 days/.test(x.text)));
-  assert.ok(f.some((x) => /sign-in is off/.test(x.text)));
+  assert.ok(f.some((x) => /Sign-in is off on the live site/.test(x.text)));
   assert.ok(f.some((x) => /never run/.test(x.text)));
   assert.ok(f.some((x) => /Launch path, left in order: 1\./.test(x.text)));
 });

@@ -37,12 +37,15 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 
 | Step | Who | Status |
 |---|---|---|
-| X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them) | Aaron | open |
 | Merge PR #36 | Aaron | open |
 | Add the three repository secrets | Aaron | open |
 | Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | open |
 | Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | open |
-| Smoke test: a second GitHub account signs up and posts | Aaron or a friend | open |
+| PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | open |
+| Approve the pending criteria (N1 to N11, R16, R33, SA1 to SA12; ROADMAP.md) | Aaron | open |
+| Smoke test: a second GitHub account signs up and posts. First-post review stays on while JEVs is in shadow mode (standing decision) | Aaron or a friend | open |
+| Update ROADMAP.md with the actual launch date next to the Nov 6 and Nov 20 targets | Claude | open |
+| Optional, not blocking: X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them); /join already says X is coming soon | Aaron | open |
 
 ## Open for Aaron (ask once; record the answer here)
 
@@ -50,6 +53,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 |---|---|---|
 | Keep the 24-hour deletion rule (RK62), or switch to the oldest-method rule | 2026-10-22 | |
 | Charter section 3 says each PR "is built on the one before it". Change it to "every PR targets main" (harness rule 1) | 2026-10-23 | |
+| Is PK13 (two passkeys, one a hardware key) required for today's launch, or is one synced passkey enough until a hardware key arrives | 2026-10-23 | |
 
 ## Parking list (no named owner yet; not built until one is named)
 

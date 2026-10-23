@@ -33,17 +33,25 @@ function evaluate(state) {
   const out = [];
   const now = state.now || Date.now();
   for (const pr of state.prs || []) {
-    if (pr.base !== 'main') out.push({ level: 'stop', rule: 1, text: `PR #${pr.number} (${pr.head}) targets "${pr.base}", not main. Retarget it to main before anyone merges it.` });
+    if (pr.base !== 'main') out.push({ level: 'stop', rule: 1, text: `PR #${pr.number} (${pr.head}) targets "${pr.base}", not main. Tell Aaron before he merges it: he retargets it (Edit next to the title), or Claude does with his yes.` });
+  }
+  const prs = state.prs || [];
+  if (state.prs) out.push({ level: 'info', rule: 1, text: prs.length ? 'Open PRs: ' + prs.map((p) => `#${p.number} ${p.head} -> ${p.base}`).join('; ') : 'No pull requests are open.' });
+  if (prs.length > 1) out.push({ level: 'warn', rule: 1, text: `${prs.length} PRs are open. Keep one, and add work to its branch.` });
+  const opened = prs.map((p) => p.created_at).filter(Boolean).sort()[0];
+  if (opened) {
+    const days = Math.floor((now - Date.parse(opened)) / DAY);
+    if (days >= 2) out.push({ level: 'warn', rule: 1, text: `The oldest open PR has waited ${days} days for a merge.` });
   }
   if (state.offMainOldest) {
     const days = Math.floor((now - Date.parse(state.offMainOldest)) / DAY);
-    if (days >= 2) out.push({ level: 'warn', rule: 1, text: `Work has waited off main for ${days} days. Shipping it beats adding to it.` });
+    if (days >= 2) out.push({ level: 'warn', rule: 1, text: `The oldest change not yet on main was made ${days} days ago. Shipping it beats adding to it.` });
   }
   if (state.mainLastChange) {
     const days = Math.floor((now - Date.parse(state.mainLastChange)) / DAY);
     if (days >= 2) out.push({ level: 'warn', rule: 1, text: `Nothing has reached main for ${days} days (last change ${state.mainLastChange.slice(0, 10)}).` });
   }
-  if (state.signIn === 'off') out.push({ level: 'info', rule: 0, text: 'The live site is closed: sign-in is off (no database yet). The goal is a fully functional production site.' });
+  if (state.signIn === 'off') out.push({ level: 'info', rule: 0, text: 'Sign-in is off on the live site (503): either no database is connected yet or the stage is closed. The goal is a fully functional production site.' });
   if (state.signIn === 'on') out.push({ level: 'info', rule: 0, text: 'The live site has sign-in on.' });
   if (state.setupRuns === 0) out.push({ level: 'info', rule: 0, text: 'Production setup has never run.' });
   if (state.setupRuns > 0) out.push({ level: 'info', rule: 0, text: `Production setup has run ${state.setupRuns} time(s); read the latest run before assuming its result.` });
@@ -93,7 +101,7 @@ function gather() {
 function report(state, findings) {
   const icon = { stop: 'STOP', warn: 'WARN', info: 'INFO' };
   const lines = ['Day One Great session check, ' + new Date(state.now).toISOString().slice(0, 16) + 'Z',
-    'Read first: harness/NORTH-STAR.md, harness/RULES.md, harness/FACTS.md, then CHARTER.md.', ''];
+    'Read: CHARTER.md (first, as it says), then harness/NORTH-STAR.md, harness/RULES.md and harness/FACTS.md.', ''];
   for (const f of findings) lines.push(`${icon[f.level]}${f.rule ? ' (rule ' + f.rule + ')' : ''}: ${f.text}`);
   if (state.notChecked && state.notChecked.length) lines.push('', 'Not checked: ' + state.notChecked.join(', ') + '.');
   return lines.join('\n');

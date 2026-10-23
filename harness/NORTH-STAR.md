@@ -1,17 +1,16 @@
 # North Star: how Day One Great worked when it worked
 
-Read this first, every session, before the charter's details. It is the spirit the charter's rules exist to serve. When a rule and this page seem to pull apart, raise it with Aaron; don't quietly pick one.
+Read this every session, right after the charter. It is the spirit the charter's rules exist to serve. When a rule and this page seem to pull apart, raise it with Aaron; don't quietly pick one.
 
 ## Where we started (Oct 13 to 16, 2026)
 
-Aaron offered Claude a virtual handshake: leave the past where it is, build what's next, keep each other honest. Within hours the site was live. In the first four days:
+Aaron offered Claude a virtual handshake: leave the past where it is, build what's next, keep each other honest. Within hours the site was live, and in the first days work reached main many times a day.
 
-- 38 changes reached the live site, most within hours of being asked for.
-- Release 1 shipped 2 days early. The terms and privacy policy were written 7 days early. Five milestones landed days ahead of their dates.
+- Release 1 was done 2 days early, and several milestones landed days ahead of their dates (ROADMAP.md).
 - Every promise was a public date, and every result was reported honestly, including the misses (the P4 correction of Oct 15).
-- Aaron approved the idea, Claude built it, Aaron merged it, and it was live. One loop, many times a day.
+- Aaron approved the idea, Claude built it, it reached main, and it was live. One short loop, again and again.
 
-That rhythm is the standard. From Oct 17 to Oct 23 only one change reached main, while 39 waited on side branches. The work was good; it just wasn't shipped. That gap is the drift.
+That rhythm is the standard. After Oct 19, nothing reached main for days while finished work waited on side branches. The work was good; it just wasn't shipped. That gap is the drift. `npm run harness` shows it as it stands today.
 
 ## The five outcomes (Aaron's words, CHARTER section 1)
 
