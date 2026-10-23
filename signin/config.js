@@ -50,7 +50,9 @@ function load(env = process.env) {
     sessionKey,
     fingerprintKeys,
     ipKey,
-    github: pair('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'),
+    // The JEVs gateway holds only GitHub's (public) client ID: it checks tokens, and Vercel, which holds the secret,
+    // swaps codes for them (GATEWAY.md). In-process sign-in still needs both.
+    github: pair('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET') || (env.GITHUB_CLIENT_ID && env.DOG_GATEWAY === '1' ? { clientId: env.GITHUB_CLIENT_ID, clientSecret: null } : null),
     x: pair('X_CLIENT_ID', 'X_CLIENT_SECRET'),
     // LinkedIn was dropped on Oct 16, 2026 (CHARTER.md). The provider name stays in the schema, unused, as built.
     linkedin: null

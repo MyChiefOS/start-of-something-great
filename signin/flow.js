@@ -226,6 +226,34 @@ function make(deps) {
     return h.redirect(res, ret || '/');
   }
 
+  // Everything after the provider has said who this is: the regional gate, linking, the go-live gate, the session and
+  // JEVs. Shared by the in-process callback and the gateway's complete step, so both behave exactly alike.
+  async function proceed(req, res, provider, who, saved) {
+      const args = { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
+        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter };
+      const country = region.declined(req);
+      if (saved.l) {
+        // Still the same session that started the link (PR 15), not just the same member?
+        const me = await current(req);
+        if (!sameSession(req, me, saved.l, saved.k)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
+        if (country) return regional(res, country, { ...args, linkMember: saved.l, linkSession: saved.k }, { r: saved.r || null });
+        return completeLink(req, res, me, args, saved.r);
+      }
+      if (country) return regional(res, country, args, { r: saved.r || null });
+      // The go-live gate (launch.js): during the preview a new account is made only for an allow-listed account ID.
+      // Existing members sign in as usual. Nothing is stored for someone turned away.
+      if (!launch.mayJoin(provider, who.accountId) && !(await run(ANON, (t) => store.known(t, { provider, fingerprints: args.fingerprints })))) {
+        return h.redirect(res, '/join?error=preview');
+      }
+      const out = await finish(res, ANON, args);
+      if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
+      await afterSignIn(req, out);
+      // A fresh session replaces any older one in this browser.
+      const old = sessionHash(req);
+      if (old) await run(ANON, (t) => store.sessionEnd(t, old));
+      return h.redirect(res, saved.r || '/');
+  }
+
   return {
     async start(req, res, provider) {
       const p = providers[provider];
@@ -277,30 +305,24 @@ function make(deps) {
       let who;
       try { who = await p.identify(creds, { code, verifier: saved.v }); } catch { who = null; }
       if (!who) return h.redirect(res, linking ? LINK_FAILED : '/join?error=provider');
+      return proceed(req, res, provider, who, saved);
+    },
 
-      const args = { provider, fingerprints: c.fingerprints(keys, provider, who.accountId), keyVersion: keys[0].version,
-        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter };
-      const country = region.declined(req);
-      if (saved.l) {
-        // Still the same session that started the link (PR 15), not just the same member?
-        const me = await current(req);
-        if (!sameSession(req, me, saved.l, saved.k)) return h.redirect(res, me ? LINK_FAILED : '/join?error=signin');
-        if (country) return regional(res, country, { ...args, linkMember: saved.l, linkSession: saved.k }, { r: saved.r || null });
-        return completeLink(req, res, me, args, saved.r);
-      }
-      if (country) return regional(res, country, args, { r: saved.r || null });
-      // The go-live gate (launch.js): during the preview a new account is made only for an allow-listed account ID.
-      // Existing members sign in as usual. Nothing is stored for someone turned away.
-      if (!launch.mayJoin(provider, who.accountId) && !(await run(ANON, (t) => store.known(t, { provider, fingerprints: args.fingerprints })))) {
-        return h.redirect(res, '/join?error=preview');
-      }
-      const out = await finish(res, ANON, args);
-      if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
-      await afterSignIn(req, out);
-      // A fresh session replaces any older one in this browser.
-      const old = sessionHash(req);
-      if (old) await run(ANON, (t) => store.sessionEnd(t, old));
-      return h.redirect(res, saved.r || '/');
+    // The JEVs gateway's half of signing in (GATEWAY.md): Vercel has checked the state and swapped GitHub's code for
+    // a token (it holds the client secret); here GitHub itself is asked whose token it is, and the token must have
+    // been issued to our own sign-in app. A broken-into Vercel can't name someone; it could only pass along the
+    // tokens of people signing in while it was broken into. Linking a second method isn't offered this way.
+    async complete(req, res, provider) {
+      const p = providers[provider];
+      const creds = config[provider];
+      if (provider !== 'github' || !p || typeof p.whoIs !== 'function' || !creds || !creds.clientId) return h.redirect(res, '/join?error=unavailable');
+      // The same per-network limit as starting a sign-in, counted the same way (nothing for a declined region).
+      if (!region.declined(req) && await limited('signin_ip', h.ipKey(req, config.ipKey))) return h.redirect(res, '/join?error=slow');
+      const body = await h.form(req);
+      let who;
+      try { who = await p.whoIs(body && body.token, { clientId: creds.clientId }); } catch { who = null; }
+      if (!who) return h.redirect(res, '/join?error=provider');
+      return proceed(req, res, provider, who, { r: h.returnPath(body && body.r), l: null, k: null });
     },
 
     async emailStart(req, res) {

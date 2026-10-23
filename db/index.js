@@ -11,10 +11,12 @@ const postgres = require('postgres');
 const v = require('./validate');
 
 // Connection poolers we accept, by host name and port. Supabase: its shared pooler (Supavisor) in transaction
-// mode on port 6543. (Its dedicated pooler, db.<ref>.supabase.co, is reachable only over IPv6, which Vercel's
-// functions don't have.) Neon: the "-pooler" address of an endpoint.
+// mode on port 6543, or its dedicated pooler on the database's own host, also port 6543 in transaction mode. (The
+// dedicated one is reachable only over IPv6, which Vercel's functions don't have, but the JEVs gateway runs inside
+// Supabase and reaches it: checked Oct 23, 2026, GATEWAY.md.) Neon: the "-pooler" address of an endpoint.
 const POOLERS = [
   { host: /^[a-z0-9-]+\.pooler\.supabase\.com$/, ports: ['6543'] },
+  { host: /^db\.[a-z0-9]{20}\.supabase\.co$/, ports: ['6543'] },
   { host: /^ep-[a-z0-9-]+-pooler\.[a-z0-9.-]+\.neon\.tech$/, ports: ['', '5432'] }
 ];
 

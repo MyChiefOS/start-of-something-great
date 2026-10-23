@@ -28,12 +28,15 @@ const SERVER = process.env.TEST_DATABASE_URL;
 test('G1: production connections must go through a pooler in transaction mode', () => {
   for (const ok of [
     'postgres://u:p@aws-0-us-west-1.pooler.supabase.com:6543/postgres',
-    'postgres://u:p@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+    'postgres://u:p@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+    // Supabase's dedicated pooler (transaction mode, port 6543), which the JEVs gateway reaches from inside Supabase.
+    'postgresql://u:p@db.nksagchwpyljvjiwolmp.supabase.co:6543/postgres'
   ]) assert.strictEqual(db.pooledUrl(ok), ok);
   for (const bad of [
     'postgres://u:p@aws-0-us-west-1.pooler.supabase.com:5432/postgres', // session mode
-    'postgres://u:p@db.abcdefghijklmnop.supabase.co:5432/postgres', // direct
-    'postgresql://u:p@db.abcdefghijklmnop.supabase.co:6543/postgres', // dedicated pooler: IPv6 only, Vercel can't reach it
+    'postgres://u:p@db.nksagchwpyljvjiwolmp.supabase.co:5432/postgres', // direct
+    'postgresql://u:p@db.abcdefghijklmnop.supabase.co:6543/postgres', // not a real project reference (20 characters)
+    'postgresql://u:p@db.nksagchwpyljvjiwolmp.supabase.co.evil.com:6543/postgres',
     'postgres://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb', // direct
     'postgres://u:p@localhost:5432/postgres',
     'postgres://u:p@evil.com/x?host=aws-0.pooler.supabase.com',
@@ -491,7 +494,9 @@ function sourceFiles() {
     for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) {
       const rel = d ? d + '/' + e.name : e.name;
       if (e.isDirectory()) { if (!['node_modules', '.git', 'research', 'fonts', '.vercel'].includes(e.name)) walk(rel); }
-      else if (/\.(js|sql)$/.test(e.name)) out.push(rel);
+      // The JEVs gateway's bundle is built from these same sources by scripts/build-gateway.js, and test/gateway.test.js
+      // fails if the committed bundle differs from a fresh build, so the sources are what these checks read.
+      else if (/\.(js|sql)$/.test(e.name) && rel !== 'supabase/functions/jevs-gateway/gateway.js') out.push(rel);
     }
   };
   walk('');

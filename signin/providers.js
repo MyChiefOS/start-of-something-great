@@ -13,7 +13,7 @@ async function call(url, init = {}, ms = TIMEOUT_MS) {
     const text = await r.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* not JSON */ }
-    return { ok: r.ok, status: r.status, json };
+    return { ok: r.ok, status: r.status, json, headers: r.headers };
   } finally {
     clearTimeout(timer);
   }
@@ -30,28 +30,42 @@ const PROVIDERS = {
         code_challenge: challenge, code_challenge_method: 'S256', allow_signup: 'true' });
       return 'https://github.com/login/oauth/authorize?' + q;
     },
-    async identify(c, { code, verifier }) {
+    // The three steps of identifying someone, apart so the JEVs gateway can do the middle one without the client
+    // secret (GATEWAY.md): Vercel swaps the code for a token (it holds the secret), the gateway asks GitHub whose
+    // token it is, and Vercel revokes it afterwards. identify() still does all three in one place.
+    async exchange(c, { code, verifier }) {
       const t = await call('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, code, redirect_uri: this.redirectUri, code_verifier: verifier })
       });
-      const accessToken = t.ok && t.json && typeof t.json.access_token === 'string' ? t.json.access_token : null;
+      return t.ok && t.json && typeof t.json.access_token === 'string' ? t.json.access_token : null;
+    },
+    // Whose token this is, and only if our own sign-in app issued it: GitHub names the issuing app's client ID in the
+    // X-OAuth-Client-Id header of every answer (checked live on Oct 23, 2026; not in GitHub's documentation). A
+    // token from any other app, a personal token, or an answer without the header is refused, never guessed at.
+    async whoIs(accessToken, { clientId }) {
+      if (typeof accessToken !== 'string' || accessToken.length < 8 || accessToken.length > 256 || !clientId) return null;
+      const u = await call('https://api.github.com/user', {
+        headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin', 'X-GitHub-Api-Version': '2022-11-28' }
+      });
+      const issuer = u.headers && typeof u.headers.get === 'function' ? u.headers.get('x-oauth-client-id') : null;
+      if (!u.ok || !u.json || !Number.isSafeInteger(u.json.id) || issuer !== clientId) return null;
+      return { accountId: String(u.json.id), level: 1, recheckAfter: null };
+    },
+    async revoke(c, accessToken) {
+      await call('https://api.github.com/applications/' + encodeURIComponent(c.clientId) + '/token', {
+        method: 'DELETE', headers: { Authorization: basic(c), Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin' },
+        body: JSON.stringify({ access_token: accessToken })
+      }, 2000).catch(() => {});
+    },
+    async identify(c, { code, verifier }) {
+      const accessToken = await this.exchange(c, { code, verifier });
       if (!accessToken) return null;
       try {
-        const u = await call('https://api.github.com/user', {
-          headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin', 'X-GitHub-Api-Version': '2022-11-28' }
-        });
-        if (!u.ok || !u.json || !Number.isSafeInteger(u.json.id)) return null;
-        // Only the account's number is used (for the fingerprint). Names and usernames are not kept (S12).
-        return { accountId: String(u.json.id), level: 1, recheckAfter: null };
+        return await this.whoIs(accessToken, { clientId: c.clientId });
       } finally {
-        // Best effort, and finished before we answer (a function can be frozen once it has replied): tell GitHub
-        // to forget the token too.
-        await call('https://api.github.com/applications/' + encodeURIComponent(c.clientId) + '/token', {
-          method: 'DELETE', headers: { Authorization: basic(c), Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin' },
-          body: JSON.stringify({ access_token: accessToken })
-        }, 2000).catch(() => {});
+        await this.revoke(c, accessToken);
       }
     }
   },
