@@ -28,7 +28,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | The live site is closed: sign-in answers "Sign-in is not switched on here yet." because no database is set | checked | curl https://dayonegreat.com/auth/github/start (503) | 2026-10-23 |
 | The public pages, API and MCP server work on the live site | checked | curl of /, /api/status, /api/proposals; MCP tools/call | 2026-10-23 |
 | Production setup has never run, so no database is connected to the live site | checked | GitHub API: the Production setup workflow has 0 runs; sign-in is off | 2026-10-23 |
-| The three repository secrets for Production setup (MIGRATION_DATABASE_URL, MIGRATION_DATABASE_CA, VERCEL_TOKEN) are not set yet | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
+| The two secrets for Production setup (MIGRATION_DATABASE_URL, VERCEL_TOKEN) are not set yet | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
 | Aaron's GitHub account ID is 304218593 | checked | GitHub API, repository owner | 2026-10-23 |
 | Claude's GitHub access: admin on the repository; can read PRs, issues, contents, deployments, rulesets and workflow runs and push branches; the session proxy refuses secrets, variables, environments and collaborators (403) | checked | GitHub API path by path; push dry-run | 2026-10-23 |
 | main has one active ruleset ("The Start of Something Great Rule Set") and no classic branch protection | checked | GitHub API rulesets; branches/main/protection 404 | 2026-10-23 |
@@ -42,7 +42,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | Step | Who | Status |
 |---|---|---|
 | Merge PR #36 | Aaron | open |
-| Add the three repository secrets | Aaron | open |
+| Add two secrets: MIGRATION_DATABASE_URL (Supabase, Connect, Session pooler, with the database password) and VERCEL_TOKEN (chief-os scope, 1 day). The certificate is in the repo now | Aaron | open |
 | Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | open |
 | Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | open |
 | PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | open |

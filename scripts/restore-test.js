@@ -128,7 +128,7 @@ function defaultCheck(sql) {
 }
 
 if (require.main === module) {
-  restoreTest({ sourceUrl: process.env.SOURCE_DATABASE_URL, sourceCa: process.env.SOURCE_DATABASE_CA, targetUrl: process.env.TARGET_DATABASE_URL, check: defaultCheck })
+  restoreTest({ sourceUrl: process.env.SOURCE_DATABASE_URL, sourceCa: process.env.SOURCE_DATABASE_CA || require('./setup-production').databaseCa({}), targetUrl: process.env.TARGET_DATABASE_URL, check: defaultCheck })
     .then((r) => console.log('restore test passed: ' + r.tables + ' tables, ' + r.rows + ' rows'))
     .catch((e) => { console.error('restore test FAILED: ' + e.message); process.exit(1); });
 }

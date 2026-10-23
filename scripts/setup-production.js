@@ -21,7 +21,8 @@
 // the uptime monitor can tell when the live stage drifts from the last approved run (D1).
 //
 // Settings it reads (placeholders until Aaron adds them; see SETUP.md):
-//   secrets  MIGRATION_DATABASE_URL, MIGRATION_DATABASE_CA, VERCEL_TOKEN
+//   secrets  MIGRATION_DATABASE_URL, VERCEL_TOKEN (and MIGRATION_DATABASE_CA only to override the Supabase root
+//            certificate kept in db/certs/supabase-root-2021.crt: it is public, not a secret, so it lives in the repo)
 //   inputs   SETUP_STEPS, SETUP_STAGE, SETUP_PREVIEW_ALLOW, SETUP_ADMIN_MEMBER_ID, SETUP_ROTATE_DB_PASSWORD
 'use strict';
 
@@ -292,6 +293,14 @@ function plan(env = process.env) {
   return lines;
 }
 
+// Supabase's public root certificate (Supabase Root 2021 CA, valid to 2031), kept in the repository so nobody has to
+// copy it into a secret. A MIGRATION_DATABASE_CA secret, if set, takes its place.
+const SUPABASE_CA_FILE = require('path').join(__dirname, '..', 'db', 'certs', 'supabase-root-2021.crt');
+function databaseCa(env) {
+  if (env.MIGRATION_DATABASE_CA && env.MIGRATION_DATABASE_CA.trim()) return env.MIGRATION_DATABASE_CA;
+  return require('fs').readFileSync(SUPABASE_CA_FILE, 'utf8');
+}
+
 async function main(env = process.env, deps = {}) {
   const log = deps.log || ((m) => console.log(m));
   const todo = steps(env.SETUP_STEPS);
@@ -306,7 +315,7 @@ async function main(env = process.env, deps = {}) {
   if (needsDb && !sql) {
     if (!env.MIGRATION_DATABASE_URL) throw new Error('MIGRATION_DATABASE_URL is not set (SETUP.md, step 2)');
     const db = require('../db');
-    sql = db.connect(env.MIGRATION_DATABASE_URL, { max: 1, ssl: env.MIGRATION_SSL === 'off' ? false : db.tls(env.MIGRATION_DATABASE_CA) });
+    sql = db.connect(env.MIGRATION_DATABASE_URL, { max: 1, ssl: env.MIGRATION_SSL === 'off' ? false : db.tls(databaseCa(env)) });
   }
   try {
     for (const s of todo) {
@@ -318,7 +327,7 @@ async function main(env = process.env, deps = {}) {
           const snapshot = fs.readFileSync(path.join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
           return problems(x, { snapshot });
         });
-        await stepDatabase(sql, v, { migrationUrl: env.MIGRATION_DATABASE_URL, ca: env.MIGRATION_DATABASE_CA, rotate: env.SETUP_ROTATE_DB_PASSWORD === 'yes', log, migrate: deps.migrate || migrate, check });
+        await stepDatabase(sql, v, { migrationUrl: env.MIGRATION_DATABASE_URL, ca: databaseCa(env), rotate: env.SETUP_ROTATE_DB_PASSWORD === 'yes', log, migrate: deps.migrate || migrate, check });
       }
       if (s === 'keys') await stepKeys(v, { log });
       if (s === 'stage') await stepStage(v, { stage: stageSet, allow: env.SETUP_PREVIEW_ALLOW, log, gh });
@@ -345,4 +354,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, plan, steps, scramVerifier, siteDatabaseUrl, vercel, github, verifyLive, stepDatabase, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };
+module.exports = { databaseCa, SUPABASE_CA_FILE, main, plan, steps, scramVerifier, siteDatabaseUrl, vercel, github, verifyLive, stepDatabase, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };

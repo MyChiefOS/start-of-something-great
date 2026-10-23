@@ -382,3 +382,16 @@ test('the setup run’s raw SQL is exactly these statements, built only from fix
   assert.match(src, /if \(!\/\^\[a-z_\]\[a-z0-9_\]\{0,62\}\$\/\.test\(role\)\) throw/, 'the role name is checked before use');
   assert.match(s.scramVerifier('x'), /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'the hash has no quote to break out of');
 });
+
+test('the Supabase root certificate is in the repository, so no one copies it into a secret; a secret still overrides it', () => {
+  const crypto = require('crypto');
+  const pem = require('fs').readFileSync(s.SUPABASE_CA_FILE, 'utf8');
+  const cert = new crypto.X509Certificate(pem);
+  assert.match(cert.subject, /CN=Supabase Root 2021 CA/);
+  assert.ok(new Date(cert.validTo) > new Date('2030-01-01'), 'valid for years yet');
+  assert.ok(cert.ca, 'a certificate authority, not a server certificate');
+  assert.strictEqual(s.databaseCa({}), pem);
+  assert.strictEqual(s.databaseCa({ MIGRATION_DATABASE_CA: '  ' }), pem, 'an empty secret falls back to the file');
+  assert.strictEqual(s.databaseCa({ MIGRATION_DATABASE_CA: 'override' }), 'override');
+  assert.ok(!/BEGIN (RSA |EC )?PRIVATE KEY/.test(pem), 'only a public certificate');
+});
