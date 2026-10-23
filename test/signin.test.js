@@ -195,20 +195,19 @@ test('form bodies: read the same whether Vercel has already parsed them or not, 
   assert.strictEqual(await h.form({ headers: { 'content-type': 'application/json' }, body: { t: 'abc' } }), null);
 });
 
-test('SF4, S5: the join page has one field and no password, and posts only to our own sign-in', () => {
+test('SF4, S5: the join page signs people in with GitHub through giscus: no fields, no password, no form', () => {
   const html = fs.readFileSync(path.join(root, 'join.html'), 'utf8');
-  // The bot-check field (PR 12) is one no person meets: off screen, hidden from screen readers, out of the tab order,
-  // never filled in by the browser. Every other field counts.
-  const hp = html.match(/<div class="hp" aria-hidden="true">([\s\S]*?)<\/div>/);
-  assert.ok(hp, 'the bot-check field is wrapped so nobody meets it');
-  assert.match(hp[1], /<input id="website" name="website" type="text" tabindex="-1" autocomplete="off">/);
-  assert.match(fs.readFileSync(path.join(root, 'styles.css'), 'utf8'), /\.hp \{ position: absolute; left: -10000px;/);
-  const fields = html.replace(hp[0], '').match(/<(input|select|textarea)\b(?![^>]*type="hidden")[^>]*>/g) || [];
-  assert.ok(fields.length <= 5, fields.length + ' fields');
-  assert.strictEqual(fields.length, 1);
+  const fields = html.match(/<(input|select|textarea|form)\b/g) || [];
+  assert.strictEqual(fields.length, 0, 'phase 1 (Aaron, Oct 23): GitHub users only, signed in by giscus');
   assert.ok(!/type="password"|autocomplete="(new|current)-password"/.test(html));
-  for (const m of html.matchAll(/<form\b[^>]*action="([^"]+)"/g)) assert.match(m[1], /^\/auth\//);
-  assert.match(html, /name="robots" content="noindex"/, 'not listed until the preview opens');
+  assert.match(html, /<script src="https:\/\/giscus\.app\/client\.js"/);
+  assert.match(html, /data-repo="MyChiefOS\/start-of-something-great"/);
+  assert.ok(!/auth\/(x|email)\//.test(html), 'no X or email sign-in on the page');
+  const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+  const csp = v.headers.find((h) => h.source === '/join').headers.find((h) => h.key === 'Content-Security-Policy').value;
+  assert.match(csp, /script-src 'self' https:\/\/giscus\.app;/);
+  assert.match(csp, /frame-src https:\/\/giscus\.app;/);
+  assert.match(csp, /form-action 'none'/);
 });
 
 // ---- End to end against a real database ------------------------------------------------------------------------
