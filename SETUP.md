@@ -21,14 +21,13 @@ GitHub → the repository → Settings → Environments → `production` (create
 2. **"Allow administrators to bypass configured protection rules":** turn it **off**, so an administrator token can't skip your approval. (Leave "Prevent self-review" off: you start the runs and you approve them.)
 3. **Deployment branches and tags:** "Selected branches and tags", allow only `main`.
 
-## 2. Three secrets in that environment (once)
+## 2. Two secrets (once)
 
-Add each one under the `production` environment's "Environment secrets", not as a repository secret.
+Add each one under the `production` environment's "Environment secrets" (best: only approved runs can read them), or, if you skipped step 1, as repository secrets (Settings → Secrets and variables → Actions). Supabase's certificate is public, so it is already in the repository (db/certs/supabase-root-2021.crt); there is no third secret.
 
 | Name | Where to get it |
 |---|---|
 | `MIGRATION_DATABASE_URL` | **[PLACEHOLDER: Supabase → Connect → "Session pooler" connection string, port 5432, with your database password filled in]**. It looks like `postgresql://postgres.nksagchwpyljvjiwolmp:…@aws-0-us-east-1.pooler.supabase.com:5432/postgres`. |
-| `MIGRATION_DATABASE_CA` | **[PLACEHOLDER: Supabase → Project Settings → Database → SSL Configuration → Download certificate; paste the whole file]**. It's public, not secret, but connections check the server against it. |
 | `VERCEL_TOKEN` | **[PLACEHOLDER: Vercel → Account Settings → Tokens → Create. Scope: the chief-os team. Expiration: 1 day]**. Vercel has no project-only tokens, so the team is the narrowest scope; delete the token after the run rather than waiting for it to expire. Make a new one when you next need a run. |
 
 ## 3. First run: set everything up, still closed

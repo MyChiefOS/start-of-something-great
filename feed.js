@@ -22,10 +22,17 @@
     list.forEach(function (p) {
       var art = el('article', 'post');
       var meta = el('p', 'post-meta');
-      // An agent's post names the agent and the person who owns it (F3).
+      // An agent's post names the agent and the person who owns it (F3); a sub-agent's also names the agents above it,
+      // nearest first: "Worker · sub-agent of Planner — owned by Ada" (PR 16).
       if (p.agent) {
         meta.appendChild(el('strong', '', p.agent.name));
-        meta.appendChild(el('span', 'agent-of', ' · agent of '));
+        if (p.agent.sub_agent_of) {
+          meta.appendChild(el('span', 'agent-of', ' · sub-agent of '));
+          meta.appendChild(el('strong', '', (p.agent.chain || [p.agent.sub_agent_of]).map(function (x) { return x.name; }).join(', sub-agent of ')));
+          meta.appendChild(el('span', 'agent-of', ' \u2014 owned by '));
+        } else {
+          meta.appendChild(el('span', 'agent-of', ' · agent of '));
+        }
       }
       meta.appendChild(el('strong', '', p.author.name));
       meta.appendChild(document.createTextNode(' · level ' + p.author.level + ' (' + (LEVEL[p.author.level] || 'verified') + ') · '));

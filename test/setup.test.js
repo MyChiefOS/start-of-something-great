@@ -23,7 +23,8 @@ function fakeVercel(existing = {}) {
       env.set(key, { value, type: sensitive ? 'sensitive' : 'plain' });
       return { existed: false };
     },
-    async redeploy() { this.redeploys++; return 'dpl_test'; }
+    async redeploy() { this.redeploys++; return 'dpl_test'; },
+    async waitReady(id) { this.waited = id; return { readyState: 'READY' }; }
   };
 }
 const masker = () => { const seen = []; const mask = (v) => seen.push(v); mask.seen = seen; return mask; };
@@ -147,6 +148,70 @@ test('masking: inside GitHub Actions every made value is reported to the runner 
   } finally { process.stdout.write = write; if (was === undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS = was; }
 });
 
+test('redeploy: rebuilds what production serves now (so it works after a rollback), waits for it, and checks the live stage', async () => {
+  const calls = [];
+  const states = ['BUILDING', 'READY'];
+  const fetchImpl = async (url, opts) => {
+    calls.push(opts.method + ' ' + url.replace('https://api.vercel.com', '').replace(/[?&]teamId=[^&]*/, ''));
+    if (/\/v9\/projects\//.test(url)) return { ok: true, status: 200, text: async () => JSON.stringify({ name: 'start-of-something-great', targets: { production: { id: 'dpl_rolledback', name: 'start-of-something-great' } } }) };
+    if (/\/v13\/deployments\?/.test(url) && opts.method === 'POST') { assert.strictEqual(JSON.parse(opts.body).deploymentId, 'dpl_rolledback', 'the production target, not the newest build'); return { ok: true, status: 200, text: async () => '{"id":"dpl_new"}' }; }
+    if (/\/v13\/deployments\/dpl_new/.test(url)) return { ok: true, status: 200, text: async () => JSON.stringify({ readyState: states.shift() || 'READY' }) };
+    if (/\/v13\/deployments\/dpl_bad/.test(url)) return { ok: true, status: 200, text: async () => '{"readyState":"ERROR"}' };
+    if (/\/v13\/deployments\/dpl_slow/.test(url)) return { ok: true, status: 200, text: async () => '{"readyState":"BUILDING"}' };
+    return { ok: true, status: 200, text: async () => '{}' };
+  };
+  const v = s.vercel('tok_test', { fetchImpl });
+  assert.strictEqual(await v.redeploy(), 'dpl_new');
+  assert.ok(calls.some((c) => c.startsWith('GET /v9/projects/prj_')), 'asks the project what production serves');
+  let slept = 0;
+  const d = await v.waitReady('dpl_new', { sleep: async () => { slept++; }, everyMs: 1 });
+  assert.strictEqual(d.readyState, 'READY'); assert.strictEqual(slept, 1, 'polled until ready');
+  await assert.rejects(v.waitReady('dpl_bad', { sleep: async () => {} }), /the redeploy error/);
+  await assert.rejects(v.waitReady('dpl_slow', { sleep: async () => {}, timeoutMs: -1 }), /still building/);
+  // verifyLive: a unique address, a 200, and the stage this run set.
+  let seen;
+  const site = async (url) => { seen = url; return { status: 200, text: async () => '{"name":"Day One Great","stage":"preview"}' }; };
+  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: 'preview', fetchImpl: site, tag: 'dpl_new' }), 'preview');
+  assert.match(seen, /^https:\/\/x\.test\/api\/status\?after=dpl_new$/);
+  await assert.rejects(s.verifyLive({ site: 'https://x.test', stage: 'public', fetchImpl: site }), /reports stage "preview", not "public"/);
+  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: null, fetchImpl: site }), 'preview', 'with no stage set this run, any real answer passes');
+  await assert.rejects(s.verifyLive({ site: 'https://x.test', fetchImpl: async () => ({ status: 503, text: async () => '' }) }), /answered 503/);
+});
+
+test('the stage step records EXPECTED_STAGE in GitHub (created if missing), and a failure there is said, not hidden', async () => {
+  const calls = [];
+  const ghFetch = (first404) => async (url, opts) => { calls.push(opts.method + ' ' + url); return { ok: !(first404 && opts.method === 'PATCH'), status: first404 && opts.method === 'PATCH' ? 404 : 200 }; };
+  const gh = s.github('ghs_test', 'MyChiefOS/start-of-something-great', { fetchImpl: ghFetch(false) });
+  await gh.setVariable('EXPECTED_STAGE', 'closed');
+  assert.deepStrictEqual(calls, ['PATCH https://api.github.com/repos/MyChiefOS/start-of-something-great/actions/variables/EXPECTED_STAGE']);
+  calls.length = 0;
+  await s.github('ghs_test', 'MyChiefOS/start-of-something-great', { fetchImpl: ghFetch(true) }).setVariable('EXPECTED_STAGE', 'closed');
+  assert.deepStrictEqual(calls.map((c) => c.split(' ')[0]), ['PATCH', 'POST'], 'created when it does not exist yet');
+  const v = fakeVercel(); const log = logger();
+  const recorded = [];
+  await s.stepStage(v, { stage: 'closed', log, gh: { async setVariable(n, val) { recorded.push(n + '=' + val); } } });
+  assert.deepStrictEqual(recorded, ['EXPECTED_STAGE=closed']);
+  await s.stepStage(v, { stage: 'public', log, gh: { async setVariable() { throw new Error('403'); } } });
+  assert.strictEqual(v.env.get('LAUNCH_STAGE').value, 'public', 'the stage itself was still set');
+  assert.ok(log.lines.some((l) => /EXPECTED_STAGE: could not be recorded .*by hand/.test(l)), 'and the run says what to do');
+  const y = require('fs').readFileSync(require('path').join(__dirname, '..', '.github', 'workflows', 'setup.yml'), 'utf8');
+  assert.match(y, /actions: write/, 'the setup job may write the variable');
+  assert.match(y, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+});
+
+test('main: keys, stage and a verified redeploy run in order against a fake Vercel, and the stage is checked live', async () => {
+  const v = fakeVercel(); const log = logger(); const verified = [];
+  await s.main({ SETUP_STEPS: 'redeploy,stage,keys', SETUP_STAGE: 'closed', VERCEL_TOKEN: 'x' },
+    { vercel: v, log, github: { async setVariable() {} }, verifyLive: async (o) => { verified.push(o); return 'closed'; } });
+  assert.strictEqual(v.env.size, 5, 'four keys and the stage');
+  assert.strictEqual(v.redeploys, 1); assert.strictEqual(v.waited, 'dpl_test');
+  assert.deepStrictEqual(verified.map((o) => [o.stage, o.tag]), [['closed', 'dpl_test']]);
+  assert.deepStrictEqual(log.lines.filter((l) => l.startsWith('==')), ['== keys', '== stage', '== redeploy']);
+  const v2 = fakeVercel(); const verified2 = [];
+  await s.main({ SETUP_STEPS: 'redeploy', VERCEL_TOKEN: 'x' }, { vercel: v2, log, verifyLive: async (o) => { verified2.push(o.stage); return 'public'; } });
+  assert.deepStrictEqual(verified2, [null], 'no stage set this run, so none is demanded of the site');
+});
+
 if (!SERVER) {
   if (process.env.CI) test('setup tests need TEST_DATABASE_URL in CI', () => assert.fail('TEST_DATABASE_URL is not set'));
   else test('setup against a database', { skip: 'set TEST_DATABASE_URL to a Postgres server to run them' }, () => {});
@@ -257,6 +322,18 @@ test('admin: sets exactly one active member as administrator, and refuses anythi
   await s.stepAdmin(su, { memberId: id, log });
   const [{ is_admin }] = await su`select is_admin from app.members where id = ${id}`;
   assert.strictEqual(is_admin, true);
+  // S8: the change left an audit row, written as the system; running it again changes nothing; a second
+  // administrator is refused.
+  const rows = await su`select actor_kind, actor_id, action, subject_id, detail from app.audit_log where action = 'admin.set'`;
+  assert.strictEqual(rows.length, 1);
+  assert.deepStrictEqual({ ...rows[0] }, { actor_kind: 'system', actor_id: null, action: 'admin.set', subject_id: id, detail: { by: 'production setup run' } });
+  await s.stepAdmin(su, { memberId: id, log });
+  assert.ok(log.lines.some((l) => /already this member/.test(l)));
+  assert.strictEqual((await su`select count(*)::int as n from app.audit_log where action = 'admin.set'`)[0].n, 1, 'no second row for a no-op');
+  const other = crypto.randomUUID();
+  await su`insert into app.members (id, display_name, trust_level) values (${other}, 'Grace', 1)`;
+  await assert.rejects(s.stepAdmin(su, { memberId: other, log }), /another member is already the administrator/);
+  assert.strictEqual((await su`select is_admin from app.members where id = ${other}`)[0].is_admin, false);
 });
 
 test('the setup workflow starts by hand only, on main only, in the protected environment, with pinned actions and read-only rights', () => {
@@ -304,4 +381,17 @@ test('the setup run’s raw SQL is exactly these statements, built only from fix
   ]);
   assert.match(src, /if \(!\/\^\[a-z_\]\[a-z0-9_\]\{0,62\}\$\/\.test\(role\)\) throw/, 'the role name is checked before use');
   assert.match(s.scramVerifier('x'), /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'the hash has no quote to break out of');
+});
+
+test('the Supabase root certificate is in the repository, so no one copies it into a secret; a secret still overrides it', () => {
+  const crypto = require('crypto');
+  const pem = require('fs').readFileSync(s.SUPABASE_CA_FILE, 'utf8');
+  const cert = new crypto.X509Certificate(pem);
+  assert.match(cert.subject, /CN=Supabase Root 2021 CA/);
+  assert.ok(new Date(cert.validTo) > new Date('2030-01-01'), 'valid for years yet');
+  assert.ok(cert.ca, 'a certificate authority, not a server certificate');
+  assert.strictEqual(s.databaseCa({}), pem);
+  assert.strictEqual(s.databaseCa({ MIGRATION_DATABASE_CA: '  ' }), pem, 'an empty secret falls back to the file');
+  assert.strictEqual(s.databaseCa({ MIGRATION_DATABASE_CA: 'override' }), 'override');
+  assert.ok(!/BEGIN (RSA |EC )?PRIVATE KEY/.test(pem), 'only a public certificate');
 });

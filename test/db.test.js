@@ -58,6 +58,11 @@ test('G1: the site reads its database address in one place, checks certificates,
 });
 
 const RAW_SQL_OK = ['scripts/migrate.js', 'scripts/setup-production.js'];
+test('no placeholder migrations: a migration file that has run anywhere can never be renamed, removed or filled in, so none is ever committed as a placeholder', () => {
+  const names = require('fs').readdirSync(require('path').join(__dirname, '..', 'db', 'migrations'));
+  assert.deepStrictEqual(names.filter((n) => /placeholder|reserved|todo|tmp|temp/i.test(n)), [], 'number real work only');
+});
+
 test('S8 code check: raw SQL, the driver, and identity or session changes appear only where allowed', () => {
   for (const f of sourceFiles().filter((x) => x.endsWith('.js') && !x.startsWith('test/'))) {
     const s = read(f);
@@ -67,8 +72,8 @@ test('S8 code check: raw SQL, the driver, and identity or session changes appear
     if (/(require\(\s*['"`]postgres['"`]\s*\)|from\s+['"`]postgres['"`]|import\(\s*['"`]postgres['"`])/.test(s)) assert.strictEqual(f, 'db/index.js', f + ' loads the database driver directly; go through db/index.js');
     // Who is acting is set in exactly one place; nothing else may change it or keep state on a pooled connection.
     if (f !== 'db/index.js') {
-      assert.ok(!/set_config|app\.(actor|member_id|agent_id)\b/.test(s), f + ' sets who is acting; only db/index.js may');
-      assert.ok(!/\b(set\s+(session|local\s+role|role)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || RAW_SQL_OK.includes(f), f + ' changes the session or keeps state past a transaction');
+      assert.ok(!/set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b/.test(s), f + ' sets who is acting; only db/index.js may');
+      assert.ok(!/\b(set\s+(local\s+)?(session|role|app\.)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || RAW_SQL_OK.includes(f), f + ' changes the session or keeps state past a transaction');
     }
   }
   const rules = read('.semgrep/database.yml');
@@ -233,7 +238,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_owner, audit_insert_signin, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     ['alter table app.audit_log enable trigger audit_log_no_change', /not set to fire always/],
     [`set local role dog_owner; create or replace function app.audit_log_append_only() returns trigger language plpgsql as $$ begin return null; end $$`, /no longer refuses/],

@@ -48,9 +48,13 @@ const CACHE = 20; // seconds fresh at the edge
 const STALE = 20; // plus at most this long while refreshing: 40 seconds, leaving room inside F7's minute for the
                   // refresh itself (a database read can take up to its 5-second limit)
 const UNTRUSTED_FIELDS = ['posts[].body', 'posts[].author.name'];
-// The agents lane also names each post's agent, as its owner gave it (F3).
-const UNTRUSTED_AGENT_FIELDS = UNTRUSTED_FIELDS.concat(['posts[].agent.name', 'posts[].delegation.label']);
-const untrustedFor = (lane) => (lane === 'agents' ? UNTRUSTED_AGENT_FIELDS : UNTRUSTED_FIELDS);
+// The agents lane also names each post's agent, as its owner gave it (F3), and for a sub-agent the agents above it
+// (PR 16), as their own makers named them.
+const UNTRUSTED_AGENT_FIELDS = UNTRUSTED_FIELDS.concat(['posts[].agent.name', 'posts[].agent.chain_label', 'posts[].delegation.label']);
+const UNTRUSTED_CHAIN_FIELDS = ['posts[].agent.sub_agent_of.name', 'posts[].agent.chain[].name'];
+// Every listed field is in the answer (C7): the chain's fields only when some post comes from a sub-agent.
+const untrustedFor = (lane, list) => (lane !== 'agents' ? UNTRUSTED_FIELDS
+  : UNTRUSTED_AGENT_FIELDS.concat((list || []).some((p) => p.agent && p.agent.chain && p.agent.chain.length) ? UNTRUSTED_CHAIN_FIELDS : []));
 const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well inside this
 // Reporting is limited per member and per network (S6). Generous for honest use; it stops one account or one
 // network from burying the queue. Posting itself stays unlimited (F4).
@@ -58,18 +62,57 @@ const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
 const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
 
-// An agent's post shows the agent and, as its author, the person who owns it (F3).
+// An agent's post shows the agent and, as its author, the person who owns it (F3). A sub-agent's post also shows the
+// agents above it (PR 16): "sub-agent of <parent> — owned by <owner>" for people, and for machines the chain as nested
+// "act" claims after RFC 8693 section 4.1: the author is the subject; "act" is the agent that acted, and each "act"
+// inside it is the agent that made the one outside it. The claims carry IDs only; names are in agent.chain.
 function shape(p) {
   const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
-  if (p.agent) out.agent = { id: p.agent.id, name: maskContacts(p.agent.name) };
+  if (p.agent) {
+    const chain = shownChain(p.agent.chain, p.author.name);
+    out.agent = { id: p.agent.id, name: maskContacts(p.agent.name), chain_label: chainLabel(chain, p.author.name) };
+    if (chain.length) {
+      out.agent.sub_agent_of = { id: chain[0].id, name: chain[0].name };
+      out.agent.chain = chain;
+    }
+    out.act = act(p.author.id, p.agent.id, chain);
+  }
   // How an agent's post went out, as words for people and fields for machines (PR 7, A3, A4).
-  if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id);
+  if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id, out.agent.chain);
   return out;
 }
-function label(kind, agentName, ownerName, rulesVersion, postId) {
+// The chain as shown in public: an agent above that is still active by name (masked), one that has stopped as "an
+// agent of <owner>", with no ID or name (Aaron, the review of PR 16, F5), so a name chosen for a private purpose leaves
+// with its agent. [{ id, name, active }], nearest first.
+function shownChain(chain, ownerName) {
+  return (chain || []).map((x) => (x.active === false || !x.name
+    ? { id: null, name: 'an agent of ' + maskContacts(ownerName), active: false }
+    : { id: x.id, name: maskContacts(x.name), active: true }));
+}
+// "agent of Ada", or "sub-agent of Planner, sub-agent of Lead — owned by Ada" (nearest first). When the agent at the top
+// is no longer shown, the line already names the owner: "sub-agent of Planner, sub-agent of an agent of Ada".
+function chainLabel(chain, ownerName) {
+  if (!chain || !chain.length) return 'agent of ' + maskContacts(ownerName);
+  // Stopped agents next to each other read as one "an agent of <owner>".
+  const names = chain.filter((x, i) => !(x.active === false && i > 0 && chain[i - 1].active === false)).map((x) => x.name);
+  const line = 'sub-agent of ' + names.join(', sub-agent of ');
+  return chain[chain.length - 1].active === false ? line : line + ' \u2014 owned by ' + maskContacts(ownerName);
+}
+// { sub: "member:<owner>", act: { sub: "agent:<agent>", act: { sub: "agent:<parent>", ... } } }; an agent above that
+// has stopped is "agent:inactive", with no ID.
+function act(ownerId, agentId, chain) {
+  let inner;
+  for (const x of [...(chain || [])].reverse()) {
+    const sub = x.active === false ? 'agent:inactive' : 'agent:' + x.id;
+    inner = inner ? { sub, act: inner } : { sub };
+  }
+  return { sub: 'member:' + ownerId, act: inner ? { sub: 'agent:' + agentId, act: inner } : { sub: 'agent:' + agentId } };
+}
+function label(kind, agentName, ownerName, rulesVersion, postId, chain) {
+  const sub = chain && chain.length ? ' (sub-agent of ' + chain[0].name + ')' : '';
   return { kind, approved_by_owner: kind === 'approved', rules_version: rulesVersion, receipt: '/receipt?post=' + postId,
-    label: kind === 'approved' ? 'Approved by ' + maskContacts(ownerName) : 'Posted by ' + maskContacts(agentName) + ' under ' + maskContacts(ownerName) + '\u2019s rules' };
+    label: kind === 'approved' ? 'Approved by ' + maskContacts(ownerName) : 'Posted by ' + maskContacts(agentName) + sub + ' under ' + maskContacts(ownerName) + '\u2019s rules' };
 }
 
 // Public answers: Vercel's edge keeps them 20 seconds, plus up to 20 while refreshing. Browsers and any other shared
@@ -191,8 +234,11 @@ function shapeQueued(i) {
 // A reviewer's decision (SF5: one tap from the queue). Recorded in the audit log by the database (O3).
 async function decide(req, res, run, who, body) {
   if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can decide on posts.' });
+  // PR 17: every one of Aaron's controls needs a passkey check in the last 5 minutes (D5). One check covers 5 minutes
+  // of decisions, so a run through the queue on a phone is one tap of Face ID or a fingerprint.
+  if (who.stepUp !== true) return reply(res, 403, session.stepUpNeeded(who));
   try {
-    const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
+    const out = await run(session.strongActorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such post.' });
     if (out.refused === 'stale') return reply(res, 409, { error: 'That post has already been decided.' });
     return reply(res, 200, { id: body.review, decision: body.decision, status: out.status });
@@ -279,6 +325,8 @@ const DELETION_DONE = {
 };
 async function control(req, res, run, who, body) {
   if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
+  // PR 17: a passkey check in the last 5 minutes (D5); the database checks again for brakes, bans and deletion reviews.
+  if (who.stepUp !== true) return reply(res, 403, session.stepUpNeeded(who));
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
     + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
@@ -292,23 +340,23 @@ async function control(req, res, run, who, body) {
           || Object.keys(b).some((k) => !['member', 'note', ...controls.LIMITS].includes(k))) {
         return reply(res, 400, { error: usage });
       }
-      const out = await run(session.actorFor(who), (t) => controls.setBrake(t, b));
+      const out = await run(session.strongActorFor(who), (t) => controls.setBrake(t, b));
       if (out.refused) return reply(res, 404, { error: 'No such member.' });
       return reply(res, 201, { brake: out.brake, message: out.brake.member ? 'The brake is on for this owner.' : 'The brake is on for everyone.' });
     }
     if (kind === 'deletion_review') {
-      const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
+      const out = await run(session.strongActorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
       if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
       if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
       return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
     }
     if (kind === 'lift') {
-      const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
+      const ok = await run(session.strongActorFor(who), (t) => controls.lift(t, body.lift));
       return ok ? reply(res, 200, { lifted: body.lift, message: 'The brake is off.' }) : reply(res, 404, { error: 'That brake is already off, or doesn\u2019t exist.' });
     }
     const note = body.note === undefined || body.note === null ? null : body.note;
     if (note !== null && typeof note !== 'string') return reply(res, 400, { error: usage });
-    const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
+    const out = await run({ ...session.strongActorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
     if (out.refused === 'unchanged') {
@@ -446,14 +494,18 @@ async function handle(req, res, run) {
     if (!run) return pub(res, 404, { error: 'No receipt for that post.' });
     const r = await run({ actor: 'anon' }, (t) => delegation.receipt(t, String(q.receipt)));
     if (!r) return pub(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
+    r.agent.chain = shownChain(r.agent.chain, r.owner.name);
     return pub(res, 200, { receipt: {
       post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
-      agent: { id: r.agent.id, name: maskContacts(r.agent.name) },
+      agent: { id: r.agent.id, name: maskContacts(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
+        ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: r.agent.chain[0].name }, chain: r.agent.chain } : {}) },
+      act: act(r.owner.id, r.agent.id, r.agent.chain),
       owner: { id: r.owner.id, name: maskContacts(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
-      delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id),
+      delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id, r.agent.chain),
       rules: { version: r.rules.version, post: r.rules.post, daily_cap: r.rules.dailyCap },
       approval: r.delegation === 'approved' ? { approved_by_owner: true, minutes_to_approve: r.minutesToApprove } : null
-    }, untrusted_fields: ['receipt.agent.name', 'receipt.owner.name', 'receipt.delegation.label'], note: UNTRUSTED_NOTE });
+    }, untrusted_fields: ['receipt.agent.name', 'receipt.agent.chain_label', 'receipt.owner.name', 'receipt.delegation.label']
+      .concat(r.agent.chain.length ? ['receipt.agent.sub_agent_of.name', 'receipt.agent.chain[].name'] : []), note: UNTRUSTED_NOTE });
   }
 
   if (q.profile !== undefined) {
@@ -479,7 +531,7 @@ async function handle(req, res, run) {
   try {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));
     const next = rows.length === limit ? '/api/feed?lane=' + lane + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
-    return pub(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE });
+    return pub(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane, rows), note: UNTRUSTED_NOTE });
   } catch (e) {
     if (e instanceof ValidationError) return pub(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
     throw e;

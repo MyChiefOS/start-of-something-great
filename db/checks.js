@@ -40,6 +40,21 @@ const DEFINERS = {
   'app.identity_unlink(uuid, text)': 'dog_signin',
   // PR 15's review (F6): a traveller's sealed confirmation is used once.
   'app.region_confirm_use(text)': 'dog_signin',
+  // PR 17: passkeys, in the sign-in role. Whether a session passed a passkey check in the last 5 minutes; a challenge
+  // (and throwing one away); adding a passkey; a passkey check; removing one; starting and cancelling recovery; and
+  // the trigger that removes a sign-in method's passkeys with it.
+  'app.session_step_up(text)': 'dog_signin',
+  'app.passkey_challenge(text, text, text)': 'dog_signin',
+  'app.passkey_challenge_drop(text, text)': 'dog_signin',
+  'app.passkey_enrol(text, text, text, text, bigint, text, text, boolean)': 'dog_signin',
+  'app.passkey_assert(text, text, text, bigint, boolean)': 'dog_signin',
+  'app.passkey_remove(text, uuid)': 'dog_signin',
+  'app.passkey_recovery_start(text)': 'dog_signin',
+  'app.passkey_recovery_cancel(text)': 'dog_signin',
+  'app.identities_passkeys()': 'dog_signin',
+  // 016 (RK64): the step-up bound to the request's own session. It answers only about the transaction's own session, so
+  // every role that writes on a person's behalf may ask (the step-up triggers run as whichever of them is writing).
+  'app.step_up_check(boolean)': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits' },
   // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
   // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
   'app.current_identity()': 'dog_signin',
@@ -78,7 +93,15 @@ const DEFINERS = {
   // PR 12 (Aaron, Oct 16, 2026): a high-risk deletion is reviewed by Aaron. His decision (delete, keep disabled or
   // restore) and the 24-hour timer that disables an account he hasn't decided on, in the role that deletes.
   'app.deletion_review_decide(uuid, text)': 'dog_erase',
-  'app.deletion_reviews_expire()': 'dog_erase'
+  'app.deletion_reviews_expire()': 'dog_erase',
+  // PR 16 (Aaron, Oct 16, 2026): agents make sub-agents. Making one, stopping a tree when an agent above stops or its
+  // time is up, and lowering sub-agents with their parent, in the role that registers, claims and resolves agents; and
+  // a parent's daily cap counting its whole subtree, in the role that counts for the brake.
+  'app.subagent_create(text, text, text, text, text, text, integer, integer, boolean, text)': 'dog_signin',
+  'app.agents_cascade()': 'dog_signin',
+  'app.agent_rules_cascade()': 'dog_signin',
+  'app.subagents_expire()': 'dog_signin',
+  'app.agent_tree_cap()': 'dog_limits'
 };
 const NO_UUID_PK = ['app.schema_migrations']; // bookkeeping keyed by file name, not a record
 
@@ -90,7 +113,8 @@ const AUDIT_POLICIES = {
   audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
   audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
+  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
+  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
@@ -268,9 +292,10 @@ async function problems(sql, { snapshot } = {}) {
     if (f.definer) {
       if (!Object.hasOwn(DEFINERS, f.signature)) add(f.signature + ' runs with its owner\'s rights (security definer); not allowed without a reviewed exception (S1)');
       else {
-        if (f.owner !== DEFINERS[f.signature]) add(f.name + ' must be owned by ' + DEFINERS[f.signature] + ', not ' + f.owner + ' (S1)');
+        const want = typeof DEFINERS[f.signature] === 'string' ? { owner: DEFINERS[f.signature], callers: 'dog_app' } : DEFINERS[f.signature];
+        if (f.owner !== want.owner) add(f.name + ' must be owned by ' + want.owner + ', not ' + f.owner + ' (S1)');
         if (f.config !== 'search_path=pg_catalog') add(f.name + ' must fix its search path to pg_catalog (S1)');
-        if (f.callers.join() !== 'dog_app') add(f.name + ' may be called only by dog_app, not ' + (f.callers.join(', ') || 'nobody') + ' (S1)');
+        if ([...f.callers].sort().join() !== want.callers) add(f.name + ' may be called only by ' + want.callers + ', not ' + (f.callers.join(', ') || 'nobody') + ' (S1)');
       }
     } else if (f.owner !== 'dog_owner') add(f.name + ' is owned by ' + f.owner + '; everything in app belongs to dog_owner (S1)');
   }
@@ -308,7 +333,21 @@ async function problems(sql, { snapshot } = {}) {
     ['jevs_challenges', 'jevs_challenges_guard', 27, 'jevs_challenges_guard', 'every updated or deleted challenge'],
     ['jevs_settings', 'jevs_settings_check', 23, 'jevs_settings_check', 'every new or changed setting'],
     // A deletion review's subject never changes; only Aaron's decision or the 24-hour timer moves it.
-    ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review']
+    ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
+    // PR 16: a parent's daily cap counts its whole subtree, before every new post and draft.
+    ['posts', 'posts_tree_cap', 7, 'agent_tree_cap', 'every new post'],
+    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft'],
+    // PR 17: the passkey step-up (D5). Risky grants by people refuse without a passkey check in the last 5 minutes.
+    ['agent_rules', 'agent_rules_step_up', 7, 'agent_rules_step_up', 'every new rules version'],
+    ['agent_keys', 'agent_keys_step_up', 7, 'agent_keys_step_up', 'every new key'],
+    ['identities', 'identities_step_up', 7, 'identities_step_up', 'every newly linked sign-in method'],
+    ['members', 'members_step_up', 27, 'members_step_up', 'every updated or deleted member row'],
+    ['brakes', 'brakes_step_up', 23, 'admin_step_up', 'every new or changed brake'],
+    ['deletion_reviews', 'deletion_reviews_step_up', 19, 'admin_step_up', 'every decided deletion review'],
+    // After the PR 17 review (finding 4): Aaron's review-queue and appeal decisions are checked by the database too.
+    ['posts', 'posts_step_up', 19, 'admin_review_step_up', 'every post Aaron changes'],
+    ['review_flags', 'review_flags_step_up', 19, 'admin_review_step_up', 'every flag Aaron decides'],
+    ['containments', 'containments_step_up', 19, 'admin_review_step_up', 'every pause Aaron decides']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

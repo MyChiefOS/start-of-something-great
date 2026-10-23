@@ -16,9 +16,19 @@
 //   POST /api/agents/decline    {"draft"}                 decline a draft
 //   POST /api/agents/reconfirm  {"agent", "version"}      keep an agent acting on its own for another 90 days (R33, PR 13);
 //                                                         needs a sign-in in the last 10 minutes (PR 15)
+//   POST /api/agents/subagents  (Authorization: Bearer)   an agent makes a sub-agent, with no human step (PR 16):
+//                               {"name", "description"?, "rules"?: {"post", "reply", "report": off | draft | act, "daily_cap"},
+//                                "ttl_hours"?}. Returns its key once. It belongs to the same owner, gets the same or narrower
+//                                rules, expires (24 hours unless asked; never after its parent), and stops with its parent.
+//   GET  /api/agents/subagents  (Authorization: Bearer)   the acting agent's own sub-agents, and the limits they are made within
+//   POST /api/agents/subagents/revoke {"agent"} (Bearer)  revoke one of them; everything under it stops too
+// PR 17: letting an agent act on its own, raising its daily cap, a new key for an agent that acts, and the 90-day keep
+// also need a passkey check in the last 5 minutes (D5); the database refuses without one, and the answer carries
+// "step_up" so the page can ask for the passkey and try once more. Drafting never needs one.
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
-// letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron.
+// letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron. Making a
+// sub-agent (PR 16) has no human step: medium risk makes it with everything drafting for its owner's approval.
 // Self-registration from the EU, EEA, UK and Switzerland is declined before anything is kept (signin/region.js).
 'use strict';
 
@@ -45,6 +55,9 @@ const MAX_BODY_BYTES = 4096;
 const REGISTER_LIMITS = { agent_register_ip: { windowSeconds: 3600, max: 10 }, agent_register_net: { windowSeconds: 3600, max: 20 },
   agent_register_all: { windowSeconds: 3600, max: 500 } };
 const ALL = '0'.repeat(64);
+// Asking for sub-agents is limited per agent too (the review of PR 16, F6), like registration: twice the per-parent rate
+// of making them, so refusals can't flood JEVs's decisions or the database's checks.
+const SUBAGENT_LIMITS = { subagent_agent: { windowSeconds: 3600, max: 60 } };
 // Letting an agent act without approval needs a sign-in this recent (R17), so a stolen or forgotten session can't do it.
 const FRESH_MINUTES = 10;
 const REAUTH = '/join?return_to=%2Fagents';
@@ -85,8 +98,9 @@ function held(res, d) {
 // JEVs's check and the sensitive step in one transaction, as the signed-in owner (the JEVs review, F7): the decision
 // and the step commit together, and a fresh sign-in counts as confirming a challenge, which also answers the owner's
 // earlier requests to confirm the same step. Returns { held: decision } or the step's own result.
+// PR 17: the session's passkey step-up goes with it too; the database decides whether the step needs it.
 const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {}) =>
-  run({ ...session.actorFor(who), fresh: who.fresh === true }, async (t) => {
+  run(session.strongActorFor(who), async (t) => {
     if (check) {
       const d = await jevs.check(t, { action, subject, ...jevs.facts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
@@ -94,7 +108,9 @@ const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {
     return step(t);
   });
 
+// A sub-agent (PR 16) also says where it sits: its parent, its depth and when it expires (null for an agent the owner made).
 const shapeAgent = (a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, created_at: a.createdAt, claimed_at: a.claimedAt,
+  parent_id: a.parentId === undefined ? null : a.parentId, depth: a.depth === undefined ? 0 : a.depth, expires_at: a.expiresAt === undefined ? null : a.expiresAt,
   keys: a.keys.map((k) => ({ id: k.id, created_at: k.createdAt, revoked_at: k.revokedAt })) });
 
 const KEY_NOTE = 'This key is shown once. Keep it secret; send it as "Authorization: Bearer <key>". Revoke it at ' + ORIGIN + '/agents if it leaks.';
@@ -179,8 +195,12 @@ const ROUTES = {
     // wait) and as a member takes part, not on page views (the JEVs review).
     const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
-    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.mine(t); });
-    return reply(res, 200, { agents: list.map(shapeAgent), can_own: canOwn });
+    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.listMine(t); });
+    // The agents the owner made come first, always; then sub-agents, with a count per tree of how many are running and
+    // how many are listed here (PR 16, the review's F3). PR 17: whether the owner has a passkey yet, so the page can
+    // offer one before the first risky step.
+    return reply(res, 200, { agents: list.agents.map(shapeAgent), can_own: canOwn, has_passkey: who.passkeys > 0,
+      trees: list.trees.map((x) => ({ root_id: x.rootId, active_subagents: x.active, listed: x.listed })), subagents_truncated: list.truncated });
   },
 
   async 'POST '(req, res, run, body, cfg) {
@@ -210,10 +230,13 @@ const ROUTES = {
     // A new key for an agent that acts on its own needs a fresh sign-in (PR 7); the database decides.
     const ok = await guarded(run, who, req, cfg, 'agent.key', v.uuid('agent', body.agent), (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
     if (ok && ok.held) return held(res, ok.held);
+    // PR 17: and a passkey check in the last 5 minutes.
+    if (ok && ok.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (ok && ok.refused === 'fresh') {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
-    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working.' })
+    // A new key is a fresh start (PR 16): the agent's sub-agents stop too, so none that a leaked key made carry on.
+    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working, and so have its sub-agents.' })
       : reply(res, 404, { error: 'No active agent of yours with that ID.' });
   },
 
@@ -221,7 +244,9 @@ const ROUTES = {
     const a = await agentkey.resolve(req, run);
     if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
     const out = await run(agentkey.actorFor(a), async (t) => ({ row: await agents.whoami(t), rules: await delegation.current(t, a.agentId) }));
-    return reply(res, 200, { agent: { id: out.row.id, name: maskContacts(out.row.name) }, owner: { id: a.ownerId, name: maskContacts(out.row.ownerName) },
+    // A sub-agent (PR 16) also learns its parent, its depth and when it expires.
+    const tree = out.row.parentId ? { parent_id: out.row.parentId, depth: out.row.depth, expires_at: out.row.expiresAt } : { depth: 0 };
+    return reply(res, 200, { agent: { id: out.row.id, name: maskContacts(out.row.name), ...tree }, owner: { id: a.ownerId, name: maskContacts(out.row.ownerName) },
       // What your owner lets you do (PR 7): "act" posts at once under their rules, "draft" waits for their approval.
       rules: out.rules, untrusted_fields: ['agent.name', 'owner.name'] });
   },
@@ -270,11 +295,16 @@ const ROUTES = {
     const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null,
       async (t) => { await notices.liftDue(t); return delegation.setRules(t, args); }, { check: acting });
     if (out.held) return held(res, out.held);
+    // PR 17: letting an agent act on its own, or raising its cap, needs a passkey check in the last 5 minutes too.
+    if (out.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
     if (out.refused === 'contained') {
       return reply(res, 409, { error: 'Your agents draft for your approval until the pause on them ends, so nothing can be raised before then. Lowering still works.' });
+    }
+    if (out.refused === 'above_parent') {
+      return reply(res, 409, { error: 'A sub-agent can\u2019t be allowed more than the agent above it. Raise that agent first, or choose less.' });
     }
     if (out.refused) return reply(res, 404, { error: 'No active agent of yours with that ID.' });
     return reply(res, 201, { agent: body.agent, rules: out.rules });
@@ -307,14 +337,75 @@ const ROUTES = {
   async 'POST reconfirm'(req, res, run, body) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
-    const out = await run({ ...session.actorFor(who), fresh: who.fresh === true }, (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
+    const out = await run(session.strongActorFor(who), (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No active agent of yours with that ID.' });
+    // PR 17: keeping it acting for another 90 days needs a passkey check in the last 5 minutes too.
+    if (out.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To keep an agent acting on its own, sign in again first (within the last ' + FRESH_MINUTES + ' minutes), then tap Keep once more.', reauth: REAUTH });
     }
     if (out.refused === 'changed') return reply(res, 409, { error: 'Its rules changed since this page loaded. Refresh and look again.' });
     if (out.refused) return reply(res, 409, { error: 'This agent doesn’t act on its own, so there is nothing to keep.' });
     return reply(res, 201, { agent: body.agent, rules_version: out.version, message: 'Kept. It goes on acting on its own for another 90 days.' });
+  },
+
+  // ---- Sub-agents (PR 16): an agent makes its own, with its key, and no human step ----
+  async 'POST subagents'(req, res, run, body, cfg) {
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    const input = { name: body.name, description: body.description, rules: body.rules, ttlHours: body.ttl_hours };
+    // Inputs first, so a malformed request uses up no allowance; then the per-agent request limit.
+    agents.subArgs(input);
+    const limited = await run({ actor: 'anon' }, async (t) => !(await store.rateLimitHit(t, { bucket: 'subagent_agent', keyHash: c.sha256hex('subagent ' + a.agentId),
+      ...SUBAGENT_LIMITS.subagent_agent })));
+    if (limited) return reply(res, 429, { error: 'This agent has asked for too many sub-agents this hour. Please try again later.', refused: 'requests' });
+    const k = agentkey.newKey();
+    // The cheap refusals first (depth, the per-parent rate), then JEVs's check and the creation, which commit together.
+    // High risk (or scoring that failed) holds it for Aaron; medium makes it with every action drafting, so each thing
+    // it does waits for the owner, never for an agent. The database locks and re-checks the parent and the very key
+    // this request came with as it makes the sub-agent, so a revoke or a new key always wins.
+    const out = await run(agentkey.actorFor(a), async (t) => {
+      const pre = await agents.subPrecheck(t);
+      if (pre) return pre;
+      const d = await jevs.check(t, { action: 'agent.subagent', subject: a.agentId, ...jevs.facts(req, cfg.ipKey) });
+      if (jevs.blocks(d)) return { held: d };
+      const draftOnly = Boolean(d.applied && d.effect === 'draft');
+      const r = await agents.createSub(t, { ...input, keyHash: k.hash, callerKeyHash: agentkey.fromRequest(req).hash, draftOnly });
+      if (r.refused) return r;
+      return { ...r, draftOnly };
+    });
+    if (out.held) {
+      return reply(res, 403, { error: 'This sub-agent is held for review: our automatic checks (JEVs) found it high risk or couldn\u2019t finish. '
+        + 'Aaron will look at it; try again later.' });
+    }
+    const refusals = { depth: 403, above_parent: 403, rate_parent: 429, rate_owner: 429, brake: 429, ttl: 400, busy: 409 };
+    if (out.refused === 'not_active') return reply(res, 401, { error: 'This agent can\u2019t make sub-agents right now: it, or its owner, is no longer active.' });
+    if (out.refused) return reply(res, refusals[out.refused] || 403, { error: out.message || 'This sub-agent can\u2019t be made.', refused: out.refused });
+    return reply(res, 201, {
+      agent_id: out.id, key: k.key, key_note: 'This key is shown once. Keep it secret; it works as "Authorization: Bearer <key>" until '
+        + new Date(out.expiresAt).toISOString() + ', or until you, an agent above you or your owner revokes it.',
+      parent_id: a.agentId, owner_id: a.ownerId, depth: out.depth, expires_at: out.expiresAt, rules: out.rules,
+      // Who it acts for, after RFC 8693's "act" claim: your owner is the subject; it acts, made by you, made by ...
+      act: { sub: 'member:' + a.ownerId, act: [out.id, ...out.chain].reverse().reduce((inner, id) => (inner ? { sub: 'agent:' + id, act: inner } : { sub: 'agent:' + id }), null) },
+      ...(out.draftOnly ? { note: 'Our automatic checks (JEVs) asked for care, so everything this sub-agent does drafts for your owner\u2019s approval.' } : {})
+    });
+  },
+
+  async 'GET subagents'(req, res, run) {
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    const out = await run(agentkey.actorFor(a), async (t) => ({ list: await agents.children(t), limits: await agents.subLimits(t) }));
+    return reply(res, 200, { subagents: out.list.map((x) => ({ id: x.id, name: maskContacts(x.name), description: x.description ? maskContacts(x.description) : null,
+      status: x.status, depth: x.depth, created_at: x.createdAt, expires_at: x.expiresAt, rules: x.rules })), limits: out.limits,
+      untrusted_fields: ['subagents[].name', 'subagents[].description'] });
+  },
+
+  async 'POST subagents/revoke'(req, res, run, body) {
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    const ok = await run(agentkey.actorFor(a), (t) => agents.revokeChild(t, body.agent));
+    return ok ? reply(res, 200, { agent: body.agent, status: 'revoked', note: 'Every sub-agent under it stopped too.' })
+      : reply(res, 404, { error: 'No active sub-agent of yours with that ID.' });
   },
 
   async 'POST decline'(req, res, run, body) {
@@ -363,3 +454,4 @@ module.exports = async (req, res) => {
 module.exports.handle = handle;
 module.exports.ROUTES = ROUTES;
 module.exports.REGISTER_LIMITS = REGISTER_LIMITS;
+module.exports.SUBAGENT_LIMITS = SUBAGENT_LIMITS;

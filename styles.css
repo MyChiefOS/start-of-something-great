@@ -487,6 +487,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
 .key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
 .agent-of { color: var(--muted); }
+/* Sub-agents (PR 16): each sits under its parent on /agents, a step further in per level (three steps at most, so a
+   deep tree still fits a phone at 390 px). */
+.agent.sub-agent { border-left: 2px solid var(--rule); padding-left: 0.75rem; }
+.agent.depth-1 { margin-left: 0.75rem; }
+.agent.depth-2 { margin-left: 1.5rem; }
+.agent.depth-3, .agent.depth-deep { margin-left: 2.25rem; }
 .claim-agent { font-size: 1.1rem; }
 
 /* Owner controls (/controls, PR 6): the numbers in a grid, the brake form one field per row on a phone */

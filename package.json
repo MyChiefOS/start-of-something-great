@@ -6,9 +6,11 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "migrate": "node scripts/migrate.js",
-    "db:snapshot": "node scripts/db-snapshot.js"
+    "db:snapshot": "node scripts/db-snapshot.js",
+    "harness": "node harness/check.js"
   },
   "dependencies": {
+    "@simplewebauthn/server": "14.0.3",
     "postgres": "3.4.9"
   }
 }

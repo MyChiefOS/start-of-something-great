@@ -3,6 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -111,9 +112,11 @@ async function member(level = 2, name = 'Owner') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId } };
+  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
 }
-const asAdmin = (sqlText) => su.begin(async (t) => { await t`select set_config('app.actor', 'admin', true)`; await t.unsafe(sqlText); });
+let adminMember; // a real member with a session that passed a passkey check (security batch 1)
+const asAdmin = async (sqlText) => { adminMember = adminMember || await member(2, 'Admin'); return su.begin(async (t) => { await actAsAdmin(t, adminMember.ctx); await t.unsafe(sqlText); }); };
 // Agents start by drafting (PR 7). Tests of other behaviour let an agent act on its own first, as its owner could
 // after a fresh sign-in.
 const letAct = (sql, agentId) => sql.begin(async (t) => {

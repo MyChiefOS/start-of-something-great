@@ -99,7 +99,11 @@ function context(ctx) {
   const session = ctx.session == null ? null : String(ctx.session);
   if (session !== null && !/^[0-9a-f]{64}$/.test(session)) throw new Error('session must be a session hash');
   if (session !== null && actor !== 'member' && actor !== 'admin') throw new Error('only member calls carry a session');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '' };
+  // A passkey step-up (PR 17): this session passed a passkey check in the last 5 minutes, by the database's own answer
+  // (app.session_step_up), which risky grants require. Only people's calls carry it, like fresh.
+  const stepUp = ctx.stepUp === true;
+  if (stepUp && actor !== 'member' && actor !== 'admin') throw new Error('only member calls can carry a passkey step-up');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', stepUp: stepUp ? '1' : '', session: session || '' };
 }
 
 // Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
@@ -116,6 +120,7 @@ async function tx(sql, ctx, fn) {
                    set_config('app.agent_id', ${c.agentId}, true),
                    set_config('app.note', ${c.note}, true),
                    set_config('app.fresh', ${c.fresh}, true),
+                   set_config('app.step_up', ${c.stepUp}, true),
                    set_config('app.session', ${c.session}, true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
