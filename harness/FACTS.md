@@ -29,6 +29,9 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | Production setup has never run, so no database is connected to the live site | checked | GitHub API: the Production setup workflow has 0 runs; sign-in is off | 2026-10-23 |
 | The three repository secrets for Production setup (MIGRATION_DATABASE_URL, MIGRATION_DATABASE_CA, VERCEL_TOKEN) are not set yet | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
 | Aaron's GitHub account ID is 304218593 | checked | GitHub API, repository owner | 2026-10-23 |
+| Claude's GitHub access: admin on the repository; can read PRs, issues, contents, deployments, rulesets and workflow runs and push branches; the session proxy refuses secrets, variables, environments and collaborators (403) | checked | GitHub API path by path; push dry-run | 2026-10-23 |
+| main has one active ruleset ("The Start of Something Great Rule Set") and no classic branch protection | checked | GitHub API rulesets; branches/main/protection 404 | 2026-10-23 |
+| Supabase project "Day One Great" (nksagchwpyljvjiwolmp, us-east-1) is healthy and has no migrations applied: the database is empty | checked | Supabase get_project and list_migrations | 2026-10-23 |
 | The terms of service and privacy policy were approved by Aaron in his doc on Oct 14 and updated for Release 2 as /terms and /privacy in PR #36 | checked | Claude Docs "Day One Great: Terms and Privacy (draft for counsel)"; commit 708722d | 2026-10-23 |
 | PR #36 (security-batch-1 → main) holds all Release 2 work; checks green; nothing else is open | checked | GitHub API | 2026-10-23 |
 | 15 commits on Oct 17 carry Aaron's name (MyChiefOS) but were made by a Claude session (Fable 5.1); GitHub shows them Unverified. Three reviews found no harmful change | checked | GitHub API commit verification; red, blue and scalability reviews | 2026-10-22 |
