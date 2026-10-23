@@ -39,7 +39,17 @@ async function build({ write = true } = {}) {
     charset: 'utf8',
     logLevel: 'silent',
     plugins: [embedLists],
-    banner: { js: '// Built by scripts/build-gateway.js from this repository. Do not edit by hand.\nimport { createRequire as __dogRequire } from "node:module";\nconst require = __dogRequire(import.meta.url);' }
+    // Node's require, Buffer and process, set up before anything else runs, so the bundle behaves the same under
+    // Deno (Supabase Edge Functions) as under Node.
+    banner: { js: [
+      '// Built by scripts/build-gateway.js from this repository. Do not edit by hand.',
+      'import { createRequire as __dogRequire } from "node:module";',
+      'import { Buffer as __dogBuffer } from "node:buffer";',
+      'import __dogProcess from "node:process";',
+      'globalThis.Buffer ??= __dogBuffer;',
+      'globalThis.process ??= __dogProcess;',
+      'const require = __dogRequire(import.meta.url);'
+    ].join('\n') }
   });
   const text = r.outputFiles[0].text;
   if (write) {
