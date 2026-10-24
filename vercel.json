@@ -34,6 +34,42 @@
       ],
       "destination": "https://dayonegreat.com/:path",
       "permanent": true
+    },
+    {
+      "source": "/join",
+      "has": [
+        {
+          "type": "header",
+          "key": "x-vercel-ip-country",
+          "value": "(AT|BE|BG|HR|CY|CZ|DK|EE|FI|FR|DE|GR|HU|IE|IT|LV|LT|LU|MT|NL|PL|PT|RO|SK|SI|ES|SE|AX|GF|GP|MQ|YT|RE|MF|IS|LI|NO|GB|UK|CH|EU)"
+        }
+      ],
+      "missing": [
+        {
+          "type": "query",
+          "key": "here"
+        }
+      ],
+      "destination": "/region",
+      "permanent": false
+    },
+    {
+      "source": "/talk",
+      "has": [
+        {
+          "type": "header",
+          "key": "x-vercel-ip-country",
+          "value": "(AT|BE|BG|HR|CY|CZ|DK|EE|FI|FR|DE|GR|HU|IE|IT|LV|LT|LU|MT|NL|PL|PT|RO|SK|SI|ES|SE|AX|GF|GP|MQ|YT|RE|MF|IS|LI|NO|GB|UK|CH|EU)"
+        }
+      ],
+      "missing": [
+        {
+          "type": "query",
+          "key": "here"
+        }
+      ],
+      "destination": "/region",
+      "permanent": false
     }
   ],
   "headers": [

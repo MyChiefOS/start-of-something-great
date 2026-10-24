@@ -189,7 +189,11 @@ test('vercel.json: the timers run every minute, /api/notify is routed, and the c
   // Vercel Cron doesn't follow redirects, and it may call a *.vercel.app address, which redirects everything else.
   // The same regular expression path-to-regexp builds from "/:path((?!api/cron$).*)".
   const rule = /^\/((?!api\/cron$).*)[/#?]?$/i;
-  for (const r of v.redirects) assert.strictEqual(r.source, '/:path((?!api/cron$).*)');
+  // Host redirects catch every path except the cron; the regional notice (PR 4) redirects only /join and /talk.
+  for (const r of v.redirects) {
+    if (r.has && r.has.some((h) => h.type === 'host')) assert.strictEqual(r.source, '/:path((?!api/cron$).*)');
+    else assert.ok(['/join', '/talk'].includes(r.source), r.source);
+  }
   assert.ok(!rule.test('/api/cron') && rule.test('/') && rule.test('/api/cronx') && rule.test('/agents') && rule.test('/api/notify'));
 });
 

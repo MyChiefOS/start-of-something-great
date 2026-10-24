@@ -198,11 +198,23 @@ async function getChanges(limit) {
 }
 
 // The public conversation (Discussion #1 and its replies).
+// Text people can't see but agents read (USE-CASES.md row 10): HTML comments, which GitHub hides from readers but keeps
+// in the text, and invisible characters (the same set JEVs's J16 counts). Removed before an agent reads a post, and
+// the reply says so, so a post can't carry instructions a person reviewing it never saw.
+const HIDDEN_MARKUP = /<!--[\s\S]*?(?:-->|$)|[\u200B\u202A-\u202E\u2066-\u2069\u2060-\u2064]|(?!^)\uFEFF/g;
+function stripHidden(text) {
+  const raw = String(text == null ? '' : text);
+  const clean = raw.replace(HIDDEN_MARKUP, '');
+  return { text: clean, removed: clean !== raw };
+}
+
 async function getConversation(limit) {
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
   const [d, comments] = await Promise.all([gh('/discussions/1'), gh('/discussions/1/comments?per_page=50')]);
-  const pub = (v, max) => clip(maskContacts(v), max); // P4: Discussion text is public text too; mask first, then clip
-  return {
+  let removed = false;
+  // P4: Discussion text is public text too; hidden markup out first, then mask, then clip.
+  const pub = (v, max) => { const h = stripHidden(v); removed = removed || h.removed; return clip(maskContacts(h.text), max); };
+  const out = {
     note: UNTRUSTED_NOTE,
     thread: {
       title: pub(d.title, 300),
@@ -219,6 +231,8 @@ async function getConversation(limit) {
       url: c.html_url
     }))
   };
+  out.hidden_markup_removed = removed;
+  return out;
 }
 
 // Proposals filed through the GitHub issue template (label "proposal").
@@ -266,4 +280,5 @@ function onlyGet(req, res) {
   return true;
 }
 
-module.exports = { SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };
+module.exports = {
+  stripHidden, SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };

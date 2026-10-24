@@ -36,7 +36,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          sparse-checkout: jevs
+          sparse-checkout: |
+            /jevs/
+            /moderation/
           sparse-checkout-cone-mode: false
 
       - name: Build the event for the gate (from GitHub's payload, never through a command line)
@@ -49,11 +51,13 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = discussion_comment ]; then sel=comment; else sel=discussion; fi
           uid=$(jq -r --arg s "$sel" '.[$s].user.id' "$GITHUB_EVENT_PATH")
           [[ "$uid" =~ ^[0-9]{1,15}$ ]] || { echo "unexpected author id"; exit 1; }
+          # The ban list (moderation/bans.json): GitHub numeric IDs, changed only by a merged PR.
+          banned=$(jq --argjson id "$uid" '(.ids // []) | any(.[]; . == $id)' moderation/bans.json)
           # The GitHub account's age (J01). If GitHub doesn't answer, JEVs treats it as new-ish rather than failing.
           created=$(gh api "user/$uid" --jq .created_at 2>/dev/null || true)
-          jq --arg mode "$mode" --arg event "$GITHUB_EVENT_NAME" --arg sel "$sel" --arg created "$created" '
+          jq --arg mode "$mode" --arg event "$GITHUB_EVENT_NAME" --arg sel "$sel" --arg created "$created" --argjson banned "$banned" '
             .[$sel] as $p | {
-              event: $event, action: .action, mode: $mode, discussion: .discussion.number,
+              event: $event, action: .action, mode: $mode, discussion: .discussion.number, banned: $banned,
               post: {
                 node_id: $p.node_id,
                 thread_node_id: (if $sel == "comment" then ("c" + (($p.parent_id // $p.id) | tostring)) else null end),
@@ -111,8 +115,8 @@ jobs:
             issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -F body=@issue.txt -f 'labels[]=jevs-alert' --jq .number)
           fi
           jq -r --arg url "$(cat post_url.txt)" --arg run "$RUN_URL" '
-            "Flagged: " + $url + "\n\n" +
-            ([.decisions[] | select(.risk == "high" or (.questions | any(. == "J16" or . == "J17")))
+            (if .appeal then "Appeal (the author asks a person to look): " else "Flagged: " end) + $url + "\n\n" +
+            ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or (.questions | any(. == "J16" or . == "J17")))
               | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)] | join("\n"))
             + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
@@ -128,6 +132,17 @@ jobs:
           gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: SPAM}) { minimizedComment { isMinimized } } }' \
             -f id="$(cat node_id.txt)" > /dev/null
           echo "hidden"
+
+      - name: Show approved drafts again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -r '(.unhide // [])[]' result.json > unhide.txt
+          while IFS= read -r id; do
+            [[ "$id" =~ ^[A-Za-z0-9_=-]{1,100}$ ]] || continue
+            gh api graphql -f query='mutation($id: ID!) { unminimizeComment(input: {subjectId: $id}) { unminimizedComment { isMinimized } } }' -f id="$id" > /dev/null || true
+          done < unhide.txt
 
       - name: Reply to /agent commands
         # A reply that fails (a locked thread, a rate limit) must not stop anything else.
