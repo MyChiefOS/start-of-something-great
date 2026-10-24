@@ -13,7 +13,7 @@ Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this lis
 
 ## Accounts and settings
 
-All from GitHub, nothing on your computer. Since Oct 23 (Aaron: "remove the Old Path") launching needs no secret from you: the database is built, and its login and keys were made inside it and kept in Supabase Vault (GATEWAY.md). The old items "add the setup secrets", "first setup run" and "enrol two passkeys (PK13)" are removed.
+All from GitHub, nothing on your computer. Since Oct 23 (Aaron: "remove the Old Path") the preview and its sign-in test need no secret from you (going public on the Vercel side needs a 1-day `VERCEL_TOKEN` run or a hand edit of `LAUNCH_STAGE`, SETUP.md, step 4): the database is built, and its login and keys were made inside it and kept in Supabase Vault (GATEWAY.md). The old items "add the setup secrets", "first setup run" and "enrol two passkeys (PK13)" are removed.
 
 1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only (SETUP.md, step 1). No secret is needed to launch; one is added only on the day you choose a run that needs it (SETUP.md, step 2).
 2. [x] **The database** (migrations 001 to 017, row-level security forced on every table, the narrow login and keys in Vault): built Oct 23 with Aaron's approval (OPERATIONS.md).

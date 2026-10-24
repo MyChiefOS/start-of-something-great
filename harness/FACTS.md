@@ -54,6 +54,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | The terms of service and privacy policy were approved by Aaron in his doc on Oct 14 and updated for Release 2 as /terms and /privacy in PR #36 | checked | Claude Docs "Day One Great: Terms and Privacy (draft for counsel)"; commit 708722d | 2026-10-23 |
 | PR #36 (security-batch-1 → main) holds all Release 2 work; checks green; nothing else is open | checked | GitHub API | 2026-10-23 |
 | 15 commits on Oct 17 carry Aaron's name (MyChiefOS) but were made by a Claude session (Fable 5.1); GitHub shows them Unverified. Three reviews found no harmful change | checked | GitHub API commit verification; red, blue and scalability reviews | 2026-10-22 |
+| On the live database the main login `postgres` holds admin option on `dog_web` (not inherit, not set) and `pg_signal_backend`, so `alter role dog_web nologin` and ending dog_web's connections are allowed; Supabase's dashboard "Reset database password" changes only `postgres`'s password | checked | read-only query via the Supabase connector (pg_auth_members, pg_has_role); Supabase docs on roles (independent review) | 2026-10-23 |
 
 ## Launch path (what is left, in order)
 
@@ -78,15 +79,10 @@ The gateway path (GATEWAY.md, "Order and date"). Since Oct 23 it is the only one
 
 | Step | Who | Status |
 |---|---|---|
-| Merge PR #36 | Aaron | replaced Oct 23 |
 | Add two secrets: MIGRATION_DATABASE_URL (Supabase, Connect, Session pooler, with the database password) and VERCEL_TOKEN (chief-os scope, 1 day). The certificate is in the repo now | Aaron | replaced Oct 23 |
 | Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | replaced Oct 23 |
 | Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | replaced Oct 23 |
 | PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | replaced Oct 23 |
-| Approve the pending criteria (N1 to N11, R16, R33, SA1 to SA12; ROADMAP.md) | Aaron | replaced Oct 23 |
-| Smoke test: a second GitHub account signs up and posts. First-post review stays on while JEVs is in shadow mode (standing decision) | Aaron or a friend | replaced Oct 23 |
-| Update ROADMAP.md with the actual launch date next to the Nov 6 and Nov 20 targets | Claude | replaced Oct 23 |
-| Optional, not blocking: X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them); /join already says X is coming soon | Aaron | replaced Oct 23 |
 
 ## Open for Aaron (ask once; record the answer here)
 

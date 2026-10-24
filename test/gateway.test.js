@@ -93,3 +93,26 @@ test('the gateway pooler rule: Supabase\'s dedicated pooler only on port 6543, o
   assert.ok(db.pooledUrl('postgres://dog_web:x@db.nksagchwpyljvjiwolmp.supabase.co:6543/postgres'));
   assert.throws(() => db.pooledUrl('postgres://dog_web:x@db.nksagchwpyljvjiwolmp.supabase.co:5432/postgres'), /pooler/);
 });
+
+// Replaces the setup run's "the keys it makes are exactly what sign-in needs" test (removed with the old path, Oct 23):
+// the keys now come from migration 017 through Vault, so the names it creates, the names the gateway reads and the
+// settings sign-in needs must line up, or the gateway would start without sign-in.
+test('migration 017 makes exactly the Vault keys the gateway reads, and they switch sign-in on', () => {
+  const mig = fs.readFileSync(path.join(root, 'db', 'migrations', '017_gateway.sql'), 'utf8');
+  const entry = fs.readFileSync(path.join(root, 'supabase', 'functions', 'jevs-gateway', 'index.ts'), 'utf8');
+  const loop = mig.match(/foreach k in array array\[([^\]]+)\] loop/);
+  assert.ok(loop, '017 makes the site keys in one loop');
+  const siteKeys = [...loop[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+  assert.match(mig, /vault\.create_secret\(pw, 'dog_web_password'/, '017 stores the login password in Vault');
+  assert.match(mig, /vault\.create_secret\(encode\(extensions\.gen_random_bytes\(32\), 'base64'\), k,/, 'each site key is 32 random bytes in base64');
+  const made = ['dog_web_password', ...siteKeys].sort();
+  const read = [...entry.match(/const KEYS = \[([^\]]+)\]/)[1].matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]).sort();
+  assert.deepStrictEqual(read, made, 'the gateway reads exactly the Vault names 017 makes');
+  // The settings the gateway builds from Vault (SESSION_SECRET: v.dog_session_secret, ...), with values shaped as 017 makes them.
+  const mapped = [...entry.matchAll(/^\s+([A-Z0-9_]+): v\.([a-z0-9_]+),?$/gm)].map((m) => [m[1], m[2]]);
+  assert.deepStrictEqual(mapped.map((m) => m[1]).sort(), siteKeys.slice().sort(), 'every site key becomes a setting');
+  const env = Object.fromEntries(mapped.map(([name]) => [name, require('crypto').randomBytes(32).toString('base64')]));
+  const cfg = require('../signin/config').load(env);
+  assert.strictEqual(cfg.ready, true, 'sign-in switches on with exactly those settings');
+  assert.strictEqual(cfg.fingerprintKeys.length, 1);
+});

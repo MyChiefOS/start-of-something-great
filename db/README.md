@@ -413,7 +413,7 @@ commit;
 - the 90-day check
 - the watch
 
-`api/cron.js` calls it every minute (Vercel Cron, `CRON_SECRET`). It takes a lock and skips if another run holds it; every step is safe to repeat. Vercel Cron calls only the production deployment (RK35).
+`api/cron.js` calls it every minute (Vercel Cron, `CRON_SECRET`), once the timers are switched on: they are off in slice 1 and move to the gateway in a later slice, with their secret made in Vault (GATEWAY.md). It takes a lock and skips if another run holds it; every step is safe to repeat. Vercel Cron calls only the production deployment (RK35).
 
 **Why pg_cron isn't used.** A pg_cron job runs as the role that scheduled it, and only a superuser may schedule one for another role (Supabase's `postgres` isn't one). The timers must act as `dog_app` under row-level security. Making a login role able to become `dog_app` with other powers would fail the coverage check's role rules. Vercel Cron reaches the database the same way every request does.
 

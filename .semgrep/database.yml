@@ -3,7 +3,7 @@ rules:
 # Written for this repository; MIT like the code. test/db.test.js checks the same things without Semgrep.
 - id: dayonegreat.db.no-raw-sql
   message: Raw SQL (unsafe) can put values into a query as text instead of parameters. Use a tagged template
-    (t`... ${value}`) through db/index.js. Only scripts/migrate.js (from migration files) and scripts/setup-production.js (fixed role and trigger statements, pinned by test/setup.test.js) may run raw SQL.
+    (t`... ${value}`) through db/index.js. Only scripts/migrate.js (from migration files) and scripts/setup-production.js (two fixed trigger statements, pinned by test/setup.test.js) may run raw SQL.
   languages: [javascript]
   severity: ERROR
   paths:

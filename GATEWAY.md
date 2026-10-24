@@ -28,7 +28,7 @@ Agents, controls, notifications, deletion and the timers stay switched off in sl
 | GitHub keys | Stay in Vercel, where Aaron put them. The Vercel side seals its short-lived sign-in cookie with a key derived from the GitHub secret it already has, so it needs no new setting |
 | GitHub client ID (public) | Read from the live sign-in link and written into the gateway's settings |
 | Go-live stage | In the database. Starts at `preview` with only Aaron (GitHub ID 304218593) allowed; Claude changes it only on Aaron's words, recorded in OPERATIONS.md |
-| Administrator | Aaron's GitHub ID becomes the administrator on his first sign-in |
+| Administrator | Not automatic yet: after Aaron's first sign-in, Claude runs `app.set_administrator` (migration 013) with his member_id through the Supabase connector once he agrees, recorded in OPERATIONS.md (or Aaron runs the setup `admin` step). Making it automatic on his first sign-in is a later change |
 
 ## Migration 017 (in the database)
 

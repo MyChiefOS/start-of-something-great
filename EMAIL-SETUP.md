@@ -87,13 +87,12 @@ Project Settings, Environment Variables, **Production** only, so preview deploym
 | `SNS_TOPIC_ARN` | the topic's ARN from step 3 | no |
 | `SES_ACCESS_KEY_ID` | from step 5 | yes |
 | `SES_SECRET_ACCESS_KEY` | from step 5 | yes |
-| `CRON_SECRET` | a random string of 32 or more characters: run `openssl rand -base64 32` on your own computer and paste the output | yes |
 
 No extra key is needed for bounces: their fingerprints use the sign-in fingerprint keys you already set (SIGNIN-SETUP.md), with a label of their own.
 
 The names are `SES_*`, not `AWS_*`, because Vercel uses the `AWS_*` names for its own credentials.
 
-`CRON_SECRET` turns on the every-minute timers at `/api/cron`: draft expiry, the 90-day check, the watch and pauses, and JEVs's 24-hour deletion-review timer and mark sweep. Vercel sends it to that route by itself, and only to the production deployment. Without it, the route answers "not switched on" and nothing runs, so set it with the preview. Every-minute cron jobs need Vercel Pro, which you chose (GAP-52). (A pause whose time is up also ends whenever its owner opens their agents, so a missed run never makes one longer.)
+**The timers are off in slice 1** (GATEWAY.md: they move to the gateway in a later slice, and their secret will be made inside the database and kept in Vault like the others, so nothing runs on your computer; the old instruction to make `CRON_SECRET` with `openssl` on your own computer is removed, Oct 23). When they return, `CRON_SECRET` turns on the every-minute timers at `/api/cron`: draft expiry, the 90-day check, the watch and pauses, and JEVs's 24-hour deletion-review timer and mark sweep. Vercel sends it to that route by itself, and only to the production deployment. Without it, the route answers "not switched on" and nothing runs, so set it with the preview. Every-minute cron jobs need Vercel Pro, which you chose (GAP-52). (A pause whose time is up also ends whenever its owner opens their agents, so a missed run never makes one longer.)
 
 Redeploy after adding them.
 
