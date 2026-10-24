@@ -1,0 +1,167 @@
+# JEVs on every post (USE-CASES.md rows 3 to 9, 13 and 18). Each time anyone creates, edits or deletes a discussion
+# or a comment, this sends GitHub's own record of it to the JEVs gate (supabase/functions/jevs), proving who it is
+# with a short-lived GitHub identity token, and carries out what the gate decides:
+#   * a reply to /agent commands;
+#   * an alert, as a comment on the one open "JEVs alerts" issue: the post's link and the question IDs only;
+#   * in enforce mode only (jevs/mode), hiding a post (GitHub's "hide", which anyone with rights can undo).
+# It never refuses anyone and never acts on an account. Safety: the post's text is attacker-controlled, so it never
+# appears in a command line (only in files, read by jq); this file uses no ${{ github.event... }} inside "run:".
+# Nothing about the person, the text or the scores is written to the run's public log or summary.
+name: JEVs
+
+on:
+  discussion:
+    types: [created, edited, deleted]
+  discussion_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  id-token: write # only to ask GitHub for the identity token the gate checks
+  discussions: write # only to reply to /agent commands and, in enforce mode, hide a post
+  issues: write # only to add alerts to the "JEVs alerts" issue
+
+# No concurrency group: GitHub cancels a pending run when a third one queues in the same group, which would drop
+# posts. Every event runs; the gate takes a lock per author, and a post already erased is never recorded again.
+
+jobs:
+  jevs:
+    # Only in this repository (a fork's copy can't call the gate anyway: its token names another repository).
+    if: github.repository_id == 1418125608
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GATE_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/jevs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: jevs
+          sparse-checkout-cone-mode: false
+
+      - name: Build the event for the gate (from GitHub's payload, never through a command line)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mode=$(tr -d '[:space:]' < jevs/mode)
+          case "$mode" in shadow|enforce) ;; *) echo "jevs/mode must be shadow or enforce"; exit 1 ;; esac
+          if [ "$GITHUB_EVENT_NAME" = discussion_comment ]; then sel=comment; else sel=discussion; fi
+          uid=$(jq -r --arg s "$sel" '.[$s].user.id' "$GITHUB_EVENT_PATH")
+          [[ "$uid" =~ ^[0-9]{1,15}$ ]] || { echo "unexpected author id"; exit 1; }
+          # The GitHub account's age (J01). If GitHub doesn't answer, JEVs treats it as new-ish rather than failing.
+          created=$(gh api "user/$uid" --jq .created_at 2>/dev/null || true)
+          jq --arg mode "$mode" --arg event "$GITHUB_EVENT_NAME" --arg sel "$sel" --arg created "$created" '
+            .[$sel] as $p | {
+              event: $event, action: .action, mode: $mode, discussion: .discussion.number,
+              post: {
+                node_id: $p.node_id,
+                thread_node_id: (if $sel == "comment" then ("c" + (($p.parent_id // $p.id) | tostring)) else null end),
+                title: (if $sel == "discussion" then ($p.title // "") else null end),
+                body: ($p.body // ""), created_at: $p.created_at
+              },
+              author: { id: $p.user.id, login: $p.user.login, type: $p.user.type,
+                        created_at: (if $created == "" then null else $created end) }
+            }' "$GITHUB_EVENT_PATH" > event.json
+          jq -r --arg s "$sel" '.[$s].html_url // ""' "$GITHUB_EVENT_PATH" > post_url.txt
+          jq -r '.discussion.node_id' "$GITHUB_EVENT_PATH" > discussion_id.txt
+          jq -r --arg s "$sel" '.[$s].node_id' "$GITHUB_EVENT_PATH" > node_id.txt
+
+      - name: Ask the JEVs gate
+        id: gate
+        run: |
+          set -euo pipefail
+          # The gate is deployed from the merged commit right after merge (OPERATIONS.md); until then it isn't
+          # there, so wait (up to 10 minutes) rather than lose the event. Each try gets a fresh token.
+          for try in $(seq 1 20); do
+            token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$GATE_URL" | jq -r .value)
+            echo "::add-mask::$token"
+            rm -f result.json
+            code=$(curl -sS --max-time 60 -o result.json -w '%{http_code}' -X POST "$GATE_URL" \
+              -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data-binary @event.json) || true
+            unset token
+            if [ "$code" = 401 ] && ! jq -e '(.error // "") | startswith("refused: ")' result.json > /dev/null 2>&1; then code=not-ready; fi
+            case "$code" in
+              200|400|401|413) break ;;
+              *) echo "gate not ready yet ($code), try $try of 20"; sleep 30 ;;
+            esac
+          done
+          # Only whether it worked goes in the log: never the decision, the person or the text.
+          if [ "$code" != 200 ] || ! jq -e '.ok == true' result.json > /dev/null 2>&1; then
+            echo "JEVs gate answered $code: $(jq -r '.error // "no answer"' result.json 2>/dev/null | head -c 200)"
+            exit 1
+          fi
+          echo "JEVs gate answered: ok"
+
+      - name: Alert (the "JEVs alerts" issue)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq -e '.alert == true' result.json > /dev/null || exit 0
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          if [ -z "$issue" ]; then
+            printf '%s\n' 'JEVs adds a comment here for every post it flags: high risk, hidden instructions, or impersonation.' \
+              'Each comment has the post'"'"'s link and the questions that scored, never the text or any score. Details are in the database.' > issue.txt
+            issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -F body=@issue.txt -f 'labels[]=jevs-alert' --jq .number)
+          fi
+          jq -r --arg url "$(cat post_url.txt)" --arg run "$RUN_URL" '
+            "Flagged: " + $url + "\n\n" +
+            ([.decisions[] | select(.risk == "high" or (.questions | any(. == "J16" or . == "J17")))
+              | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)] | join("\n"))
+            + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
+          echo "alert added"
+
+      - name: Hide the post (enforce mode only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e '.hide == true and .mode == "enforce"' result.json > /dev/null || exit 0
+          [ "$GITHUB_EVENT_NAME" = discussion_comment ] || exit 0
+          gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: SPAM}) { minimizedComment { isMinimized } } }' \
+            -f id="$(cat node_id.txt)" > /dev/null
+          echo "hidden"
+
+      - name: Reply to /agent commands
+        # A reply that fails (a locked thread, a rate limit) must not stop anything else.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e '.reply != null' result.json > /dev/null || exit 0
+          { jq -r '.reply' result.json; echo; echo '<sub>JEVs, Day One Great'"'"'s automated checks. They never turn anyone away.</sub>'; } > reply.txt
+          node_id=$(cat node_id.txt)
+          # GitHub allows one level of replies: reply under the top-level comment.
+          top=$(gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on DiscussionComment { id replyTo { id } } } }' \
+            -f id="$node_id" --jq '.data.node.replyTo.id // .data.node.id // empty' || true)
+          if [ -n "$top" ]; then
+            gh api graphql -f query='mutation($d: ID!, $r: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, replyToId: $r, body: $b}) { comment { id } } }' \
+              -f d="$(cat discussion_id.txt)" -f r="$top" -F b=@reply.txt > /dev/null
+          else
+            gh api graphql -f query='mutation($d: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, body: $b}) { comment { id } } }' \
+              -f d="$(cat discussion_id.txt)" -F b=@reply.txt > /dev/null
+          fi
+          echo "replied"
+
+      - name: Alert that this run failed (so no event goes unnoticed)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, and for every run that fails.' -f 'labels[]=jevs-alert' --jq .number)
+          printf 'A JEVs run failed, so one post or edit may not have been checked. Run: %s\n' "$RUN_URL" > failed.txt
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@failed.txt > /dev/null

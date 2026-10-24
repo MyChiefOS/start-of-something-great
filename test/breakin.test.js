@@ -108,6 +108,19 @@ test.before(async () => {
     await t.unsafe(`insert into app.change_log (commit_sha, run_id, actor, event, result) values ('${'a'.repeat(40)}', '1', 'breakin', 'push', 'ok')`);
     await t.unsafe(`insert into app.runner_tokens (jti) values ('breakin-token')`);
   });
+  // PR 3 (Oct 24, 2026): a GitHub account with an agent, a post linking a site, its decision and an erasure note,
+  // as the JEVs gate writes them (dog_jevs).
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`with a as (insert into app.gh_accounts (github_id, login) values (99001, 'breakin-a') returning id),
+      g as (insert into app.gh_agents (owner_id, name) select id, 'breakin-agent' from a returning id, owner_id),
+      p as (insert into app.gh_posts (node_id, kind, discussion_number, author_id, agent_id, created_at, body_key, risk)
+            select 'DC_breakin', 'comment', 1, owner_id, id, now(), '${'b'.repeat(64)}', 'low' from g returning id, author_id),
+      d as (insert into app.gh_post_domains (post_id, domain_key) select id, '${'c'.repeat(64)}' from p)
+      insert into app.gh_decisions (action, member_id, post_id, scores, total, risk, mode, effect, applied)
+      select 'post.create', author_id, id, '{}'::jsonb, 0, 'low', 'shadow', 'none', true from p`);
+    await t.unsafe(`insert into app.gh_erasures (github_key, post_node_id) values ('${'d'.repeat(64)}', 'DC_gone')`);
+  });
   // Member B (level 2) with an agent.
   B = await signIn(2, 'Member B');
   const [bAgent] = await run(B.ctx, (t) => t`insert into app.agents (name) values ('B agent') returning id`);
