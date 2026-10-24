@@ -38,12 +38,31 @@ jobs:
         run: |
           set -euo pipefail
           state=$(tr -d '[:space:]' < moderation/brake)
-          case "$state" in on) op=lockLockable ;; off) op=unlockLockable ;; *) echo "moderation/brake must be on or off"; exit 1 ;; esac
-          gh api graphql -f query='query($o: String!, $n: String!) { repository(owner: $o, name: $n) { discussions(first: 100, states: OPEN) { nodes { id } } } }' \
-            -f o="$OWNER" -f n="${NAME:-start-of-something-great}" --jq '.data.repository.discussions.nodes[].id' > ids.txt
-          count=0
-          while IFS= read -r id; do
-            gh api graphql -f query="mutation(\$id: ID!) { $op(input: {lockableId: \$id}) { clientMutationId } }" -f id="$id" > /dev/null
-            count=$((count + 1))
-          done < ids.txt
-          echo "Brake $state: $count discussion(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          case "$state" in on|off) ;; *) echo "moderation/brake must be on or off"; exit 1 ;; esac
+          # Every discussion, page by page. The brake locks with the reason "too heated" and, when switched off, unlocks
+          # only discussions locked for that reason, so a discussion Aaron locked by hand for another reason stays locked.
+          # New discussions started while the brake is on are locked by the JEVs workflow.
+          # Oldest first, so locking (which updates a discussion) never moves one behind the cursor; and the whole pass
+          # repeats until it changes nothing (at most 5 times), so a discussion started meanwhile is caught too.
+          locked=0; unlocked=0
+          for pass in 1 2 3 4 5; do
+          changed=0; cursor=null
+          while :; do
+            page=$(gh api graphql -f query='query($o: String!, $n: String!, $c: String) { repository(owner: $o, name: $n) {
+                discussions(first: 100, after: $c, orderBy: {field: CREATED_AT, direction: ASC}) { pageInfo { hasNextPage endCursor } nodes { id locked activeLockReason } } } }' \
+              -f o="$OWNER" -f n="${NAME:-start-of-something-great}" $( [ "$cursor" = null ] || echo -f c="$cursor" ))
+            while IFS=$'\t' read -r id isLocked reason; do
+              if [ "$state" = on ] && [ "$isLocked" = false ]; then
+                gh api graphql -f query='mutation($id: ID!) { lockLockable(input: {lockableId: $id, lockReason: TOO_HEATED}) { clientMutationId } }' -f id="$id" > /dev/null
+                locked=$((locked + 1)); changed=1
+              elif [ "$state" = off ] && [ "$isLocked" = true ] && [ "$reason" = TOO_HEATED ]; then
+                gh api graphql -f query='mutation($id: ID!) { unlockLockable(input: {lockableId: $id}) { clientMutationId } }' -f id="$id" > /dev/null
+                unlocked=$((unlocked + 1)); changed=1
+              fi
+            done < <(jq -r '.data.repository.discussions.nodes[] | [.id, (.locked | tostring), (.activeLockReason // "")] | @tsv' <<< "$page")
+            [ "$(jq -r '.data.repository.discussions.pageInfo.hasNextPage' <<< "$page")" = true ] || break
+            cursor=$(jq -r '.data.repository.discussions.pageInfo.endCursor' <<< "$page")
+          done
+          [ "$changed" = 1 ] || break
+          done
+          echo "Brake $state: locked $locked, unlocked $unlocked" | tee -a "$GITHUB_STEP_SUMMARY"

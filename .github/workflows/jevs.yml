@@ -41,6 +41,18 @@ jobs:
             /moderation/
           sparse-checkout-cone-mode: false
 
+      - name: Lock a new discussion while the brake is on (first, so nothing later can skip it)
+        if: always() && github.event_name == 'discussion' && github.event.action == 'created'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(tr -d '[:space:]' < moderation/brake)" = on ] || exit 0
+          id=$(jq -r '.discussion.node_id' "$GITHUB_EVENT_PATH")
+          [[ "$id" =~ ^[A-Za-z0-9_=-]{1,100}$ ]] || exit 1
+          gh api graphql -f query='mutation($id: ID!) { lockLockable(input: {lockableId: $id, lockReason: TOO_HEATED}) { clientMutationId } }' -f id="$id" > /dev/null
+          echo "locked (brake on)"
+
       - name: Build the event for the gate (from GitHub's payload, never through a command line)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,13 +63,15 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = discussion_comment ]; then sel=comment; else sel=discussion; fi
           uid=$(jq -r --arg s "$sel" '.[$s].user.id' "$GITHUB_EVENT_PATH")
           [[ "$uid" =~ ^[0-9]{1,15}$ ]] || { echo "unexpected author id"; exit 1; }
-          # The ban list (moderation/bans.json): GitHub numeric IDs, changed only by a merged PR.
-          banned=$(jq --argjson id "$uid" '(.ids // []) | any(.[]; . == $id)' moderation/bans.json)
+          # The ban list (moderation/bans.json): GitHub numeric IDs, changed only by a merged PR (a test checks its
+          # format). The gate checks it against the author and the account a machine account posts for.
+          # A malformed file never stops JEVs: only whole positive numbers count (CI also checks the format).
+          bans=$(jq -c '[(.ids // [])[]? | select(type == "number" and . > 0 and . == floor and . < 9007199254740992)]' moderation/bans.json 2>/dev/null || echo '[]')
           # The GitHub account's age (J01). If GitHub doesn't answer, JEVs treats it as new-ish rather than failing.
           created=$(gh api "user/$uid" --jq .created_at 2>/dev/null || true)
-          jq --arg mode "$mode" --arg event "$GITHUB_EVENT_NAME" --arg sel "$sel" --arg created "$created" --argjson banned "$banned" '
+          jq --arg mode "$mode" --arg event "$GITHUB_EVENT_NAME" --arg sel "$sel" --arg created "$created" --argjson bans "$bans" '
             .[$sel] as $p | {
-              event: $event, action: .action, mode: $mode, discussion: .discussion.number, banned: $banned,
+              event: $event, action: .action, mode: $mode, discussion: .discussion.number, bans: $bans,
               post: {
                 node_id: $p.node_id,
                 thread_node_id: (if $sel == "comment" then ("c" + (($p.parent_id // $p.id) | tostring)) else null end),
@@ -116,8 +130,9 @@ jobs:
           fi
           jq -r --arg url "$(cat post_url.txt)" --arg run "$RUN_URL" '
             (if .appeal then "Appeal (the author asks a person to look): " else "Flagged: " end) + $url + "\n\n" +
-            ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or (.questions | any(. == "J16" or . == "J17")))
-              | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)] | join("\n"))
+            ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or .effect == "alert" or (.questions | any(. == "J16" or . == "J17")))
+              | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)
+                + (if .reason == "banned" then " (ban list)" else "" end)] | join("\n"))
             + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
           echo "alert added"
@@ -138,6 +153,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          jq -e '.mode == "enforce"' result.json > /dev/null || exit 0
           jq -r '(.unhide // [])[]' result.json > unhide.txt
           while IFS= read -r id; do
             [[ "$id" =~ ^[A-Za-z0-9_=-]{1,100}$ ]] || continue

@@ -34,7 +34,7 @@ export function checkEvent(ev) {
   if (!Number.isSafeInteger(a.id) || a.id < 1) bad('author id');
   if (typeof a.login !== 'string' || !/^[A-Za-z0-9-]{1,39}(\[bot\])?$/.test(a.login)) bad('author login');
   if (a.created_at != null && Number.isNaN(Date.parse(a.created_at))) bad('author created_at');
-  if (ev.banned !== undefined && typeof ev.banned !== 'boolean') bad('banned');
+  if (ev.bans !== undefined && !(Array.isArray(ev.bans) && ev.bans.length <= 10000 && ev.bans.every((x) => Number.isSafeInteger(x) && x > 0))) bad('bans');
   return ev;
 }
 
@@ -52,7 +52,7 @@ const at = (login) => '`@' + login + '`';
 
 async function record(t, out, { action, account, post = null, agent = null, scores, level, effect, reason = '', mode }) {
   const total = Object.values(scores).reduce((a, b) => a + b, 0);
-  const applied = effect === 'promote' || effect === 'alert' || effect === 'none' || effect === 'unhide' || (effect === 'hide' && mode === 'enforce');
+  const applied = effect === 'promote' || effect === 'alert' || effect === 'none' || ((effect === 'hide' || effect === 'unhide') && mode === 'enforce');
   await t`insert into app.gh_decisions (action, member_id, post_id, agent_id, scores, total, risk, mode, effect, reason, applied)
     values (${action}, ${account}, ${post}, ${agent}, ${t.json(scores)}, ${total}, ${level}, ${mode}, ${effect}, ${reason}, ${applied})`;
   out.decisions.push({ action, risk: level, total, effect, reason, applied, questions: Object.keys(scores).filter((k) => scores[k] > 0) });
@@ -192,30 +192,39 @@ const HIDDEN_BECAUSE = {
 };
 
 // /approve and /appeal, replied under a post in the same thread.
-async function moderate(t, out, { ev, acct, principal, mode, body }) {
+async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banned }) {
   const act = J.parseActions(body);
   const thread = ev.post.thread_node_id;
   if (!thread || (!act.approve && !act.appeal)) return;
   if (act.approve) {
-    const drafts = await t`update app.gh_posts p set approved = true, hidden = false
-      from app.gh_agents a where a.id = p.agent_id and a.owner_id = ${principal} and p.thread_node_id = ${thread}
-        and p.node_id <> ${ev.post.node_id} and not p.approved
-        and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason = 'agent_draft')
-      returning p.id, p.node_id, p.agent_id`;
-    for (const d of drafts) {
-      await record(t, out, { action: 'post.approve', account: principal, post: d.id, agent: d.agent_id, scores: {}, level: 'low', effect: 'unhide', mode });
-      out.unhide.push(d.node_id);
+    // Only the owner, posting as themselves: never a linked machine account, never a post tagged as an agent's, and
+    // never a banned account. Only drafts: never a post that was also high risk or from a banned account.
+    if (acct.id !== principal || tagged || banned) {
+      out.replies.push('Only the agent\'s owner, posting from their own account (not a machine account or an agent), can approve a draft.');
+    } else {
+      const drafts = await t`update app.gh_posts p set approved = true, hidden = case when ${mode} = 'enforce' then false else p.hidden end
+        from app.gh_agents a where a.id = p.agent_id and a.owner_id = ${principal} and p.thread_node_id = ${thread}
+          and p.node_id <> ${ev.post.node_id} and not p.approved and p.risk <> 'high'
+          and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason = 'agent_draft')
+          and not exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason in ('high_risk', 'banned'))
+        returning p.id, p.node_id, p.agent_id`;
+      for (const d of drafts) {
+        await record(t, out, { action: 'post.approve', account: principal, post: d.id, agent: d.agent_id, scores: {}, level: 'low', effect: 'unhide', mode });
+        if (mode === 'enforce') out.unhide.push(d.node_id);
+      }
+      out.replies.push(drafts.length ? 'Approved: ' + drafts.length + ' draft' + (drafts.length > 1 ? 's' : '') + (mode === 'enforce' ? ' shown again.' : ' (nothing was hidden: JEVs is in shadow mode).')
+        : 'Nothing of your agents\' is waiting for approval in this thread.');
     }
-    out.replies.push(drafts.length ? 'Approved: ' + drafts.length + ' draft' + (drafts.length > 1 ? 's' : '') + ' shown again.'
-      : 'Nothing of your agents\' is waiting for approval in this thread.');
   }
   if (act.appeal) {
     const [p] = await t`select p.id from app.gh_posts p
       where p.thread_node_id = ${thread} and p.node_id <> ${ev.post.node_id}
         and p.author_id in (select id from app.gh_accounts where id = ${principal} or owner_id = ${principal})
-        and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.effect = 'hide')
+        and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.effect = 'hide' and d.applied)
+        and not exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.action = 'post.appeal')
       order by p.created_at desc limit 1`;
-    if (!p) return void out.replies.push('Nothing of yours in this thread was hidden by JEVs, so there is nothing to appeal.');
+    // One appeal per post: posts already appealed are left out, so an older hidden post can still be appealed.
+    if (!p) return void out.replies.push('Nothing of yours in this thread is hidden by JEVs and waiting for a person, so there is nothing (more) to appeal.');
     await record(t, out, { action: 'post.appeal', account: acct.id, post: p.id, scores: {}, level: 'low', effect: 'alert', mode });
     out.alert = true;
     out.appeal = true;
@@ -259,6 +268,10 @@ export async function handle(sql, raw, { key }) {
     const principal = principalOf(acct);
     const principalLogin = principal === acct.id ? acct.login : (await t`select login from app.gh_accounts where id = ${principal}`)[0].login;
     const founder = ev.author.id === FOUNDER_ID;
+    // The ban list (moderation/bans.json) covers an account and every machine account linked to it.
+    const bans = new Set(ev.bans || []);
+    const principalGithub = principal === acct.id ? Number(acct.github_id) : Number((await t`select github_id from app.gh_accounts where id = ${principal}`)[0].github_id);
+    const banned = !founder && (bans.has(ev.author.id) || bans.has(principalGithub));
 
     // Commands run once, when the post is made (not again on edits).
     if (ev.action === 'created') {
@@ -310,13 +323,18 @@ export async function handle(sql, raw, { key }) {
     // What JEVs does. The ban list first, then the owner's own limits (off, draft, daily cap), then risk.
     const [prior] = await t`select approved from app.gh_posts where node_id = ${ev.post.node_id}`;
     let reason = '';
-    if (ev.banned === true && !founder) reason = 'banned';
+    if (banned) reason = 'banned';
     else if (agent && agent.mode === 'off') reason = 'agent_off';
     else if (agent && agent.mode === 'draft' && !(prior && prior.approved)) reason = 'agent_draft';
     else if (agent && action === 'post.create' && sig.agent_posts_24h >= agent.daily_cap) reason = 'agent_cap';
     else if (r.level === 'high') reason = 'high_risk';
-    const effect = reason ? 'hide' : (scores.J16 > 0 || scores.J17 > 0) ? 'alert' : 'none';
-    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0) out.alert = true;
+    // GitHub can hide a comment but not a discussion, so a discussion that would be hidden is alerted instead.
+    const hideable = ev.event === 'discussion_comment';
+    const effect = reason && hideable ? 'hide' : (reason && !(reason.startsWith('agent_'))) || scores.J16 > 0 || scores.J17 > 0 ? 'alert' : 'none';
+    // A discussion can't be hidden: a banned or high-risk one alerts Aaron, once, when it is started. An agent's own
+    // limits (off, draft, cap) on a discussion are the owner's business and alert no one.
+    const ownLimit = reason === 'agent_off' || reason === 'agent_draft' || reason === 'agent_cap';
+    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || (reason && !hideable && !ownLimit && ev.action === 'created')) out.alert = true;
     out.hide = effect === 'hide' && mode === 'enforce';
     if (out.hide) out.replies.push(HIDDEN_BECAUSE[reason]);
 
@@ -343,7 +361,7 @@ export async function handle(sql, raw, { key }) {
       out.level = acct.level;
     }
 
-    if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body });
+    if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body, tagged: Boolean(tag), banned });
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;
     delete out.replies;
