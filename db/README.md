@@ -31,12 +31,12 @@ Nobody applies changes by hand, Claude included, and no database password or key
 
 1. A pull request changes `db/migrations/` (and `db/manifest.json`, which `node scripts/manifest.js` rebuilds; a test fails if it is stale). CI applies every migration to a throwaway Postgres and to Supabase's own Postgres image, and runs the whole suite.
 2. Aaron merges it. The "Database migrations" workflow (`.github/workflows/database.yml`) asks GitHub for a short-lived identity token and sends it to the runner, `supabase/functions/dog-migrate`.
-3. The runner accepts only a token from that workflow on `main` of this repository (checked by number, not name), fresh, and never used before (`supabase/functions/_shared/github-oidc.mjs`). It fetches the files of that exact commit from the public repository, checks each against `db/manifest.json`, and applies the new ones, each in its own transaction.
+3. The runner accepts only a token from that workflow on `main` of this repository (checked by number, not name), fresh, and never used before (`supabase/functions/_shared/github-oidc.mjs`). It fetches the files of that exact commit from the public repository, checks each against `db/manifest.json`, and applies the new ones, all in one transaction: a failure anywhere changes nothing. Supabase's own JWT check is off for this function (`supabase/config.toml`), because GitHub's token isn't a Supabase token; the runner does the checking.
 4. It checks the result (row-level security forced on every table, the ledger equal to `main`, no login role of ours, no passkey objects) and writes one row to `app.change_log`: the commit, the run, who merged, every file with its SHA-256, and the result. The workflow posts the same on the merged pull request.
 
 When the runner's own code changes, Claude deploys it once from the merged commit and records it in OPERATIONS.md. The workflow waits for that deploy (up to 40 minutes) rather than failing.
 
-**The one-time fresh build (PR 2).** `db/manifest.json` names `db/reset/fresh-build.sql` and the exact migration that must be live for it to run (014_passkeys at its Oct 23 fingerprint). It runs once, refuses if any real row exists, drops the old schema, and the runner then builds 001 onward. Once 014_passkeys is gone it never runs again; a later PR removes the entry.
+**The one-time fresh build (PR 2).** `db/manifest.json` names `db/reset/fresh-build.sql` and the exact migration that must be live for it to run (014_passkeys at its Oct 23 fingerprint). It runs once, refuses if any table holds a row (other than the ledger, the runner's records and seeded settings), drops the old schema, and the runner then builds 001 onward. Once 014_passkeys is gone it never runs again; a later PR removes the entry.
 
 **The way back.** The Oct 23 build can be rebuilt exactly: a PR restoring those files (commit 9b1fcd7) with a reset entry whose "when" is `015_change_log`. `test/runner.test.js` proves it on every build.
 

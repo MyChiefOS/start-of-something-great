@@ -4,11 +4,11 @@
 //      nothing touches the database until every file matches;
 //   2. runs the one-time reset (db/reset/) only if the manifest names it and the live ledger holds the exact
 //      migration its "when" names;
-//   3. applies each pending migration in its own transaction, under one advisory lock, recording it in
-//      app.schema_migrations (a migration already applied must still match; one missing from the manifest stops);
+//   3. applies every pending migration, recording each in app.schema_migrations, all in ONE transaction with the
+//      reset, under an advisory lock (a migration already applied must still match; one missing from the manifest stops);
 //   4. checks the result: every app table has row-level security forced, the ledger equals the manifest, no
 //      passkey table or step-up trigger exists, and no dog_* role can sign in;
-//   5. writes one app.change_log row if anything changed, and records the identity token's ID so it can't be reused.
+//   5. writes one app.change_log row if anything changed; the token's ID is recorded as soon as it is checked.
 // It returns versions, counts and check names only: no data, settings or secrets.
 
 const VERSION = /^(\d{3})_[a-z0-9_]+$/;
@@ -67,13 +67,15 @@ const LOCK = 'dayonegreat.migrate';
 // The roles the migrations use, and dog_web, the login 017 made. None may sign in.
 const ROLES = ['dog_owner', 'dog_app', 'dog_public', 'dog_signin', 'dog_jevs', 'dog_limits', 'dog_delegate', 'dog_erase', 'dog_web'];
 
-export async function tokenSeen(sql, jti) {
+// Records a token ID the moment the token passes every other check, so the same token can never be used twice,
+// even if the run then fails. Returns true if it was already used. Before 015 exists there is nothing to record.
+export async function tokenUsed(sql, jti) {
   return sql.begin(async (t) => {
     const [{ exists }] = await t`select to_regclass('app.runner_tokens') is not null as exists`;
     if (!exists) return false;
     await t`set local role dog_owner`;
-    const r = await t`select 1 from app.runner_tokens where jti = ${jti}`;
-    return r.length > 0;
+    const r = await t`insert into app.runner_tokens (jti) values (${jti}) on conflict do nothing returning jti`;
+    return r.length === 0;
   });
 }
 
@@ -82,41 +84,46 @@ export async function status(sql) {
   return [...have].sort().map(([version, sha]) => ({ version, sha256: sha }));
 }
 
+// Each file starts as if in a fresh transaction: no role or setting left over from the file before it.
+async function clean(t) {
+  await t`reset all`;
+  await t`reset role`;
+}
+
 // claims: the checked identity token (sha, run_id, actor, event_name, jti). Returns the run's result.
+// The whole run is ONE transaction: the reset (if due) and every pending migration commit together or not at all,
+// so a failure anywhere leaves the database exactly as it was.
 export async function run(sql, { files, reset }, claims) {
-  let didReset = false;
-  if (reset) {
-    didReset = await sql.begin(async (t) => {
-      await t`select pg_advisory_xact_lock(hashtext(${LOCK}))`;
-      const have = await ledger(t);
-      if (have.get(reset.when.version) !== reset.when.sha256) return false;
+  const { didReset, applied } = await sql.begin(async (t) => {
+    await t`select pg_advisory_xact_lock(hashtext(${LOCK}))`;
+    let have = await ledger(t);
+    const didReset = Boolean(reset) && have.get(reset.when.version) === reset.when.sha256;
+    if (didReset) {
       await t.unsafe(reset.sql);
-      return true;
-    });
-  }
-
-  const known = new Set(files.map((f) => f.version));
-  const missing = [...(await sql.begin(ledger)).keys()].filter((v) => !known.has(v));
-  if (missing.length) throw new Error('applied migrations missing from the merged commit: ' + missing.sort().join(', '));
-
-  const applied = [];
-  for (const f of files) {
-    const ran = await sql.begin(async (t) => {
-      await t`select pg_advisory_xact_lock(hashtext(${LOCK}))`;
-      const have = await ledger(t);
+      await clean(t);
+      have = await ledger(t);
+    }
+    const known = new Set(files.map((f) => f.version));
+    const missing = [...have.keys()].filter((v) => !known.has(v));
+    if (missing.length) throw new Error('applied migrations missing from the merged commit: ' + missing.sort().join(', '));
+    const applied = [];
+    for (const f of files) {
       if (have.has(f.version)) {
         if (have.get(f.version) !== f.sha256) throw new Error(f.version + ' changed after it was applied; put the change in a new migration');
-        return false;
+        continue;
       }
       await t.unsafe(f.sql);
+      await clean(t);
       await t`set local role dog_owner`;
       await t`insert into app.schema_migrations (version, sha256) values (${f.version}, ${f.sha256})`;
-      return true;
-    });
-    if (ran) applied.push(f.version);
-  }
+      await clean(t);
+      applied.push(f.version);
+    }
+    return { didReset, applied };
+  });
 
   const failed = await checks(sql, files);
+  const warnings = await leftovers(sql);
   await sql.begin(async (t) => {
     const [{ exists }] = await t`select to_regclass('app.change_log') is not null and to_regclass('app.runner_tokens') is not null as exists`;
     if (!exists) return;
@@ -128,7 +135,23 @@ export async function run(sql, { files, reset }, claims) {
       values (${claims.sha}, ${String(claims.run_id || '')}, ${String(claims.actor || '')}, ${claims.event_name},
               ${didReset}, ${t.json(list)}, ${failed.length ? 'checks_failed' : 'ok'})`;
   });
-  return { ok: failed.length === 0, commit: claims.sha, reset: didReset, applied, total: files.length, failed };
+  return { ok: failed.length === 0, commit: claims.sha, reset: didReset, applied, total: files.length, failed, warnings };
+}
+
+// Things the fresh build tries to remove but treats as notes, not failures, if Supabase doesn't allow it.
+export async function leftovers(sql) {
+  const [r] = await sql`select
+      exists (select 1 from pg_roles where rolname = 'dog_web') as web,
+      to_regprocedure('public.rls_auto_enable()') is not null as rls_fn,
+      to_regclass('vault.secrets') is not null as vault`;
+  const out = [];
+  if (r.web) out.push('dog_web still exists (it cannot sign in)');
+  if (r.rls_fn) out.push('public.rls_auto_enable() still exists');
+  if (r.vault) {
+    const [{ n }] = await sql`select count(*)::int as n from vault.secrets where name = 'dog_web_password'`.catch(() => [{ n: -1 }]);
+    if (n !== 0) out.push(n < 0 ? 'Vault could not be read to confirm dog_web_password is gone' : 'dog_web_password is still in Vault');
+  }
+  return out;
 }
 
 // Names of the checks that failed; empty when all pass.

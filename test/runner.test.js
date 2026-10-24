@@ -15,6 +15,8 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const postgres = require('postgres');
 const { build, FILE } = require('../scripts/manifest');
+const { problems } = require('../db/checks');
+const SNAPSHOT = fs.readFileSync(path.join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -101,6 +103,19 @@ if (!SERVER) {
     }
   });
 
+  test('row 15: the rehearsal runs as production does (in place: not a superuser, Vault and dog_web present)', { skip: !IN_PLACE && 'only on Supabase\'s image' }, async (t) => {
+    await withDatabase(async (sql) => {
+      await buildLive(sql);
+      const [r] = await sql`select r.rolsuper, r.rolbypassrls, to_regclass('vault.secrets') is not null as vault,
+        exists (select 1 from pg_roles where rolname = 'dog_web' and rolcanlogin) as web
+        from pg_roles r where r.rolname = current_user`;
+      t.diagnostic(JSON.stringify(r));
+      assert.deepStrictEqual(r, { rolsuper: false, rolbypassrls: true, vault: true, web: true });
+      const [{ n }] = await sql`select count(*)::int as n from vault.secrets where name = 'dog_web_password'`;
+      assert.strictEqual(n, 1, 'the Oct 23 build made the gateway password, as in production');
+    });
+  });
+
   test('row 15: the fresh build turns the Oct 23 database into main: passkeys gone, every check passing, the change recorded', async () => {
     await withDatabase(async (sql) => {
       await buildLive(sql);
@@ -118,8 +133,12 @@ if (!SERVER) {
       const log = await sql.begin(async (t) => { await t`set local role dog_owner`; return t`select commit_sha, actor, event, reset, applied, result from app.change_log`; });
       assert.strictEqual(log.length, 1);
       assert.deepStrictEqual({ ...log[0], applied: log[0].applied.length }, { commit_sha: c.sha, actor: 'test', event: 'push', reset: true, applied: newList().length, result: 'ok' });
-      const seen = await core.tokenSeen(sql, c.jti);
-      assert.strictEqual(seen, true, 'the token can never be used again');
+      assert.strictEqual(await core.tokenUsed(sql, c.jti), true, 'the token can never be used again');
+      const fresh = crypto.randomUUID();
+      assert.strictEqual(await core.tokenUsed(sql, fresh), false, 'a new token is accepted once');
+      assert.strictEqual(await core.tokenUsed(sql, fresh), true, '... and recorded the moment it is checked');
+      assert.deepStrictEqual(r.warnings, [], 'dog_web, its Vault password and rls_auto_enable are all gone');
+      assert.deepStrictEqual(await problems(sql, { snapshot: SNAPSHOT }), [], 'the runner builds exactly the reviewed snapshot, coverage check passing');
 
       const again = await core.run(sql, await freshBuild(), claims());
       assert.deepStrictEqual({ reset: again.reset, applied: again.applied, failed: again.failed }, { reset: false, applied: [], failed: [] }, 'a second run changes nothing');
@@ -147,6 +166,18 @@ if (!SERVER) {
       await assert.rejects(core.run(sql, await freshBuild(), claims()), /missing from the merged commit: 014_passkeys, 015_subagents, 016_security_batch1, 017_gateway/);
       const [{ p }] = await sql`select to_regclass('app.passkeys') as p`;
       assert.ok(p, 'still the old build');
+    });
+  });
+
+  test('row 15: a migration failing halfway leaves the Oct 23 database exactly as it was (one transaction)', async () => {
+    await withDatabase(async (sql) => {
+      await buildLive(sql);
+      const plan = await freshBuild();
+      plan.files = plan.files.map((f) => (f.version === '010_jevs' ? { ...f, sql: f.sql + '\nselect 1/0;' } : f));
+      await assert.rejects(core.run(sql, plan, claims()), /division by zero/);
+      await ledgerIs(sql, LIVE);
+      const [{ p }] = await sql`select to_regclass('app.passkeys') as p`;
+      assert.ok(p, 'nothing was dropped');
     });
   });
 

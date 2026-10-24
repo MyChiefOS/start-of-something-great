@@ -2,11 +2,12 @@
 -- Not a numbered migration. The runner (supabase/functions/dog-migrate/core.mjs) runs this file only when
 -- db/manifest.json names it and the live ledger holds the exact migration the manifest's "when" names
 -- (for PR 2: 014_passkeys at its Oct 23 fingerprint), so it can only ever run against the Oct 23 build, once.
--- It runs in one transaction: if any statement fails, nothing changes. Then the runner applies 001 onward.
+-- The runner runs it and then 001 onward in ONE transaction: if anything fails, nothing changes.
 --
 -- What it does:
---   1. Refuses if any member, identity, session, post, agent or audit row exists (row-level security switched off
---      for the count, so a hidden row makes it fail loudly instead of being missed).
+--   1. Refuses if any table in app holds a row, except the runner's own records and the settings tables (which hold only what the
+--      migrations seed; on Oct 24 the live ones had never been updated). Row-level security is switched off for the
+--      count, so a hidden row makes it fail loudly instead of being missed.
 --   2. Drops the app schema and everything in it (the passkey tables and triggers included).
 --   3. Removes dog_web, the unused login made by migration 017, and its password in Vault. The other dog_* roles
 --      can't sign in, own nothing outside app, and are reused by 001 onward. The three site keys in Vault are kept.
@@ -18,12 +19,14 @@ declare
   t text;
   n bigint;
 begin
-  foreach t in array array['members', 'identities', 'sessions', 'posts', 'agents', 'audit_log'] loop
-    if to_regclass('app.' || t) is not null then
-      execute format('select count(*) from app.%I', t) into n;
-      if n > 0 then
-        raise exception 'fresh build refused: app.% has % row(s); nothing changed', t, n;
-      end if;
+  for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'app' and c.relkind in ('r', 'p')
+             and c.relname <> all (array['schema_migrations', 'change_log', 'runner_tokens'])
+             and c.relname not like '%\_settings'
+           order by c.relname loop
+    execute format('select count(*) from app.%I', t) into n;
+    if n > 0 then
+      raise exception 'fresh build refused: app.% has % row(s); nothing changed', t, n;
     end if;
   end loop;
 end

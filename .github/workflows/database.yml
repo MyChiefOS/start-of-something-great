@@ -3,7 +3,7 @@
 # runner checks that the token is from this workflow on main, then applies the files of that exact commit and records
 # the run in app.change_log. There is no secret anywhere: no database password, no Supabase key, nothing to paste.
 # The result goes in this run's summary and as a comment on the merged pull request. A failed run fails loudly
-# (GitHub emails the owner) and leaves nothing half-applied: each file is its own transaction.
+# (GitHub emails the owner) and leaves nothing half-applied: the whole run is one transaction.
 name: Database migrations
 
 on:
@@ -40,12 +40,16 @@ jobs:
             token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
               "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$RUNNER_URL" | jq -r .value)
             echo "::add-mask::$token"
-            code=$(curl -sS -o result.json -w '%{http_code}' -X POST "$RUNNER_URL" \
-              -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data '{"mode":"apply"}' || echo 000)
+            rm -f result.json
+            code=$(curl -sS --max-time 240 -o result.json -w '%{http_code}' -X POST "$RUNNER_URL" \
+              -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data '{"mode":"apply"}') || true
             unset token
+            # A 401 counts as final only if it is the runner's own refusal; Supabase's gateway or the old function
+            # answering means the new runner isn't in place yet.
+            if [ "$code" = 401 ] && ! jq -e '(.error // "") | startswith("refused: ")' result.json > /dev/null 2>&1; then code=not-ready; fi
             case "$code" in
-              410|404|502|503|504|000) echo "runner not ready yet ($code), try $try of 80"; sleep 30 ;;
-              *) break ;;
+              200|500|400|401|405|413) break ;;
+              *) echo "runner not ready yet ($code), try $try of 80"; sleep 30 ;;
             esac
           done
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -70,6 +74,7 @@ jobs:
                    "- Migrations on main: " + ((.total // "?") | tostring),
                    (if (.failed // []) | length > 0 then "- Checks failed: " + (.failed | join("; ")) else empty end),
                    (if .error then "- Error: " + .error else empty end),
+                   (if (.warnings // []) | length > 0 then "- Left over (not a failure): " + (.warnings | join("; ")) else empty end),
                    (if (.notices // []) | length > 0 then "- Notes: " + (.notices | join("; ")) else empty end)' result.json
             echo
             echo "Run: $RUN_URL"

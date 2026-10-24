@@ -63,7 +63,7 @@
   ],
   "reset": {
     "file": "db/reset/fresh-build.sql",
-    "sha256": "6cfd180674a92504d956ae3804765badd27ce81ccffcb992d0979d3ef5584712",
+    "sha256": "989e1bfd6e0171763ec86d637e743da47a312fb713bd076be4fc01cd2c3e5923",
     "when": {
       "version": "014_passkeys",
       "sha256": "56e45811f334653cbd3cd40f10dd840f525c60e8758e852dc89fa99803c14854"

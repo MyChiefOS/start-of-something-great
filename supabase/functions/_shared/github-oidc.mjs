@@ -21,8 +21,10 @@ const b64url = (s) => {
 const json = (s) => JSON.parse(new TextDecoder().decode(b64url(s)));
 
 let cache = { at: 0, keys: null };
-async function githubKeys() {
-  if (cache.keys && Date.now() - cache.at < 3600_000) return cache.keys;
+// Cached for an hour; an unknown key ID refetches once (GitHub rotates its keys), at most once a minute.
+async function githubKeys({ refresh = false } = {}) {
+  const age = Date.now() - cache.at;
+  if (cache.keys && age < 3600_000 && !(refresh && age > 60_000)) return cache.keys;
   const r = await fetch(JWKS_URL, { redirect: 'error' });
   if (!r.ok) throw new Error('GitHub keys unavailable: ' + r.status);
   const body = await r.json();
@@ -44,7 +46,8 @@ export async function verify(token, { audience, workflow, events, now = Date.now
   let header, claims;
   try { header = json(parts[0]); claims = json(parts[1]); } catch { no('unreadable token'); }
   if (header.alg !== 'RS256' || typeof header.kid !== 'string') no('wrong signature type');
-  const jwk = (await keys()).find((k) => k.kid === header.kid && k.kty === 'RSA');
+  const find = (list) => list.find((k) => k.kid === header.kid && k.kty === 'RSA');
+  const jwk = find(await keys()) || find(await keys({ refresh: true }));
   if (!jwk) no('signed by an unknown key');
   const key = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);

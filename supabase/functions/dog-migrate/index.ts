@@ -2,13 +2,15 @@
 // migrations" workflow (.github/workflows/database.yml) running on main, proved by a GitHub identity token. It then
 // applies the files of the exact commit that token names, fetched from the public repository. No password, key or
 // token is stored anywhere for this; the database login is the one Supabase gives every function.
-// Deployed once per change from the merged commit (OPERATIONS.md records each deploy). The work is in core.mjs.
+// Deployed once per change from the merged commit (OPERATIONS.md records each deploy), with Supabase's own JWT check
+// OFF (supabase/config.toml): GitHub's token is not a Supabase token, so that check would refuse it before this code
+// runs. This code does the checking. The work is in core.mjs.
 //
 //   POST {"mode": "apply"}   apply the merged commit (reset first, if its manifest says so)
 //   POST {"mode": "status"}  the live ledger, for the drift check
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
-import { load, run, status, tokenSeen } from "./core.mjs";
+import { load, run, status, tokenUsed } from "./core.mjs";
 
 const AUDIENCE = "https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate";
 const RAW = "https://raw.githubusercontent.com/MyChiefOS/start-of-something-great/";
@@ -39,7 +41,7 @@ Deno.serve(async (req) => {
         audience: AUDIENCE,
         workflow: ".github/workflows/database.yml",
         events: ["push", "workflow_dispatch"],
-        seen: (jti: string) => tokenSeen(sql, jti),
+        seen: (jti: string) => tokenUsed(sql, jti),
       });
     } catch (e) {
       if (e instanceof Refused) return reply(401, { ok: false, error: "refused: " + e.message });
