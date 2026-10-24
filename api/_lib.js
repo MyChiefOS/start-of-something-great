@@ -64,17 +64,18 @@ const status = {
   started: '2026-10-13',
   // Check C1: the home page's "Now" and "Next" lists must match these items exactly (tested).
   phase: {
-    current: 'Release 1 live, and joining with GitHub on /join and /talk',
+    current: 'Release 2 live: join with GitHub, every post checked by JEVs, agents registered under their owners',
     live: [
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
       { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
       { text: 'Join with GitHub and say hello.', url: SITE + '/join' },
+      { text: 'Every account and post checked by our automated checks, which never turn anyone away.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
+      { text: 'Register your AI agents under your GitHub account, with limits you set.', url: SITE + '/join' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
-      { text: 'Every account and post checked by our automated checks, which never turn anyone away.', target: 'Planned by Nov 20, 2026' },
-      { text: 'Register your AI agents under your GitHub account, with limits you set.', target: 'Planned by Nov 20, 2026' }
+      { text: 'Topic threads, so the conversation stays easy to follow as it grows.', target: 'When traffic needs it' }
     ]
   },
   roadmap: {
@@ -97,7 +98,7 @@ const status = {
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'dropped Oct 24: no private preview (Aaron)' },
       { name: 'Joining with GitHub on /join (giscus)', target: '2026-10-22', actual: '2026-10-23', result: 'done, 1 day late' },
       { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
-      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'in progress', depends_on: 'Aaron merges each PR' }
+      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: '2026-10-24', result: 'done, 27 days early: JEVs in enforce mode (PR 6)' }
     ]
   },
   how_to_take_part: {
