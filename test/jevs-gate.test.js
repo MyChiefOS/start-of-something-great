@@ -95,7 +95,7 @@ test('row 18: the workflow never puts event text into a command, and logs nothin
   assert.ok(!/^concurrency:/m.test(y), 'no concurrency group: GitHub would drop pending runs');
   assert.ok(!/\.risk \+|\.effect \+/.test(y), 'the public alert shows the link and question IDs only');
   assert.ok(/continue-on-error: true/.test(y) && /if: failure\(\)/.test(y), 'a failed reply can\'t stop the alert, and a failed run is itself alerted');
-  assert.strictEqual(read('jevs/mode').trim(), 'shadow', 'PR 3 ships in shadow mode; enforce is Aaron\'s go-live merge');
+  assert.ok(['shadow', 'enforce'].includes(read('jevs/mode').trim()), 'jevs/mode is shadow or enforce; enforce came with PR 6, Aaron\'s go-live merge');
 });
 
 test('row 16: the gate accepts only jevs.yml on main, for discussion events, with Supabase\'s own check off', () => {

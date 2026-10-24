@@ -31,5 +31,5 @@ Day One Great on giscus/GitHub sign-in, with JEVs wrapped around the database. E
 2. **Database:** rows 15 and 16 (gate code), rehearsed in CI. After merge: runner deploy, reset, verification.
 3. **JEVs live (shadow):** rows 3, 4, 6 to 9, 13, 16, 18.
 4. **Moderation and region:** rows 2, 5, 10, 12, 17.
-5. **Enforce:** `jevs/mode` set to `enforce`. Aaron's go-live merge.
+5. **Enforce:** `jevs/mode` set to `enforce`. Aaron's go-live merge (PR 6).
 6. **Growth:** row 20 when traffic needs it.
