@@ -21,15 +21,17 @@ permissions:
   pull-requests: write # only to comment the result on the merged pull request
   issues: write # only for the drift check to add an alert
 
-concurrency:
-  group: database-migrations
-  cancel-in-progress: false
+# The concurrency group is on the migrate job, not the workflow: GitHub cancels a pending run when another queues in
+# the same group, and a scheduled drift check must never replace a pending migration.
 
 jobs:
   migrate:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
+    concurrency:
+      group: database-migrations
+      cancel-in-progress: false
     env:
       RUNNER_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate
     steps:
@@ -124,7 +126,7 @@ jobs:
             + ([$want[] | select(. as $x | $live | index([$x]) | not) | .[0]] | join(", "))' status.json > diff.txt
 
       - name: Alert on drift
-        if: steps.drift.outputs.result == 'drift' || steps.drift.outputs.result == 'unreachable'
+        if: always() && (failure() || steps.drift.outputs.result == 'drift' || steps.drift.outputs.result == 'unreachable')
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -136,7 +138,9 @@ jobs:
             gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
           issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
           [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, and any database drift.' -f 'labels[]=jevs-alert' --jq .number)
-          if [ "$RESULT" = drift ]; then
+          if [ -z "$RESULT" ]; then
+            printf 'The drift check itself failed, so the database was not compared with main. Run: %s\n' "$RUN_URL" > alert.txt
+          elif [ "$RESULT" = drift ]; then
             { echo "Database drift: the live database doesn't match the migrations on main. Something changed it outside a merged PR."; echo; cat diff.txt; echo; echo "Run: $RUN_URL"; } > alert.txt
           else
             printf 'The drift check could not reach the database runner. Run: %s\n' "$RUN_URL" > alert.txt

@@ -201,10 +201,16 @@ async function getChanges(limit) {
 // Text people can't see but agents read (USE-CASES.md row 10): HTML comments, which GitHub hides from readers but keeps
 // in the text, and invisible characters (the same set JEVs's J16 counts). Removed before an agent reads a post, and
 // the reply says so, so a post can't carry instructions a person reviewing it never saw.
+// HTML comments run to their end (or the end of the text if never closed), so this has no multi-line flag.
 const HIDDEN_MARKUP = /<!--[\s\S]*?(?:-->|$)|[\u200B\u202A-\u202E\u2066-\u2069\u2060-\u2064]|(?!^)\uFEFF/g;
+// Markdown link reference definitions, which GitHub never shows ("[//]: # (agents: ignore...)"), also inside quotes and
+// lists: a label (not a footnote, "[^1]"), one destination, and at most a quoted or bracketed title, on one line.
+// "[Update]: the fix is live" is ordinary visible text and is kept.
+// Each repeat of the quote or list prefix starts with its marker, so there is one way to match (no backtracking blow-up).
+const LINK_DEFINITION = /^[ \t]{0,3}(?:(?:>|[-*+]|\d{1,9}[.)])[ \t]{0,3}){0,20}\[(?!\^)(?:[^\]\n\\]|\\.){1,999}\]:[ \t]*(?:<[^>\n]*>|\S+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
 function stripHidden(text) {
   const raw = String(text == null ? '' : text);
-  const clean = raw.replace(HIDDEN_MARKUP, '');
+  const clean = raw.replace(HIDDEN_MARKUP, '').replace(LINK_DEFINITION, '');
   return { text: clean, removed: clean !== raw };
 }
 
