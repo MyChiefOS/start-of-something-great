@@ -19,7 +19,6 @@ const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { stepUpFor } = require('./passkey-helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -86,7 +85,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
-  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check // PR 17: Aaron's controls need a passkey check
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
   await asOwner(QUIET_WATCH);
 });
 test.after(async () => {
@@ -99,15 +98,12 @@ test.after(async () => {
 });
 
 // ---- Helpers ----
-// PR 17: with a passkey and a passkey check already passed, so these tests keep testing the sub-agent rules, which
-// apply in addition to the passkey step-up.
 async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  await stepUpFor(su, out.memberId);
-  return { id: out.memberId, name, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
+  return { id: out.memberId, name, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 function res() {
   const r = { statusCode: 200, headers: {}, body: '', headersSent: false };
@@ -825,7 +821,6 @@ test('PR 15 with 013: unlinking a sign-in method stops every sub-agent under the
   const owner = await member(2, 'Grace');
   const ghHash = c.sha256hex(owner.cookie.split('=')[1]);
   const xFp = c.sha256hex(crypto.randomUUID());
-  await q(`update app.passkeys set created_at = now() - interval '25 hours' where member_id = '${owner.id}'`); // PR 17: linking opens 24 hours after the first passkey
   const linked = await run({ ...owner.ctx, session: ghHash, fresh: true }, (t) => store.link(t, { provider: 'x', fingerprints: [xFp], keyVersion: 1, level: 2, sessionHash: ghHash }));
   assert.strictEqual(linked.linked, true, JSON.stringify(linked));
   // The link signed every session out (PR 15 final); sign in again with each method.
@@ -833,7 +828,6 @@ test('PR 15 with 013: unlinking a sign-in method stops every sub-agent under the
     const token = c.token(32);
     const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider, fingerprints: [fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(token), sessionDays: 30 }));
     assert.strictEqual(out.memberId, owner.id);
-    await stepUpFor(su, owner.id);
     return { ...owner, cookie: '__Host-dog_session=' + token, hash: c.sha256hex(token) };
   };
   const [ghFp] = (await q(`select fingerprint from app.identities where member_id = '${owner.id}' and provider = 'github'`)).map((r) => r.fingerprint);

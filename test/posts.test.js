@@ -3,7 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
+// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
+const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
+  set_config('app.session', ${ctx.session}, true)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -103,12 +105,11 @@ async function member(level = 1, name = 'New member') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: level === 0 ? 'email' : 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 // Changing a post's status is a reviewer's decision (PR 4), even for the database superuser.
 // A reviewer always acts under their member ID, which closed flags record.
-// Since security batch 1 that member is real, with a session that passed a passkey check.
+// That member is real, with a session.
 let reviewer;
 const asReviewer = async (sqlText) => { reviewer = reviewer || await member(2, 'Reviewer'); return su.begin(async (t) => {
   await actAsAdmin(t, reviewer.ctx);

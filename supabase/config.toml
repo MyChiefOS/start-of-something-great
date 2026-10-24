@@ -1,0 +1,6 @@
+# Supabase settings for the functions in this repository (read by the Supabase CLI and by Claude's deploy).
+# dog-migrate checks its callers itself: it accepts only a GitHub Actions identity token from database.yml on main
+# (supabase/functions/_shared/github-oidc.mjs). Supabase's own JWT check must be off, or it would refuse GitHub's
+# token before that code runs.
+[functions.dog-migrate]
+verify_jwt = false

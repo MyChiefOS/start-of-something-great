@@ -3,7 +3,6 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor } = require('./passkey-helpers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -85,7 +84,7 @@ test.before(async () => {
   flow = make({ config: cfg, run, providers: {}, sendEmail: null });
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -102,8 +101,7 @@ async function member(level = 2, name = 'Member') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, fp, cookie: SESSION + '=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
+  return { id: out.memberId, fp, cookie: SESSION + '=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 const count = async (sqlText) => Number((await q(sqlText))[0].n);
 async function everything(id) {
@@ -179,13 +177,9 @@ test('F8: deleting an account removes the member and all their personal data at 
   await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(await everything(m.id), { member: 1, identities: 1, sessions: 2, posts: 2, reports: 1, agents: 1, brakes: 1 });
-  // PR 17: deleting needs a passkey check too; their passkey goes with everything else.
-  await stepUpFor(su, m.id);
-  assert.strictEqual(await count(`select count(*) as n from app.passkeys where member_id = '${m.id}'`), 1);
 
   const r = await del(m);
   assert.strictEqual(r.getHeader('Location'), '/join?deleted=1');
-  assert.strictEqual(await count(`select count(*) as n from app.passkeys where member_id = '${m.id}'`), 0, 'passkeys are deleted with the account');
   assert.match(String(r.getHeader('Set-Cookie')), new RegExp(SESSION + '=;.*Max-Age=0'), 'the session cookie is cleared');
   assert.deepStrictEqual(await everything(m.id), { member: 0, identities: 0, sessions: 0, posts: 0, reports: 0, agents: 0, brakes: 0 });
   assert.strictEqual(await count(`select count(*) as n from app.agent_keys where agent_id = '${ag.id}'`), 0);

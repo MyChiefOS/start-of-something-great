@@ -16,9 +16,9 @@
   }
   function clear(id) { var n = document.getElementById(id); n.textContent = ''; return n; }
 
-  // PR 17: every owner control needs a passkey check in the last 5 minutes; /passkey.js asks for it and tries again.
   function post(body) {
-    return window.dogPasskey.postJson('/api/feed', body);
+    return fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
   }
 
   // A button that acts on the second tap within 5 seconds; the first tap only says what will happen.

@@ -6,8 +6,6 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor } = require('./passkey-helpers');
-const passkeys = require('../db/passkeys');
 const crypto = require('crypto');
 const postgres = require('postgres');
 const db = require('../db');
@@ -40,7 +38,7 @@ let A, B, BAgent, tables;
 // subagent_settings: anyone signed in sees the one row of limits sub-agents are made within (PR 16; public in 013).
 const MAY_SEE = {
   anon: { jevs_settings: 1 },
-  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, passkeys: 1 },
+  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1 },
   BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1 }
 };
 
@@ -62,9 +60,7 @@ test.before(async () => {
   // Aaron, so A's footprint includes moderation, brakes and notes.
   const aaron = await signIn(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  // PR 17: Aaron's controls need a passkey check.
-  await stepUpFor(su, aaron.id);
-  const admin = { actor: 'admin', memberId: aaron.id, stepUp: true, session: aaron.sessionHash };
+  const admin = { actor: 'admin', memberId: aaron.id, session: aaron.sessionHash };
   // Member A, with something in every table.
   A = await signIn(2, 'Member A');
   const [agent] = await run(A.ctx, (t) => t`insert into app.agents (name) values ('A agent') returning id`);
@@ -104,15 +100,16 @@ test.before(async () => {
   // PR 13: A's notices (the brake and the draft above left some), a suppressed sign-in address and a containment.
   await run({ actor: 'system' }, (t) => t`insert into app.email_suppressions (address_fp, reason) values (${c.sha256hex('gone@example.com')}, 'bounce')`);
   await run({ actor: 'system' }, (t) => t`insert into app.containments (member_id, reason, measured, usual_x100, ends_at) values (${A.id}, 'volume', 600, 0, now() + interval '1 day')`);
-  // PR 17: A's passkey, a challenge waiting on A's session, and a recovery A started, through the real functions. The
-  // ban above ended A's sessions, so A signs in again first.
+  // The ban above ended A's sessions, so A signs in again, leaving a session row.
   A.sessionHash = (await signIn(2, 'Member A', A.fp)).sessionHash;
-  await stepUpFor(su, A.id);
-  await run(A.ctx, (t) => passkeys.challenge(t, { sessionHash: A.sessionHash, purpose: 'step_up', challengeHash: c.sha256hex('A challenge') }));
-  await run(A.ctx, (t) => passkeys.recoveryStart(t, { sessionHash: A.sessionHash }));
-  // Member B (level 2) with an agent and a passkey of its own.
+  // PR 2 (Oct 24, 2026): one change-log row and one used runner token, as the migration runner writes them (dog_owner).
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_owner');
+    await t.unsafe(`insert into app.change_log (commit_sha, run_id, actor, event, result) values ('${'a'.repeat(40)}', '1', 'breakin', 'push', 'ok')`);
+    await t.unsafe(`insert into app.runner_tokens (jti) values ('breakin-token')`);
+  });
+  // Member B (level 2) with an agent.
   B = await signIn(2, 'Member B');
-  await stepUpFor(su, B.id);
   const [bAgent] = await run(B.ctx, (t) => t`insert into app.agents (name) values ('B agent') returning id`);
   await run(B.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${bAgent.id}, ${c.sha256hex('b-key')})`);
   BAgent = { actor: 'agent', memberId: B.id, agentId: bAgent.id };

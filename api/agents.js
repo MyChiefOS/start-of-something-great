@@ -22,9 +22,6 @@
 //                                rules, expires (24 hours unless asked; never after its parent), and stops with its parent.
 //   GET  /api/agents/subagents  (Authorization: Bearer)   the acting agent's own sub-agents, and the limits they are made within
 //   POST /api/agents/subagents/revoke {"agent"} (Bearer)  revoke one of them; everything under it stops too
-// PR 17: letting an agent act on its own, raising its daily cap, a new key for an agent that acts, and the 90-day keep
-// also need a passkey check in the last 5 minutes (D5); the database refuses without one, and the answer carries
-// "step_up" so the page can ask for the passkey and try once more. Drafting never needs one.
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
 // letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron. Making a
@@ -98,7 +95,6 @@ function held(res, d) {
 // JEVs's check and the sensitive step in one transaction, as the signed-in owner (the JEVs review, F7): the decision
 // and the step commit together, and a fresh sign-in counts as confirming a challenge, which also answers the owner's
 // earlier requests to confirm the same step. Returns { held: decision } or the step's own result.
-// PR 17: the session's passkey step-up goes with it too; the database decides whether the step needs it.
 const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {}) =>
   run(session.strongActorFor(who), async (t) => {
     if (check) {
@@ -197,9 +193,8 @@ const ROUTES = {
     // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
     const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.listMine(t); });
     // The agents the owner made come first, always; then sub-agents, with a count per tree of how many are running and
-    // how many are listed here (PR 16, the review's F3). PR 17: whether the owner has a passkey yet, so the page can
-    // offer one before the first risky step.
-    return reply(res, 200, { agents: list.agents.map(shapeAgent), can_own: canOwn, has_passkey: who.passkeys > 0,
+    // how many are listed here (PR 16, the review's F3).
+    return reply(res, 200, { agents: list.agents.map(shapeAgent), can_own: canOwn,
       trees: list.trees.map((x) => ({ root_id: x.rootId, active_subagents: x.active, listed: x.listed })), subagents_truncated: list.truncated });
   },
 
@@ -230,8 +225,6 @@ const ROUTES = {
     // A new key for an agent that acts on its own needs a fresh sign-in (PR 7); the database decides.
     const ok = await guarded(run, who, req, cfg, 'agent.key', v.uuid('agent', body.agent), (t) => agents.rotate(t, { agent: body.agent, keyHash: k.hash }));
     if (ok && ok.held) return held(res, ok.held);
-    // PR 17: and a passkey check in the last 5 minutes.
-    if (ok && ok.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (ok && ok.refused === 'fresh') {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
@@ -295,8 +288,6 @@ const ROUTES = {
     const out = await guarded(run, who, req, cfg, 'agent.rules', acting ? v.uuid('agent', args.agent) : null,
       async (t) => { await notices.liftDue(t); return delegation.setRules(t, args); }, { check: acting });
     if (out.held) return held(res, out.held);
-    // PR 17: letting an agent act on its own, or raising its cap, needs a passkey check in the last 5 minutes too.
-    if (out.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To let an agent act without your approval, sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
@@ -339,8 +330,6 @@ const ROUTES = {
     if (!who) return;
     const out = await run(session.strongActorFor(who), (t) => notices.reconfirm(t, { agent: body.agent, version: body.version }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No active agent of yours with that ID.' });
-    // PR 17: keeping it acting for another 90 days needs a passkey check in the last 5 minutes too.
-    if (out.refused === 'step_up') return reply(res, 403, session.stepUpNeeded(who));
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To keep an agent acting on its own, sign in again first (within the last ' + FRESH_MINUTES + ' minutes), then tap Keep once more.', reauth: REAUTH });
     }

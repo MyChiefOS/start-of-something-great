@@ -1,0 +1,72 @@
+{
+  "migrations": [
+    {
+      "version": "001_foundation",
+      "sha256": "58d9bba8a8703bb3220b2e164e90bf616c67ead7315498038275a82afef4f737"
+    },
+    {
+      "version": "002_signin",
+      "sha256": "f26d977343fb773b68122832eedf46f36fcd9cabd86ee31fda45df3d8b964408"
+    },
+    {
+      "version": "003_posts",
+      "sha256": "ba4b47b5bc286ba4789dc468b24ba5c13fe31db13ca029d4b35c8a579b850c53"
+    },
+    {
+      "version": "004_review",
+      "sha256": "61ab05faf7c62770b57c26c1889f70ba4e7e71854c4ced57cf80f99e4d027ae9"
+    },
+    {
+      "version": "005_agents",
+      "sha256": "d33e71eff1e4cd68d39336af1e99e6ef1151e05263b9723e7f7e803b0bd210c8"
+    },
+    {
+      "version": "006_owner_controls",
+      "sha256": "5806d73e03a4ec2f7ed565544178c040ba246db30cddc4516b5c93a71fae454c"
+    },
+    {
+      "version": "007_account_deletion",
+      "sha256": "f5b0b58c269b605ee3811caee224e98b56da946cafe8bcd552d40e508941d28f"
+    },
+    {
+      "version": "008_delegated_agency",
+      "sha256": "3a29442e8021cbc9b929cae288b2a1238dda46cfa5efffcb640f29980780968e"
+    },
+    {
+      "version": "009_fresh_delete",
+      "sha256": "0f5d32eb8ff295c0c1a09e310d5eb498133fe78b6fb37bc0b1cc5b4b2ff77001"
+    },
+    {
+      "version": "010_jevs",
+      "sha256": "157d8fc66017e22898a985eb0923f89a7976696006ba877d3aa8a7521a461d59"
+    },
+    {
+      "version": "011_notifications",
+      "sha256": "9316ac0072037444de2667a348d9da6d8b5548d44f2dc405e5352b72c90316a4"
+    },
+    {
+      "version": "012_signin_fixes",
+      "sha256": "3291f5ccb763ef43f296bfb126337cb948cb2b036a5446145f28796d0d745acb"
+    },
+    {
+      "version": "013_setup_audit",
+      "sha256": "957e455c3a78a2f8010718ead0a24db2123f660677ecbbf0fa17bf852fb1f12f"
+    },
+    {
+      "version": "014_subagents",
+      "sha256": "58a93e2138dae621ef702e5ae59829b01b80a65859a85cac10e2b09e753f0f2e"
+    },
+    {
+      "version": "015_change_log",
+      "sha256": "6972e6ba3239025553f4ab7aed1863a338756a0030ee310d5f9ffc6cb64bb23b"
+    }
+  ],
+  "reset": {
+    "file": "db/reset/fresh-build.sql",
+    "sha256": "989e1bfd6e0171763ec86d637e743da47a312fb713bd076be4fc01cd2c3e5923",
+    "when": {
+      "version": "014_passkeys",
+      "sha256": "56e45811f334653cbd3cd40f10dd840f525c60e8758e852dc89fa99803c14854"
+    }
+  }
+}

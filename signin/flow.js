@@ -22,10 +22,6 @@
 //   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
 //   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
 //   and a traveller's sealed confirmation is used once.
-//   PR 17: linking and deleting an account also need a passkey check in the last 5 minutes (D5), on top of all of the
-//   above; a member without a passkey is sent to add one (signin/passkey.js), never to a weaker check. After its review:
-//   unlinking needs only the fresh sign-in and seniority (the older method always wins, as in PR 15), and no method can be
-//   linked within 24 hours of the account's first passkey.
 'use strict';
 
 const launch = require('../launch');
@@ -37,7 +33,6 @@ const store = require('../db/signin');
 const v = require('../db/validate');
 const jevs = require('../db/jevs');
 const region = require('./region');
-const passkeys = require('../db/passkeys');
 
 const session = require('./session');
 const { SESSION, isToken } = session;
@@ -146,11 +141,6 @@ function make(deps) {
     } catch (e) {
       jevs.logFailure('after sign-in', e);
     }
-    // PR 17: a new member is offered a passkey once, in-app, before their first risky step. Its own transaction, so it
-    // can never undo the sign-in or JEVs's check.
-    if (out.isNew) {
-      try { await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId }, (t) => passkeys.offer(t)); } catch (e) { jevs.logFailure('passkey offer', e); }
-    }
   }
 
   // An email link asked for from a declined region (see emailStart). Only for an address with an account: within the
@@ -180,12 +170,6 @@ function make(deps) {
   // A link that didn't go through returns to the account page (the member is still signed in), never /join.
   const LINK_FAILED = '/account?error=link';
   const LINK_REFUSED = { taken: '/account?error=taken_method', busy: '/account?error=busy' };
-  // PR 17: linking, unlinking and deleting also need a passkey check in the last 5 minutes (D5); the database decides.
-  const STEP_UP = '/account?error=step_up#passkeys';
-  // PR 17's review (1d): no new sign-in method within 24 hours of the account's first passkey.
-  const LINK_WAIT = '/account?error=link_wait';
-  // Security batch 1 (RK62): no deleting your own account within 24 hours of its first passkey either.
-  const DELETE_WAIT = '/account?error=delete_wait';
 
   // A link starts only from our own pages (the review, F5): the browser must say the request came from this origin,
   // and an Origin or Referer, where sent, must be ours. A plain sign-in may still start from anywhere.
@@ -212,8 +196,6 @@ function make(deps) {
       fingerprints: args.fingerprints, keyVersion: args.keyVersion, level: args.level, recheckAfter: args.recheckAfter || null,
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
-    if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
-    if (out.refused === 'link_wait') return h.redirect(res, LINK_WAIT);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
     await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
     // A new method ended every session of the member, this one too (PR 15's re-review, R4): this browser signs in
@@ -245,9 +227,6 @@ function make(deps) {
         if (!me) return h.redirect(res, '/join?error=signin');
         if (!fromOurPages(req)) return h.redirect(res, LINK_FAILED);
         if (me.fresh !== true) return h.redirect(res, FRESH_METHOD);
-        // PR 17: a passkey check in the last 5 minutes first (checked again, by the database, when the link completes).
-        if (me.stepUp !== true) return h.redirect(res, STEP_UP);
-        if (me.linkingFrom && new Date(me.linkingFrom) > new Date()) return h.redirect(res, LINK_WAIT);
         link = { m: me.memberId, k: sessionHash(req) };
       }
       const state = c.token(32);
@@ -494,11 +473,6 @@ function make(deps) {
       if (who.isAdmin) return h.redirect(res, '/account?error=admin');
       // Signed in within the last few minutes first (RK3), so a stolen session cookie can't even start a review.
       if (who.fresh !== true) return h.redirect(res, '/account?error=fresh');
-      // PR 17: and a passkey check in the last 5 minutes, before JEVs is even asked (the database checks again).
-      if (who.stepUp !== true) return h.redirect(res, STEP_UP);
-      // Security batch 1 (RK62): and not within 24 hours of the account's first passkey, the same wait as linking, so a
-      // stolen cookie that adds its own passkey can't delete the account at once (the database checks again).
-      if (who.linkingFrom && new Date(who.linkingFrom) > new Date()) return h.redirect(res, DELETE_WAIT);
       // JEVs checks the deletion (PR 12): low risk deletes; medium risk is confirmed by that fresh sign-in; high risk
       // (or a check that couldn't finish) deletes nothing and goes to Aaron as a deletion review (Oct 16, 2026). The
       // member is told their account was flagged; if he hasn't decided in 24 hours it is disabled, never deleted.
@@ -507,8 +481,6 @@ function make(deps) {
       if (jevs.blocks(d)) return h.redirect(res, '/account?error=' + (d.effect === 'challenge' ? 'fresh' : 'review'));
       const out = await run(session.strongActorFor(who), (t) => store.deleteAccount(t));
       if (out.refused === 'fresh') return h.redirect(res, '/account?error=fresh');
-      if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
-      if (out.refused === 'delete_wait') return h.redirect(res, DELETE_WAIT);
       if (out.refused === 'under_review') return h.redirect(res, '/account?error=review');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
@@ -524,13 +496,9 @@ function make(deps) {
       const who = await current(req);
       if (!who) return h.redirect(res, '/join?error=signin');
       if (who.fresh !== true) return h.redirect(res, FRESH_METHOD);
-      // No passkey check unless passkeys were added under that method (identities_passkeys, Oct 17); otherwise PR 15's
-      // seniority rule alone lets a session remove only a method added after its own, so the holder of the older method
-      // can always remove a newer one, as before passkeys (PR 17's review, 1e). The database decides either way.
       const body = await h.form(req);
       const out = await run(session.strongActorFor(who), (t) => store.unlink(t, { identity: body && body.id, sessionHash: sessionHash(req) }));
       if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
-      if (out.refused === 'step_up') return h.redirect(res, STEP_UP);
       if (out.refused === 'last') return h.redirect(res, '/account?error=last_method');
       if (out.refused === 'senior') return h.redirect(res, '/account?error=senior');
       if (out.refused === 'busy') return h.redirect(res, '/account?error=busy');

@@ -60,8 +60,6 @@ async function reconfirm(t, { agent, version }) {
   } catch (e) {
     if (e.code === '42501') return { refused: 'not_acting' };
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
-    // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
-    if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     throw e;
   }
 }

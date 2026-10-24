@@ -9,7 +9,6 @@ Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this lis
 - [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix, including RK62 (who may delete an account).
 - [ ] Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md), and the watch's starting limits (RISKS.md RK37).
 - [ ] Linking a new sign-in method signs out the session that linked it (PR 15): keep it, or say so.
-- [ ] A "recovery started" email for passkeys (PR 17), which would change "notices are in-app only": yes or no.
 
 ## Accounts and settings
 
@@ -22,7 +21,7 @@ All from GitHub, nothing on your computer: **SETUP.md** has every step and marks
 5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).
 6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
 7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
-8. [ ] **Before go-live:** enrol two passkeys on your account, one synced and one hardware key (PK13, once passkeys merge).
+8. [x] ~~Before go-live: enrol two passkeys~~: removed Oct 24, 2026: Aaron's instruction, passkeys dropped.
 9. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
 
 ## Legal (Aaron approves, with legal review)
