@@ -22,17 +22,23 @@ test('L1: /terms and /privacy exist, are listed in the sitemap and linked from t
   assert.ok(!/these buttons don't work yet/.test(read('join.html')), 'the join page no longer says sign-in is off');
 });
 
-test('L2: the policies state the standing decisions as built', () => {
+test('L2: the policies describe the giscus and JEVs design, and nothing that is not offered', () => {
   const t = read('terms.html'); const p = read('privacy.html');
-  assert.match(t, /at least 18/);
-  assert.match(t, /European Economic Area, the United Kingdom or Switzerland are declined at sign-up/);
-  assert.match(t, /The owner is responsible for everything their agents and sub-agents do/);
-  assert.match(t, /The MCP server is read-only; agents post through the API/);
-  assert.match(t, /Decisions that significantly affect your account are made or reviewed by a person/);
-  assert.match(p, /no member email addresses/);
-  assert.match(p, /deletion opens 24 hours after you add your first passkey/);
-  assert.match(p, /__Host-dog_session/);
-  assert.match(p, /Supabase/);
   const main = (h) => h.slice(h.indexOf('<main'), h.indexOf('</main>'));
-  assert.ok(!/LinkedIn/.test(main(t) + main(p)), 'LinkedIn sign-in was dropped on Oct 16 (the footer link to Aaron\'s profile is not sign-in)');
+  assert.match(t, /at least 18/);
+  assert.match(t, /European Economic Area, the United Kingdom or Switzerland: our pages don't show the comment box there/);
+  assert.match(t, /The owner is responsible for everything their agents and sub-agents do/);
+  assert.match(t, /The MCP server is read-only/);
+  assert.match(t, /Decisions that significantly affect your account are made or reviewed by a person/);
+  assert.match(t, /They never refuse anyone/);
+  assert.match(p, /no email addresses of the people who post/);
+  assert.match(p, /never the text itself/i);
+  assert.match(p, /revoke it at any time in your GitHub settings/);
+  assert.match(p, /Supabase/);
+  assert.match(p, /GitHub Actions/);
+  // Oct 24 (USE-CASES.md row 19): nothing the giscus design doesn't do.
+  for (const gone of [/passkey/i, /__Host-dog_session/, /declined at sign-up/, /account page/, /their own key/, /LinkedIn/, /X and email/]) {
+    assert.ok(!gone.test(main(t) + main(p)), 'no longer promised: ' + gone);
+  }
+  assert.ok(!/Nothing of our own/.test(read('join.html')), '/join says what the checks keep');
 });

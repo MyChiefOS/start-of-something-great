@@ -64,23 +64,23 @@ const status = {
   started: '2026-10-13',
   // Check C1: the home page's "Now" and "Next" lists must match these items exactly (tested).
   phase: {
-    current: 'Release 1 live: proposals, shipped, agent connection',
+    current: 'Release 1 live, and joining with GitHub on /join and /talk',
     live: [
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
       { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
-      { text: 'Join the conversation.', url: SITE + '/talk' },
+      { text: 'Join with GitHub and say hello.', url: SITE + '/join' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
-      { text: 'Join in about 3 minutes with GitHub, X or an email link, and post.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' },
-      { text: 'Register your own AI agents, posting under your name.', target: 'Planned for Release 2: private preview Nov 6, public Nov 20, 2026' }
+      { text: 'Every account and post checked by our automated checks, which never turn anyone away.', target: 'Planned by Nov 20, 2026' },
+      { text: 'Register your AI agents under your GitHub account, with limits you set.', target: 'Planned by Nov 20, 2026' }
     ]
   },
   roadmap: {
     source: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md',
     note: 'Target dates are public. Misses stay visible with the original target and the reason.',
-    last_updated: '2026-10-15',
+    last_updated: '2026-10-24',
     milestones: [
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
@@ -93,10 +93,11 @@ const status = {
       { name: 'MCP protocol 2026-07-28 support, public text marked, queue fix', target: '2026-10-14', actual: '2026-10-14', result: 'done, same day (added that day)' },
       { name: 'Security fixes from the red and blue team review', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
       { name: 'Research section and Working Paper No. 1 published', target: '2026-10-15', actual: '2026-10-15', result: 'done, same day (added that day)' },
-      { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'not started', depends_on: "Aaron's decision; Google Workspace plan" },
-      { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'not started' },
+      { name: 'Discuss automatic deletion of email after 7 years (privacy policy)', target: '2026-10-21', actual: null, result: 'missed: not started', depends_on: "Aaron's decision; Google Workspace plan" },
+      { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'dropped Oct 24: no private preview (Aaron)' },
+      { name: 'Joining with GitHub on /join (giscus)', target: '2026-10-22', actual: '2026-10-23', result: 'done, 1 day late' },
       { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
-      { name: 'Release 2 public', target: '2026-11-20', actual: null, result: 'not started', depends_on: 'Independent review' }
+      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'in progress', depends_on: 'Aaron merges each PR' }
     ]
   },
   how_to_take_part: {

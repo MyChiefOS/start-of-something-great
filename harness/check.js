@@ -65,6 +65,9 @@ function evaluate(state) {
   if (open.length > 3) out.push({ level: 'warn', rule: 5, text: `${open.length} questions are waiting on Aaron. Ask fewer, sharper ones; don't add more.` });
   const left = table(md, 'Launch path').filter((r) => !/^done$/i.test(r[2] || ''));
   if (left.length) out.push({ level: 'info', rule: 0, text: 'Launch path, left in order: ' + left.map((r, i) => `${i + 1}. ${r[0]} (${r[1]})`).join(' ') });
+  const instructions = table(md, "Aaron's instructions");
+  const notDone = instructions.filter((r) => !/^(done|in force)\b/i.test(r[2] || ''));
+  if (notDone.length) out.push({ level: 'warn', rule: 0, text: `${notDone.length} of Aaron's instructions are not done yet: ` + notDone.map((r) => `${r[0]} [${r[2] || 'no status'}]`).join('; ') });
   if (!md) out.push({ level: 'stop', rule: 4, text: 'harness/FACTS.md is missing. Every fact must live there.' });
   return out;
 }

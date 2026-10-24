@@ -3,11 +3,14 @@ name: Checks
 
 on:
   pull_request:
+    # edited too, so fixing a PR description re-runs the PR guards.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
 permissions:
   contents: read
+  pull-requests: read
 
 # A newer push to the same pull request replaces the older run. Runs on main each get their own group
 # (the run id), so they are never cancelled or replaced.
@@ -41,6 +44,13 @@ jobs:
 
       - name: Install locked dependencies (no install scripts)
         run: npm ci --ignore-scripts
+
+      - name: PR guards (base is main, every commit verified and listed in the description; USE-CASES.md row 14)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/pr-guards.js
 
       - name: Dependency check (S11, against the locked list; a critical advisory blocks)
         run: npm audit --package-lock-only --audit-level=critical
