@@ -31,6 +31,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | Phase 1 admits GitHub users only; passkeys are removed from the design. Replaces the passkey-only plan | stated | Aaron: "the owners already have Github accounts and you cannot post of GitHub with out it. We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 |
 | Passkey-only sign-up is not built: a passkey needs an account first made through GitHub, X or email (migration 014; signin/passkey.js). Red and blue team reviews found 8 launch blockers in the passkey plan | checked | code read; reviews of Oct 23 | 2026-10-23 |
 | Launch the product system in the easiest way possible, with Claude operating as a can-do co-founder | stated | Aaron: "Goal - 1.) Launch the product system in the easiest way possible today. Goal - 2.) you will operate as a co founder..." | 2026-10-22 |
+| The old launch path is removed: Aaron pastes no database password or Vercel token to launch, no setup run makes keys or a database login, no passkeys are enrolled (PK13). The setup run now makes no password or key; the gateway path (GATEWAY.md) is the only launch path. Replaces the launch path rows of Oct 22-23 | stated | Aaron: "Can you remove the Old Path without damaging the code base for the system." | 2026-10-23 |
 
 ## Systems
 
@@ -45,7 +46,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | The live site is closed: sign-in answers "Sign-in is not switched on here yet." because no database is set | checked | curl https://dayonegreat.com/auth/github/start (503) | 2026-10-23 |
 | The public pages, API and MCP server work on the live site | checked | curl of /, /api/status, /api/proposals; MCP tools/call | 2026-10-23 |
 | Production setup has never run, so no database is connected to the live site | checked | GitHub API: the Production setup workflow has 0 runs; sign-in is off | 2026-10-23 |
-| The two secrets for Production setup (MIGRATION_DATABASE_URL, VERCEL_TOKEN) are not set yet | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
+| The two secrets for Production setup (MIGRATION_DATABASE_URL, VERCEL_TOKEN) are not set yet (replaced Oct 23: neither is needed to launch; each is added only on the day a run that needs it is chosen, SETUP.md) | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
 | Aaron's GitHub account ID is 304218593 | checked | GitHub API, repository owner | 2026-10-23 |
 | Claude's GitHub access: admin on the repository; can read PRs, issues, contents, deployments, rulesets and workflow runs and push branches; the session proxy refuses secrets, variables, environments and collaborators (403) | checked | GitHub API path by path; push dry-run | 2026-10-23 |
 | main has one active ruleset ("The Start of Something Great Rule Set") and no classic branch protection | checked | GitHub API rulesets; branches/main/protection 404 | 2026-10-23 |
@@ -56,17 +57,36 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 
 ## Launch path (what is left, in order)
 
+The gateway path (GATEWAY.md, "Order and date"). Since Oct 23 it is the only one (Aaron: "remove the Old Path").
+
 | Step | Who | Status |
 |---|---|---|
-| Merge PR #36 | Aaron | open |
-| Add two secrets: MIGRATION_DATABASE_URL (Supabase, Connect, Session pooler, with the database password) and VERCEL_TOKEN (chief-os scope, 1 day). The certificate is in the repo now | Aaron | open |
-| Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | open |
-| Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | open |
-| PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | open |
+| Merge PR #36 (Oct 23, 19:19 UTC) | Aaron | done |
+| Build the database: migrations 001 to 017; the narrow login dog_web, its password and the keys made inside it and kept in Vault | Claude, with Aaron's approval of Oct 23 | done |
+| Fix the gateway's start-up file (supabase/functions/jevs-gateway/index.ts), test it, and close its three holes (forced host, trusted headers, no Origin check), each with a failing-first test | Claude | open |
+| The Vercel side: GitHub start and the callback hand-off to the gateway, and forwarding /auth/* and /api/feed to it | Claude | open |
+| Deploy the gateway in preview with only Aaron's GitHub ID allowed; drop Supabase's public.rls_auto_enable() | Claude, after Aaron's agreement is recorded in OPERATIONS.md | open |
+| Merge the gateway pull request | Aaron | open |
+| Sign in on dayonegreat.com and post (the pass/fail test) | Aaron | open |
+| Make Aaron the administrator (app.set_administrator, migration 013) with the member_id from /auth/me: Claude through the Supabase connector once Aaron agrees, recorded in OPERATIONS.md, so no secret is needed; not blocking the sign-in test | Claude, after Aaron's agreement | open |
 | Approve the pending criteria (N1 to N11, R16, R33, SA1 to SA12; ROADMAP.md) | Aaron | open |
 | Smoke test: a second GitHub account signs up and posts. First-post review stays on while JEVs is in shadow mode (standing decision) | Aaron or a friend | open |
 | Update ROADMAP.md with the actual launch date next to the Nov 6 and Nov 20 targets | Claude | open |
 | Optional, not blocking: X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them); /join already says X is coming soon | Aaron | open |
+
+## Replaced launch path (Oct 23: kept for history; do not follow)
+
+| Step | Who | Status |
+|---|---|---|
+| Merge PR #36 | Aaron | replaced Oct 23 |
+| Add two secrets: MIGRATION_DATABASE_URL (Supabase, Connect, Session pooler, with the database password) and VERCEL_TOKEN (chief-os scope, 1 day). The certificate is in the repo now | Aaron | replaced Oct 23 |
+| Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | replaced Oct 23 |
+| Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | replaced Oct 23 |
+| PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | replaced Oct 23 |
+| Approve the pending criteria (N1 to N11, R16, R33, SA1 to SA12; ROADMAP.md) | Aaron | replaced Oct 23 |
+| Smoke test: a second GitHub account signs up and posts. First-post review stays on while JEVs is in shadow mode (standing decision) | Aaron or a friend | replaced Oct 23 |
+| Update ROADMAP.md with the actual launch date next to the Nov 6 and Nov 20 targets | Claude | replaced Oct 23 |
+| Optional, not blocking: X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them); /join already says X is coming soon | Aaron | replaced Oct 23 |
 
 ## Open for Aaron (ask once; record the answer here)
 
@@ -74,7 +94,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 |---|---|---|
 | Keep the 24-hour deletion rule (RK62), or switch to the oldest-method rule | 2026-10-22 | |
 | Charter section 3 says each PR "is built on the one before it". Change it to "every PR targets main" (harness rule 1) | 2026-10-23 | |
-| Is PK13 (two passkeys, one a hardware key) required for today's launch, or is one synced passkey enough until a hardware key arrives | 2026-10-23 | |
+| Is PK13 (two passkeys, one a hardware key) required for today's launch, or is one synced passkey enough until a hardware key arrives | 2026-10-23 | Neither: removed with the old path (Aaron, Oct 23: "remove the Old Path") |
 
 ## Parking list (no named owner yet; not built until one is named)
 

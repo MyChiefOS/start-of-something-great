@@ -1,6 +1,6 @@
-// The production setup run (scripts/setup-production.js): keys are made once and never replaced, the database
-// password reaches Postgres only as a hash yet really works, nothing secret is ever logged, and every step refuses
-// bad input. Vercel is faked here; Postgres is real.
+// The production setup run (scripts/setup-production.js): it makes no password and no key (Oct 23, 2026: the site's
+// database login and keys live in Supabase Vault, made by migration 017), never touches the site's login role, needs
+// Vercel only for the steps that change Vercel, and every step refuses bad input. Vercel is faked here; Postgres is real.
 'use strict';
 
 const test = require('node:test');
@@ -27,47 +27,24 @@ function fakeVercel(existing = {}) {
     async waitReady(id) { this.waited = id; return { readyState: 'READY' }; }
   };
 }
-const masker = () => { const seen = []; const mask = (v) => seen.push(v); mask.seen = seen; return mask; };
 const logger = () => { const lines = []; const log = (m) => lines.push(String(m)); log.lines = lines; return log; };
 const leaked = (lines, values) => values.filter((v) => v && lines.some((l) => l.includes(v)));
 
-test('steps run in a fixed order, and unknown steps are refused', () => {
-  assert.deepStrictEqual(s.steps('redeploy, keys database'), ['database', 'keys', 'redeploy']);
+test('steps run in a fixed order, unknown steps are refused, and the removed keys step says why', () => {
+  assert.deepStrictEqual(s.steps('redeploy, admin database'), ['database', 'admin', 'redeploy']);
   assert.deepStrictEqual(s.steps(''), []);
-  assert.throws(() => s.steps('keys,drop-everything'), /unknown step/);
+  assert.throws(() => s.steps('stage,drop-everything'), /unknown step/);
+  assert.throws(() => s.steps('database,keys'), /step keys was removed: .*Supabase Vault/);
+  assert.deepStrictEqual(s.ORDER, ['database', 'stage', 'admin', 'redeploy']);
 });
 
-test('the site’s database address is the transaction pooler on the same host, as dog_web.<project>', () => {
-  const u = new URL(s.siteDatabaseUrl('postgresql://postgres.nksagchwpyljvjiwolmp:x@aws-0-us-east-1.pooler.supabase.com:5432/postgres', 'pw-Abc_123'));
-  assert.strictEqual(u.hostname, 'aws-0-us-east-1.pooler.supabase.com');
-  assert.strictEqual(u.port, '6543');
-  assert.strictEqual(u.username, 'dog_web.nksagchwpyljvjiwolmp');
-  assert.strictEqual(u.password, 'pw-Abc_123');
-  assert.strictEqual(u.pathname, '/postgres');
-  assert.throws(() => s.siteDatabaseUrl('postgresql://postgres:x@db.example.com:5432/postgres', 'p'), /session pooler/);
-});
-
-test('keys: each is made only when missing; an existing key, FINGERPRINT_KEY_1 above all, is never replaced or logged', async () => {
-  const v = fakeVercel({ FINGERPRINT_KEY_1: 'members-are-recognised-by-this' });
-  const log = logger(); const mask = masker();
-  const sets = [];
-  const spy = { ...v, async set(k, val, o) { sets.push({ k, replace: o && o.replace }); return v.set(k, val, o); } };
-  await s.stepKeys(spy, { log, mask });
-  assert.ok(sets.length === 4 && sets.every((x) => x.replace === false), 'every key is created, never upserted: ' + JSON.stringify(sets));
-  assert.strictEqual(v.env.get('FINGERPRINT_KEY_1').value, 'members-are-recognised-by-this');
-  assert.strictEqual(mask.seen.length, 4, 'every made value was masked before use');
-  for (const k of ['SESSION_SECRET', 'IP_HASH_KEY', 'CRON_SECRET']) assert.ok(mask.seen.includes(v.env.get(k).value), k + ' masked');
-  for (const k of ['SESSION_SECRET', 'IP_HASH_KEY', 'CRON_SECRET']) {
-    const e = v.env.get(k);
-    assert.ok(e, k + ' was set');
-    assert.strictEqual(e.type, 'sensitive');
-    assert.strictEqual(Buffer.from(e.value, 'base64').length, 32, k + ' is 32 random bytes');
+test('the old path is gone: nothing in the setup run makes or changes a password or a key', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'scripts', 'setup-production.js'), 'utf8');
+  const code = src.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  for (const gone of ['randomBytes', 'scramVerifier', 'alter role', 'create role', 'DATABASE_URL\'', 'SESSION_SECRET', 'FINGERPRINT_KEY', 'CRON_SECRET', 'ROTATE']) {
+    assert.ok(!code.includes(gone), 'no ' + gone + ' in the setup run');
   }
-  assert.notStrictEqual(v.env.get('SESSION_SECRET').value, v.env.get('IP_HASH_KEY').value);
-  assert.deepStrictEqual(leaked(log.lines, [...v.env.values()].map((e) => e.value)), [], 'no value was logged');
-  const before = JSON.stringify([...v.env]);
-  await s.stepKeys(v, { log });
-  assert.strictEqual(JSON.stringify([...v.env]), before, 'a second run changes nothing');
+  for (const name of ['stepKeys', 'scramVerifier', 'siteDatabaseUrl', 'maskInActions', 'KEYS']) assert.strictEqual(s[name], undefined, name + ' is not exported');
 });
 
 test('stage: unchanged leaves everything alone; closed, preview or public only; the preview needs an allow-list; the stage itself is not secret', async () => {
@@ -121,31 +98,20 @@ test('the Vercel client sends to the right project and team, for Production only
 });
 
 test('plan: says what a run will do from its inputs alone, and refuses bad input before anyone approves', () => {
-  const base = { SETUP_STEPS: 'database,keys,stage,redeploy', SETUP_STAGE: 'unchanged', SETUP_ROTATE_DB_PASSWORD: 'no' };
+  const base = { SETUP_STEPS: 'database,stage,redeploy', SETUP_STAGE: 'unchanged' };
   const lines = s.plan(base);
-  assert.strictEqual(lines.length, 4);
-  assert.match(lines[0], /^database: .*existing password is kept/);
-  assert.match(lines[1], /never replaced/);
-  assert.strictEqual(lines[2], 'stage: unchanged');
-  assert.match(s.plan({ ...base, SETUP_ROTATE_DB_PASSWORD: 'yes' })[0], /NEW password/);
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[2], /go-live decision/);
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'preview', SETUP_PREVIEW_ALLOW: 'github:1, x:2' })[2], /PREVIEW.*2 allow-listed accounts/);
+  assert.strictEqual(lines.length, 3);
+  assert.match(lines[0], /^database: .*no login, password or key is made or changed/);
+  assert.strictEqual(lines[1], 'stage: unchanged');
+  assert.match(lines[2], /^redeploy: /);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[1], /go-live decision/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'preview', SETUP_PREVIEW_ALLOW: 'github:1, x:2' })[1], /PREVIEW.*2 allow-listed accounts/);
+  assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'keys' }), /was removed/);
   assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /at least one entry/);
   assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'open' }), /unchanged, closed, preview or public/);
   assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'admin' }), /member_id/);
   assert.throws(() => s.plan({ SETUP_STEPS: '' }), /nothing to do/);
   assert.match(s.plan({ SETUP_STEPS: 'admin', SETUP_ADMIN_MEMBER_ID: '11111111-2222-3333-4444-555555555555' })[0], /^admin: make member 1111/);
-});
-
-test('masking: inside GitHub Actions every made value is reported to the runner as a mask; elsewhere nothing is written', () => {
-  const was = process.env.GITHUB_ACTIONS; const out = [];
-  const write = process.stdout.write; process.stdout.write = (c) => { out.push(String(c)); return true; };
-  try {
-    delete process.env.GITHUB_ACTIONS; s.maskInActions('quiet-value');
-    assert.deepStrictEqual(out, []);
-    process.env.GITHUB_ACTIONS = 'true'; s.maskInActions('loud-value'); s.maskInActions('');
-    assert.deepStrictEqual(out, ['::add-mask::loud-value\n']);
-  } finally { process.stdout.write = write; if (was === undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS = was; }
 });
 
 test('redeploy: rebuilds what production serves now (so it works after a rollback), waits for it, and checks the live stage', async () => {
@@ -199,17 +165,26 @@ test('the stage step records EXPECTED_STAGE in GitHub (created if missing), and 
   assert.match(y, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });
 
-test('main: keys, stage and a verified redeploy run in order against a fake Vercel, and the stage is checked live', async () => {
+test('main: the close-the-site run (stage, then a verified redeploy) runs in order against a fake Vercel, and the stage is checked live', async () => {
   const v = fakeVercel(); const log = logger(); const verified = [];
-  await s.main({ SETUP_STEPS: 'redeploy,stage,keys', SETUP_STAGE: 'closed', VERCEL_TOKEN: 'x' },
+  await s.main({ SETUP_STEPS: 'redeploy,stage', SETUP_STAGE: 'closed', VERCEL_TOKEN: 'x' },
     { vercel: v, log, github: { async setVariable() {} }, verifyLive: async (o) => { verified.push(o); return 'closed'; } });
-  assert.strictEqual(v.env.size, 5, 'four keys and the stage');
+  assert.deepStrictEqual([...v.env.keys()], ['LAUNCH_STAGE'], 'only the stage');
   assert.strictEqual(v.redeploys, 1); assert.strictEqual(v.waited, 'dpl_test');
   assert.deepStrictEqual(verified.map((o) => [o.stage, o.tag]), [['closed', 'dpl_test']]);
-  assert.deepStrictEqual(log.lines.filter((l) => l.startsWith('==')), ['== keys', '== stage', '== redeploy']);
+  assert.deepStrictEqual(log.lines.filter((l) => l.startsWith('==')), ['== stage', '== redeploy']);
   const v2 = fakeVercel(); const verified2 = [];
   await s.main({ SETUP_STEPS: 'redeploy', VERCEL_TOKEN: 'x' }, { vercel: v2, log, verifyLive: async (o) => { verified2.push(o.stage); return 'public'; } });
   assert.deepStrictEqual(verified2, [null], 'no stage set this run, so none is demanded of the site');
+  await assert.rejects(s.main({ SETUP_STEPS: 'stage', SETUP_STAGE: 'closed' }, { log }), /VERCEL_TOKEN/, 'stage still needs Vercel');
+});
+
+test('main: the database step alone needs no Vercel token and touches no Vercel setting', async () => {
+  const log = logger(); const statements = [];
+  const fakeSql = Object.assign(async () => [{ exists: true }], { unsafe: async (q) => { statements.push(q); } });
+  await s.main({ SETUP_STEPS: 'database' }, { sql: fakeSql, log, migrate: async () => [], check: async () => [] });
+  assert.deepStrictEqual(statements, ['drop event trigger if exists ensure_rls', 'drop function if exists public.rls_auto_enable()']);
+  assert.ok(log.lines.some((l) => /dog_web: exists; this run never changes its password/.test(l)));
 });
 
 if (!SERVER) {
@@ -238,79 +213,25 @@ test.after(async () => {
   }
 });
 
-// Does this password match the role's stored SCRAM hash? Checked from the hash itself, so it holds on any server,
-// including one that trusts every local connection (as the CI database does).
-async function hashMatches(password) {
-  const [row] = await server`select rolpassword from pg_authid where rolname = ${ROLE}`;
-  const m = String(row && row.rolpassword).match(/^SCRAM-SHA-256\$(\d+):([^$]+)\$([^:]+):(.+)$/);
-  if (!m) return false;
-  return s.scramVerifier(password, { salt: Buffer.from(m[2], 'base64'), iterations: Number(m[1]) }) === row.rolpassword;
-}
-// Does the server check passwords at all here? (A trusting server lets any password in.)
-async function serverChecksPasswords() { return !(await signsIn('definitely-not-the-password-' + crypto.randomBytes(6).toString('hex'))); }
-// Can the role really sign in with the password inside the address that went to Vercel?
-async function signsIn(password) {
-  const c = postgres(at(SERVER, NAME, ROLE, password), { max: 1, ssl: false, onnotice: () => {}, connect_timeout: 5 });
-  try { const [r] = await c`select current_user as u`; return r.u === ROLE; } catch { return false; } finally { await c.end({ timeout: 5 }); }
-}
+const passwordHash = async () => ((await server`select rolpassword from pg_authid where rolname = ${ROLE}`)[0] || {}).rolpassword;
 
-test('database: migrations, the login role with a hashed password that really works, the address in Vercel, and a passing check', async () => {
-  const v = fakeVercel();
-  const log = logger(); const mask = masker();
-  const order = [];
-  const spy = { ...v, async set(k, val, o) { order.push(k); return v.set(k, val, o); } };
+test('database: migrations and a passing check; the login role is reported, never made, and its password never changes', async () => {
+  const log = logger();
   let checked = 0;
   const check = async (x) => { checked++; return require('../db/checks').problems(x, { snapshot: require('fs').readFileSync(require('path').join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#')) }); };
-  await s.stepDatabase(su, spy, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE, mask });
+  await s.stepDatabase(su, { log, migrate, check, role: ROLE });
   assert.strictEqual(checked, 1);
-  assert.deepStrictEqual(order, ['DATABASE_CA', 'DATABASE_URL'], 'the certificate goes in before the address (S4)');
-  const addr = new URL(v.env.get('DATABASE_URL').value);
-  assert.deepStrictEqual(mask.seen, [decodeURIComponent(addr.password), v.env.get('DATABASE_URL').value], 'the password and the address were masked before use');
-  assert.strictEqual(addr.port, '6543');
-  assert.strictEqual(v.env.get('DATABASE_URL').type, 'sensitive');
-  assert.strictEqual(v.env.get('DATABASE_CA').value, 'CA-PEM');
-  const password = decodeURIComponent(addr.password);
-  assert.ok(password.length >= 40);
-  assert.strictEqual(await hashMatches(password), true, 'the stored hash is of exactly the password that went to Vercel');
-  assert.strictEqual(await signsIn(password), true, 'and the role signs in with it');
-  const checks = await serverChecksPasswords();
-  const [{ granted }] = await su`select pg_has_role(${ROLE}, 'dog_app', 'member') as granted`;
-  assert.strictEqual(granted, true, 'it acts as dog_app');
-  assert.deepStrictEqual(leaked(log.lines, [password, v.env.get('DATABASE_URL').value]), [], 'neither the password nor the address was logged');
+  const [{ made }] = await server`select exists (select 1 from pg_roles where rolname = ${ROLE}) as made`;
+  assert.strictEqual(made, false, 'a missing login role is not created');
+  assert.ok(log.lines.some((l) => l.includes(ROLE + ': missing') && /makes no logins or passwords/.test(l)), 'it is reported instead');
 
-  // Run again: nothing changes, and the site's password keeps working.
-  const v2 = fakeVercel();
-  await s.stepDatabase(su, v2, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE });
-  assert.strictEqual(v2.env.size, 0, 'Vercel untouched on a re-run');
-  assert.strictEqual(await hashMatches(password), true, 'the password is unchanged');
-
-  // Rotation: a new password works, the old one stops.
-  const v3 = fakeVercel();
-  await s.stepDatabase(su, v3, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: true, log, migrate, check, role: ROLE });
-  const fresh = decodeURIComponent(new URL(v3.env.get('DATABASE_URL').value).password);
-  assert.notStrictEqual(fresh, password);
-  assert.strictEqual(await hashMatches(fresh), true, 'the new password is the one stored');
-  assert.strictEqual(await hashMatches(password), false, 'the old password no longer matches');
-  if (checks) assert.strictEqual(await signsIn(password), false, 'and, where the server checks passwords, it no longer signs in');
-});
-
-test('database: if the database refuses the new password after the address went to Vercel, the message says how to put it right', async () => {
-  const log = logger();
-  const v = fakeVercel();
-  // The same connection, except that changing the role's password fails.
-  const refusing = Object.assign((...a) => su(...a), { unsafe: async (q) => { if (/^alter role/.test(q)) throw new Error('permission denied'); return su.unsafe(q); } });
-  await assert.rejects(s.stepDatabase(refusing, v, { migrationUrl: POOLER, rotate: true, log, migrate: async () => [], check: async () => [], role: ROLE, mask: () => {} }),
-    /did not accept.*Do not redeploy.*rotate_db_password ticked/s);
-  assert.ok(v.env.get('DATABASE_URL'), 'the address had already gone in, which is what the message is about');
-});
-
-test('database: if Vercel refuses, the database password is left alone', async () => {
-  const log = logger();
-  const broken = { ...fakeVercel(), async set() { throw new Error('Vercel POST failed (403)'); } };
-  const [{ before }] = await server`select rolpassword as before from pg_authid where rolname = ${ROLE}`.catch(() => [{ before: 'n/a' }]);
-  await assert.rejects(s.stepDatabase(su, broken, { migrationUrl: POOLER, rotate: true, log, migrate, check: async () => [], role: ROLE }), /403/);
-  const [{ after }] = await server`select rolpassword as after from pg_authid where rolname = ${ROLE}`.catch(() => [{ after: 'n/a' }]);
-  assert.strictEqual(after, before);
+  // With the role there (as migration 017 makes it on Supabase), a run leaves its password exactly as it was.
+  await server.unsafe('create role ' + ROLE + " login noinherit password 'made-elsewhere-1'");
+  const before = await passwordHash();
+  assert.ok(before, 'the role has a password');
+  await s.stepDatabase(su, { log, migrate, check, role: ROLE });
+  assert.strictEqual(await passwordHash(), before, 'the password is unchanged');
+  assert.ok(log.lines.some((l) => l.includes(ROLE + ': exists; this run never changes its password')));
 });
 
 test('admin: sets exactly one active member as administrator, and refuses anything else', async () => {
@@ -357,30 +278,18 @@ test('the setup workflow starts by hand only, on main only, in the protected env
   for (const m of y.matchAll(/uses: ([^\s]+)/g)) assert.match(m[1], /@[0-9a-f]{40}$/, 'pinned to a commit: ' + m[1]);
   assert.match(y, /persist-credentials: false/);
   assert.ok(!/echo .*\$\{\{\s*secrets\./.test(y), 'no secret is echoed');
+  assert.ok(!/rotate_db_password|ROTATE/.test(y), 'no option to make a new database password');
+  assert.match(y, /default: 'stage,redeploy'/, 'the default run makes nothing');
+  assert.ok(!/\bkeys\b/.test(y.split('\n').filter((l) => !l.startsWith('#')).join('\n')), 'no keys step');
 });
 
-test('the keys the setup run makes are exactly what sign-in needs to switch on', async () => {
-  const v = fakeVercel();
-  await s.stepKeys(v, { log: () => {} });
-  const env = Object.fromEntries([...v.env].map(([k, e]) => [k, e.value]));
-  const cfg = require('../signin/config').load(env);
-  assert.strictEqual(cfg.ready, true);
-  assert.strictEqual(cfg.fingerprintKeys.length, 1);
-  assert.strictEqual(cfg.fingerprintKeys[0].version, 1);
-});
-
-test('the setup run’s raw SQL is exactly these statements, built only from fixed text, a checked role name and a hash', () => {
+test('the setup run’s raw SQL is exactly these two fixed statements', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'scripts', 'setup-production.js'), 'utf8');
   const calls = [...src.matchAll(/\.unsafe\(([^;]*)\);/g)].map((m) => m[1].trim());
   assert.deepStrictEqual(calls, [
     "'drop event trigger if exists ensure_rls'",
-    "'drop function if exists public.rls_auto_enable()'",
-    "'create role ' + role + ' login noinherit'",
-    "'grant dog_app to ' + role",
-    `'alter role ' + role + " password '" + scramVerifier(password) + "'"`
+    "'drop function if exists public.rls_auto_enable()'"
   ]);
-  assert.match(src, /if \(!\/\^\[a-z_\]\[a-z0-9_\]\{0,62\}\$\/\.test\(role\)\) throw/, 'the role name is checked before use');
-  assert.match(s.scramVerifier('x'), /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'the hash has no quote to break out of');
 });
 
 test('the Supabase root certificate is in the repository, so no one copies it into a secret; a secret still overrides it', () => {

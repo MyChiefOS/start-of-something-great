@@ -2,19 +2,11 @@
 
 Everything Aaron needs to switch sign-in on, prepared so his part is short. Claude can't create accounts, handle secrets, spend money or accept terms of service for anyone, so each step below is Aaron's. Everything around those steps is ready.
 
-Order: the database first (db/README.md, steps 1 to 5), then the steps below. Sign-in stays off until all of its settings are present.
+The database is built (Oct 23, db/README.md). Sign-in stays off until all of its settings are present.
 
-## 1. The three keys (about 2 minutes)
+## 1. The three keys: nothing to do
 
-On your own computer, in this repository's folder:
-
-```sh
-npx vercel@62.0.0 login
-npx vercel@62.0.0 link
-bash scripts/setup-signin-keys.sh
-```
-
-The script makes `SESSION_SECRET`, `IP_HASH_KEY` and `FINGERPRINT_KEY_1` and puts them straight into Vercel as secrets (Production only). It never prints or saves them, and nobody can read them back afterwards. If a key already exists, it leaves it alone.
+Since Oct 23, 2026 the keys (`SESSION_SECRET`, `IP_HASH_KEY`, `FINGERPRINT_KEY_1`) are made inside the database by migration 017 and kept in Supabase Vault, where the JEVs gateway reads them. Nobody sees them and nothing runs on your computer. The script that used to make them on your computer and paste them into Vercel is removed (Aaron: "remove the Old Path").
 
 ## 2. GitHub sign-in app (about 3 minutes)
 

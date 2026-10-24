@@ -27,29 +27,16 @@ Nothing here is tied to one provider: it runs the same on Supabase or Neon.
 
 ## Setting it up (Aaron; Claude never sees these values)
 
-**Use SETUP.md.** The Production setup workflow does steps 2 to 5 below from GitHub, with nothing on your computer, and keeps Release 2 closed until you choose the go-live stage. The manual steps stay here for reference.
+**Built Oct 23, 2026, with no secret handled by anyone.** Aaron approved building the Supabase database through the connector (OPERATIONS.md): migrations 001 to 017 are applied, and migration 017 made the site's narrow login `dog_web`, its password and the sign-in keys inside the database and stored them in Supabase Vault, where the JEVs gateway reads them (GATEWAY.md). The old manual steps that made `dog_web` by hand and put `DATABASE_URL` in Vercel are removed (Aaron: "remove the Old Path"): in this design Vercel holds no database login.
+
+For a new database, and for every new migration (standing decision: migrations only through the protected GitHub workflow):
 
 1. **Create the database project** with the provider you approve.
-2. **Add the migration address to GitHub, locked to `main` and to your approval.** This address can change anything in the database, so it lives in a protected environment, not a plain repository secret:
+2. **Add the migration address to GitHub, locked to `main` and to your approval,** on the day you run a migration. This address can change anything in the database, so it lives in a protected environment, not a plain repository secret:
    1. Go to repository Settings, then Environments. Create `production`.
    2. Under Required reviewers, add yourself. Under Deployment branches, choose "Selected branches" and allow only `main`.
-   3. In the same environment, add the secret `MIGRATION_DATABASE_URL`. Its value is the provider's session-mode or direct connection string for the main database user (for Supabase, the "Session pooler" string on port 5432).
-   4. For Supabase, also add `MIGRATION_DATABASE_CA` with the contents of the SSL certificate from the database settings page. It's public, not a secret, but connections check the server against it.
-3. **Run the migrations.** On the Actions tab, open "Database migrations" and click Run workflow on `main`, then approve it when GitHub asks. It applies the migrations, then runs the coverage check against the real database. Both steps must be green.
-4. **Create the site's login role.** In the provider's SQL editor, run:
-
-   ```sql
-   create role dog_web login noinherit;
-   grant dog_app to dog_web;
-   ```
-
-   Then give it a long random password without typing it into the SQL editor, which keeps a history of queries. Use `\password dog_web` in `psql`, which sends only a hash. Keep the password only in step 5.
-
-5. **Add the site's address to Vercel.** Go to project Settings, then Environment Variables, and add `DATABASE_URL` for Production. Its value is the transaction pooler address for `dog_web`:
-   - Supabase: the shared "Transaction pooler" string on port 6543, with user `dog_web.<project-ref>`. Supabase's dedicated pooler address is reachable only over IPv6, which Vercel's functions don't have.
-   - Neon: the "-pooler" address.
-
-   For Supabase, also add `DATABASE_CA` with the same certificate as in step 2. The site refuses any address that isn't a transaction pooler (G1), and checks the server's certificate. Nothing reads any of this until sign-in arrives in PR 2.
+   3. In the same environment, add the secret `MIGRATION_DATABASE_URL`. Its value is the provider's session-mode or direct connection string for the main database user (for Supabase, the "Session pooler" string on port 5432). Supabase's certificate is already in the repository (db/certs/supabase-root-2021.crt).
+3. **Run the migrations.** On the Actions tab, open "Database migrations" and click Run workflow on `main`, then approve it when GitHub asks. It applies the migrations, then runs the coverage check against the real database. Both steps must be green. On Supabase, migration 017 makes `dog_web` and the keys in Vault; anywhere without Vault it does nothing.
 
 For Supabase, leave the Data API's exposed schemas as they are (`public` only). Never add `app`.
 
@@ -87,12 +74,7 @@ Names and usernames from GitHub and X are not kept; everyone starts as "New memb
 
 All of these are Vercel environment variables for **Production only**, so preview deployments never get them and sign-in stays off there.
 
-1. **Keys.** Run `bash scripts/setup-signin-keys.sh` (SIGNIN-SETUP.md, step 1). It makes three keys and stores each one in Vercel as a secret, never shown to anyone:
-   - `SESSION_SECRET`: protects the short-lived sign-in state.
-   - `IP_HASH_KEY`: used only for rate limits.
-   - `FINGERPRINT_KEY_1`: recognises members.
-
-   To rotate the fingerprint key later, add `FINGERPRINT_KEY_2` (the highest number is the current key). Each person moves to it at their next sign-in. Never delete an older key, or the people who haven't signed in since become strangers.
+1. **Keys: nothing to do.** `SESSION_SECRET`, `IP_HASH_KEY` and `FINGERPRINT_KEY_1` are made inside the database by migration 017 and kept in Supabase Vault (`dog_session_secret`, `dog_ip_hash_key`, `dog_fingerprint_key_1`), where the gateway reads them; nobody sees them. (Removed Oct 23: the script that made them on Aaron's computer and pasted them into Vercel.) Never replace `dog_fingerprint_key_1`: members are recognised by it. Rotating it (a second key that members move to at their next sign-in) is not built for Vault yet.
 2. **GitHub and X apps:** follow SIGNIN-SETUP.md, which has every value to paste.
 3. **X.** In the developer console, create an app with OAuth 2.0 as a confidential client (a "web app"). Set the callback to exactly `https://dayonegreat.com/auth/x/callback` and the scopes to `tweet.read` and `users.read`. Buy a small prepaid credit and set a spend cap: each X sign-in reads the account once, about $0.01. If the credit runs out, X sign-in fails safely and GitHub and email still work. Then set `X_CLIENT_ID` and `X_CLIENT_SECRET`.
 4. **Email links** switch on once the email service is chosen, a later small PR. Until then, the email form says "Sign-in by email isn't switched on yet."
@@ -550,6 +532,6 @@ Drafting never needs it, and neither does unlinking (below). Triggers of their o
 
 **Settings (Aaron; nothing secret).** None needed for production: the RP ID is `dayonegreat.com`. For a preview that has sign-in, set both `PASSKEY_RP_ID` (the preview's own host) and `PASSKEY_ORIGINS` (its exact https origins, comma-separated); a wildcard or anything malformed switches passkeys off. Sign-in itself still answers only on dayonegreat.com today, so these have no effect yet.
 
-**Before go-live (PK13).** Aaron enrols at least two passkeys on his own account, one synced and one hardware key kept apart, so he always has the brake.
+**PK13 removed (Oct 23, 2026).** Aaron removed passkeys from phase 1 ("remove pass key") and then the old launch path that included enrolling two ("remove the Old Path"), so there is nothing to enrol before go-live. The passkey code and migration 014 stay in place, dormant (RISKS.md RK72).
 
 **Known limits.** RK63 (the first passkey: High until the review's fixes, Medium now), RK64 (the database trusts the step-up setting from the site, like `fresh`), RK66 (the 5-minute window), RK67 (synced passkeys can't be told apart by their counter). Passkeys are a step-up only, not a way to sign in.

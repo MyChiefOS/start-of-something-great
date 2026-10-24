@@ -2,7 +2,7 @@
 
 Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until Aaron sets the go-live stage (launch.js): `closed` (the default), `preview` (only the people he allow-lists), then `public`, which is the go-live decision. The private preview target is Nov 6 and the public release Nov 20, only on Aaron's go-live decision.
 
-Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the setup run does it), notices in-app only, and the regional gate in code.
+Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (removed Oct 23 with Aaron's approval; its leftover function `public.rls_auto_enable()` still waits for his agreement, OPERATIONS.md), notices in-app only, and the regional gate in code.
 
 ## Decisions
 
@@ -13,17 +13,16 @@ Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this lis
 
 ## Accounts and settings
 
-All from GitHub, nothing on your computer: **SETUP.md** has every step and marks each value only you can supply.
+All from GitHub, nothing on your computer. Since Oct 23 (Aaron: "remove the Old Path") launching needs no secret from you: the database is built, and its login and keys were made inside it and kept in Supabase Vault (GATEWAY.md). The old items "add the setup secrets", "first setup run" and "enrol two passkeys (PK13)" are removed.
 
-1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only, and its three secrets (SETUP.md, steps 1 and 2).
-2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. You read the run's plan before approving it. The site doesn't change.
+1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only (SETUP.md, step 1). No secret is needed to launch; one is added only on the day you choose a run that needs it (SETUP.md, step 2).
+2. [x] **The database** (migrations 001 to 017, row-level security forced on every table, the narrow login and keys in Vault): built Oct 23 with Aaron's approval (OPERATIONS.md).
 3. [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): done Oct 16.
 4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
-5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).
+5. [ ] **Sign in and post** in the preview, which opens for your GitHub account only (GATEWAY.md, step 4), then **make yourself the administrator** (SETUP.md, step 3; Claude can do it with no secret once you agree).
 6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
-7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
-8. [ ] **Before go-live:** enrol two passkeys on your account, one synced and one hardware key (PK13, once passkeys merge).
-9. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
+7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 5); record both in OPERATIONS.md.
+8. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
 
 ## Legal (Aaron approves, with legal review)
 
@@ -35,4 +34,4 @@ All from GitHub, nothing on your computer: **SETUP.md** has every step and marks
 ## Go live
 
 - [ ] Test the preview yourself, with the stage at `preview` (every automated gate is green).
-- [ ] Give the go-live decision: run Production setup with the stage `public`. Nothing goes public before it.
+- [ ] Give the go-live decision: the gateway's stage and Production setup's stage (`stage,redeploy`, stage `public`) both move to `public` on your recorded words. Nothing goes public before it.

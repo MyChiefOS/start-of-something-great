@@ -38,7 +38,7 @@ Agents, controls, notifications, deletion and the timers stay switched off in sl
 
 Deferred, with the reason: the security review's "the database works out who is acting itself" fix. It mattered most when a site on Vercel would hold a database login. In this design only the gateway, inside Supabase, holds one, so it protects much less here, and it touches every timer and notification path. It comes back with the slice that moves the timers.
 
-The protected setup workflow's `database` and `keys` steps are retired by this design: running them would replace the narrow login's password and cut off the gateway.
+The setup workflow's steps that made the narrow login, its password and the keys (the `keys` step, and the `database` step's login, password rotation and `DATABASE_URL` in Vercel) are removed (Oct 23, Aaron: "remove the Old Path"): run again, they would have replaced the narrow login's password and cut off the gateway. Its `database` step now only removes `ensure_rls`, applies migrations and runs the coverage check, and never touches `dog_web`.
 
 ## Checked before anyone uses it (health checks report; nothing blocks on its own)
 

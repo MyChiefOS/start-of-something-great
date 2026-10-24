@@ -1,17 +1,26 @@
 # Production setup: Aaron's steps
 
-Release 2 is set up from GitHub by one workflow, **Production setup** (`.github/workflows/setup.yml`, code in `scripts/setup-production.js`). Nothing runs on your computer. Every key and password is made inside the run and goes straight to Vercel or to the database as a hash, so nobody sees them, Claude included.
+**Changed Oct 23, 2026 (Aaron: "remove the Old Path").** Launching needs no secret from you and no setup run. The old path (you paste a database password and a Vercel token into GitHub, a setup run makes keys and a database login and copies them into Vercel, you enrol two passkeys) is removed. The site's database login (`dog_web`), its password and the sign-in keys are made inside the database by migration 017 and kept in Supabase Vault, where the JEVs gateway reads them; nobody sees them, Claude included. The launch path is in GATEWAY.md ("Order and date") and harness/FACTS.md ("Launch path"): you merge the pull request, then sign in and post.
 
-Setting things up never opens the site. Release 2 stays off until **you** set the go-live stage (`LAUNCH_STAGE`, below). Setting it to `public` is the go-live decision.
+The **Production setup** workflow (`.github/workflows/setup.yml`, code in `scripts/setup-production.js`) stays for four jobs that don't have another home yet. It makes no password and no key. None of them is needed to launch, and each needs a secret only on the day you choose to run it.
+
+| Job | Steps | Secret it needs, only when run |
+|---|---|---|
+| Close the site in an emergency (OPERATIONS.md, "Runbook: close the site now") | `stage,redeploy` with stage `closed` | `VERCEL_TOKEN` |
+| Make yourself the administrator (or, with no secret, Claude runs the same database function through the Supabase connector once you agree, recorded in OPERATIONS.md) | `admin` | `MIGRATION_DATABASE_URL` |
+| Remove Supabase's `ensure_rls` leftovers, apply new migrations, run the coverage check | `database` | `MIGRATION_DATABASE_URL` |
+| Go live on the Vercel side | `stage,redeploy` with stage `public` | `VERCEL_TOKEN` |
+
+New migrations go through the **Database migrations** workflow (standing decision: migrations only through the protected GitHub workflow), and backups are tested by **Restore test**; both use `MIGRATION_DATABASE_URL` the same way.
 
 Everything in **[PLACEHOLDER: …]** is a value only you can supply.
 
 ## How every run works
 
 1. You start it from the Actions tab and fill in the inputs.
-2. A first job, **plan**, reads the inputs alone (no secrets) and writes what the run will do into the run's summary. Bad input (a stage that doesn't exist, a preview with nobody allow-listed) stops it here.
+2. A first job, **plan**, reads the inputs alone (no secrets) and writes what the run will do into the run's summary. Bad input (a stage that doesn't exist, a preview with nobody allow-listed, a step that was removed) stops it here.
 3. GitHub asks you to approve the **setup** job. Read the plan first; approve, or cancel the run.
-4. The setup job does exactly what the plan said, stops at the first problem, and never shows a secret: every value it makes is masked in the log before it's used.
+4. The setup job does exactly what the plan said and stops at the first problem.
 
 ## 1. The protected environment (once, about 2 minutes)
 
@@ -21,57 +30,29 @@ GitHub → the repository → Settings → Environments → `production` (create
 2. **"Allow administrators to bypass configured protection rules":** turn it **off**, so an administrator token can't skip your approval. (Leave "Prevent self-review" off: you start the runs and you approve them.)
 3. **Deployment branches and tags:** "Selected branches and tags", allow only `main`.
 
-## 2. Two secrets (once)
+## 2. The secrets, only for the run you choose
 
-Add each one under the `production` environment's "Environment secrets" (best: only approved runs can read them), or, if you skipped step 1, as repository secrets (Settings → Secrets and variables → Actions). Supabase's certificate is public, so it is already in the repository (db/certs/supabase-root-2021.crt); there is no third secret.
+Add a secret only when you're about to run a job that needs it, under the `production` environment's "Environment secrets". Supabase's certificate is public, so it is already in the repository (db/certs/supabase-root-2021.crt).
 
 | Name | Where to get it |
 |---|---|
 | `MIGRATION_DATABASE_URL` | **[PLACEHOLDER: Supabase → Connect → "Session pooler" connection string, port 5432, with your database password filled in]**. It looks like `postgresql://postgres.nksagchwpyljvjiwolmp:…@aws-0-us-east-1.pooler.supabase.com:5432/postgres`. |
-| `VERCEL_TOKEN` | **[PLACEHOLDER: Vercel → Account Settings → Tokens → Create. Scope: the chief-os team. Expiration: 1 day]**. Vercel has no project-only tokens, so the team is the narrowest scope; delete the token after the run rather than waiting for it to expire. Make a new one when you next need a run. |
+| `VERCEL_TOKEN` | **[PLACEHOLDER: Vercel → Account Settings → Tokens → Create. Scope: the chief-os team. Expiration: 1 day]**. Vercel has no project-only tokens, so the team is the narrowest scope; delete the token after the run rather than waiting for it to expire. |
 
-## 3. First run: set everything up, still closed
-
-Actions → **Production setup** → Run workflow, on `main`:
-
-- steps: `database,keys,stage,redeploy` (the default)
-- stage: `closed`
-
-Read the plan, then approve the setup job. It:
-
-1. removes Supabase's `ensure_rls` trigger (your decision of Oct 16, GAP-44, recorded in CHARTER.md; it's owned by the same user as the migration address, so the run can remove it);
-2. applies the migrations, 001 onwards;
-3. creates the site's login role `dog_web` with a password made in the run, sent to the database only as a hash;
-4. puts `DATABASE_CA` and then `DATABASE_URL` (the transaction pooler, port 6543) in Vercel;
-5. runs the database coverage check;
-6. makes `SESSION_SECRET`, `IP_HASH_KEY`, `FINGERPRINT_KEY_1` and `CRON_SECRET`, but only those that aren't already there. A key is created, never replaced: Vercel itself refuses to create one that exists, and the run takes that as "leave it";
-7. sets `LAUNCH_STAGE=closed`;
-8. redeploys, so Vercel uses the new settings.
-
-The site looks exactly as before. That's the point of `closed`.
-
-## 4. Open the private preview (when you're ready)
-
-Run **Production setup** again:
-
-- steps: `stage,redeploy`
-- stage: `preview`
-- preview_allow: **[PLACEHOLDER: `github:<your numeric GitHub account ID>`]**. Your numeric ID is the `id` at `https://api.github.com/users/<your GitHub user name>`. Add more people the same way, separated by commas: `github:<id>`, `x:<id>`, or `email:<address>`. The run's inputs are visible in the Actions log, so prefer account IDs to email addresses.
-
-Then sign in at https://dayonegreat.com/join with GitHub. Only the people on that list can make an account; existing members can still sign in. Signed-out visitors see no posts. Agents register as usual (open registration is a standing decision); their owners must be members.
-
-## 5. Make yourself the administrator
+## 3. Make yourself the administrator
 
 1. While signed in, open https://dayonegreat.com/auth/me and copy `member_id`.
-2. Run **Production setup** with steps `admin` and admin_member_id: **[PLACEHOLDER: your member_id]**.
+2. Either tell Claude to make you the administrator (it runs `app.set_administrator` through the Supabase connector, recorded in OPERATIONS.md; no secret), or run **Production setup** with steps `admin` and admin_member_id: **[PLACEHOLDER: your member_id]**.
 
-## 6. Go live
+## 4. Close the site, or go live on the Vercel side
 
-When you've tested the preview and decided, run **Production setup** with steps `stage,redeploy` and stage `public`. To close it again at any time, run the same steps with stage `closed`.
+Run **Production setup** with steps `stage,redeploy` and stage `closed` (or `public` for the go-live decision). The run sets `LAUNCH_STAGE` in Vercel, redeploys, and checks the live site reports the stage before it says done. Any re-run with the stage input at `unchanged` (the default) leaves the stage as it is.
 
-Always step back with a run, never with Vercel's Instant Rollback (RISKS.md RK68): an older deployment keeps the stage it was built with, so rolling back to one built while the site was public would open it again. If you ever step back from `public`, tick rotate_db_password in the same run: a new database password stops every older deployment reaching the database.
+Once the gateway is live it has its own stage setting (GATEWAY.md, "Go-live stage"), so closing the whole of Release 2 also means closing the gateway; the runbook gains that step with the gateway's pull request.
 
-## 7. Test that the backup really restores (O2)
+Always step back with a run, never with Vercel's Instant Rollback (RISKS.md RK68): an older deployment keeps the stage it was built with.
+
+## 5. Test that the backup really restores (O2)
 
 Run **Restore test** (Actions tab, on `main`) and approve it. It rebuilds the live data in a throwaway database inside the run, checks that every table's row count matches the live one, and runs the coverage check on the copy. The copy never leaves the run and is deleted when it ends. Separately, confirm in Supabase that daily backups are on. Record both in OPERATIONS.md.
 
@@ -79,20 +60,16 @@ Run **Restore test** (Actions tab, on `main`) and approve it. It rebuilds the li
 
 - **X sign-in:** `X_CLIENT_ID` and `X_CLIENT_SECRET` (SIGNIN-SETUP.md) **[PLACEHOLDER: from console.x.com, after you register the app and set its spending limit]**.
 - **Email sign-in links:** EMAIL-SETUP.md (Amazon SES) **[PLACEHOLDER: your AWS account, SES production access, and the DNS records]**.
-- **A new database password:** run `database,redeploy` with "rotate_db_password" ticked.
-- **Any re-run of the default steps** leaves the stage as it is (the stage input defaults to `unchanged`), so a maintenance run can never open or close the site by accident.
 
 ## If a run stops
 
-It stops at the first problem and says what it was, without showing any secret. Nothing after that point has run. Fix the cause and run it again. Running again is safe: migrations already applied are skipped, keys that exist are never replaced, and `unchanged` leaves the stage alone.
-
-One case has its own instruction, and the run prints it if it happens: if the database refused the new password after `DATABASE_URL` had already gone to Vercel, don't redeploy; run `database` again with rotate_db_password ticked, which makes a new password and sets both sides to match.
+It stops at the first problem and says what it was. Nothing after that point has run. Fix the cause and run it again: migrations already applied are skipped, and `unchanged` leaves the stage alone.
 
 ## Your way back in
 
-Every control below is one you hold. Be clear about what that does and doesn't mean today: Claude's session acts on GitHub as your own account (`MyChiefOS`, an administrator), and it holds write tools for Vercel and Supabase through its connections. The rules in CHARTER.md (you merge, Claude never writes to Supabase, nothing goes live without your decision) are followed by Claude's conduct and recorded in OPERATIONS.md; they become real permissions only when you set the three things in RISKS.md RK71. What no setting can take from you:
+Every control below is one you hold. Be clear about what that does and doesn't mean today: Claude's session acts on GitHub as your own account (`MyChiefOS`, an administrator), and it holds write tools for Vercel and Supabase through its connections. The rules in CHARTER.md (you merge, Claude changes Supabase only with your approval, nothing goes live without your decision) are followed by Claude's conduct and recorded in OPERATIONS.md; they become real permissions only when you set the three things in RISKS.md RK71. What no setting can take from you:
 
 - **GitHub.** You own the repository and the `production` environment. Once the environment has you as required reviewer and the administrator bypass is off, only your approval lets a setup run go ahead; until then an administrator token could run it. The branch rules on `main` are yours to change (today main requires 0 approvals). If a Claude session misbehaves, revoke the connection it uses (Claude's GitHub connector in your Claude settings, or the token under your GitHub account's Applications) and the workflows still work for you.
-- **Vercel.** You own the chief-os team. Every variable the run sets is visible by name under the project's Settings → Environment Variables, and you can change or delete any of them there; `LAUNCH_STAGE` is plain text, so you can read it and set it to `closed` by hand at any time, then redeploy. Delete `VERCEL_TOKEN`s you no longer need under Account Settings → Tokens. Claude's Vercel connection can also change variables; it is used read-only by rule, and you can revoke it in your Claude settings.
-- **Supabase.** You own the project. The migration address is your `postgres` user; `dog_web` is a lesser role the migrations created, and you can reset either password from the dashboard (Project Settings → Database). Resetting the `postgres` password invalidates `MIGRATION_DATABASE_URL`, which you then replace in the GitHub environment. Claude's Supabase connection can run SQL and migrations; it is used read-only by rule, and you can revoke it in your Claude settings.
-- **The site.** With `LAUNCH_STAGE` at `closed`, or `DATABASE_URL` removed, Release 2 is off and the site serves exactly what it did before, from the code alone.
+- **Vercel.** You own the chief-os team. Every variable is visible by name under the project's Settings → Environment Variables, and you can change or delete any of them there; `LAUNCH_STAGE` is plain text, so you can read it and set it to `closed` by hand at any time, then redeploy. Delete `VERCEL_TOKEN`s you no longer need under Account Settings → Tokens. Claude's Vercel connection can also change variables; it is used read-only by rule, and you can revoke it in your Claude settings.
+- **Supabase.** You own the project. `dog_web` is the site's lesser login, made by migration 017 with its password in Vault. Resetting its password from the dashboard (Project Settings → Database) cuts the gateway off from the database at once (it fails closed); bringing it back means storing a new password in both the database and Vault, which is not automated yet and is done only with your agreement, recorded in OPERATIONS.md. Resetting the `postgres` password invalidates `MIGRATION_DATABASE_URL` if you have set it. Claude's Supabase connection can run SQL and migrations; it is used only with your approval, and you can revoke it in your Claude settings.
+- **The site.** With `LAUNCH_STAGE` at `closed`, Release 2 is off on the Vercel side and the site serves exactly what it did before, from the code alone.

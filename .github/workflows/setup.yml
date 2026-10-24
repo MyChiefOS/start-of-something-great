@@ -1,5 +1,6 @@
-# Production setup: the database, the site's login role, the sign-in keys, the go-live stage and the administrator,
-# done from GitHub so nothing runs on anyone's own computer and no secret is ever shown to a person (SETUP.md).
+# Production setup: the database migrations and coverage check, the go-live stage and the administrator, done from
+# GitHub so nothing runs on anyone's own computer (SETUP.md). It makes no password and no key: since Oct 23, 2026 the
+# site's database login and keys are made inside the database (migration 017) and kept in Supabase Vault (GATEWAY.md).
 # Started by hand only (Actions tab, "Production setup", Run workflow, on main). Its secrets live in the protected
 # "production" environment: only main, and only after Aaron approves the run.
 #
@@ -11,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       steps:
-        description: 'Steps, comma separated: database, keys, stage, admin, redeploy (always run in that order)'
+        description: 'Steps, comma separated: database, stage, admin, redeploy (always run in that order)'
         required: true
-        default: 'database,keys,stage,redeploy'
+        default: 'stage,redeploy'
       stage:
         description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
         type: choice
@@ -27,10 +28,6 @@ on:
         description: 'For the "admin" step: your member_id from https://dayonegreat.com/auth/me after signing in once'
         required: false
         default: ''
-      rotate_db_password:
-        description: 'Give the site''s login role a new password (and update DATABASE_URL to match)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -63,7 +60,6 @@ jobs:
           SETUP_STAGE: ${{ inputs.stage }}
           SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
-          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: |
           node scripts/setup-production.js --plan | tee plan.txt
           { echo '## This run will'; echo; cat plan.txt; echo; echo 'Approve the "setup" job to do it, or cancel the run.'; } >> "$GITHUB_STEP_SUMMARY"
@@ -99,5 +95,4 @@ jobs:
           SETUP_STAGE: ${{ inputs.stage }}
           SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
-          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: node scripts/setup-production.js
