@@ -59,6 +59,10 @@
     {
       "version": "015_change_log",
       "sha256": "6972e6ba3239025553f4ab7aed1863a338756a0030ee310d5f9ffc6cb64bb23b"
+    },
+    {
+      "version": "016_github_jevs",
+      "sha256": "52737aef2522a81004751368973b5999640ff676cfc7bf0a4c439a93c52d66da"
     }
   ],
   "reset": {

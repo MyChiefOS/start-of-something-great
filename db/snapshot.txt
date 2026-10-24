@@ -89,6 +89,48 @@ constraint app.email_tokens email_tokens_key_version_check CHECK (((key_version 
 constraint app.email_tokens email_tokens_pkey PRIMARY KEY (id)
 constraint app.email_tokens email_tokens_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.email_tokens email_tokens_token_hash_key UNIQUE (token_hash)
+constraint app.gh_accounts gh_accounts_github_id_check CHECK ((github_id > 0))
+constraint app.gh_accounts gh_accounts_github_id_key UNIQUE (github_id)
+constraint app.gh_accounts gh_accounts_level_check CHECK (((level >= 1) AND (level <= 2)))
+constraint app.gh_accounts gh_accounts_link_wanted_fkey FOREIGN KEY (link_wanted) REFERENCES app.gh_accounts(id) ON DELETE SET NULL
+constraint app.gh_accounts gh_accounts_login_check CHECK ((((char_length(login) >= 1) AND (char_length(login) <= 39)) AND (login ~ '^[A-Za-z0-9-]+$'::text)))
+constraint app.gh_accounts gh_accounts_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES app.gh_accounts(id) ON DELETE SET NULL
+constraint app.gh_accounts gh_accounts_pkey PRIMARY KEY (id)
+constraint app.gh_agents gh_agents_daily_cap_check CHECK (((daily_cap >= 0) AND (daily_cap <= 10000)))
+constraint app.gh_agents gh_agents_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'draft'::text, 'act'::text])))
+constraint app.gh_agents gh_agents_name_check CHECK ((((char_length(name) >= 1) AND (char_length(name) <= 40)) AND (name ~ '^[a-z0-9][a-z0-9-]*$'::text)))
+constraint app.gh_agents gh_agents_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES app.gh_accounts(id) ON DELETE CASCADE
+constraint app.gh_agents gh_agents_owner_id_name_key UNIQUE (owner_id, name)
+constraint app.gh_agents gh_agents_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES app.gh_agents(id) ON DELETE CASCADE
+constraint app.gh_agents gh_agents_pkey PRIMARY KEY (id)
+constraint app.gh_decisions gh_decisions_action_check CHECK ((action = ANY (ARRAY['account.first'::text, 'post.create'::text, 'post.edit'::text, 'agent.register'::text, 'agent.subagent'::text, 'agent.limit'::text, 'agent.remove'::text, 'agent.link'::text])))
+constraint app.gh_decisions gh_decisions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.gh_agents(id) ON DELETE SET NULL
+constraint app.gh_decisions gh_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'alert'::text, 'hide'::text, 'promote'::text])))
+constraint app.gh_decisions gh_decisions_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.gh_accounts(id) ON DELETE CASCADE
+constraint app.gh_decisions gh_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
+constraint app.gh_decisions gh_decisions_pkey PRIMARY KEY (id)
+constraint app.gh_decisions gh_decisions_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.gh_posts(id) ON DELETE CASCADE
+constraint app.gh_decisions gh_decisions_reason_check CHECK ((char_length(reason) <= 40))
+constraint app.gh_decisions gh_decisions_risk_check CHECK ((risk = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+constraint app.gh_decisions gh_decisions_scores_check CHECK (((jsonb_typeof(scores) = 'object'::text) AND (octet_length((scores)::text) <= 2000)))
+constraint app.gh_decisions gh_decisions_total_check CHECK (((total >= 0) AND (total <= 10000)))
+constraint app.gh_erasures gh_erasures_github_key_check CHECK ((char_length(github_key) = 64))
+constraint app.gh_erasures gh_erasures_pkey PRIMARY KEY (id)
+constraint app.gh_erasures gh_erasures_post_node_id_check CHECK ((char_length(post_node_id) <= 100))
+constraint app.gh_post_domains gh_post_domains_domain_key_check CHECK ((char_length(domain_key) = 64))
+constraint app.gh_post_domains gh_post_domains_pkey PRIMARY KEY (id)
+constraint app.gh_post_domains gh_post_domains_post_id_domain_key_key UNIQUE (post_id, domain_key)
+constraint app.gh_post_domains gh_post_domains_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.gh_posts(id) ON DELETE CASCADE
+constraint app.gh_posts gh_posts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.gh_agents(id) ON DELETE SET NULL
+constraint app.gh_posts gh_posts_author_id_fkey FOREIGN KEY (author_id) REFERENCES app.gh_accounts(id) ON DELETE CASCADE
+constraint app.gh_posts gh_posts_body_key_check CHECK ((char_length(body_key) = 64))
+constraint app.gh_posts gh_posts_discussion_number_check CHECK ((discussion_number > 0))
+constraint app.gh_posts gh_posts_kind_check CHECK ((kind = ANY (ARRAY['comment'::text, 'discussion'::text])))
+constraint app.gh_posts gh_posts_node_id_check CHECK (((char_length(node_id) >= 1) AND (char_length(node_id) <= 100)))
+constraint app.gh_posts gh_posts_node_id_key UNIQUE (node_id)
+constraint app.gh_posts gh_posts_pkey PRIMARY KEY (id)
+constraint app.gh_posts gh_posts_risk_check CHECK ((risk = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+constraint app.gh_posts gh_posts_thread_node_id_check CHECK ((char_length(thread_node_id) <= 100))
 constraint app.identities identities_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
 constraint app.identities identities_key_version_check CHECK (((key_version >= 1) AND (key_version <= 999)))
 constraint app.identities identities_level_check CHECK (((level >= 0) AND (level <= 2)))
@@ -249,6 +291,22 @@ default app.email_suppressions.created_at = now()
 default app.email_suppressions.id = app.uuid_v7()
 default app.email_tokens.created_at = now()
 default app.email_tokens.id = app.uuid_v7()
+default app.gh_accounts.first_seen_at = now()
+default app.gh_accounts.id = app.uuid_v7()
+default app.gh_accounts.level = 1
+default app.gh_agents.created_at = now()
+default app.gh_agents.daily_cap = 20
+default app.gh_agents.id = app.uuid_v7()
+default app.gh_agents.mode = 'act'::text
+default app.gh_decisions.at = now()
+default app.gh_decisions.id = app.uuid_v7()
+default app.gh_decisions.reason = ''::text
+default app.gh_erasures.account_erased = false
+default app.gh_erasures.at = now()
+default app.gh_erasures.id = app.uuid_v7()
+default app.gh_post_domains.id = app.uuid_v7()
+default app.gh_posts.hidden = false
+default app.gh_posts.id = app.uuid_v7()
 default app.identities.created_at = now()
 default app.identities.id = app.uuid_v7()
 default app.identities.verified_at = now()
@@ -368,6 +426,7 @@ function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_b
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=535ea91b8aa8e22fe80658bba6d9f9e2
+function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.identity_link(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_recheck_after timestamp with time zone, p_session_hash text, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, linked boolean, sessions_ended integer) body_md5=d5b865dd9f30f1b613f2382483a7e1d1
 function app.identity_unlink(p_identity uuid, p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(provider text, trust_level smallint, sessions_ended integer, also_unlinked integer, keys_revoked integer, agents_lowered integer) body_md5=c72d1ffe16f76fab1667af322f90b2c7
 function app.is_reviewer() owner=dog_owner execute=dog_owner,dog_app,dog_jevs language=sql volatile=s definer=false config= returns=boolean body_md5=7d420a3147ea7f058784ef85d6f5aaab
@@ -630,6 +689,25 @@ grant app.email_tokens.expires_at dog_signin INSERT
 grant app.email_tokens.key_version dog_signin INSERT
 grant app.email_tokens.token_hash dog_signin INSERT
 grant app.email_tokens.used_at dog_signin UPDATE
+grant app.gh_accounts dog_jevs DELETE
+grant app.gh_accounts dog_jevs INSERT
+grant app.gh_accounts dog_jevs SELECT
+grant app.gh_accounts dog_jevs UPDATE
+grant app.gh_agents dog_jevs DELETE
+grant app.gh_agents dog_jevs INSERT
+grant app.gh_agents dog_jevs SELECT
+grant app.gh_agents dog_jevs UPDATE
+grant app.gh_decisions dog_jevs INSERT
+grant app.gh_decisions dog_jevs SELECT
+grant app.gh_erasures dog_jevs INSERT
+grant app.gh_erasures dog_jevs SELECT
+grant app.gh_post_domains dog_jevs DELETE
+grant app.gh_post_domains dog_jevs INSERT
+grant app.gh_post_domains dog_jevs SELECT
+grant app.gh_posts dog_jevs DELETE
+grant app.gh_posts dog_jevs INSERT
+grant app.gh_posts dog_jevs SELECT
+grant app.gh_posts dog_jevs UPDATE
 grant app.identities dog_erase DELETE
 grant app.identities dog_signin DELETE
 grant app.identities dog_signin SELECT
@@ -955,6 +1033,12 @@ policy app.email_tokens email_tokens_signin_delete cmd=d permissive=true to=dog_
 policy app.email_tokens email_tokens_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.email_tokens email_tokens_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.email_tokens email_tokens_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.gh_accounts gh_accounts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_agents gh_agents_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_decisions gh_decisions_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_erasures gh_erasures_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_post_domains gh_post_domains_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_posts gh_posts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.identities identities_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_update cmd=w permissive=true to=dog_erase using=true check=true
@@ -1100,6 +1184,7 @@ trigger app.containments enabled=A CREATE TRIGGER containments_guard BEFORE UPDA
 trigger app.containments enabled=A CREATE TRIGGER containments_start AFTER INSERT ON app.containments FOR EACH ROW EXECUTE FUNCTION app.containments_start()
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_guard BEFORE DELETE OR UPDATE ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_guard()
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_notify AFTER INSERT ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_notify()
+trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_guard BEFORE UPDATE ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.gh_decisions_guard()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_guard BEFORE DELETE OR UPDATE ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_guard()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_notify BEFORE INSERT ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_notify()
 trigger app.jevs_decisions enabled=A CREATE TRIGGER jevs_decisions_alert AFTER INSERT ON app.jevs_decisions FOR EACH ROW EXECUTE FUNCTION app.jevs_decisions_alert()

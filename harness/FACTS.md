@@ -54,10 +54,12 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24. The previous launch path (
 | Step | Who | Status |
 |---|---|---|
 | PR 1: plan and guards (USE-CASES.md rows 14 and 19, giscus origin lock) | Claude builds; Aaron merges | done: PR #37, merged Oct 24 |
-| PR 2: database fresh build without passkeys, and the JEVs gate (rows 15 and 16) | Claude builds; Aaron merges | open |
-| After PR 2: deploy the runner and gate from the merged commit; reset; verify | Claude, from the merge | open |
-| PR 3: JEVs live in shadow mode, alerts only (rows 3 to 10, 12, 13, 17, 18) | Claude builds; Aaron merges | open |
-| PR 4: JEVs enforce mode (Aaron's go-live merge) | Claude builds; Aaron merges | open |
+| PR 2: database fresh build without passkeys, and the JEVs gate (rows 15 and 16) | Claude builds; Aaron merges | done: PR #38, merged and run Oct 24 |
+| After PR 2: deploy the runner from the merged commit; reset; verify | Claude, from the merge | done: runner v3 deployed; fresh build verified live, Oct 24 |
+| PR 3: JEVs live in shadow mode (rows 3, 4, 6 to 9, 13, 16, 18) | Claude builds; Aaron merges | open |
+| After PR 3: deploy the JEVs gate from the merged commit; verify on a real post | Claude, from the merge | open |
+| PR 4: moderation and region (rows 2, 5, 10, 12, 17): bans, /appeal and draft approval, brake, drift check, regional notice, hidden markup removed from the feed and MCP | Claude builds; Aaron merges | open |
+| PR 5: JEVs enforce mode (Aaron's go-live merge) | Claude builds; Aaron merges | open |
 
 ## Aaron's instructions (status)
 
@@ -65,16 +67,17 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 
 | Instruction (Aaron's words) | Date | Status |
 |---|---|---|
-| "We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 | in plan: PR 2 removes them from the code and, on its run after merge, from the live database (not carried out on Oct 23) |
+| "We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 | done: PR #38; the live database rebuilt without passkeys on Oct 24 (change log row, commit 7583266) |
 | "Can you use the same capability for Join as you do for giscus on/talk?" | 2026-10-23 | done: PR #36 |
-| "put the Jevs between the dayongreat.com site and database login" / "wapp it around the database" | 2026-10-23 | in plan: the GitHub token check that guards the database ships in PR 2; the JEVs gate's routes ship with their first caller, PR 3 |
+| "put the Jevs between the dayongreat.com site and database login" / "wapp it around the database" | 2026-10-23 | in plan: PR 3 (the JEVs gate, the only writer of the JEVs tables; Vercel holds no database login) |
 | "A denial of service against our selves is not the goal." (checks alert, never lock out) | 2026-10-23 | in plan: JEVs never refuses; shadow first (PR 3) |
 | "NO preview systems" | 2026-10-24 | done: preview dropped from the roadmap and status (PR #37) |
 | "Auth needs to throught giscus on /talk and /join" | 2026-10-24 | done for posting; JEVs on giscus posts in PR 3 |
-| "Can you clear the database tables and start over with a fresh build" | 2026-10-24 | in plan: PR 2 (the reset runs on merge, refuses if any real row exists) |
+| "Can you clear the database tables and start over with a fresh build" | 2026-10-24 | done: PR #38 (fresh build, Oct 24) |
 | "I only approve PRs" | 2026-10-24 | in force |
 | "I want the it corrected from your side. So when you send a PR its verified without failures." | 2026-10-24 | done: push guard; CI PR guards (PR #37) |
 | "I want a PR that spells out any chages." | 2026-10-24 | in force: every PR description lists every file changed and what happens on merge |
+| "We need to finish this today, line up the changes that are required, let do PR 3" | 2026-10-24 | in plan: PRs 3, 4 and 5 lined up (launch path above) |
 
 ## Open for Aaron (ask once; record the answer here)
 

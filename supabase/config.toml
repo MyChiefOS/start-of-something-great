@@ -4,3 +4,7 @@
 # token before that code runs.
 [functions.dog-migrate]
 verify_jwt = false
+
+# The JEVs gate checks its callers the same way: only jevs.yml on main.
+[functions.jevs]
+verify_jwt = false
