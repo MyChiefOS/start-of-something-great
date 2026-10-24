@@ -11,11 +11,15 @@ on:
     branches: [main]
     paths: ['db/migrations/**', 'db/reset/**', 'db/manifest.json']
   workflow_dispatch:
+  # The drift check (USE-CASES.md row 17): once a day, compare the live ledger with main. It only reads.
+  schedule:
+    - cron: '17 9 * * *'
 
 permissions:
   contents: read
   id-token: write # only to ask GitHub for the identity token the runner checks
   pull-requests: write # only to comment the result on the merged pull request
+  issues: write # only for the drift check to add an alert
 
 concurrency:
   group: database-migrations
@@ -25,7 +29,7 @@ jobs:
   migrate:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     env:
       RUNNER_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate
     steps:
@@ -82,3 +86,59 @@ jobs:
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
           pr=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number // empty' || true)
           if [ -n "$pr" ]; then gh api "repos/${{ github.repository }}/issues/$pr/comments" -F body=@summary.md > /dev/null || true; fi
+
+  drift:
+    # Daily, and after every merge that changes the database: the live ledger must equal db/manifest.json on main.
+    # A difference means something changed the database outside a merged PR. It alerts; it never changes anything.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [migrate]
+    if: always() && github.ref == 'refs/heads/main' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    env:
+      RUNNER_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /db/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Compare the live ledger with main
+        id: drift
+        run: |
+          set -euo pipefail
+          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$RUNNER_URL" | jq -r .value)
+          echo "::add-mask::$token"
+          code=$(curl -sS --max-time 60 -o status.json -w '%{http_code}' -X POST "$RUNNER_URL" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data '{"mode":"status"}') || true
+          unset token
+          [ "$code" = 200 ] || { echo "drift check: the runner answered $code"; echo "result=unreachable" >> "$GITHUB_OUTPUT"; exit 0; }
+          live=$(jq -c '[.ledger[] | [.version, .sha256]] | sort' status.json)
+          want=$(jq -c '[.migrations[] | [.version, .sha256]] | sort' db/manifest.json)
+          if [ "$live" = "$want" ]; then echo "result=same" >> "$GITHUB_OUTPUT"; echo "No drift: the live database matches main."
+          else echo "result=drift" >> "$GITHUB_OUTPUT"; echo "DRIFT: the live database does not match main."; fi
+          jq -r --argjson want "$want" '[.ledger[] | [.version, .sha256]] as $live
+            | "Only live: " + ([$live[] | select(. as $x | $want | index([$x]) | not) | .[0]] | join(", ")) + "\nOnly on main: "
+            + ([$want[] | select(. as $x | $live | index([$x]) | not) | .[0]] | join(", "))' status.json > diff.txt
+
+      - name: Alert on drift
+        if: steps.drift.outputs.result == 'drift' || steps.drift.outputs.result == 'unreachable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RESULT: ${{ steps.drift.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, and any database drift.' -f 'labels[]=jevs-alert' --jq .number)
+          if [ "$RESULT" = drift ]; then
+            { echo "Database drift: the live database doesn't match the migrations on main. Something changed it outside a merged PR."; echo; cat diff.txt; echo; echo "Run: $RUN_URL"; } > alert.txt
+          else
+            printf 'The drift check could not reach the database runner. Run: %s\n' "$RUN_URL" > alert.txt
+          fi
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null

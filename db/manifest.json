@@ -63,6 +63,10 @@
     {
       "version": "016_github_jevs",
       "sha256": "52737aef2522a81004751368973b5999640ff676cfc7bf0a4c439a93c52d66da"
+    },
+    {
+      "version": "017_moderation",
+      "sha256": "24be5b620983993fe9c2ccb21cc28dda028292651f3bd7e66083fe43808d2a09"
     }
   ],
   "reset": {

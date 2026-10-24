@@ -103,9 +103,9 @@ constraint app.gh_agents gh_agents_owner_id_fkey FOREIGN KEY (owner_id) REFERENC
 constraint app.gh_agents gh_agents_owner_id_name_key UNIQUE (owner_id, name)
 constraint app.gh_agents gh_agents_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES app.gh_agents(id) ON DELETE CASCADE
 constraint app.gh_agents gh_agents_pkey PRIMARY KEY (id)
-constraint app.gh_decisions gh_decisions_action_check CHECK ((action = ANY (ARRAY['account.first'::text, 'post.create'::text, 'post.edit'::text, 'agent.register'::text, 'agent.subagent'::text, 'agent.limit'::text, 'agent.remove'::text, 'agent.link'::text])))
+constraint app.gh_decisions gh_decisions_action_check CHECK ((action = ANY (ARRAY['account.first'::text, 'post.create'::text, 'post.edit'::text, 'agent.register'::text, 'agent.subagent'::text, 'agent.limit'::text, 'agent.remove'::text, 'agent.link'::text, 'post.approve'::text, 'post.appeal'::text])))
 constraint app.gh_decisions gh_decisions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.gh_agents(id) ON DELETE SET NULL
-constraint app.gh_decisions gh_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'alert'::text, 'hide'::text, 'promote'::text])))
+constraint app.gh_decisions gh_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'alert'::text, 'hide'::text, 'promote'::text, 'unhide'::text])))
 constraint app.gh_decisions gh_decisions_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.gh_accounts(id) ON DELETE CASCADE
 constraint app.gh_decisions gh_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
 constraint app.gh_decisions gh_decisions_pkey PRIMARY KEY (id)
@@ -305,6 +305,7 @@ default app.gh_erasures.account_erased = false
 default app.gh_erasures.at = now()
 default app.gh_erasures.id = app.uuid_v7()
 default app.gh_post_domains.id = app.uuid_v7()
+default app.gh_posts.approved = false
 default app.gh_posts.hidden = false
 default app.gh_posts.id = app.uuid_v7()
 default app.identities.created_at = now()

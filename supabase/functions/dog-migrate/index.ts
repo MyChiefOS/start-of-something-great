@@ -7,7 +7,7 @@
 // runs. This code does the checking. The work is in core.mjs.
 //
 //   POST {"mode": "apply"}   apply the merged commit (reset first, if its manifest says so)
-//   POST {"mode": "status"}  the live ledger, for the drift check
+//   POST {"mode": "status"}  the live ledger, for the daily drift check (the only thing a scheduled run may ask)
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
 import { load, run, status, tokenUsed } from "./core.mjs";
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       claims = await verify(auth.replace(/^Bearer /, ""), {
         audience: AUDIENCE,
         workflow: ".github/workflows/database.yml",
-        events: ["push", "workflow_dispatch"],
+        events: ["push", "workflow_dispatch", "schedule"],
         seen: (jti: string) => tokenUsed(sql, jti),
       });
     } catch (e) {
@@ -48,6 +48,8 @@ Deno.serve(async (req) => {
       throw e;
     }
     if (mode === "status") return reply(200, { ok: true, ledger: await status(sql) });
+    // The daily drift check runs on a schedule and may only read; changes come only from a merge (or a run started on main).
+    if (claims.event_name === "schedule") return reply(401, { ok: false, error: "refused: a scheduled run may only read the status" });
 
     const fetchText = async (path: string) => {
       const r = await fetch(RAW + claims.sha + "/" + path, { redirect: "error" });

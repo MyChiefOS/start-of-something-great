@@ -34,6 +34,7 @@ export function checkEvent(ev) {
   if (!Number.isSafeInteger(a.id) || a.id < 1) bad('author id');
   if (typeof a.login !== 'string' || !/^[A-Za-z0-9-]{1,39}(\[bot\])?$/.test(a.login)) bad('author login');
   if (a.created_at != null && Number.isNaN(Date.parse(a.created_at))) bad('author created_at');
+  if (ev.banned !== undefined && typeof ev.banned !== 'boolean') bad('banned');
   return ev;
 }
 
@@ -51,7 +52,7 @@ const at = (login) => '`@' + login + '`';
 
 async function record(t, out, { action, account, post = null, agent = null, scores, level, effect, reason = '', mode }) {
   const total = Object.values(scores).reduce((a, b) => a + b, 0);
-  const applied = effect === 'promote' || effect === 'alert' || effect === 'none' || (effect === 'hide' && mode === 'enforce');
+  const applied = effect === 'promote' || effect === 'alert' || effect === 'none' || effect === 'unhide' || (effect === 'hide' && mode === 'enforce');
   await t`insert into app.gh_decisions (action, member_id, post_id, agent_id, scores, total, risk, mode, effect, reason, applied)
     values (${action}, ${account}, ${post}, ${agent}, ${t.json(scores)}, ${total}, ${level}, ${mode}, ${effect}, ${reason}, ${applied})`;
   out.decisions.push({ action, risk: level, total, effect, reason, applied, questions: Object.keys(scores).filter((k) => scores[k] > 0) });
@@ -181,6 +182,47 @@ async function erase(t, ev, key) {
   return { ok: true, mode: ev.mode, erased: gone.length, account_erased: accountErased, decisions: [], alert: false, hide: false, reply: null };
 }
 
+// What a hidden post's reply says, in plain words (enforce mode only).
+const HIDDEN_BECAUSE = {
+  banned: 'Hidden by JEVs: this account is on the ban list. Reply `/appeal` under this post to ask a person to look.',
+  agent_off: 'Hidden by JEVs: this agent is switched off by its owner (`/agent limit <name> act` turns it on).',
+  agent_draft: 'Hidden by JEVs until the agent\'s owner approves it: the owner replies `/approve` under this post.',
+  agent_cap: 'Hidden by JEVs: this agent is over its owner\'s daily limit. Its owner can raise it with `/agent limit <name> act daily <n>`.',
+  high_risk: 'Hidden by JEVs: this post scored high risk on its automated checks. Reply `/appeal` under this post and a person will look.'
+};
+
+// /approve and /appeal, replied under a post in the same thread.
+async function moderate(t, out, { ev, acct, principal, mode, body }) {
+  const act = J.parseActions(body);
+  const thread = ev.post.thread_node_id;
+  if (!thread || (!act.approve && !act.appeal)) return;
+  if (act.approve) {
+    const drafts = await t`update app.gh_posts p set approved = true, hidden = false
+      from app.gh_agents a where a.id = p.agent_id and a.owner_id = ${principal} and p.thread_node_id = ${thread}
+        and p.node_id <> ${ev.post.node_id} and not p.approved
+        and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason = 'agent_draft')
+      returning p.id, p.node_id, p.agent_id`;
+    for (const d of drafts) {
+      await record(t, out, { action: 'post.approve', account: principal, post: d.id, agent: d.agent_id, scores: {}, level: 'low', effect: 'unhide', mode });
+      out.unhide.push(d.node_id);
+    }
+    out.replies.push(drafts.length ? 'Approved: ' + drafts.length + ' draft' + (drafts.length > 1 ? 's' : '') + ' shown again.'
+      : 'Nothing of your agents\' is waiting for approval in this thread.');
+  }
+  if (act.appeal) {
+    const [p] = await t`select p.id from app.gh_posts p
+      where p.thread_node_id = ${thread} and p.node_id <> ${ev.post.node_id}
+        and p.author_id in (select id from app.gh_accounts where id = ${principal} or owner_id = ${principal})
+        and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.effect = 'hide')
+      order by p.created_at desc limit 1`;
+    if (!p) return void out.replies.push('Nothing of yours in this thread was hidden by JEVs, so there is nothing to appeal.');
+    await record(t, out, { action: 'post.appeal', account: acct.id, post: p.id, scores: {}, level: 'low', effect: 'alert', mode });
+    out.alert = true;
+    out.appeal = true;
+    out.replies.push('Thanks. Your appeal has gone to a person, who will look at the post and decide. JEVs never decides an appeal.');
+  }
+}
+
 // key: the secret for keyed hashes (from Supabase Vault in production).
 export async function handle(sql, raw, { key }) {
   const ev = checkEvent(raw);
@@ -203,7 +245,7 @@ export async function handle(sql, raw, { key }) {
     if (gone.yes) return { ok: true, mode: ev.mode, skipped: 'erased', decisions: [], alert: false, hide: false, reply: null };
 
     const th = await thresholds(t);
-    const out = { ok: true, mode, first: false, level: null, decisions: [], alert: false, hide: false, replies: [] };
+    const out = { ok: true, mode, first: false, level: null, decisions: [], alert: false, hide: false, appeal: false, unhide: [], replies: [] };
 
     let [acct] = await t`select * from app.gh_accounts where github_id = ${ev.author.id}`;
     if (!acct) {
@@ -265,15 +307,18 @@ export async function handle(sql, raw, { key }) {
     const scores = J.score(action, signals);
     const r = J.risk(scores, th);
 
-    // What JEVs does. The owner's own limits first (off, draft, daily cap), then risk.
+    // What JEVs does. The ban list first, then the owner's own limits (off, draft, daily cap), then risk.
+    const [prior] = await t`select approved from app.gh_posts where node_id = ${ev.post.node_id}`;
     let reason = '';
-    if (agent && agent.mode === 'off') reason = 'agent_off';
-    else if (agent && agent.mode === 'draft') reason = 'agent_draft';
+    if (ev.banned === true && !founder) reason = 'banned';
+    else if (agent && agent.mode === 'off') reason = 'agent_off';
+    else if (agent && agent.mode === 'draft' && !(prior && prior.approved)) reason = 'agent_draft';
     else if (agent && action === 'post.create' && sig.agent_posts_24h >= agent.daily_cap) reason = 'agent_cap';
     else if (r.level === 'high') reason = 'high_risk';
     const effect = reason ? 'hide' : (scores.J16 > 0 || scores.J17 > 0) ? 'alert' : 'none';
     if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0) out.alert = true;
     out.hide = effect === 'hide' && mode === 'enforce';
+    if (out.hide) out.replies.push(HIDDEN_BECAUSE[reason]);
 
     const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, created_at, body_key, simhash, risk, hidden)
       values (${ev.post.node_id}, ${ev.event === 'discussion' ? 'discussion' : 'comment'}, ${ev.discussion}, ${ev.post.thread_node_id || null}, ${acct.id},
@@ -297,6 +342,8 @@ export async function handle(sql, raw, { key }) {
     } else {
       out.level = acct.level;
     }
+
+    if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body });
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;
     delete out.replies;

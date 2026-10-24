@@ -78,6 +78,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "I want the it corrected from your side. So when you send a PR its verified without failures." | 2026-10-24 | done: push guard; CI PR guards (PR #37) |
 | "I want a PR that spells out any chages." | 2026-10-24 | in force: every PR description lists every file changed and what happens on merge |
 | "We need to finish this today, line up the changes that are required, let do PR 3" | 2026-10-24 | in plan: PRs 3, 4 and 5 lined up (launch path above) |
+| "finish the build" | 2026-10-24 | in plan: PR 4 built on PR 3; PR 5 (enforce) last |
 
 ## Open for Aaron (ask once; record the answer here)
 

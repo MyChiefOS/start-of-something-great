@@ -5,6 +5,10 @@
 // The questions are public (here, and in db/README.md). The thresholds that turn scores into low, medium and high
 // live in the database (app.jevs_settings), as they did for the site's own sign-in.
 
+// Characters outside plain ASCII are written as \u{...} escapes (the deploy tool turns \uXXXX into the character
+// itself, and invisible characters are easy to break when typed): a test keeps this file ASCII-only except dashes
+// and quote marks in text.
+
 // ---- Reading a post ----
 
 // Link hosts: web addresses with a scheme, or starting www. Lower case, without www., a port or a trailing dot.
@@ -24,11 +28,11 @@ export function links(body) {
 // Contact details (J08): the same patterns, folding and limits as the site's masking (api/_proposals.js, P4); a test
 // keeps the two in step. Counts what masking would hide.
 const EMAIL = /(?<![\p{L}\p{M}\p{N}._%+-])[\p{L}\p{M}\p{N}._%+-]{1,64}@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63}){0,8}\.[\p{L}\p{M}]{2,24}/gu;
-const PHONE = /\+?\(?\d(?:[\s().\/_|·•‐-―−\p{Cf}͏︀-️-]{0,8}\d){9,60}/gu;
+const PHONE = /\+?\(?\d(?:[\s().\/_|\u{00B7}\u{2022}\u{2010}-\u{2015}\u{2212}\p{Cf}\u{034F}\u{FE00}-\u{FE0F}-]{0,8}\d){9,60}/gu;
 const DATES_ONLY = /^(?:(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))[\s,.]*)+$/;
-const isPhone = (m) => !DATES_ONLY.test(m.replace(/[\p{Cf}͏︀-️]/gu, '').trim()) && m.replace(/\D/g, '').length >= 10;
-const INVISIBLE_RUN = /(?<=[A-Za-z0-9@.+%_()-])[\p{Cf}͏]+|[\p{Cf}͏]+(?=[A-Za-z0-9@.+%_()-])/gu;
-const VARIATION_IN_TEXT = /(?<=[A-Za-z0-9@.])[︀-️](?!⃣)/gu;
+const isPhone = (m) => !DATES_ONLY.test(m.replace(/[\p{Cf}\u{034F}\u{FE00}-\u{FE0F}]/gu, '').trim()) && m.replace(/\D/g, '').length >= 10;
+const INVISIBLE_RUN = /(?<=[A-Za-z0-9@.+%_()-])[\p{Cf}\u{034F}]+|[\p{Cf}\u{034F}]+(?=[A-Za-z0-9@.+%_()-])/gu;
+const VARIATION_IN_TEXT = /(?<=[A-Za-z0-9@.])[\u{FE00}-\u{FE0F}](?!\u{20E3})/gu;
 const MAX_SCAN = 70000;
 function digitValue(ch) {
   let cp = ch.codePointAt(0), k = 0;
@@ -39,7 +43,7 @@ function fold(text) {
   return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC')
     .replace(/[^\x00-\x7F]/gu, (ch) => (/\p{Nd}/u.test(ch) ? digitValue(ch) : ch))
     .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '')
-    .replace(/[。｡]/g, '.');
+    .replace(/[\u{3002}\u{FF61}]/gu, '.');
 }
 export function contactHits(body) {
   const t = fold(body);
@@ -78,7 +82,7 @@ const HIDDEN = [
   // Zero-width space, the bidirectional overrides and isolates, word joiner and invisible operators, and a byte-order
   // mark inside text. Not the zero-width joiner and non-joiner or the direction marks (U+200C to U+200F): emoji
   // (family, flags) and Persian, Arabic and Indic writing use them every day.
-  ['invisible_chars', /[\u200B\u202A-\u202E\u2066-\u2069\u2060-\u2064]|(?!^)\uFEFF/],
+  ['invisible_chars', /[\u{200B}\u{202A}-\u{202E}\u{2066}-\u{2069}\u{2060}-\u{2064}]|(?!^)\u{FEFF}/u],
   ['encoded_blob', /[A-Za-z0-9+/=]{200,}/],
   ['override_phrase', /\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions|prompts?|messages|rules)\b/i],
   ['role_marker', /(^|\n)\s*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/i]
@@ -90,7 +94,7 @@ export function hiddenSignals(body) {
 // J17: claiming to be someone it isn't. A tag naming another owner's agent is checked by the gate (80); this is text
 // claiming to BE the founder, the site, JEVs or Claude, which scores 40: worth a look, never a hide on its own.
 // Only a claim of identity counts: "this is the site I wanted" or "this is Claude's answer" don't.
-const CLAIMS = /\b(i am|i'm|this is|speaking (as|for))\s+(aaron( chandler)?|day one great|dayonegreat|jevs|claude|the day one great (team|moderators?|admins?))(?![\w'\u2019])(?!\s+(i|you|we|they|he|she|is|was|has|had|that|which|who)\b)/i;
+const CLAIMS = /\b(i am|i'm|this is|speaking (as|for))\s+(aaron( chandler)?|day one great|dayonegreat|jevs|claude|the day one great (team|moderators?|admins?))(?![\w'\u{2019}])(?!\s+(i|you|we|they|he|she|is|was|has|had|that|which|who)\b)/iu;
 export const claimsAuthority = (body) => CLAIMS.test(String(body));
 
 export function analyze(body) {
@@ -133,6 +137,13 @@ export function parseCommands(body) {
     if (out.length === 10) break;
   }
   return out;
+}
+
+// Moderation replies (PR 4), each alone on a line: /approve (an owner shows their agent's draft) and /appeal (the
+// author of a hidden post asks a person to look).
+export function parseActions(body) {
+  const lines = String(body).split('\n').map((l) => l.trim().toLowerCase());
+  return { approve: lines.includes('/approve'), appeal: lines.includes('/appeal') };
 }
 
 // An agent's post ends with a tag line naming the agent and its owner: "— agent scout for @aaron" (an em dash, en
@@ -178,7 +189,7 @@ export const QUESTIONS = [
     score: (s) => band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]]) },
   { id: 'J16', title: 'Hidden instructions', description: 'Text hidden from people but read by agents: HTML comments, invisible characters, long encoded blobs, "ignore previous instructions" and role markers. 20 for each kind, at most 40: an alert, never a hide on its own.',
     score: (s) => Math.min(40, 20 * (s.hidden || []).length) },
-  { id: 'J17', title: 'Impersonation', description: 'A tag naming another owner\u2019s agent scores 80. Text claiming to be Aaron, Day One Great, JEVs or Claude, from anyone but the founder\u2019s account, scores 40: worth a look, never a hide on its own.',
+  { id: 'J17', title: 'Impersonation', description: 'A tag naming another owner\u{2019}s agent scores 80. Text claiming to be Aaron, Day One Great, JEVs or Claude, from anyone but the founder\u{2019}s account, scores 40: worth a look, never a hide on its own.',
     score: (s) => (s.impersonation ? 80 : s.claims ? 40 : 0) }
 ];
 const BY_ID = Object.fromEntries(QUESTIONS.map((q) => [q.id, q]));
