@@ -49,17 +49,31 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 
 ## Launch path (what is left, in order)
 
+The giscus and JEVs plan (USE-CASES.md), from Oct 24. The previous launch path (setup secrets, Production setup, PK13) is replaced and kept in git history.
+
 | Step | Who | Status |
 |---|---|---|
-| Merge PR #36 | Aaron | open |
-| Add two secrets: MIGRATION_DATABASE_URL (Supabase, Connect, Session pooler, with the database password) and VERCEL_TOKEN (chief-os scope, 1 day). The certificate is in the repo now | Aaron | open |
-| Run Production setup: steps database,keys,stage,redeploy, stage public | Aaron (the go-live decision) | open |
-| Sign in at /join, then run setup with step admin and the member_id from /auth/me | Aaron, then Claude gives the exact inputs | open |
-| PK13: at least two passkeys on Aaron's account before go-live (one synced, one hardware key), recorded in OPERATIONS.md | Aaron | open |
-| Approve the pending criteria (N1 to N11, R16, R33, SA1 to SA12; ROADMAP.md) | Aaron | open |
-| Smoke test: a second GitHub account signs up and posts. First-post review stays on while JEVs is in shadow mode (standing decision) | Aaron or a friend | open |
-| Update ROADMAP.md with the actual launch date next to the Nov 6 and Nov 20 targets | Claude | open |
-| Optional, not blocking: X keys under the names X_CLIENT_ID and X_CLIENT_SECRET (or tell Claude the names, and the code accepts them); /join already says X is coming soon | Aaron | open |
+| PR 1: plan and guards (USE-CASES.md rows 14 and 19, giscus origin lock) | Claude builds; Aaron merges | open |
+| PR 2: database fresh build without passkeys, and the JEVs gate (rows 15 and 16) | Claude builds; Aaron merges | open |
+| After PR 2: deploy the runner and gate from the merged commit; reset; verify | Claude, from the merge | open |
+| PR 3: JEVs live in shadow mode, alerts only (rows 3 to 10, 12, 13, 17, 18) | Claude builds; Aaron merges | open |
+| PR 4: JEVs enforce mode (Aaron's go-live merge) | Claude builds; Aaron merges | open |
+
+## Aaron's instructions (status)
+
+Every instruction Aaron gives that changes the build, with its status, so none is quietly left undone (USE-CASES.md row 14). Status: done, in plan (with the PR), or open.
+
+| Instruction (Aaron's words) | Date | Status |
+|---|---|---|
+| "We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 | in plan: passkeys still on main and in the live database; removed by PR 2 (not carried out on Oct 23) |
+| "Can you use the same capability for Join as you do for giscus on/talk?" | 2026-10-23 | done: PR #36 |
+| "put the Jevs between the dayongreat.com site and database login" / "wapp it around the database" | 2026-10-23 | in plan: PR 2 (the JEVs gate) |
+| "A denial of service against our selves is not the goal." (checks alert, never lock out) | 2026-10-23 | in plan: JEVs never refuses; shadow first (PR 3) |
+| "NO preview systems" | 2026-10-24 | in plan: preview dropped from the roadmap and status (PR 1) |
+| "Auth needs to throught giscus on /talk and /join" | 2026-10-24 | done for posting; JEVs on giscus posts in PR 3 |
+| "Can you clear the database tables and start over with a fresh build" | 2026-10-24 | in plan: PR 2 |
+| "I only approve PRs" | 2026-10-24 | in force |
+| "I want the it corrected from your side. So when you send a PR its verified without failures." | 2026-10-24 | done: push guard; CI PR guards in PR 1 |
 
 ## Open for Aaron (ask once; record the answer here)
 

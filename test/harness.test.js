@@ -72,3 +72,11 @@ test('the check flags assumed and stale facts, too many open questions, and a mi
     'a PR to main with fresh work raises no stop');
   assert.match(report({ now, notChecked: ['live sign-in'] }, f), /Not checked: live sign-in\./, 'anything unreachable is said, not guessed');
 });
+
+test("every instruction of Aaron's that isn't done is shown at the start of each session", () => {
+  const { evaluate } = require('../harness/check');
+  const md = "# Facts\n\n## Aaron's instructions (status)\n\n| Instruction | Date | Status |\n|---|---|---|\n| \"remove pass key\" | 2026-10-23 | in plan: PR 2 |\n| \"use giscus\" | 2026-10-23 | done: #36 |\n";
+  const f = evaluate({ now: Date.parse('2026-10-24'), factsMd: md });
+  const w = f.find((x) => /instructions are not done/.test(x.text));
+  assert.ok(w && /remove pass key/.test(w.text) && !/use giscus/.test(w.text));
+});
