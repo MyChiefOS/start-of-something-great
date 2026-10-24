@@ -85,11 +85,7 @@ async function link(t, { provider, fingerprints, keyVersion, level, sessionHash,
     return { memberId: r.member_id, trustLevel: r.trust_level, isAdmin: r.is_admin, linked: r.linked, sessionsEnded: r.sessions_ended };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
-    // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
-    if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     if (e.code === 'P0001' && ['taken', 'banned', 'disabled'].includes(e.message)) return { refused: e.message };
-    // PR 17's review: no new method within 24 hours of the account's first passkey.
-    if (e.code === 'P0001' && e.message === 'passkey_new') return { refused: 'link_wait' };
     // Two members linking the same method at the same moment: whoever comes second finds it taken (review F4).
     if (e.code === '23505') return { refused: 'taken' };
     if (BUSY.includes(e.code)) return { refused: 'busy' };
@@ -112,8 +108,6 @@ async function unlink(t, { identity, sessionHash }) {
       keysRevoked: r.keys_revoked, agentsLowered: r.agents_lowered };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
-    // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
-    if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     if (e.code === 'P0001' && e.message === 'not_found') return { refused: 'not_found' };
     if (e.code === 'P0001' && e.message === 'last_method') return { refused: 'last' };
     if (e.code === 'P0001' && e.message === 'not_senior') return { refused: 'senior' };
@@ -196,7 +190,7 @@ async function rename(t, name) {
 }
 
 // F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
-// or { refused: 'not_member' | 'not_active' | 'fresh' | 'step_up' | 'delete_wait' | 'under_review' } ('fresh': the session didn't start recently
+// or { refused: 'not_member' | 'not_active' | 'fresh' | 'under_review' } ('fresh': the session didn't start recently
 // enough, RK3; 'under_review': JEVs flagged an earlier request and Aaron hasn't decided yet, PR 12).
 async function deleteAccount(t) {
   try {
@@ -205,11 +199,7 @@ async function deleteAccount(t) {
   } catch (e) {
     if (e.code === '42501' && (e.message === 'not_member' || e.message === 'not_active')) return { refused: e.message };
     if (e.code === 'P0001' && e.message === 'fresh_sign_in') return { refused: 'fresh' };
-    // PR 17: a risky grant needs a passkey check in the last 5 minutes (the database decides, by its clock).
-    if (e.code === 'P0001' && e.message === 'step_up') return { refused: 'step_up' };
     if (e.code === 'P0001' && e.message === 'under_review') return { refused: 'under_review' };
-    // Security batch 1 (RK62): not within 24 hours of the account's first passkey.
-    if (e.code === 'P0001' && e.message === 'passkey_new') return { refused: 'delete_wait' };
     throw e;
   }
 }

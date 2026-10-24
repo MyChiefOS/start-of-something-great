@@ -3,7 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
+// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
+const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
+  set_config('app.session', ${ctx.session}, true)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -30,10 +32,7 @@ test('SF5: the review page decides each post with one tap, shows member text as 
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js), 'no dialog between the tap and the decision');
   // One button per action the API offers; the tap sends the decision.
   assert.match(js, /i\.actions\.map\(function \(a\)/);
-  // PR 17: through /passkey.js, which asks for a passkey check (one tap, lasting 5 minutes of decisions) only when the
-  // server says one is needed; no dialog is added between the tap and the decision.
-  assert.match(js, /window\.dogPasskey\.postJson\('\/api\/feed', \{ review: i\.id, decision: decision \}\)/);
-  assert.match(html, /<script defer src="\/passkey\.js"><\/script>\s*<script defer src="\/review\.js"><\/script>/);
+  assert.match(js, /JSON\.stringify\(\{ review: i\.id, decision: decision \}\)/);
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /JSON\.stringify\(\{ report: id, reason: sel\.value, note: note\.value \}\)/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(feed));
@@ -98,7 +97,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
   aaron = await member(1, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -115,8 +114,7 @@ async function member(level = 1, name = 'New member') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: level === 0 ? 'email' : 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
+  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 const queue = () => run(aaron.ctx, (t) => review.queue(t, { limit: 100 }));
 const inQueue = async (id) => (await queue()).items.find((i) => i.id === id);

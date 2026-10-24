@@ -99,9 +99,7 @@ const ROUTES = {
     const who = await member(req, res, run, { write: true });
     if (!who) return;
     if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron decides appeals.' });
-    // PR 17: every one of Aaron's controls needs a passkey check in the last 5 minutes (D5).
-    if (who.stepUp !== true) return reply(res, 403, session.stepUpNeeded(who));
-    const out = await run(session.strongActorFor(who), (t) => store.decideAppeal(t, { containment: body.containment, decision: body.decision }));
+    const out = await run(session.actorFor(who), (t) => store.decideAppeal(t, { containment: body.containment, decision: body.decision }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'That containment has already ended.' });
     if (out.refused) return reply(res, 409, { error: 'That appeal has already been decided.' });
     return reply(res, 200, { decided: body.decision });

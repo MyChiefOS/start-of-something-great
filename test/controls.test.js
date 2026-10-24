@@ -3,7 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stepUpFor, actAsAdmin } = require('./passkey-helpers');
+// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
+const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
+  set_config('app.session', ${ctx.session}, true)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -86,7 +88,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 6 });
   aaron = await member(1, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session and its passkey check
+  aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -104,8 +106,7 @@ async function member(level = 2, name = 'Owner') {
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp],
     keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
-  await stepUpFor(su, out.memberId); // PR 17: a passkey, already checked
-  return { id: out.memberId, fp, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, stepUp: true, session: c.sha256hex(token) } };
+  return { id: out.memberId, fp, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 async function feedApi(r) {
   const out = res();
@@ -423,8 +424,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     };
     const boss = await mk('Boss');
     await s2.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.id}'`); });
-    await stepUpFor(s2, boss.id); // security batch 1: the step-up is checked against the session
-    const bossCtx = { actor: 'admin', memberId: boss.id, stepUp: true, session: boss.sessionHash };
+    const bossCtx = { actor: 'admin', memberId: boss.id, session: boss.sessionHash };
     const ann = await mk('Ann'), ben = await mk('Ben'), quiet = await mk('Quiet');
     // Ann: 2 agents; 3 people posts (two the same text apart from case and punctuation), 4 agent posts.
     const agentIds = [];

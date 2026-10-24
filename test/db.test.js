@@ -57,7 +57,8 @@ test('G1: the site reads its database address in one place, checks certificates,
   assert.ok(!/process\.env\.DATABASE_URL|env\.DATABASE_URL\b|env\[['"`]DATABASE_URL/.test(read('scripts/setup-production.js')), 'the setup run never reads DATABASE_URL');
 });
 
-const RAW_SQL_OK = ['scripts/migrate.js', 'scripts/setup-production.js'];
+// The database runner (core.mjs) applies the merged migration files, as scripts/migrate.js does locally.
+const RAW_SQL_OK = ['scripts/migrate.js', 'scripts/setup-production.js', 'supabase/functions/dog-migrate/core.mjs'];
 test('no placeholder migrations: a migration file that has run anywhere can never be renamed, removed or filled in, so none is ever committed as a placeholder', () => {
   const names = require('fs').readdirSync(require('path').join(__dirname, '..', 'db', 'migrations'));
   assert.deepStrictEqual(names.filter((n) => /placeholder|reserved|todo|tmp|temp/i.test(n)), [], 'number real work only');
@@ -72,7 +73,7 @@ test('S8 code check: raw SQL, the driver, and identity or session changes appear
     if (/(require\(\s*['"`]postgres['"`]\s*\)|from\s+['"`]postgres['"`]|import\(\s*['"`]postgres['"`])/.test(s)) assert.strictEqual(f, 'db/index.js', f + ' loads the database driver directly; go through db/index.js');
     // Who is acting is set in exactly one place; nothing else may change it or keep state on a pooled connection.
     if (f !== 'db/index.js') {
-      assert.ok(!/set_config|app\.(actor|member_id|agent_id|note|fresh|step_up|session)\b/.test(s), f + ' sets who is acting; only db/index.js may');
+      assert.ok(!/set_config|app\.(actor|member_id|agent_id|note|fresh|session)\b/.test(s), f + ' sets who is acting; only db/index.js may');
       assert.ok(!/\b(set\s+(local\s+)?(session|role|app\.)|reset\s+(role|session)|with\s+hold|create\s+temp)/i.test(s) || RAW_SQL_OK.includes(f), f + ' changes the session or keeps state past a transaction');
     }
   }
@@ -491,7 +492,7 @@ function sourceFiles() {
     for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) {
       const rel = d ? d + '/' + e.name : e.name;
       if (e.isDirectory()) { if (!['node_modules', '.git', 'research', 'fonts', '.vercel'].includes(e.name)) walk(rel); }
-      else if (/\.(js|sql)$/.test(e.name)) out.push(rel);
+      else if (/\.(js|mjs|ts|sql)$/.test(e.name)) out.push(rel);
     }
   };
   walk('');

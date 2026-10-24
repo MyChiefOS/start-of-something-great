@@ -11,12 +11,6 @@ const { make } = require('../signin/flow');
 const db = require('../db');
 const notifyConfig = require('../notify/config');
 const { signinSender } = require('../notify/sender');
-const passkey = require('../signin/passkey');
-
-// The passkey handlers under the names the routes below call.
-const passkeyRoutes = (p) => ({ passkeyList: p.list, passkeyEnrolOptions: p.enrolOptions, passkeyEnrolFinish: p.enrolFinish,
-  passkeyAssertOptions: p.assertOptions, passkeyAssertFinish: p.assertFinish, passkeyRemove: p.remove,
-  passkeyRecoveryStart: p.recoveryStart, passkeyRecoveryCancel: p.recoveryCancel });
 
 let flow;
 function get() {
@@ -26,8 +20,6 @@ function get() {
     // bounced or complained; until then they stay off.
     const sendEmail = db.configured() ? signinSender(notifyConfig.load(), { run: db.run, keys: cfg.fingerprintKeys }) : null;
     flow = cfg.ready && db.configured() ? make({ config: cfg, run: db.run, providers: PROVIDERS, sendEmail }) : null;
-    // PR 17: passkeys, the step-up risky grants need (D5), under the same switch as sign-in.
-    if (flow) Object.assign(flow, passkeyRoutes(passkey.make({ run: db.run })));
   }
   return flow;
 }
@@ -53,17 +45,7 @@ const ROUTES = {
   // a region where we don't sign people up (Continue finishes signing in; Cancel stores nothing).
   'GET form': (f, q, s) => f.formToken(q, s),
   'POST region/continue': (f, q, s) => f.regionContinue(q, s),
-  'POST region/cancel': (f, q, s) => f.regionCancel(q, s),
-  // PR 17: passkeys (signin/passkey.js). JSON posts from our own pages; adding one needs a fresh sign-in, and a
-  // second one (or removing one) needs a passkey check too.
-  'GET passkey/list': (f, q, s) => f.passkeyList(q, s),
-  'POST passkey/enrol/options': (f, q, s) => f.passkeyEnrolOptions(q, s),
-  'POST passkey/enrol/finish': (f, q, s) => f.passkeyEnrolFinish(q, s),
-  'POST passkey/assert/options': (f, q, s) => f.passkeyAssertOptions(q, s),
-  'POST passkey/assert/finish': (f, q, s) => f.passkeyAssertFinish(q, s),
-  'POST passkey/remove': (f, q, s) => f.passkeyRemove(q, s),
-  'POST passkey/recovery/start': (f, q, s) => f.passkeyRecoveryStart(q, s),
-  'POST passkey/recovery/cancel': (f, q, s) => f.passkeyRecoveryCancel(q, s)
+  'POST region/cancel': (f, q, s) => f.regionCancel(q, s)
 };
 
 function plain(res, status, text) {

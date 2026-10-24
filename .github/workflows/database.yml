@@ -1,13 +1,21 @@
-# Applies the database migrations to production, then runs the coverage check against it.
-# Started by hand only (Actions tab, "Database migrations", Run workflow); never on a schedule or a push.
-# Its secrets live in the protected "production" environment (db/README.md, step 2): only main, only with Aaron's approval.
+# The only way the database changes (USE-CASES.md row 15). When a merge to main changes db/migrations or db/reset,
+# this asks GitHub for a short-lived identity token and hands it to the runner (supabase/functions/dog-migrate). The
+# runner checks that the token is from this workflow on main, then applies the files of that exact commit and records
+# the run in app.change_log. There is no secret anywhere: no database password, no Supabase key, nothing to paste.
+# The result goes in this run's summary and as a comment on the merged pull request. A failed run fails loudly
+# (GitHub emails the owner) and leaves nothing half-applied: each file is its own transaction.
 name: Database migrations
 
 on:
+  push:
+    branches: [main]
+    paths: ['db/migrations/**', 'db/reset/**', 'db/manifest.json']
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write # only to ask GitHub for the identity token the runner checks
+  pull-requests: write # only to comment the result on the merged pull request
 
 concurrency:
   group: database-migrations
@@ -16,30 +24,56 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment: production
-    # Refuse any branch but main, even if the environment's branch rule were ever loosened.
+    timeout-minutes: 45
     if: github.ref == 'refs/heads/main'
+    env:
+      RUNNER_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
+      - name: Apply the merged commit through the runner
+        id: run
+        run: |
+          set -euo pipefail
+          # A new runner is deployed from the merged commit right after merge (OPERATIONS.md). Until it answers,
+          # the old one replies 410; wait for it (up to 40 minutes) rather than fail. Each try gets a fresh token,
+          # because the runner accepts each token once.
+          for try in $(seq 1 80); do
+            token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$RUNNER_URL" | jq -r .value)
+            echo "::add-mask::$token"
+            code=$(curl -sS -o result.json -w '%{http_code}' -X POST "$RUNNER_URL" \
+              -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data '{"mode":"apply"}' || echo 000)
+            unset token
+            case "$code" in
+              410|404|502|503|504|000) echo "runner not ready yet ($code), try $try of 80"; sleep 30 ;;
+              *) break ;;
+            esac
+          done
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          jq . result.json || cat result.json
+          [ "$code" = 200 ] && jq -e '.ok == true' result.json > /dev/null
 
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '22'
-
-      - name: Install locked dependencies (no install scripts)
-        run: npm ci --ignore-scripts
-
-      - name: Apply migrations
+      - name: Record the result (run summary and the merged pull request)
+        if: always() && steps.run.outcome != 'skipped'
         env:
-          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
-          MIGRATION_DATABASE_CA: ${{ secrets.MIGRATION_DATABASE_CA }}
-        run: node scripts/migrate.js
-
-      - name: Coverage check against production (S1, S7, S8, S12, G3)
-        env:
-          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
-          MIGRATION_DATABASE_CA: ${{ secrets.MIGRATION_DATABASE_CA }}
-        run: node scripts/db-check.js
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          [ -f result.json ] || echo '{"ok":false,"error":"the runner never answered"}' > result.json
+          {
+            echo "## Database migrations at ${SHA:0:7}"
+            echo
+            jq -r '"- Result: " + (if .ok then "passed" else "FAILED" end),
+                   "- Fresh build (reset): " + (if .reset then "yes" else "no" end),
+                   "- Applied: " + ((.applied // []) | if length == 0 then "nothing new" else join(", ") end),
+                   "- Migrations on main: " + ((.total // "?") | tostring),
+                   (if (.failed // []) | length > 0 then "- Checks failed: " + (.failed | join("; ")) else empty end),
+                   (if .error then "- Error: " + .error else empty end),
+                   (if (.notices // []) | length > 0 then "- Notes: " + (.notices | join("; ")) else empty end)' result.json
+            echo
+            echo "Run: $RUN_URL"
+          } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          pr=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number // empty' || true)
+          if [ -n "$pr" ]; then gh api "repos/${{ github.repository }}/issues/$pr/comments" -F body=@summary.md > /dev/null || true; fi

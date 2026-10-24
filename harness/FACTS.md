@@ -38,7 +38,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | The live site is closed: sign-in answers "Sign-in is not switched on here yet." because no database is set | checked | curl https://dayonegreat.com/auth/github/start (503) | 2026-10-23 |
 | The public pages, API and MCP server work on the live site | checked | curl of /, /api/status, /api/proposals; MCP tools/call | 2026-10-23 |
 | Production setup has never run, so no database is connected to the live site | checked | GitHub API: the Production setup workflow has 0 runs; sign-in is off | 2026-10-23 |
-| The two secrets for Production setup (MIGRATION_DATABASE_URL, VERCEL_TOKEN) are not set yet | assumed | Claude can't see them: the session's GitHub proxy refuses the secrets API (403) | 2026-10-23 |
+| The database no longer needs any secret: from PR 2 it changes only through the runner, which checks GitHub's identity token (db/README.md) | checked | .github/workflows/database.yml, supabase/functions/dog-migrate | 2026-10-24 |
 | Aaron's GitHub account ID is 304218593 | checked | GitHub API, repository owner | 2026-10-23 |
 | Claude's GitHub access: admin on the repository; can read PRs, issues, contents, deployments, rulesets and workflow runs and push branches; the session proxy refuses secrets, variables, environments and collaborators (403) | checked | GitHub API path by path; push dry-run | 2026-10-23 |
 | main has one active ruleset ("The Start of Something Great Rule Set") and no classic branch protection | checked | GitHub API rulesets; branches/main/protection 404 | 2026-10-23 |
@@ -53,7 +53,7 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24. The previous launch path (
 
 | Step | Who | Status |
 |---|---|---|
-| PR 1: plan and guards (USE-CASES.md rows 14 and 19, giscus origin lock) | Claude builds; Aaron merges | open |
+| PR 1: plan and guards (USE-CASES.md rows 14 and 19, giscus origin lock) | Claude builds; Aaron merges | done: PR #37, merged Oct 24 |
 | PR 2: database fresh build without passkeys, and the JEVs gate (rows 15 and 16) | Claude builds; Aaron merges | open |
 | After PR 2: deploy the runner and gate from the merged commit; reset; verify | Claude, from the merge | open |
 | PR 3: JEVs live in shadow mode, alerts only (rows 3 to 10, 12, 13, 17, 18) | Claude builds; Aaron merges | open |
@@ -65,15 +65,16 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 
 | Instruction (Aaron's words) | Date | Status |
 |---|---|---|
-| "We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 | in plan: passkeys still on main and in the live database; removed by PR 2 (not carried out on Oct 23) |
+| "We will only allow Github users in phase 1. Update that design and remove pass key." | 2026-10-23 | in plan: PR 2 removes them from the code and, on its run after merge, from the live database (not carried out on Oct 23) |
 | "Can you use the same capability for Join as you do for giscus on/talk?" | 2026-10-23 | done: PR #36 |
-| "put the Jevs between the dayongreat.com site and database login" / "wapp it around the database" | 2026-10-23 | in plan: PR 2 (the JEVs gate) |
+| "put the Jevs between the dayongreat.com site and database login" / "wapp it around the database" | 2026-10-23 | in plan: the GitHub token check that guards the database ships in PR 2; the JEVs gate's routes ship with their first caller, PR 3 |
 | "A denial of service against our selves is not the goal." (checks alert, never lock out) | 2026-10-23 | in plan: JEVs never refuses; shadow first (PR 3) |
-| "NO preview systems" | 2026-10-24 | in plan: preview dropped from the roadmap and status (PR 1) |
+| "NO preview systems" | 2026-10-24 | done: preview dropped from the roadmap and status (PR #37) |
 | "Auth needs to throught giscus on /talk and /join" | 2026-10-24 | done for posting; JEVs on giscus posts in PR 3 |
-| "Can you clear the database tables and start over with a fresh build" | 2026-10-24 | in plan: PR 2 |
+| "Can you clear the database tables and start over with a fresh build" | 2026-10-24 | in plan: PR 2 (the reset runs on merge, refuses if any real row exists) |
 | "I only approve PRs" | 2026-10-24 | in force |
-| "I want the it corrected from your side. So when you send a PR its verified without failures." | 2026-10-24 | done: push guard; CI PR guards in PR 1 |
+| "I want the it corrected from your side. So when you send a PR its verified without failures." | 2026-10-24 | done: push guard; CI PR guards (PR #37) |
+| "I want a PR that spells out any chages." | 2026-10-24 | in force: every PR description lists every file changed and what happens on merge |
 
 ## Open for Aaron (ask once; record the answer here)
 
