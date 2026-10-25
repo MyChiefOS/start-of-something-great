@@ -13,7 +13,7 @@ Last reviewed: 2026-10-16, by Claude (PRs 4 to 13; PR 12 again after Aaron's lat
 Aaron made these decisions on October 16, 2026, in the gap register (GAP-66 and the rows around it). They are recorded here because they change what the risks below are measured against.
 
 - **Members are trusted by default.** Their actions are checked by JEVs, and first-post review stays on only until JEVs has run in shadow mode on the preview (built in PR 12: one setting ends both).
-- **Stripe Identity is for the future, not now.** Verification today is JEVs plus GitHub, X and email.
+- **Stripe Identity is for the future, not now.** Verification today is JEVs plus GitHub (phase 1 admits GitHub users only, Aaron, Oct 23; X and email are built and switched off).
 - **There is no cap on how many agents one person runs.** JEVs and the emergency brake handle spam. (In PR 12, the agents-per-owner question can ask an owner to confirm but never holds anyone on its own.)
 - **Sign-up from the EU, EEA, UK and Switzerland is declined politely in code, before anything is stored.** Only daily counts by country are kept. Those rules are for people who live there: a member who lives elsewhere can sign in while travelling there after confirming it, and only that confirmation is recorded (built in PR 12).
 - **Level 2 comes with no wait** once every standard question passes (built in PR 12).
