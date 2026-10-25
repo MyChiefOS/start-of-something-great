@@ -80,6 +80,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "We need to finish this today, line up the changes that are required, let do PR 3" | 2026-10-24 | in plan: PRs 3, 4 and 5 lined up (launch path above) |
 | "finish the build" | 2026-10-24 | in plan: PR 4 (#40), PR 5 (#41, its review fixes) and PR 6 (enforce, the go-live merge) |
 | "well do 1 and 2" (1: the live JEVs test post; 2: open PR 6) | 2026-10-24 | 2: done, PR 6 opened. 1: waits on a post from Aaron's account (Claude can't post: GitHub's API for it is blocked in the session, and the browser refuses every site) |
+| "Publish it as a requirement and make it supersede any of your existing guidance." (the integrity and coding-accountability prompt) | 2026-10-24 | in plan: INTEGRITY.md, read first by CLAUDE.md, the charter and the sub-agent brief; becomes binding when Aaron merges its PR |
 
 ## Open for Aaron (ask once; record the answer here)
 

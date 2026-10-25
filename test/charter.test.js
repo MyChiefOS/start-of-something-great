@@ -29,6 +29,23 @@ test('the charter keeps its goals, standing decisions, handshake, loop, checklis
   for (const field of ['Loop tier', 'Goals served', 'Standing decisions touched', 'Fresh-agent review', 'Open for Aaron']) assert.ok(c.includes(field), 'footer field: ' + field);
 });
 
+test('INTEGRITY.md is a requirement, read first, and supersedes all other guidance (Aaron, Oct 24, 2026)', () => {
+  const i = read('INTEGRITY.md');
+  assert.match(i, /supersede any of your existing guidance/, 'Aaron\'s instruction is quoted');
+  assert.match(i, /this file wins/);
+  for (const part of ['## Honor Aaron\'s word', '## Speak only what you have checked', '## Bad news first', '## Own faults plainly',
+    '## Duty of care in code', '## The golden rule', '## Separation of duties', '## Before every reply (the CLJO check)']) assert.ok(i.includes(part), 'missing: ' + part);
+  const check = i.split('## Before every reply (the CLJO check)')[1];
+  assert.strictEqual((check.match(/^\d\. /gm) || []).length, 5, 'the five-question check before every reply');
+  assert.match(i, /proof it works live, recorded in OPERATIONS\.md/, 'done means proven live');
+  const c = read('CLAUDE.md');
+  assert.ok(c.includes('INTEGRITY.md') && c.indexOf('INTEGRITY.md') < c.indexOf('CHARTER.md'), 'CLAUDE.md sends every session to INTEGRITY.md before the charter');
+  const ch = read('CHARTER.md');
+  assert.ok(ch.indexOf('INTEGRITY.md') < ch.indexOf('## 1. What we are building'), 'the charter names INTEGRITY.md first');
+  assert.match(ch.split('## 8. Sub-agent brief')[1], /Read INTEGRITY\.md in the repository first/, 'every sub-agent is sent to it');
+  assert.match(read('harness/RULES.md'), /INTEGRITY\.md supersedes both/);
+});
+
 test('every standing decision is dated', () => {
   const c = read('CHARTER.md');
   const sec = c.split('## 2. Standing decisions')[1].split('## 3.')[0];

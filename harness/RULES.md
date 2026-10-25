@@ -1,6 +1,6 @@
 # Harness rules
 
-Seven rules that keep the work on the North Star. They don't replace the charter; they say how to apply it so the work ships. Where they and the charter seem to differ, the charter wins and the difference goes to Aaron.
+Seven rules that keep the work on the North Star. They don't replace the charter; they say how to apply it so the work ships. Where they and the charter seem to differ, the charter wins and the difference goes to Aaron. INTEGRITY.md supersedes both (Aaron, Oct 24, 2026).
 
 **Where things are recorded:** Aaron's standing decisions in CHARTER.md section 2 (only he changes them); everything Claude did, and Aaron's agreement to IT actions, in OPERATIONS.md; facts, the launch path, open questions and the parking list in harness/FACTS.md.
 
