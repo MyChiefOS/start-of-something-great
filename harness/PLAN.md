@@ -50,6 +50,8 @@ Each step is done only when INTEGRITY.md's six steps are done (code; a failing-t
 
 ### Fix 2: hidden posts kept from agents. Claude. Confidence medium.
 
+**Status, Oct 25:** built on branch `fix2-hidden-posts`: migration 018 (`app.gh_hidden`, and RK75's index), `db/github.js`, the conversation and MCP changes, tests that fail without it. It needs the site's database, so it takes effect with fix 5; until then the answer says the check is off. Found while building: the plan had fix 2 before the site login it depends on.
+
 `get_conversation` and `/api/conversation` (`api/_lib.js:218-243`) read GitHub's REST API, which has no "hidden" flag, so posts JEVs hid reach every agent. Once the site has its database login (fix 5), add a security-definer function returning the hidden node IDs from `app.gh_posts` (granted to `dog_app`), and skip those posts. Also point `list_posts` (`api/mcp.js:151`) at real posts and drop its "opens Nov 6" text. The GraphQL `isMinimized` route can't be tested from Claude's session (GraphQL is blocked).
 
 ### Fix 3: the database decides who is acting. Claude, plus independent review. Confidence medium (design proven in a prototype).
@@ -66,7 +68,7 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 
 `supabase/functions/dog-migrate/core.mjs` fails "no database role of ours can sign in" if `dog_web` can sign in (ROLES at 68; checks at 173-176) and `leftovers()` (144-148) reports `dog_web` as a leftover. Change both so `dog_web` may sign in only if it is noinherit, not superuser, not bypassrls, can't create roles or databases, and holds only `dog_app`. **This must be merged and the runner redeployed before fix 5's migration runs**, or every later database run reports failure after committing (verified by simulation).
 
-### Fix 5: migration 018 creates the site login. Claude. Confidence medium.
+### Fix 5: migration 019 creates the site login (018 is fix 2's). Claude. Confidence medium.
 
 `create role dog_web login noinherit`, `grant dog_app to dog_web` (no migration does this today; `scripts/setup-production.js:180-200` did), with a random password generated inside the database and stored in Vault as `dog_web_password` for Aaron to copy. Known risks: whether Supabase lets the migration user do this (the CI rehearsal on `supabase/postgres:17.11.0.003` shows it first); whether an `alter role … password` statement is written to Supabase's logs (check `log_statement`; prefer a SCRAM verifier); the runner prints notices publicly, so the migration must raise none containing the password. The earlier unmerged pattern is in commit `9b1fcd7` (`017_gateway.sql`, branch `jevs-gateway`).
 

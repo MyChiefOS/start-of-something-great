@@ -71,7 +71,7 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/
 | Merge #43: INTEGRITY.md | Aaron merges | done: merged Oct 25 14:27 UTC |
 | Merge the handoff-plan PR: harness/PLAN.md and the reference documents brought in line | Aaron merges | done: PR #44, merged Oct 25 15:52 UTC |
 | Fix 1: the GitHub holes (machine accounts, untagged posts, J10, blank-line slowdown, moderator deletions); redeploy the gate | Claude builds; Aaron merges | done: PR #45 merged Oct 25 18:53 UTC; gate version 4 deployed from `f450b9d`, files identical, refusals 401/401/405 |
-| Fixes 2 to 7: hidden posts kept from agents; the database decides who is acting; the runner allows one site login; migration 018; the sign-in link and true text; site JEVs to enforce | Claude builds; Aaron merges | open (harness/PLAN.md, in order) |
+| Fixes 2 to 7: hidden posts kept from agents; the database decides who is acting; the runner allows one site login; migration 019 (the site login); the sign-in link and true text; site JEVs to enforce | Claude builds; Aaron merges | open (harness/PLAN.md, in order) |
 | Fix 8: Vercel settings (database address, sign-in keys, GitHub app, timer secret) | Aaron | open |
 | Fix 9 and go-live: Aaron becomes administrator, then LAUNCH_STAGE public | Aaron decides; Claude builds the step | open |
 | Fix 10: live proof of every flow, recorded in OPERATIONS.md | Aaron and Claude | open |

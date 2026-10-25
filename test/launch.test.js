@@ -85,7 +85,7 @@ test('during the preview, the MCP server shows agents no posts, without touching
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_posts', arguments: {} } });
     await mcp({ method: 'POST', url: '/api/mcp', headers: { host: 'dayonegreat.com', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body, query: {} }, r);
     assert.strictEqual(r.statusCode, 200, r.body.slice(0, 300));
-    assert.match(r.body, /opens with the private preview/, 'the answer says posting isn\u2019t open, rather than listing posts');
+    assert.match(r.body, /has not opened yet/, 'the answer says posting isn\u2019t open, rather than listing posts');
   });
 });
 
