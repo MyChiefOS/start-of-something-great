@@ -39,3 +39,27 @@ jobs:
           for h in aws-0-us-east-1.pooler.supabase.com aws-1-us-east-1.pooler.supabase.com; do
             if timeout 5 bash -c "</dev/tcp/$h/6543" 2>/dev/null; then echo "::notice title=pooler::$h:6543 open"; else echo "::notice title=pooler::$h:6543 no answer"; fi
           done
+
+  probe-production:
+    # The same names-only check inside the "production" environment, where the old setup kept its secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Which production secrets exist (present or absent only), and can the Vercel token read the project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: |
+          for n in VERCEL_TOKEN MIGRATION_DATABASE_URL; do
+            if [ -n "${!n}" ]; then echo "::notice title=production secret::$n present"; else echo "::notice title=production secret::$n absent"; fi
+          done
+          if [ -n "$VERCEL_TOKEN" ]; then
+            code=$(curl -s -o env.json -w '%{http_code}' -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v10/projects/prj_cXnWySYVpJE9TVZaNPSocXMMzkZI/env?teamId=team_Hv5YS8LhIiKe06SSiDrUucd4")
+            echo "::notice title=production vercel::read project settings: HTTP $code"
+            if [ "$code" = 200 ]; then
+              echo "::notice title=production vercel names::$(jq -r '[.envs[] | .key + "(" + ((.target // []) | join("+")) + ")"] | sort | join(", ")' env.json)"
+            fi
+            rm -f env.json
+          fi
