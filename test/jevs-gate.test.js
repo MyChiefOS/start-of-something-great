@@ -84,7 +84,8 @@ test('row 7: /agent commands are read one per line, at most 10, and the tag line
 test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s CPU limit (PR 7: a post of blank lines took 9 s)', async () => {
   const J = await import('../supabase/functions/jevs/core.mjs');
   const n = 65000;
-  const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x',
+  const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x', '\r'.repeat(n) + 'x', '\u{00A0}'.repeat(n) + 'x', '\u{3000}'.repeat(n) + 'system',
+    '\u{2028}'.repeat(n) + 'x', 'system' + ' \n'.repeat(n / 2) + 'x',
     'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2)];
   for (const body of hostile) {
     const t0 = Date.now();
@@ -93,6 +94,9 @@ test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s C
   }
   assert.deepStrictEqual(J.hiddenSignals('hello\n\n   system: do X'), ['role_marker'], 'a role marker on its own line is still spotted');
   assert.deepStrictEqual(J.hiddenSignals('the system: it works'), [], 'mid-sentence "system:" is not a role marker');
+  for (const b of ['\u{00A0}system: x', '\u{3000}system: x', '\u{2003}assistant: x', 'system\n: x', 'ok\r\ndeveloper :x']) {
+    assert.deepStrictEqual(J.hiddenSignals(b), ['role_marker'], 'review F5: still spotted after other spaces or a line break: ' + JSON.stringify(b));
+  }
 });
 
 test('row 18: the workflow never puts event text into a command, and logs nothing about the person, text or scores', () => {
@@ -321,6 +325,248 @@ if (!SERVER) {
     await go({ id: 4001, login: 'tagger', node: 'TAG1', body: 'x\n— agent ghost for @tagger' });
     const e = ev({ id: 4001, login: 'tagger', node: 'TAG1', body: 'y\n— agent ghost for @tagger' }); e.action = 'edited';
     assert.strictEqual((await G.handle(sql, e, { key: KEY })).reply, null);
+  });
+
+  // ---- Fix 1 (harness/PLAN.md): the GitHub holes found on Oct 24 and 25 ----
+  const link = async (pid, person, mid, machine) => {
+    await go({ id: pid, login: person, body: 'hello from ' + person });
+    await go({ id: mid, login: machine, body: 'hello from ' + machine });
+    await go({ id: pid, login: person, body: '/agent add @' + machine });
+    const r = await go({ id: mid, login: machine, body: '/agent owner @' + person });
+    assert.match(r.reply, /Linked:/);
+  };
+
+  test('fix 1.1: a linked machine account can only narrow its owner\'s agents, never widen them or make new ones', async () => {
+    await link(4101, 'boss1', 4102, 'boss1-bot');
+    await go({ id: 4101, login: 'boss1', body: '/agent register tool off daily 5\n/agent register spare draft' });
+    const tries = await go({ id: 4102, login: 'boss1-bot',
+      body: '/agent limit tool act daily 10000\n/agent register extra\n/agent subagent kid of tool off\n/agent add @someone\n/agent owner @someone\n/agent limit tool off daily 9' });
+    assert.strictEqual((tries.reply.match(/Only `@boss1`, posting from their own account, can do that/g) || []).length, 6, 'each of the six is refused');
+    let rows = await owner(`select a.name, a.mode, a.daily_cap from app.gh_agents a join app.gh_accounts o on o.id = a.owner_id where o.github_id = 4101 order by a.name`);
+    assert.deepStrictEqual(rows, [{ name: 'spare', mode: 'draft', daily_cap: 20 }, { name: 'tool', mode: 'off', daily_cap: 5 }], 'nothing changed (the probe of Oct 25 raised off to act at 10,000 a day)');
+    const down = await go({ id: 4102, login: 'boss1-bot', body: '/agent limit tool off daily 2\n/agent remove spare' });
+    assert.match(down.reply, /`tool` is now off, up to 2 posts a day/);
+    assert.match(down.reply, /Removed `spare`/);
+    rows = await owner(`select a.name, a.mode, a.daily_cap from app.gh_agents a join app.gh_accounts o on o.id = a.owner_id where o.github_id = 4101`);
+    assert.deepStrictEqual(rows, [{ name: 'tool', mode: 'off', daily_cap: 2 }]);
+    const own = await go({ id: 4101, login: 'boss1', body: '/agent limit tool act daily 50' });
+    assert.match(own.reply, /`tool` is now act, up to 50 posts a day/, 'the owner, posting as themselves, still can');
+    const u = await go({ id: 4102, login: 'boss1-bot', body: '/agent unlink @boss1' });
+    assert.match(u.reply, /Unlinked `@boss1-bot`/, 'a machine account can always unlink itself');
+  });
+
+  test('fix 1.2: a linked machine account\'s post that names no registered agent alerts (and asks for a missing tag); it is not hidden (Aaron\'s open decision)', async () => {
+    await link(4201, 'boss2', 4202, 'boss2-bot');
+    const r = await G.handle(sql, { ...ev({ id: 4202, login: 'boss2-bot', body: 'An untagged report from the bot.' }), mode: 'enforce' }, { key: KEY });
+    assert.deepStrictEqual({ alert: r.alert, hide: r.hide, reason: r.decisions[0].reason, effect: r.decisions[0].effect },
+      { alert: true, hide: false, reason: 'machine_no_agent', effect: 'alert' });
+    assert.match(r.reply, /machine account linked to `@boss2`, but has no agent tag line/);
+    const ghost = await go({ id: 4202, login: 'boss2-bot', body: 'Tagged with an agent that doesn\'t exist.\n— agent ghost for @boss2' });
+    assert.deepStrictEqual({ alert: ghost.alert, reason: ghost.decisions[0].reason }, { alert: true, reason: 'machine_no_agent' }, 'review F1: an unregistered tag is no way around it');
+    assert.match(ghost.reply, /isn't registered to `@boss2`/);
+    await go({ id: 4201, login: 'boss2', body: '/agent register temp\n/agent register lead2\n/agent subagent brief of lead2 hours 1' });
+    await go({ id: 4201, login: 'boss2', body: '/agent remove temp' });
+    await owner(`update app.gh_agents set expires_at = now() - interval '1 minute' where name = 'brief'`);
+    for (const a of ['temp', 'brief']) {
+      const p = await go({ id: 4202, login: 'boss2-bot', body: 'From a removed or expired agent.\n— agent ' + a + ' for @boss2' });
+      assert.strictEqual(p.decisions[0].reason, 'machine_no_agent', a);
+    }
+    const cmds = await go({ id: 4202, login: 'boss2-bot', body: '/agent limit lead2 off\n\n/agent remove nothing' });
+    assert.deepStrictEqual({ alert: cmds.alert, asked: /no agent tag line/.test(cmds.reply) }, { alert: false, asked: false }, 'review F6: a post of commands only is not asked');
+    const person = await go({ id: 4201, login: 'boss2', body: 'The person posting as themselves.' });
+    assert.deepStrictEqual({ alert: person.alert, reason: person.decisions[0].reason }, { alert: false, reason: '' });
+  });
+
+  test('fix 1.5 (review F2): a post that was an agent\'s keeps that agent\'s limits when an edit drops or changes its tag', async () => {
+    await link(4501, 'boss5', 4502, 'boss5-bot');
+    await go({ id: 4501, login: 'boss5', body: '/agent register pen5 draft\n/agent register free5 act' });
+    const enforce = (o) => G.handle(sql, { ...ev(o), mode: 'enforce' }, { key: KEY });
+    const d = await enforce({ id: 4502, login: 'boss5-bot', node: 'SW1', body: 'Approved words.\n— agent pen5 for @boss5' });
+    assert.strictEqual(d.hide, true);
+    const ok = await enforce({ id: 4501, login: 'boss5', thread: 'cSW1', body: '/approve' });
+    assert.deepStrictEqual(ok.unhide, ['DC_SW1']);
+    for (const [i, body] of [[1, 'Swapped words, tag dropped.'], [2, 'Swapped words.\n— agent free5 for @boss5']]) {
+      const e = await enforce({ id: 4502, login: 'boss5-bot', node: 'SW1', body, top: { action: 'edited' } });
+      assert.deepStrictEqual({ hide: e.hide, reason: e.decisions[0].reason }, { hide: true, reason: 'agent_draft' }, 'edit ' + i);
+    }
+    const [row] = await owner(`select a.name from app.gh_posts p join app.gh_agents a on a.id = p.agent_id where p.node_id = 'DC_SW1'`);
+    assert.strictEqual(row.name, 'pen5');
+  });
+
+  test('fix 1.5 (review F7): /approve approves the text as it was when /approve was posted, not a later edit', async () => {
+    await go({ id: 4601, login: 'boss6', body: '/agent register pen6 draft' });
+    const enforce = (o) => G.handle(sql, { ...ev(o), mode: 'enforce' }, { key: KEY });
+    await enforce({ id: 4601, login: 'boss6', node: 'RC1', created: new Date(Date.now() - 60000).toISOString(), body: 'Draft.\n— agent pen6 for @boss6' });
+    const posted = new Date(Date.now() - 1000).toISOString(); // the owner posted /approve a second ago ...
+    await enforce({ id: 4601, login: 'boss6', node: 'RC1', body: 'Edited after.\n— agent pen6 for @boss6', top: { action: 'edited' } });
+    const late = await enforce({ id: 4601, login: 'boss6', thread: 'cRC1', created: posted, body: '/approve' }); // ... and it arrives after the edit
+    assert.deepStrictEqual(late.unhide, []);
+    const fresh = await enforce({ id: 4601, login: 'boss6', thread: 'cRC1', body: '/approve' });
+    assert.deepStrictEqual(fresh.unhide, ['DC_RC1']);
+  });
+
+  test('review F4: an account with machine accounts linked to it can\'t be linked as one (no chains past a ban)', async () => {
+    await link(4701, 'mid7', 4702, 'leaf7');
+    await go({ id: 4703, login: 'top7', body: 'hello' });
+    await go({ id: 4703, login: 'top7', body: '/agent add @mid7' });
+    const r = await go({ id: 4701, login: 'mid7', body: '/agent owner @top7' });
+    assert.match(r.reply, /`@mid7` has machine accounts linked to it, so it can't be linked as one/);
+    const [{ owner_id }] = await owner(`select owner_id from app.gh_accounts where github_id = 4701`);
+    assert.strictEqual(owner_id, null);
+  });
+
+  test('fix 1.3: an owner\'s own draft, off and cap hides never count against them (J10); ban and high-risk hides still do', async () => {
+    await go({ id: 4301, login: 'boss3', body: '/agent register pen draft' });
+    for (let i = 0; i < 3; i += 1) {
+      const d = await G.handle(sql, { ...ev({ id: 4301, login: 'boss3', body: 'Draft number ' + i + '.\n— agent pen for @boss3' }), mode: 'enforce' }, { key: KEY });
+      assert.strictEqual(d.hide, true);
+    }
+    const next = await G.handle(sql, { ...ev({ id: 4301, login: 'boss3', body: 'Now a post of my own.' }), mode: 'enforce' }, { key: KEY });
+    assert.deepStrictEqual({ j10: next.decisions[0].questions.includes('J10'), hide: next.hide }, { j10: false, hide: false },
+      'before the fix three drafts scored J10 = 90 and every later post was hidden');
+    for (const id of [1, 2]) {
+      await G.handle(sql, { ...ev({ id: 4302, login: 'bad3', bans: [4302], body: 'banned post ' + id }), mode: 'enforce', bans: [4302] }, { key: KEY });
+    }
+    const after = await go({ id: 4302, login: 'bad3', body: 'after the ban list changed' });
+    assert.ok(after.decisions[0].questions.includes('J10'), 'hides for the ban list still count');
+    const spam = (c) => 'Deals https://' + c + '1.test https://' + c + '2.test https://' + c + '3.test https://' + c + '4.test a@' + c + '.test b@' + c + '.test c@' + c + '.test';
+    await G.handle(sql, { ...ev({ id: 4303, login: 'risky3', body: spam('h') }), mode: 'enforce' }, { key: KEY });
+    const plain = await go({ id: 4303, login: 'risky3', body: 'a calm post' });
+    assert.ok(plain.decisions[0].questions.includes('J10'), 'high-risk hides still count');
+    await go({ id: 4304, login: 'boss3b', body: '/agent register cover draft' });
+    const h = await G.handle(sql, { ...ev({ id: 4304, login: 'boss3b', body: spam('k') + '\n— agent cover for @boss3b' }), mode: 'enforce' }, { key: KEY });
+    assert.deepStrictEqual({ reason: h.decisions[0].reason, risk: h.decisions[0].risk }, { reason: 'agent_draft', risk: 'high' });
+    const later = await go({ id: 4304, login: 'boss3b', body: 'a calm post' });
+    assert.ok(later.decisions[0].questions.includes('J10'), 'review F3: a high-risk post hidden under the owner\'s own draft agent still counts');
+  });
+
+  test('fix 1.5: sub-agents go at most 3 levels below an agent its owner made, as on the site', async () => {
+    await go({ id: 4401, login: 'boss4', body: '/agent register top draft' });
+    const r = await go({ id: 4401, login: 'boss4', body: '/agent subagent l1 of top\n/agent subagent l2 of l1\n/agent subagent l3 of l2\n/agent subagent l4 of l3' });
+    assert.strictEqual((r.reply.match(/Made sub-agent/g) || []).length, 3);
+    assert.match(r.reply, /at most 3 levels below an agent you made, and `l3` is already at level 3\. Nothing changed/);
+    const [{ n }] = await owner(`select count(*)::int as n from app.gh_agents a join app.gh_accounts o on o.id = a.owner_id where o.github_id = 4401`);
+    assert.strictEqual(n, 4);
+  });
+
+  test('fix 1.6: the gate\'s note on who can write says what migration 016 grants', () => {
+    const ts = read('supabase/functions/jevs/index.ts');
+    assert.ok(!/holds no database login/.test(ts), 'untrue once the site has its own login (fix 5)');
+    assert.match(ts, /Only dog_jevs has grants or row-level security policies on the gh_\* tables/);
+  });
+
+  test('review R1: real text can\'t pass as "commands only" to skip the machine-account alert', async () => {
+    await link(4801, 'boss8', 4802, 'boss8-bot');
+    for (const body of ['/approve Buy cheap followers at https://followers.example today',
+      '/appeal\n/appeal Visit https://scam.example for a prize', '/agent Here is a long paragraph of ordinary looking content from the bot']) {
+      const r = await go({ id: 4802, login: 'boss8-bot', body });
+      assert.deepStrictEqual({ alert: r.alert, reason: r.decisions[0].reason }, { alert: true, reason: 'machine_no_agent' }, JSON.stringify(body.slice(0, 20)));
+    }
+  });
+
+  test('review R2: a machine account can\'t remove its draft agent and then swap an approved post\'s text unseen', async () => {
+    await link(4901, 'boss9', 4902, 'boss9-bot');
+    await go({ id: 4901, login: 'boss9', body: '/agent register pen9 draft' });
+    const enforce = (o) => G.handle(sql, { ...ev(o), mode: 'enforce' }, { key: KEY });
+    await enforce({ id: 4902, login: 'boss9-bot', node: 'R2A', created: new Date(Date.now() - 60000).toISOString(), body: 'Approved words.\n— agent pen9 for @boss9' });
+    assert.deepStrictEqual((await enforce({ id: 4901, login: 'boss9', thread: 'cR2A', body: '/approve' })).unhide, ['DC_R2A']);
+    const rm = await go({ id: 4902, login: 'boss9-bot', body: '/agent remove pen9' });
+    assert.strictEqual(rm.alert, false, 'removing an agent is narrowing, and a post of commands only');
+    const e = await enforce({ id: 4902, login: 'boss9-bot', node: 'R2A', body: 'Swapped words.', top: { action: 'edited' } });
+    assert.deepStrictEqual({ alert: e.alert, reason: e.decisions[0].reason }, { alert: true, reason: 'machine_no_agent' });
+  });
+
+  test('review R3: two links made at the same moment can\'t form a chain', async () => {
+    const u = new URL(SERVER); u.pathname = '/' + name;
+    const pool = postgres(u.toString(), { max: 4, prepare: false, onnotice: () => {} });
+    try {
+      for (let i = 0; i < 6; i += 1) {
+        const P = 5000 + i * 10, M = P + 1, X = P + 2, lp = 'rp' + i, lm = 'rm' + i, lx = 'rx' + i;
+        for (const [id, login] of [[P, lp], [M, lm], [X, lx]]) await go({ id, login, body: 'hello' });
+        await go({ id: P, login: lp, body: '/agent add @' + lm });
+        await go({ id: M, login: lm, body: '/agent add @' + lx });
+        await Promise.all([G.handle(pool, ev({ id: M, login: lm, body: '/agent owner @' + lp }), { key: KEY }),
+          G.handle(pool, ev({ id: X, login: lx, body: '/agent owner @' + lm }), { key: KEY })]);
+        const [c] = await owner(`select count(*)::int as n from app.gh_accounts a join app.gh_accounts o on o.id = a.owner_id
+          where o.owner_id is not null and a.github_id in (${M}, ${X})`);
+        assert.strictEqual(c.n, 0, 'round ' + i + ': no account is linked to an account that is itself linked');
+      }
+    } finally { await pool.end({ timeout: 5 }); }
+  });
+
+  test('review R4: an edit that keeps the text doesn\'t block /approve; one edited after it says why it wasn\'t approved', async () => {
+    await go({ id: 5101, login: 'boss10', body: '/agent register pen10 draft' });
+    const enforce = (o) => G.handle(sql, { ...ev(o), mode: 'enforce' }, { key: KEY });
+    await enforce({ id: 5101, login: 'boss10', node: 'R4A', created: new Date(Date.now() - 60000).toISOString(), body: 'Draft.\n— agent pen10 for @boss10' });
+    const posted = new Date(Date.now() - 1000).toISOString();
+    await enforce({ id: 5101, login: 'boss10', node: 'R4A', body: 'Draft.\n— agent pen10 for @boss10', top: { action: 'edited' } });
+    assert.deepStrictEqual((await enforce({ id: 5101, login: 'boss10', thread: 'cR4A', created: posted, body: '/approve' })).unhide, ['DC_R4A'], 'same text: approved');
+    await enforce({ id: 5101, login: 'boss10', node: 'R4B', created: new Date(Date.now() - 60000).toISOString(), body: 'Second.\n— agent pen10 for @boss10' });
+    const before = new Date(Date.now() - 1000).toISOString();
+    await enforce({ id: 5101, login: 'boss10', node: 'R4B', body: 'Second, changed.\n— agent pen10 for @boss10', top: { action: 'edited' } });
+    const r = await enforce({ id: 5101, login: 'boss10', thread: 'cR4B', created: before, body: '/approve' });
+    assert.match(r.reply, /edited after your `\/approve` was posted/);
+  });
+
+  test('review T1: two accounts that both changed their login can link at the same moment without a deadlock', async () => {
+    const u = new URL(SERVER); u.pathname = '/' + name;
+    const pool = postgres(u.toString(), { max: 4, prepare: false, onnotice: () => {} });
+    try {
+      for (let i = 0; i < 8; i += 1) {
+        const P = 5200 + i * 10, M = P + 1, lp = 'tp' + i, lm = 'tm' + i;
+        await go({ id: P, login: lp, body: 'hello' });
+        await go({ id: M, login: lm, body: 'hello' });
+        const [a, b] = await Promise.all([G.handle(pool, ev({ id: M, login: lm + '-new', body: '/agent owner @' + lp }), { key: KEY }),
+          G.handle(pool, ev({ id: P, login: lp + '-new', body: '/agent add @' + lm }), { key: KEY })]);
+        assert.ok(a.ok && b.ok, 'round ' + i + ': both posts scored');
+        const [r] = await owner(`select m.login, o.github_id as owner from app.gh_accounts m left join app.gh_accounts o on o.id = m.owner_id where m.github_id = ${M}`);
+        assert.strictEqual(r.login, lm + '-new', 'round ' + i + ': the new login written');
+        // If one side's rename lands first, the other named it by a login that no longer exists: no link, and that side
+        // is told so (it can try again with the new login). Otherwise they are linked.
+        assert.ok(r.owner === String(P) || /hasn't posted here yet/.test(a.reply + b.reply), 'round ' + i + ': linked, or told why not: ' + a.reply + ' | ' + b.reply);
+      }
+    } finally { await pool.end({ timeout: 5 }); }
+  });
+
+  test('review T2: a post of more than 10 command-shaped lines is not "commands only"', async () => {
+    await link(5301, 'boss11', 5302, 'boss11-bot');
+    const body = Array.from({ length: 11 }, (_, i) => '/agent remove buy-cheap-followers-now-' + i).join('\n');
+    const r = await go({ id: 5302, login: 'boss11-bot', body });
+    assert.deepStrictEqual({ alert: r.alert, reason: r.decisions[0].reason }, { alert: true, reason: 'machine_no_agent' });
+  });
+
+  test('review, fourth pass: a post with two link commands and another account\'s link post at the same moment don\'t deadlock', async () => {
+    const u = new URL(SERVER); u.pathname = '/' + name;
+    const pool = postgres(u.toString(), { max: 4, prepare: false, onnotice: () => {} });
+    try {
+      for (let i = 0; i < 12; i += 1) {
+        const S = 5400 + i * 10, A = S + 1, B = S + 2, ls = 'ds' + i, la = 'da' + i, lb = 'db' + i;
+        for (const [id, login] of [[B, lb], [A, la], [S, ls]]) await go({ id, login, body: 'hello' }); // B's id sorts first
+        const [x, y] = await Promise.all([G.handle(pool, ev({ id: S, login: ls, body: '/agent add @' + la + '\n/agent add @' + lb }), { key: KEY }),
+          G.handle(pool, ev({ id: B, login: lb, body: '/agent add @' + la }), { key: KEY })]);
+        assert.ok(x.ok && y.ok, 'round ' + i + ': both posts scored');
+      }
+    } finally { await pool.end({ timeout: 5 }); }
+  });
+
+  test('review, fifth pass: a machine account\'s command and its owner\'s unlink or add at the same moment don\'t deadlock', async () => {
+    const u = new URL(SERVER); u.pathname = '/' + name;
+    const fresh = () => postgres(u.toString(), { max: 1, prepare: false, onnotice: () => {} });
+    const failed = [];
+    for (let i = 0; i < 40; i += 1) {
+      const M = 5600 + i * 10, P = M + 1, lm = 'vm' + i, lp = 'vp' + i; // M is made first, so its id sorts first
+      await go({ id: M, login: lm, body: 'hello' });
+      await go({ id: P, login: lp, body: 'hello\n/agent register tool' });
+      await go({ id: P, login: lp, body: '/agent add @' + lm });
+      await go({ id: M, login: lm, body: '/agent owner @' + lp });
+      const second = i % 2 ? '/agent unlink @' + lm : '/agent add @' + lm;
+      const p1 = fresh(), p2 = fresh();
+      try {
+        await Promise.all([G.handle(p1, ev({ id: M, login: lm, body: '/agent limit tool off' }), { key: KEY }),
+          new Promise((r) => setTimeout(r, i % 5)).then(() => G.handle(p2, ev({ id: P, login: lp, body: second }), { key: KEY }))]);
+      } catch (e) { failed.push(i + ': ' + e.message); } finally { await p1.end({ timeout: 5 }); await p2.end({ timeout: 5 }); }
+    }
+    assert.deepStrictEqual(failed, [], 'every round: both posts scored');
   });
 
 }

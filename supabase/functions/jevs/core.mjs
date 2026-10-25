@@ -85,9 +85,9 @@ const HIDDEN = [
   ['invisible_chars', /[\u{200B}\u{202A}-\u{202E}\u{2066}-\u{2069}\u{2060}-\u{2064}]|(?!^)\u{FEFF}/u],
   ['encoded_blob', /[A-Za-z0-9+/=]{200,}/],
   ['override_phrase', /\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions|prompts?|messages|rules)\b/i],
-  // Line by line (the m flag) with only spaces and tabs before the word, so the pattern stays linear on long runs of
-  // blank lines; "(^|\n)\s*" backtracked over them.
-  ['role_marker', /^[ \t]*(system|assistant|developer)[ \t]*:|<\/?(system|instructions?)>/im]
+  // Line by line (the m flag), with any whitespace but a line break (\n, \r, U+2028, U+2029) before the word and any
+  // whitespace after it, so the pattern stays linear on long runs of blank lines; "(^|\n)\s*" backtracked over them.
+  ['role_marker', /^[^\S\r\n\u{2028}\u{2029}]*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/imu]
 ];
 export function hiddenSignals(body) {
   return HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
@@ -183,7 +183,7 @@ export const QUESTIONS = [
     score: (s) => band(num(s.contacts), [[3, 80], [2, 50], [1, 30]]) },
   { id: 'J09', title: 'Copies of other people’s words', description: 'Other people whose post in the last week, made earlier, has nearly the same words (word prints within 10 of 64 bits): one scores 30, two 60, five or more 90. Text under 8 words or 40 characters is never counted.',
     score: (s) => band(num(s.copies), [[5, 90], [2, 60], [1, 30]]) },
-  { id: 'J10', title: 'Track record', description: 'Posts of this account hidden in the last 90 days: one scores 30, two 60, three or more 90.',
+  { id: 'J10', title: 'Track record', description: 'Posts of this account and its linked machine accounts hidden in the last 90 days for the ban list or high risk (a hide only for an owner\'s own off, draft or cap limits never counts): one scores 30, two 60, three or more 90.',
     score: (s) => band(num(s.hidden_90d), [[3, 90], [2, 60], [1, 30]]) },
   { id: 'J11', title: 'Sensitive action', description: 'Registering an agent or a sub-agent, or linking a machine account, scores 10.',
     score: (s) => (s.sensitive ? 10 : 0) },

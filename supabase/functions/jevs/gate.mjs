@@ -14,6 +14,7 @@ export const FOUNDER_ID = 304218593; // MyChiefOS: Aaron's account, which co-fou
 const MODES = ['off', 'draft', 'act'];
 const wider = (a, b) => MODES.indexOf(a) > MODES.indexOf(b);
 const MAX_BODY = 65536; // GitHub's own limit on a comment
+const MAX_DEPTH = 3; // sub-agent levels below an agent its owner made, as on the site (014_subagents.sql)
 
 class BadEvent extends Error {}
 export { BadEvent };
@@ -73,7 +74,13 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
       (select count(*)::int from app.gh_agents where owner_id = ${principal} and created_at > now() - interval '24 hours') as owner_agents_24h,
       (select count(*)::int from app.gh_agents where owner_id = ${principal} and parent_id is not null and created_at > now() - interval '1 hour') as tree_subagents_1h`)[0];
   const find = async (name) => (await t`select * from app.gh_agents where owner_id = ${principal} and name = ${name} and (expires_at is null or expires_at > now())`)[0];
+  // A linked machine account acts for its owner, but may only narrow what its owner allowed (fix 1.1, harness/PLAN.md):
+  // lower an agent's limits, remove one, or unlink itself. Registering, making sub-agents, linking and raising limits
+  // need the owner's own account, as /approve does.
+  const machine = acct.id !== principal;
+  const ownerOnly = () => say('Only ' + at(principalLogin) + ', posting from their own account, can do that. A linked machine account can only lower its owner\'s agents\' limits, remove an agent, or unlink itself.');
 
+  if (machine && (cmd.op === 'register' || cmd.op === 'subagent' || cmd.op === 'add' || cmd.op === 'owner')) return ownerOnly();
   if (cmd.op === 'register') {
     if (await find(cmd.name)) return say('`' + cmd.name + '` is already one of your agents. Change it with `/agent limit ' + cmd.name + ' off|draft|act daily <n>`.');
     const c = await counts();
@@ -91,6 +98,12 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
       return say('A sub-agent can\'t have wider limits than `' + parent.name + '` (' + parent.mode + ', ' + parent.daily_cap + ' a day). Nothing changed.');
     }
     if (await find(cmd.name)) return say('`' + cmd.name + '` is already one of your agents.');
+    // At most 3 levels below an agent its owner made, as on the site (SA4).
+    const [d] = await t`with recursive up (id, parent_id, lvl) as (
+        select a.id, a.parent_id, 0 from app.gh_agents a where a.id = ${parent.id}
+        union all select a.id, a.parent_id, up.lvl + 1 from app.gh_agents a join up on a.id = up.parent_id where up.lvl < 10)
+      select max(lvl)::int as depth from up`;
+    if (d.depth + 1 > MAX_DEPTH) return say('Sub-agents go at most ' + MAX_DEPTH + ' levels below an agent you made, and `' + parent.name + '` is already at level ' + d.depth + '. Nothing changed.');
     const hours = Math.min(720, Math.max(1, cmd.hours ?? 24));
     const c = await counts();
     const [ag] = await t`insert into app.gh_agents (owner_id, name, parent_id, mode, daily_cap, expires_at)
@@ -104,6 +117,7 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
   if (cmd.op === 'limit') {
     const ag = await find(cmd.name);
     if (!ag) return say('`' + cmd.name + '` isn\'t one of your agents.');
+    if (machine && (wider(cmd.mode, ag.mode) || (cmd.daily ?? ag.daily_cap) > ag.daily_cap)) return ownerOnly();
     if (ag.parent_id) {
       const [p] = await t`select * from app.gh_agents where id = ${ag.parent_id}`;
       if (wider(cmd.mode, p.mode) || (cmd.daily ?? ag.daily_cap) > p.daily_cap) return say('A sub-agent can\'t have wider limits than its parent `' + p.name + '`. Nothing changed.');
@@ -124,7 +138,7 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
     if (!ag) return say('`' + cmd.name + '` isn\'t one of your agents.');
     await decide('agent.remove', {}, null);
     await t`delete from app.gh_agents where id = ${ag.id}`;
-    return say('Removed `' + ag.name + '` and any sub-agents under it. Its posts stay; new ones with its tag will be flagged.');
+    return say('Removed `' + ag.name + '` and any sub-agents under it. Its posts stay. A new post with its tag line gets a reply saying it isn\'t registered.');
   }
   if (cmd.op === 'unlink') {
     const other = await accountByLogin(t, cmd.login);
@@ -140,10 +154,18 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
     // add: a person names their machine account. owner: the machine account names its person. Both are needed,
     // each naming an account that has already posted here, within 24 hours of each other.
     const other = await accountByLogin(t, cmd.login);
-    if (!other) return say(at(cmd.login) + ' hasn\'t posted here yet. Post once from it (a hello is enough), then try again.');
+    if (!other) return say(at(cmd.login) + ' hasn\'t posted here yet under that login (a login that just changed counts as new). Post once from it (a hello is enough), then try again.');
     if (other.id === acct.id) return say('An account can\'t be linked to itself.');
-    const person = cmd.op === 'add' ? acct : other, machine = cmd.op === 'add' ? other : acct;
+    // Lock both accounts (in id order) and read them again, so two links made at the same moment can't both pass the
+    // checks below and form a chain (review R3).
+    const rows = await t`select * from app.gh_accounts where id in (${acct.id}, ${other.id}) order by id for no key update`;
+    const now = (id) => rows.find((x) => x.id === id);
+    const person = now(cmd.op === 'add' ? acct.id : other.id), machine = now(cmd.op === 'add' ? other.id : acct.id);
     if (person.owner_id) return say(at(person.login) + ' is itself a linked machine account, so it can\'t own one.');
+    // No chains: an account that already has machine accounts linked to it can't become one, or a ban on the person
+    // at the top wouldn't reach the accounts below (review F4).
+    const [chain] = await t`select exists (select 1 from app.gh_accounts where owner_id = ${machine.id}) as yes`;
+    if (chain.yes) return say(at(machine.login) + ' has machine accounts linked to it, so it can\'t be linked as one. Unlink those first.');
     await t`update app.gh_accounts set link_wanted = ${other.id}, link_wanted_at = now() where id = ${acct.id}`;
     const [ok] = await t`select exists (select 1 from app.gh_accounts where id = ${other.id} and link_wanted = ${acct.id}
       and link_wanted_at > now() - interval '24 hours') as yes`;
@@ -205,6 +227,7 @@ async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banne
       const drafts = await t`update app.gh_posts p set approved = true, hidden = case when ${mode} = 'enforce' then false else p.hidden end
         from app.gh_agents a where a.id = p.agent_id and a.owner_id = ${principal} and p.thread_node_id = ${thread}
           and p.node_id <> ${ev.post.node_id} and not p.approved and p.risk <> 'high'
+          and coalesce(p.edited_at, p.created_at) <= ${new Date(ev.post.created_at)}
           and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason = 'agent_draft')
           and not exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.reason in ('high_risk', 'banned'))
         returning p.id, p.node_id, p.agent_id`;
@@ -212,7 +235,14 @@ async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banne
         await record(t, out, { action: 'post.approve', account: principal, post: d.id, agent: d.agent_id, scores: {}, level: 'low', effect: 'unhide', mode });
         if (mode === 'enforce') out.unhide.push(d.node_id);
       }
+      let later = false;
+      if (!drafts.length) {
+        [{ later }] = await t`select exists (select 1 from app.gh_posts p join app.gh_agents a on a.id = p.agent_id
+          where a.owner_id = ${principal} and p.thread_node_id = ${thread} and not p.approved and p.risk <> 'high'
+            and p.edited_at > ${new Date(ev.post.created_at)}) as later`;
+      }
       out.replies.push(drafts.length ? 'Approved: ' + drafts.length + ' draft' + (drafts.length > 1 ? 's' : '') + (mode === 'enforce' ? ' shown again.' : ' (nothing was hidden: JEVs is in shadow mode).')
+        : later ? 'Not approved: the draft was edited after your `/approve` was posted. Read it again, then reply `/approve`.'
         : 'Nothing of your agents\' is waiting for approval in this thread.');
     }
   }
@@ -261,10 +291,12 @@ export async function handle(sql, raw, { key }) {
       [acct] = await t`insert into app.gh_accounts (github_id, login, github_created_at) values (${ev.author.id}, ${ev.author.login},
         ${ev.author.created_at || null}) on conflict (github_id) do update set login = excluded.login returning *`;
       out.first = true;
-    } else if (acct.login !== ev.author.login || (!acct.github_created_at && ev.author.created_at)) {
-      [acct] = await t`update app.gh_accounts set login = ${ev.author.login}, github_created_at = coalesce(github_created_at, ${ev.author.created_at || null})
-        where id = ${acct.id} returning *`;
     }
+    // A changed login or a newly known account age is written after the commands run, not before: /agent add and owner
+    // lock both accounts' rows in id order, and an earlier write here would already hold this row, so two links made at
+    // once could deadlock (review T1). Until then the post uses the new values in memory.
+    const refresh = acct.login !== ev.author.login || (!acct.github_created_at && ev.author.created_at);
+    if (refresh) acct = { ...acct, login: ev.author.login, github_created_at: acct.github_created_at || ev.author.created_at };
     const principal = principalOf(acct);
     const principalLogin = principal === acct.id ? acct.login : (await t`select login from app.gh_accounts where id = ${principal}`)[0].login;
     const founder = ev.author.id === FOUNDER_ID;
@@ -275,7 +307,21 @@ export async function handle(sql, raw, { key }) {
 
     // Commands run once, when the post is made (not again on edits).
     if (ev.action === 'created') {
-      for (const cmd of J.parseCommands(body)) await runCommand(t, out, cmd, { acct, principal, principalLogin, mode, th });
+      const cmds = J.parseCommands(body);
+      // Every account this post's link commands name, and the poster's own, are locked at once, in id order, before
+      // any command runs. Locking pair by pair let a post with two link commands deadlock with another account's link
+      // post (review, fourth pass).
+      // "no key update", not "update": it still excludes another link, but not the key-share locks the foreign keys of
+      // gh_posts and gh_decisions take on these rows, which deadlocked (review, fifth pass).
+      const named = cmds.filter((c) => c.op === 'add' || c.op === 'owner' || c.op === 'unlink').map((c) => c.login.toLowerCase());
+      if (named.length) {
+        await t`select id from app.gh_accounts where id = ${acct.id} or lower(login) = any(${named}::text[]) order by id for no key update`;
+      }
+      for (const cmd of cmds) await runCommand(t, out, cmd, { acct, principal, principalLogin, mode, th });
+    }
+    if (refresh) {
+      await t`update app.gh_accounts set login = ${ev.author.login}, github_created_at = coalesce(github_created_at, ${ev.author.created_at || null})
+        where id = ${acct.id}`;
     }
 
     // Who wrote it: a person, or one of their agents (the tag line).
@@ -293,6 +339,29 @@ export async function handle(sql, raw, { key }) {
         impersonation = true; // tagged as someone else's agent
       }
     }
+    // A post that was an agent's stays that agent's: an edit that drops or changes the tag line keeps the earlier
+    // agent's limits, so an approved or capped post can't be swapped out by editing the tag (fix 1.5, review F2).
+    // An approval covers the text that was approved: an edit that changes it needs approving again.
+    const [prior] = await t`select approved, body_key, agent_id from app.gh_posts where node_id = ${ev.post.node_id}`;
+    if (prior && prior.agent_id && (!agent || agent.id !== prior.agent_id)) {
+      [agent] = await t`select * from app.gh_agents where id = ${prior.agent_id}`;
+    }
+    const approved = Boolean(prior && prior.approved && prior.body_key === bodyKey);
+    // A linked machine account's post that names no registered agent of its owner (no tag line, or a tag naming an agent
+    // that doesn't exist, was removed or has expired) would skip the owner's off, draft and cap limits (fix 1.2). For now
+    // it alerts, once, when it is made, and asks for the tag; whether such posts are hidden is Aaron's decision
+    // (harness/PLAN.md section 4). A post that is only commands (/agent, /approve, /appeal) is not asked.
+    // At most 10 lines, the most commands one post runs, so a post of many command-shaped lines still counts (review T2).
+    const lines = String(body).split('\n').map((l) => l.trim()).filter(Boolean);
+    const commandsOnly = lines.length <= 10
+      && lines.every((l) => /^\/(approve|appeal)$/i.test(l) || J.agentTag(l) || (J.parseCommands(l)[0] || { op: 'unknown' }).op !== 'unknown');
+    const machineNoAgent = acct.id !== principal && !agent && !commandsOnly;
+    // An approved post whose agent has since been removed has no limits left to apply; a machine account changing its
+    // text alerts, even on an edit (review R2).
+    const swapped = machineNoAgent && ev.action === 'edited' && Boolean(prior && prior.approved) && !approved;
+    if (machineNoAgent && !tag && ev.action === 'created') {
+      out.replies.push('This post is from ' + at(acct.login) + ', a machine account linked to ' + at(principalLogin) + ', but has no agent tag line, so its owner\'s agent limits can\'t be applied. End posts from this account with `— agent <name> for @' + principalLogin + '`.');
+    }
 
     // Signals: counts only.
     const created = new Date(ev.post.created_at);
@@ -302,7 +371,9 @@ export async function handle(sql, raw, { key }) {
       select
         (select count(*)::int from app.gh_posts where author_id in (select id from mine) and created_at > now() - interval '1 hour' and node_id <> ${ev.post.node_id}) as posts_1h,
         (select count(*)::int from app.gh_posts where author_id in (select id from mine) and created_at between now() - interval '15 days' and now() - interval '1 hour') as posts_before,
-        (select count(*)::int from app.gh_posts where author_id in (select id from mine) and hidden and created_at > now() - interval '90 days') as hidden_90d,
+        (select count(*)::int from app.gh_posts p where p.author_id in (select id from mine) and p.hidden and p.created_at > now() - interval '90 days'
+           and exists (select 1 from app.gh_decisions d where d.post_id = p.id and d.effect = 'hide'
+             and (d.reason in ('banned', 'high_risk') or d.risk = 'high'))) as hidden_90d,
         (select count(distinct author_id)::int from app.gh_posts where author_id not in (select id from mine) and simhash is not null
            and ${text.simhash}::bigint is not null and created_at > now() - interval '7 days' and created_at < ${created}
            and bit_count((simhash # ${text.simhash}::bigint)::bit(64)) <= ${J.NEAR_BITS}) as copies,
@@ -321,28 +392,30 @@ export async function handle(sql, raw, { key }) {
     const r = J.risk(scores, th);
 
     // What JEVs does. The ban list first, then the owner's own limits (off, draft, daily cap), then risk.
-    const [prior] = await t`select approved from app.gh_posts where node_id = ${ev.post.node_id}`;
     let reason = '';
     if (banned) reason = 'banned';
     else if (agent && agent.mode === 'off') reason = 'agent_off';
-    else if (agent && agent.mode === 'draft' && !(prior && prior.approved)) reason = 'agent_draft';
+    else if (agent && agent.mode === 'draft' && !approved) reason = 'agent_draft';
     else if (agent && action === 'post.create' && sig.agent_posts_24h >= agent.daily_cap) reason = 'agent_cap';
     else if (r.level === 'high') reason = 'high_risk';
+    else if (machineNoAgent) reason = 'machine_no_agent';
+    const alertOnly = reason === 'machine_no_agent'; // never hidden (see above)
     // GitHub can hide a comment but not a discussion, so a discussion that would be hidden is alerted instead.
     const hideable = ev.event === 'discussion_comment';
-    const effect = reason && hideable ? 'hide' : (reason && !(reason.startsWith('agent_'))) || scores.J16 > 0 || scores.J17 > 0 ? 'alert' : 'none';
+    const effect = reason && hideable && !alertOnly ? 'hide' : (reason && !(reason.startsWith('agent_'))) || scores.J16 > 0 || scores.J17 > 0 ? 'alert' : 'none';
     // A discussion can't be hidden: a banned or high-risk one alerts Aaron, once, when it is started. An agent's own
     // limits (off, draft, cap) on a discussion are the owner's business and alert no one.
     const ownLimit = reason === 'agent_off' || reason === 'agent_draft' || reason === 'agent_cap';
-    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || (reason && !hideable && !ownLimit && ev.action === 'created')) out.alert = true;
+    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || ((reason && !hideable && !ownLimit || alertOnly) && ev.action === 'created') || swapped) out.alert = true;
     out.hide = effect === 'hide' && mode === 'enforce';
     if (out.hide) out.replies.push(HIDDEN_BECAUSE[reason]);
 
     const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, created_at, body_key, simhash, risk, hidden)
       values (${ev.post.node_id}, ${ev.event === 'discussion' ? 'discussion' : 'comment'}, ${ev.discussion}, ${ev.post.thread_node_id || null}, ${acct.id},
               ${agent ? agent.id : null}, ${created}, ${bodyKey}, ${text.simhash}::bigint, ${r.level}, ${out.hide})
-      on conflict (node_id) do update set edited_at = now(), body_key = excluded.body_key, simhash = excluded.simhash, risk = excluded.risk,
-        agent_id = excluded.agent_id, hidden = app.gh_posts.hidden or excluded.hidden
+      on conflict (node_id) do update set edited_at = case when app.gh_posts.body_key = excluded.body_key then app.gh_posts.edited_at else now() end, body_key = excluded.body_key, simhash = excluded.simhash, risk = excluded.risk,
+        agent_id = excluded.agent_id, hidden = app.gh_posts.hidden or excluded.hidden,
+        approved = app.gh_posts.approved and app.gh_posts.body_key = excluded.body_key
       returning id`;
     await t`delete from app.gh_post_domains where post_id = ${post.id}`;
     for (const k of new Set(domainKeys)) await t`insert into app.gh_post_domains (post_id, domain_key) values (${post.id}, ${k})`;

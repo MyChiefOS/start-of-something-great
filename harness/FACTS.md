@@ -47,7 +47,7 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | PR #36 (security-batch-1 → main) holds all Release 2 work; checks green; nothing else is open | replaced | GitHub API | 2026-10-23 |
 | 15 commits on Oct 17 carry Aaron's name (MyChiefOS) but were made by a Claude session (Fable 5.1); GitHub shows them Unverified. Three reviews found no harmful change | checked | GitHub API commit verification; red, blue and scalability reviews | 2026-10-22 |
 | The live database has migrations 001 to 017; 37 app tables, every one with row-level security forced, 193 policies; the site's own tables (members, sessions, posts, agents, keys, rules, drafts, notices) exist and are empty; no role of ours can sign in and `dog_web` doesn't exist (replaces "the database is empty") | checked | Supabase SQL, read-only | 2026-10-25 |
-| Pull requests #37 to #43 are merged (#43, INTEGRITY.md, on Oct 25 14:27 UTC); this plan follows in the handoff-plan PR | checked | GitHub API | 2026-10-25 |
+| Pull requests #37 to #44 are merged (#43, INTEGRITY.md, on Oct 25 14:27 UTC; #44, harness/PLAN.md, on Oct 25 15:52 UTC, merge commit `0c7c856`) | checked | GitHub API | 2026-10-25 |
 | The JEVs gate is version 3, its 5 files byte-identical to `a15a412`; the runner is version 4; the JEVs workflow has run once (Aaron's post, Oct 24 23:05 UTC, shadow mode, scored low, no text stored); the first scheduled drift check passed (Oct 25 13:43 UTC) | checked | Supabase function files; workflow runs; database rows | 2026-10-25 |
 | The site's JEVs mode is `shadow`, so first-post review would wait for Aaron | checked | app.jevs_settings, read-only | 2026-10-25 |
 | Vault holds `dog_fingerprint_key_1`, `dog_session_secret` and `dog_ip_hash_key` (names read, never values). The gate reads the first; the site reads its keys only from environment variables (`signin/config.js:16-45`) | checked | Supabase SQL (names only); code | 2026-10-25 |
@@ -69,8 +69,8 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/
 | PR 4: moderation and region (rows 2, 5, 10, 12, 17) | Claude builds; Aaron merges | done: PR #40 and its review fixes #41, merged Oct 24 |
 | PR 5/6: JEVs enforce mode (Aaron's go-live merge for GitHub) | Claude builds; Aaron merges | done: PR #42, merged Oct 24 23:10 UTC |
 | Merge #43: INTEGRITY.md | Aaron merges | done: merged Oct 25 14:27 UTC |
-| Merge the handoff-plan PR: harness/PLAN.md and the reference documents brought in line | Aaron merges | open |
-| Fix 1: the GitHub holes (machine accounts, untagged posts, J10, blank-line slowdown, moderator deletions); redeploy the gate | Claude builds; Aaron merges | open: blank-line fix done on branch jevs-fixes-pr7 |
+| Merge the handoff-plan PR: harness/PLAN.md and the reference documents brought in line | Aaron merges | done: PR #44, merged Oct 25 15:52 UTC |
+| Fix 1: the GitHub holes (machine accounts, untagged posts, J10, blank-line slowdown, moderator deletions); redeploy the gate | Claude builds; Aaron merges | open: built and reviewed on branch jevs-fixes-pr7 (moderator deletions left out, pending the question below); Aaron merges, then the gate is redeployed |
 | Fixes 2 to 7: hidden posts kept from agents; the database decides who is acting; the runner allows one site login; migration 018; the sign-in link and true text; site JEVs to enforce | Claude builds; Aaron merges | open (harness/PLAN.md, in order) |
 | Fix 8: Vercel settings (database address, sign-in keys, GitHub app, timer secret) | Aaron | open |
 | Fix 9 and go-live: Aaron becomes administrator, then LAUNCH_STAGE public | Aaron decides; Claude builds the step | open |
@@ -98,7 +98,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "Publish it as a requirement and make it supersede any of your existing guidance." (the integrity and coding-accountability prompt) | 2026-10-24 | done: INTEGRITY.md, merged in PR #43 (Oct 25 14:27 UTC); binding from then |
 | "can you build these back with a direct connection to database?" (`/api/feed`, `/api/agents`, `/api/notify`) | 2026-10-24 | in plan: harness/PLAN.md fixes 3 to 5; recorded in CHARTER.md §2 |
 | "Assume I want the features except PASSKEY" / "I want everything done and completed now" | 2026-10-24 | in plan: harness/PLAN.md, fixes 1 to 10 |
-| "I want you to save this plan and your notes on what needs to be done. So any other agent know exactly where to pick up… Also, update all reference material so their is no conflict with this approach." | 2026-10-25 | in plan: harness/PLAN.md and the reference documents, the handoff-plan PR |
+| "I want you to save this plan and your notes on what needs to be done. So any other agent know exactly where to pick up… Also, update all reference material so their is no conflict with this approach." | 2026-10-25 | done: PR #44, merged Oct 25 15:52 UTC |
 
 ## Open for Aaron (ask once; record the answer here)
 
@@ -110,7 +110,8 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | How does Aaron become administrator before sign-up opens (harness/PLAN.md fix 9) | 2026-10-25 | |
 | How are email erasure requests carried out (privacy promises erasure; nothing is built) | 2026-10-25 | |
 | What does the regional decline mean for posts made directly on GitHub (the gate can't know a poster's country) | 2026-10-25 | |
-| Are untagged posts from a linked machine account hidden (harness/PLAN.md fix 1.2, proposed) | 2026-10-25 | |
+| Are untagged posts from a linked machine account hidden (harness/PLAN.md fix 1.2, proposed). Built for now: they alert Aaron once and get a reply asking for the tag, never hidden | 2026-10-25 | Decided by Claude under Aaron's Oct 25 instruction ("implement whats honest and hold true to my intent… what would the CLJO do?"): alert, never hide, per "checks alert, never lock out" (Oct 23) and "members are trusted by default" (Oct 16). Aaron may reopen |
+| When a moderator (not the author) deletes a post on GitHub, does JEVs keep an IDs-only record, or erase it as today (the privacy page promises erasure) (harness/PLAN.md fix 1.5) | 2026-10-25 | Decided by Claude under the same instruction: erase, as privacy.html promises ("When a post is deleted, our checks erase what they kept about it"); a lawful exception is the legal hold (RK22). Keeping records would need the privacy page changed first. Aaron may reopen |
 
 ## Parking list (no named owner yet; not built until one is named)
 
