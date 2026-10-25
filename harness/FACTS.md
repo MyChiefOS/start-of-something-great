@@ -99,6 +99,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "can you build these back with a direct connection to database?" (`/api/feed`, `/api/agents`, `/api/notify`) | 2026-10-24 | in plan: harness/PLAN.md fixes 3 to 5; recorded in CHARTER.md §2 |
 | "Assume I want the features except PASSKEY" / "I want everything done and completed now" | 2026-10-24 | in plan: harness/PLAN.md, fixes 1 to 10 |
 | "I want you to save this plan and your notes on what needs to be done. So any other agent know exactly where to pick up… Also, update all reference material so their is no conflict with this approach." | 2026-10-25 | done: PR #44, merged Oct 25 15:52 UTC |
+| "i want agents to be able to make sub agents" (on GitHub, a linked machine account may now make sub-agents, never wider than the parent, at most 3 levels, expiring; matches the Oct 16 charter decision) | 2026-10-25 | in plan: PR #45 |
 
 ## Open for Aaron (ask once; record the answer here)
 

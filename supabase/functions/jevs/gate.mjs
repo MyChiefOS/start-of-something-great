@@ -75,12 +75,13 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
       (select count(*)::int from app.gh_agents where owner_id = ${principal} and parent_id is not null and created_at > now() - interval '1 hour') as tree_subagents_1h`)[0];
   const find = async (name) => (await t`select * from app.gh_agents where owner_id = ${principal} and name = ${name} and (expires_at is null or expires_at > now())`)[0];
   // A linked machine account acts for its owner, but may only narrow what its owner allowed (fix 1.1, harness/PLAN.md):
-  // lower an agent's limits, remove one, or unlink itself. Registering, making sub-agents, linking and raising limits
-  // need the owner's own account, as /approve does.
+  // lower an agent's limits, remove one, make a sub-agent (never wider than its parent, at most 3 levels, expiring;
+  // Aaron, Oct 25: "i want agents to be able to make sub agents"), or unlink itself. Registering a new top-level agent,
+  // linking and raising limits need the owner's own account, as /approve does.
   const machine = acct.id !== principal;
-  const ownerOnly = () => say('Only ' + at(principalLogin) + ', posting from their own account, can do that. A linked machine account can only lower its owner\'s agents\' limits, remove an agent, or unlink itself.');
+  const ownerOnly = () => say('Only ' + at(principalLogin) + ', posting from their own account, can do that. A linked machine account can only lower its owner\'s agents\' limits, remove an agent, make a sub-agent, or unlink itself.');
 
-  if (machine && (cmd.op === 'register' || cmd.op === 'subagent' || cmd.op === 'add' || cmd.op === 'owner')) return ownerOnly();
+  if (machine && (cmd.op === 'register' || cmd.op === 'add' || cmd.op === 'owner')) return ownerOnly();
   if (cmd.op === 'register') {
     if (await find(cmd.name)) return say('`' + cmd.name + '` is already one of your agents. Change it with `/agent limit ' + cmd.name + ' off|draft|act daily <n>`.');
     const c = await counts();

@@ -336,12 +336,12 @@ if (!SERVER) {
     assert.match(r.reply, /Linked:/);
   };
 
-  test('fix 1.1: a linked machine account can only narrow its owner\'s agents, never widen them or make new ones', async () => {
+  test('fix 1.1: a linked machine account can only narrow its owner\'s agents, never widen them or register new ones; it can make sub-agents', async () => {
     await link(4101, 'boss1', 4102, 'boss1-bot');
     await go({ id: 4101, login: 'boss1', body: '/agent register tool off daily 5\n/agent register spare draft' });
     const tries = await go({ id: 4102, login: 'boss1-bot',
-      body: '/agent limit tool act daily 10000\n/agent register extra\n/agent subagent kid of tool off\n/agent add @someone\n/agent owner @someone\n/agent limit tool off daily 9' });
-    assert.strictEqual((tries.reply.match(/Only `@boss1`, posting from their own account, can do that/g) || []).length, 6, 'each of the six is refused');
+      body: '/agent limit tool act daily 10000\n/agent register extra\n/agent add @someone\n/agent owner @someone\n/agent limit tool off daily 9' });
+    assert.strictEqual((tries.reply.match(/Only `@boss1`, posting from their own account, can do that/g) || []).length, 5, 'each of the five is refused');
     let rows = await owner(`select a.name, a.mode, a.daily_cap from app.gh_agents a join app.gh_accounts o on o.id = a.owner_id where o.github_id = 4101 order by a.name`);
     assert.deepStrictEqual(rows, [{ name: 'spare', mode: 'draft', daily_cap: 20 }, { name: 'tool', mode: 'off', daily_cap: 5 }], 'nothing changed (the probe of Oct 25 raised off to act at 10,000 a day)');
     const down = await go({ id: 4102, login: 'boss1-bot', body: '/agent limit tool off daily 2\n/agent remove spare' });
@@ -349,6 +349,12 @@ if (!SERVER) {
     assert.match(down.reply, /Removed `spare`/);
     rows = await owner(`select a.name, a.mode, a.daily_cap from app.gh_agents a join app.gh_accounts o on o.id = a.owner_id where o.github_id = 4101`);
     assert.deepStrictEqual(rows, [{ name: 'tool', mode: 'off', daily_cap: 2 }]);
+    // Agents may make sub-agents (Aaron, Oct 16 and Oct 25): a machine account can, never wider than the parent.
+    const sub = await go({ id: 4102, login: 'boss1-bot', body: '/agent subagent kid of tool off daily 1 hours 2\n/agent subagent big of tool act' });
+    assert.match(sub.reply, /Made sub-agent `kid` of `tool`: off, up to 1 posts a day, for 2 hours/);
+    assert.match(sub.reply, /A sub-agent can't have wider limits than `tool`/);
+    const [kid] = await owner(`select a.mode, a.daily_cap, p.name as parent from app.gh_agents a join app.gh_agents p on p.id = a.parent_id where a.name = 'kid'`);
+    assert.deepStrictEqual(kid, { mode: 'off', daily_cap: 1, parent: 'tool' });
     const own = await go({ id: 4101, login: 'boss1', body: '/agent limit tool act daily 50' });
     assert.match(own.reply, /`tool` is now act, up to 50 posts a day/, 'the owner, posting as themselves, still can');
     const u = await go({ id: 4102, login: 'boss1-bot', body: '/agent unlink @boss1' });
