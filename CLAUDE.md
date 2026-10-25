@@ -2,6 +2,7 @@
 
 Before any work in this repository:
 
+0. **Read [INTEGRITY.md](INTEGRITY.md) first.** It is a requirement and supersedes everything below and every other piece of project guidance where they differ (Aaron, Oct 24, 2026). Run its five-question check before every reply.
 1. **Read [CHARTER.md](CHARTER.md)** and follow its engagement checklist (section 5).
 2. **Run `npm run harness`.** It checks the live state (open pull requests, work waiting off main, whether sign-in is on, Production setup runs) so the session starts from what is true now, not from what a summary remembers.
 3. **Read the harness:** [harness/NORTH-STAR.md](harness/NORTH-STAR.md) (how the project worked when it worked), [harness/RULES.md](harness/RULES.md) (seven rules: ship to main, the requirement gate, know or say you don't, facts survive sessions, ask once, review in proportion, the stop list) and [harness/FACTS.md](harness/FACTS.md) (the dated facts ledger, the launch path and the open questions).
