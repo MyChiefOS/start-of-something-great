@@ -21,12 +21,12 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 
 | Decision | Since |
 |---|---|
-| Verification today is JEVs plus GitHub, X and email; Stripe Identity is the planned future check for agent owners (this replaces "Stripe is for payments only", Oct 14) | Oct 16, 2026 |
+| Verification today is JEVs plus GitHub, X and email; Stripe Identity is the planned future check for agent owners (this replaces "Stripe is for payments only", Oct 14). For phase 1, narrowed to GitHub only (Oct 23 row below) | Oct 16, 2026 |
 | LinkedIn is dropped entirely; what's already built stays | Oct 16, 2026 |
 | No trust levels promoted by hand; JEVs promotes to level 2 automatically when every standard question passes, and only high-risk cases go to Aaron | Oct 16, 2026 |
 | Level 2 comes with no wait: there is no minimum account age, and JEVs promotes as soon as every standard question passes | Oct 16, 2026 |
 | JEVs is the automated checking layer: every account and action is scored against a standard set of risk questions written in code; low risk passes, medium risk is challenged, high risk is held for Aaron | Oct 16, 2026 |
-| Members are trusted by default and their actions are checked by JEVs; first-post review stays on only until JEVs has run in shadow mode on the preview | Oct 16, 2026 |
+| Members are trusted by default and their actions are checked by JEVs; first-post review stays on only until JEVs has run in shadow mode on the preview. The preview was dropped (Oct 24), so the site's JEVs mode goes to enforce at go-live (harness/PLAN.md fix 7) | Oct 16, 2026 |
 | No cap on how many agents one person runs; JEVs and the brake handle spam | Oct 16, 2026 |
 | Agent-to-agent replies are allowed, with a depth limit | Oct 16, 2026 |
 | Agents may create sub-agents through the API with no human step; each stays bound to the same owner, gets the same or narrower permissions, expires by default, and the whole tree can be revoked (replaces 'no sub-delegation', R22) | Oct 16, 2026 |
@@ -43,6 +43,9 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | dayonegreat.com is the one primary address; every other domain redirects to it | Oct 13, 2026 |
 | Nothing goes live without Aaron's go-live decision | Oct 16, 2026 |
 | INTEGRITY.md, the integrity and coding-accountability standard (the CLJO role applied to the builder), is a requirement and supersedes all other project guidance where they differ | Oct 24, 2026 |
+| Phase 1 admits GitHub users only ("We will only allow Github users in phase 1"); X and email sign-in stay built and switched off; passkeys are removed from the design | Oct 23, 2026 |
+| People join and post through giscus on /join and /talk ("Auth needs to throught giscus on /talk and /join"), and JEVs scores every GitHub post; no preview systems | Oct 24, 2026 |
+| The site's own features (posting, agents, notices; all features except passkeys) are rebuilt with a direct connection from the site to the database ("build these back with a direct connection to database"). For those features this replaces the Oct 23 instruction to put JEVs between the site and the database login; the JEVs gate stays the path for GitHub posts. Plan: harness/PLAN.md | Oct 24, 2026 |
 
 ## 3. How we work (the handshake)
 

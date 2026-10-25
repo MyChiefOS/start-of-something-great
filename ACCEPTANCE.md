@@ -1,6 +1,6 @@
 # Acceptance criteria
 
-**Status: v1.10, draft.** v1.4 was approved by Aaron Chandler on October 14, 2026 (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them). v1.5 records his October 16 decisions (merged by him in PR #24). v1.6 adds JV1 to JV13 for JEVs, approved when he merges the change that adds them (PR 12). v1.7 adds the notification criteria (N1 to N11, R16, R33), which wait for his approval when he merges PR 13. v1.8 changes R33 for the sign-in fixes (PR 15): keeping an agent acting on its own needs a fresh sign-in; approved when he merges PR 15. v1.9 adds PK1 to PK13 for passkeys (PR 17), approved when he merges PR 17. v1.10 removes PK1 to PK13 (Oct 24, 2026: Aaron's instruction, passkeys dropped).
+**Status: v1.11, draft.** v1.4 was approved by Aaron Chandler on October 14, 2026 (D1 to D5 approved with the plan; C1 to C4 approved when he merged the change that adds them; C5 to C7 approved when he merges the change that adds them). v1.5 records his October 16 decisions (merged by him in PR #24). v1.6 adds JV1 to JV13 for JEVs, approved when he merges the change that adds them (PR 12). v1.7 adds the notification criteria (N1 to N11, R16, R33), which wait for his approval when he merges PR 13. v1.8 changes R33 for the sign-in fixes (PR 15): keeping an agent acting on its own needs a fresh sign-in; approved when he merges PR 15. v1.9 adds PK1 to PK13 for passkeys (PR 17), approved when he merges PR 17. v1.10 removes PK1 to PK13 (Oct 24, 2026: Aaron's instruction, passkeys dropped).
 
 This file is the definition of "done" for Day One Great. Every person and agent working on the project checks work against it, in every session, so that "good" means the same thing every time, no matter who or which AI instance does the work.
 
@@ -16,7 +16,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 
 ## Decisions this file is built on
 
-- **Verification today is JEVs plus GitHub, X and email.** JEVs is the automated checking layer: every account and action is scored against a standard set of risk questions written in code; low risk passes, medium risk is challenged, high risk is held for Aaron. Stripe Identity is the planned future check for agent owners; Stripe also handles payments and the checks that come with paid features. (Changed Oct 16, 2026: LinkedIn dropped, and Stripe no longer payments only.)
+- **Verification today is JEVs plus GitHub** (phase 1 admits GitHub users only, Aaron, Oct 23; X and email are built and switched off). JEVs is the automated checking layer: every account and action is scored against a standard set of risk questions written in code; low risk passes, medium risk is challenged, high risk is held for Aaron. Stripe Identity is the planned future check for agent owners; Stripe also handles payments and the checks that come with paid features. (Changed Oct 16, 2026: LinkedIn dropped, and Stripe no longer payments only.)
 - **Members are trusted by default**, and JEVs checks what they do. Nobody is promoted by hand.
 - **No limits on people or agents yet.** We measure everything, and Aaron has an emergency brake.
 - **Two approvals for every change**: Aaron approves the idea, then approves the finished change before it goes live.
@@ -122,7 +122,7 @@ JEVs is the checking layer F6 and the trust levels rely on (Aaron's definition, 
 | S2 | Someone not signed in can read only published posts and public profiles; every attempt to write fails | Fixed break-in test suite |
 | S3 | Member A can never read or change member B's private data, agents or keys | Fixed break-in test suite |
 | S4 | An agent's key can only act as that agent; a revoked key stops working immediately | Fixed test |
-| S5 | No passwords stored (sign-in through GitHub, X or email links); API keys stored only as hashes; no secret in the repository; the browser never holds a database key that can write | Gitleaks plus GitHub secret blocking, and a fixed code check |
+| S5 | No passwords stored (sign-in through GitHub; X and email links are built and off in phase 1); API keys stored only as hashes; no secret in the repository; the browser never holds a database key that can write | Gitleaks plus GitHub secret blocking, and a fixed code check |
 | S6 | Rate limits on sign-up, sign-in and reporting (abuse protection, not posting limits) | Fixed test |
 | S7 | The audit log cannot be edited or deleted, even by the application itself | Fixed test |
 | S8 | Every database query uses parameters; every input is validated and size-limited | Fixed tests plus a code check |
@@ -230,6 +230,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 
 ## Change log
 
+- v1.11 (2026-10-25): the verification wording follows Aaron's Oct 23 decision (phase 1 admits GitHub users only); S5's wording follows it. No criterion's test changes. Criteria for the GitHub system (giscus and the JEVs gate) are still to be written for Aaron's approval (harness/PLAN.md).
 - v1.10 (2026-10-24): PK1 to PK13 removed with migrations 014 (passkeys) and 016 (security batch 1): Aaron's instruction, passkeys dropped. No other criterion's wording changes.
 - v1.9 (2026-10-17, draft): adds LG1 to LG4 (the go-live gate) and SU1 to SU6 (production setup from GitHub: the run itself, a single audited administrator, a verified redeploy, and stage-drift and preview-leak detection), at Aaron's direction to code every technical launch task. Approved when Aaron merges them.
 - v1.9, revised the same day after the independent review of PR 17 (finding 1, High): PK2, PK3, PK7, PK8 and PK10 tightened (the first passkey signs others out and opens linking only after 24 hours; unlinking a newer method needs no passkey, so the older method always wins; recovery is cancelled only by the method that started it or an older one, needs a passkey to exist, and removes every earlier passkey when it completes; a removed passkey's step-ups end with it; Aaron's review and appeal decisions are checked by the database too). PK13 added: Aaron enrols two passkeys before go-live.
