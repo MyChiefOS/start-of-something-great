@@ -85,7 +85,9 @@ const HIDDEN = [
   ['invisible_chars', /[\u{200B}\u{202A}-\u{202E}\u{2066}-\u{2069}\u{2060}-\u{2064}]|(?!^)\u{FEFF}/u],
   ['encoded_blob', /[A-Za-z0-9+/=]{200,}/],
   ['override_phrase', /\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions|prompts?|messages|rules)\b/i],
-  ['role_marker', /(^|\n)\s*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/i]
+  // Line by line (the m flag) with only spaces and tabs before the word, so the pattern stays linear on long runs of
+  // blank lines; "(^|\n)\s*" backtracked over them.
+  ['role_marker', /^[ \t]*(system|assistant|developer)[ \t]*:|<\/?(system|instructions?)>/im]
 ];
 export function hiddenSignals(body) {
   return HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
@@ -147,10 +149,12 @@ export function parseActions(body) {
 }
 
 // An agent's post ends with a tag line naming the agent and its owner: "— agent scout for @aaron" (an em dash, en
-// dash, one or two hyphens).
-const TAG = new RegExp('(?:^|\\n)\\s*(?:—|–|--?)\\s*agent\\s+(' + NAME + ')\\s+for\\s+@(' + LOGIN + ')\\s*$', 'i');
+// dash, one or two hyphens). Only the last line is tested: an anchored pattern on one line is linear, where the old
+// "(^|\n)\s*" form backtracked over runs of blank lines (65,000 of them took 4 s, over the gate's 2 s CPU limit).
+const TAG = new RegExp('^[ \\t]*(?:—|–|--?)[ \\t]*agent[ \\t]+(' + NAME + ')[ \\t]+for[ \\t]+@(' + LOGIN + ')[ \\t]*$', 'i');
 export function agentTag(body) {
-  const m = TAG.exec(String(body).trimEnd());
+  const text = String(body).trimEnd();
+  const m = TAG.exec(text.slice(text.lastIndexOf('\n') + 1));
   return m ? { name: m[1].toLowerCase(), owner: m[2] } : null;
 }
 

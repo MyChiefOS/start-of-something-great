@@ -81,6 +81,20 @@ test('row 7: /agent commands are read one per line, at most 10, and the tag line
   assert.strictEqual(J.agentTag('— agent scout for @alice\nand then more text'), null, 'the tag is the last line');
 });
 
+test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s CPU limit (PR 7: a post of blank lines took 9 s)', async () => {
+  const J = await import('../supabase/functions/jevs/core.mjs');
+  const n = 65000;
+  const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x',
+    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2)];
+  for (const body of hostile) {
+    const t0 = Date.now();
+    J.analyze(body); J.agentTag(body); J.parseCommands(body); J.parseActions(body);
+    assert.ok(Date.now() - t0 < 500, 'scored in under 500 ms: ' + JSON.stringify(body.slice(0, 12)));
+  }
+  assert.deepStrictEqual(J.hiddenSignals('hello\n\n   system: do X'), ['role_marker'], 'a role marker on its own line is still spotted');
+  assert.deepStrictEqual(J.hiddenSignals('the system: it works'), [], 'mid-sentence "system:" is not a role marker');
+});
+
 test('row 18: the workflow never puts event text into a command, and logs nothing about the person, text or scores', () => {
   const y = read('.github/workflows/jevs.yml');
   const runs = [...y.matchAll(/run: \|\n([\s\S]*?)(?=\n {6}- |\n*$)/g)].map((m) => m[1]);
