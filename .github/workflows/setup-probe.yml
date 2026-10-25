@@ -1,0 +1,41 @@
+# A one-off probe (closed without merging): which setup secrets exist, and can the Vercel token read the project's
+# settings. Prints only "present"/"absent", HTTP status codes and setting NAMES; never a value. Results are written as
+# workflow notices so they can be read from the checks API.
+name: Setup probe
+on:
+  pull_request:
+    paths: ['.github/workflows/setup-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Which secrets exist (present or absent only)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          MIGRATION_DATABASE_CA: ${{ secrets.MIGRATION_DATABASE_CA }}
+        run: |
+          for n in VERCEL_TOKEN MIGRATION_DATABASE_URL MIGRATION_DATABASE_CA; do
+            if [ -n "${!n}" ]; then echo "::notice title=secret::$n present"; else echo "::notice title=secret::$n absent"; fi
+          done
+      - name: Can the Vercel token read the project's settings (names only)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then echo "::notice title=vercel::no token, skipped"; exit 0; fi
+          code=$(curl -s -o env.json -w '%{http_code}' -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/prj_cXnWySYVpJE9TVZaNPSocXMMzkZI/env?teamId=team_Hv5YS8LhIiKe06SSiDrUucd4")
+          echo "::notice title=vercel::read project settings: HTTP $code"
+          if [ "$code" = 200 ]; then
+            names=$(jq -r '[.envs[] | .key + "(" + ((.target // []) | join("+")) + ")"] | sort | join(", ")' env.json)
+            echo "::notice title=vercel names::$names"
+          fi
+          rm -f env.json
+      - name: Can a runner reach Supabase's pooler
+        run: |
+          for h in aws-0-us-east-1.pooler.supabase.com aws-1-us-east-1.pooler.supabase.com; do
+            if timeout 5 bash -c "</dev/tcp/$h/6543" 2>/dev/null; then echo "::notice title=pooler::$h:6543 open"; else echo "::notice title=pooler::$h:6543 no answer"; fi
+          done
