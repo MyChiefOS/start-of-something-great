@@ -58,6 +58,8 @@ const DEFINERS = {
   'app.members_ban_cleanup()': 'dog_signin',
   // PR 8: a member deletes their own account (F8).
   'app.delete_account()': 'dog_erase',
+  // Fix 2 (018, Oct 25, 2026): which of the GitHub posts the site already has JEVs hid; only those IDs, nothing more.
+  'app.gh_hidden(text[])': 'dog_jevs',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
   'app.receipt(uuid)': 'dog_public',

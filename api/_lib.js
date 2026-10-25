@@ -215,9 +215,36 @@ function stripHidden(text) {
   return { text: clean, removed: clean !== raw };
 }
 
+// Posts JEVs hid on GitHub (harness/PLAN.md fix 2): GitHub's REST API doesn't say which comments are hidden, so the
+// site asks the database, which the JEVs gate keeps (db/github.js). Until the site has its database (launch stage
+// closed, or no database address) the check is off, and the answer says so. The source can be swapped in tests.
+let hiddenCheck = async (ids) => {
+  const db = require('../db');
+  if (!db.configured()) return null;
+  return db.run({ actor: 'anon' }, (t) => require('../db/github').hidden(t, ids));
+};
+function setHiddenCheck(fn) { hiddenCheck = fn; }
+const HIDDEN_NOTES = {
+  on: 'Posts hidden on GitHub by JEVs, Day One Great\'s automated checks, are left out. A post JEVs has not checked yet (usually its first minute) can still appear.',
+  off: 'The check for posts hidden on GitHub by JEVs is not switched on yet, so a hidden post can appear here. Hidden posts are marked as hidden on GitHub.',
+  unavailable: 'The check for posts hidden on GitHub by JEVs could not run just now, so the replies are left out of this answer. Read them on GitHub, or ask again shortly.'
+};
+
 async function getConversation(limit) {
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
   const [d, comments] = await Promise.all([gh('/discussions/1'), gh('/discussions/1/comments?per_page=50')]);
+  // Which of these posts JEVs hid. If the check fails, the replies are left out rather than shown unchecked: anyone can
+  // still read them on GitHub, so nobody is locked out, and no hidden post reaches an agent.
+  let filter = 'off', hidden = new Set();
+  try {
+    const got = await hiddenCheck([d.node_id, ...(comments || []).map((c) => c.node_id)]);
+    if (got) { filter = 'on'; hidden = got; }
+  } catch (e) {
+    // Logged (Vercel's logs) as the error's code only, never its text, so a lasting failure is seen (fix 2 review).
+    console.error('conversation: hidden-post check failed (' + String((e && (e.code || e.name)) || 'error').replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) + ')');
+    filter = 'unavailable';
+  }
+  const shown = filter === 'unavailable' ? [] : (comments || []).filter((c) => !hidden.has(c.node_id));
   let removed = false;
   // P4: Discussion text is public text too; hidden markup out first, then mask, then clip.
   const pub = (v, max) => { const h = stripHidden(v); removed = removed || h.removed; return clip(maskContacts(h.text), max); };
@@ -231,7 +258,7 @@ async function getConversation(limit) {
       body: pub(d.body, 4000),
       reply_count: d.comments
     },
-    replies: (comments || []).slice(0, n).map((c) => ({
+    replies: shown.slice(0, n).map((c) => ({
       by: c.user ? c.user.login : null,
       at: c.created_at,
       body: pub(c.body, 2000),
@@ -239,6 +266,7 @@ async function getConversation(limit) {
     }))
   };
   out.hidden_markup_removed = removed;
+  out.hidden_posts = { filter, left_out: filter === 'on' ? (comments || []).length - shown.length : 0, note: HIDDEN_NOTES[filter] };
   return out;
 }
 
@@ -288,4 +316,4 @@ function onlyGet(req, res) {
 }
 
 module.exports = {
-  stripHidden, SITE, REPO, handshake, pages, status, getChanges, getConversation, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };
+  stripHidden, SITE, REPO, handshake, pages, status, getChanges, getConversation, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };

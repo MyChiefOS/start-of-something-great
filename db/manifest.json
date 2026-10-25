@@ -67,6 +67,10 @@
     {
       "version": "017_moderation",
       "sha256": "24be5b620983993fe9c2ccb21cc28dda028292651f3bd7e66083fe43808d2a09"
+    },
+    {
+      "version": "018_hidden_posts",
+      "sha256": "d82ca8424b5059e5c0954a5ada8381e8a694c2456d439273c59c0fb4560f27f7"
     }
   ],
   "reset": {
