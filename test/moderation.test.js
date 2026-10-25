@@ -129,7 +129,7 @@ if (!SERVER) {
     assert.match(live.reply, /until the agent's owner approves it: the owner replies `\/approve` under this post/);
   });
 
-  test('row 8: the owner approves a draft by replying /approve under it; it is shown again and stays approved when edited', async () => {
+  test('row 8: the owner approves a draft by replying /approve under it; it is shown again, and an edit that changes it needs approving again', async () => {
     await go({ id: 5101, login: 'own6', body: '/agent register writer draft' });
     const draft = await go({ id: 5101, login: 'own6', node: 'DRAFT1', body: 'Proposed text.\n— agent writer for @own6' });
     assert.strictEqual(draft.hide, true);
@@ -138,8 +138,13 @@ if (!SERVER) {
     const ok = await go({ id: 5101, login: 'own6', thread: 'cDRAFT1', body: '/approve' });
     assert.deepStrictEqual(ok.unhide, ['DC_DRAFT1']);
     assert.match(ok.reply, /Approved: 1 draft shown again/);
-    const edit = await go({ id: 5101, login: 'own6', node: 'DRAFT1', action: 'edited', body: 'Proposed text, tidied.\n— agent writer for @own6' });
-    assert.strictEqual(edit.hide, false, 'an approved draft stays shown');
+    const same = await go({ id: 5101, login: 'own6', node: 'DRAFT1', action: 'edited', body: 'Proposed text.\n— agent writer for @own6' });
+    assert.strictEqual(same.hide, false, 'an edit that leaves the approved text as it was keeps it shown');
+    const edit = await go({ id: 5101, login: 'own6', node: 'DRAFT1', action: 'edited', body: 'Different text, swapped in after approval.\n— agent writer for @own6' });
+    assert.deepStrictEqual({ hide: edit.hide, reason: edit.decisions[0].reason }, { hide: true, reason: 'agent_draft' },
+      'fix 1.5: an approval covers the text that was approved, not whatever replaces it');
+    const again = await go({ id: 5101, login: 'own6', thread: 'cDRAFT1', body: '/approve' });
+    assert.deepStrictEqual(again.unhide, ['DC_DRAFT1'], 'the owner can approve the new text');
   });
 
   test('row 5: the author of a hidden post appeals with /appeal under it; a person is alerted, and JEVs decides nothing', async () => {

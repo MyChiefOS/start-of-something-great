@@ -3,7 +3,8 @@
 // that workflow handles. It scores the event in one transaction as dog_jevs and answers with the decision, which the
 // workflow carries out on GitHub (a reply to /agent commands, an alert, and in enforce mode hiding a post).
 // Deployed from the merged commit with Supabase's own JWT check off (supabase/config.toml), like dog-migrate.
-// The site (Vercel) holds no database login; nothing else can write here.
+// Only dog_jevs has grants or row-level security policies on the gh_* tables (016_github_jevs.sql), so nothing else,
+// the site's own login included (dog_web, which holds only dog_app; harness/PLAN.md fix 5), can write them.
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
 import { tokenUsed } from "../dog-migrate/core.mjs";

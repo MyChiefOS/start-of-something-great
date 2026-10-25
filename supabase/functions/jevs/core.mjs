@@ -85,7 +85,9 @@ const HIDDEN = [
   ['invisible_chars', /[\u{200B}\u{202A}-\u{202E}\u{2066}-\u{2069}\u{2060}-\u{2064}]|(?!^)\u{FEFF}/u],
   ['encoded_blob', /[A-Za-z0-9+/=]{200,}/],
   ['override_phrase', /\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions|prompts?|messages|rules)\b/i],
-  ['role_marker', /(^|\n)\s*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/i]
+  // Line by line (the m flag), with any whitespace but a line break (\n, \r, U+2028, U+2029) before the word and any
+  // whitespace after it, so the pattern stays linear on long runs of blank lines; "(^|\n)\s*" backtracked over them.
+  ['role_marker', /^[^\S\r\n\u{2028}\u{2029}]*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/imu]
 ];
 export function hiddenSignals(body) {
   return HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
@@ -147,10 +149,12 @@ export function parseActions(body) {
 }
 
 // An agent's post ends with a tag line naming the agent and its owner: "— agent scout for @aaron" (an em dash, en
-// dash, one or two hyphens).
-const TAG = new RegExp('(?:^|\\n)\\s*(?:—|–|--?)\\s*agent\\s+(' + NAME + ')\\s+for\\s+@(' + LOGIN + ')\\s*$', 'i');
+// dash, one or two hyphens). Only the last line is tested: an anchored pattern on one line is linear, where the old
+// "(^|\n)\s*" form backtracked over runs of blank lines (65,000 of them took 4 s, over the gate's 2 s CPU limit).
+const TAG = new RegExp('^[ \\t]*(?:—|–|--?)[ \\t]*agent[ \\t]+(' + NAME + ')[ \\t]+for[ \\t]+@(' + LOGIN + ')[ \\t]*$', 'i');
 export function agentTag(body) {
-  const m = TAG.exec(String(body).trimEnd());
+  const text = String(body).trimEnd();
+  const m = TAG.exec(text.slice(text.lastIndexOf('\n') + 1));
   return m ? { name: m[1].toLowerCase(), owner: m[2] } : null;
 }
 
@@ -179,7 +183,7 @@ export const QUESTIONS = [
     score: (s) => band(num(s.contacts), [[3, 80], [2, 50], [1, 30]]) },
   { id: 'J09', title: 'Copies of other people’s words', description: 'Other people whose post in the last week, made earlier, has nearly the same words (word prints within 10 of 64 bits): one scores 30, two 60, five or more 90. Text under 8 words or 40 characters is never counted.',
     score: (s) => band(num(s.copies), [[5, 90], [2, 60], [1, 30]]) },
-  { id: 'J10', title: 'Track record', description: 'Posts of this account hidden in the last 90 days: one scores 30, two 60, three or more 90.',
+  { id: 'J10', title: 'Track record', description: 'Posts of this account and its linked machine accounts hidden in the last 90 days for the ban list or high risk (a hide only for an owner\'s own off, draft or cap limits never counts): one scores 30, two 60, three or more 90.',
     score: (s) => band(num(s.hidden_90d), [[3, 90], [2, 60], [1, 30]]) },
   { id: 'J11', title: 'Sensitive action', description: 'Registering an agent or a sub-agent, or linking a machine account, scores 10.',
     score: (s) => (s.sensitive ? 10 : 0) },
