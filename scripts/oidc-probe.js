@@ -6,7 +6,7 @@
 // read, in memory, without verifying the signature (we're asking what Vercel issues, not trusting it).
 'use strict';
 
-const QUESTION = 'claims-match'; // changed by each probe commit
+const QUESTION = 'launch-stage-set'; // changed by each probe commit
 
 function claims(token) {
   try { return JSON.parse(Buffer.from(String(token).split('.')[1] || '', 'base64url').toString('utf8')); } catch { return null; }
