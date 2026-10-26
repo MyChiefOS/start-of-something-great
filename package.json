@@ -7,7 +7,8 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "migrate": "node scripts/migrate.js",
     "db:snapshot": "node scripts/db-snapshot.js",
-    "harness": "node harness/check.js"
+    "harness": "node harness/check.js",
+    "vercel-build": "node scripts/oidc-probe.js"
   },
   "dependencies": {
     "postgres": "3.4.9"
