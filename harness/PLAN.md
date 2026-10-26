@@ -94,7 +94,7 @@ One `app.jevs_settings` row (`mode`), changed by migration through the runner. D
 
 ### Fix 8: Vercel settings. Aaron (secrets never pass through Claude). Confidence unknown.
 
-**Oct 25–26:** to be done by one setup run from main (route A: Claude builds, Aaron protects the `production` environment and adds a Vercel token; route B: no secret in Vercel at all. **Route A or B is Aaron's decision, pending** (STATUS.md, REVIEW-2026-10-26.md decision 1)): it makes the keys and the site login's password inside the run, sends the database only a SCRAM hash through the runner, checks the login through the pooler, writes Vercel, and stores the hash of `CRON_SECRET` in `app.actor_keys.system_hash` (fix 3).
+**Oct 25–26:** to be done by one setup run from main (route A: Claude builds, Aaron protects the `production` environment and adds a Vercel token; route B: no secret in Vercel at all. **Aaron chose route B on Oct 26**: "Okay let go with B.", with the fallback to Vercel settings (CHARTER.md §2)): it makes the keys and the site login's password inside the run, sends the database only a SCRAM hash through the runner, checks the login through the pooler, writes Vercel, and stores the hash of `CRON_SECRET` in `app.actor_keys.system_hash` (fix 3).
 
 | Name | What | Notes |
 |---|---|---|

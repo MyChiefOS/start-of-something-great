@@ -44,6 +44,7 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | Nothing goes live without Aaron's go-live decision | Oct 16, 2026 |
 | INTEGRITY.md, the integrity and coding-accountability standard (the CLJO role applied to the builder), is a requirement and supersedes all other project guidance where they differ | Oct 24, 2026 |
 | Phase 1 admits GitHub users only ("We will only allow Github users in phase 1"); X and email sign-in stay built and switched off; passkeys are removed from the design | Oct 23, 2026 |
+| Route B for the site's database login and keys: they are made inside the database and kept in Supabase Vault, and the site fetches them with Vercel's identity token through a broker function (the CSO's controls 1 to 8, each with its fail-safe). The site uses Vercel settings first if they exist, so switching back to route A needs no code change (Aaron: "Okay let go with B.") | Oct 26, 2026 |
 | People join and post through giscus on /join and /talk ("Auth needs to throught giscus on /talk and /join"), and JEVs scores every GitHub post; no preview systems | Oct 24, 2026 |
 | The site's own features (posting, agents, notices; all features except passkeys) are rebuilt with a direct connection from the site to the database ("build these back with a direct connection to database"). For those features this replaces the Oct 23 instruction to put JEVs between the site and the database login; the JEVs gate stays the path for GitHub posts. Plan: harness/PLAN.md | Oct 24, 2026 |
 
@@ -56,7 +57,7 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 - **Release gates are repeatable:** the scanners and the tests. AI security reviews are advisory, because they find different things each run. Fix anything critical, record the rest in RISKS.md with a compensating control.
 - **IT actions:** ask Aaron's guidance first, and record his agreement in OPERATIONS.md before acting.
 - **Supabase:** read-only unless Aaron approves a change; migrations only through the protected GitHub workflow; never pause or delete anything; never read keys.
-- **Secrets:** Claude never sees, handles or asks for keys, tokens or passwords. Aaron pastes them into Vercel himself.
+- **Secrets:** Claude never sees, handles or asks for keys, tokens or passwords. Under route B (Oct 26) the site's keys are made inside the database and never pasted anywhere; if Aaron ever switches back to route A, he pastes them into Vercel himself.
 - **No accounts created, money spent or terms accepted by Claude.** Research and web searches are fine without asking.
 - **Quality over speed:** take the time to deliver excellent work, never a partial product presented as complete. Narrate the work as it goes.
 

@@ -127,7 +127,7 @@ Seven steps before every feature (except passkeys) is live, one PR open at a tim
 
 **Decisions**
 
-- [ ] **Route A or route B for the site's login and keys** (fixes 5 and 8).
+- [x] **Route A or route B for the site's login and keys** (fixes 5 and 8): **route B, decided Oct 26** ("Okay let go with B."), with the fallback to Vercel settings.
   - Under B: whether Aaron accepts an open timer address with a rate limit in the database.
 - [ ] **RK82 (fix 3 review, finding 1):** whether the site's login may keep creating new members on its own, at a level it chooses up to 2. Claude proposes capping new members at level 1 inside `app.sign_in` in a later PR.
 - [ ] **Approve one logged deletion of `dog-probe`** on Supabase (review decision 3).

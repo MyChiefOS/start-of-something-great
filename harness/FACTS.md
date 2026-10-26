@@ -100,6 +100,9 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "Assume I want the features except PASSKEY" / "I want everything done and completed now" | 2026-10-24 | in plan: harness/PLAN.md, fixes 1 to 10 |
 | "I want you to save this plan and your notes on what needs to be done. So any other agent know exactly where to pick up… Also, update all reference material so their is no conflict with this approach." | 2026-10-25 | done: PR #44, merged Oct 25 15:52 UTC |
 | "i want agents to be able to make sub agents" (on GitHub, a linked machine account may now make sub-agents, never wider than the parent, at most 3 levels, expiring; matches the Oct 16 charter decision) | 2026-10-25 | done: PR #45, deployed (gate version 4) |
+| "Have a discussion with the CLJO MD file confirm if this can be done without me… or if this can be done another way that does not involve me taking an action outside of approving a PR." (fixes 5 and 8) | 2026-10-26 | done: CLJO counsel DR-2026-1026-001 (route B, conditional); simulation; CSO controls 1 to 8 |
+| "If i agree to route B if there is an issues can we back track that decision." Answered yes: before the route B PR merges, nothing to undo; afterwards PRs from Claude (a refusing stub, a password change) plus route A's two steps; the site reads Vercel settings first, so no code change is needed to switch | 2026-10-26 | done (answer); the fallback is in plan for the route B PR |
+| "Okay let go with B." Route B for the site's login and keys, with the fallback to Vercel settings and the CSO's controls 1 to 8 | 2026-10-26 | in plan: the probe PR, then fixes 5 and 8 (harness/REVIEW-2026-10-26.md, PR sequence 4 and 5) |
 
 ## Open for Aaron (ask once; record the answer here)
 
