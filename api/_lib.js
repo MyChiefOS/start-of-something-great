@@ -98,7 +98,7 @@ const status = {
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'dropped Oct 24: no private preview (Aaron)' },
       { name: 'Joining with GitHub on /join (giscus)', target: '2026-10-22', actual: '2026-10-23', result: 'done, 1 day late' },
       { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
-      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: '2026-10-24', result: 'done, 27 days early: JEVs in enforce mode (PR 6)' }
+      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'not yet: joining and posting with GitHub are live, with JEVs in enforce mode since Oct 24 (PR 6); the site\u2019s own sign-in, posting and agent keys are built and switched off until harness/PLAN.md fixes 5 to 10 are done and proven live' }
     ]
   },
   how_to_take_part: {

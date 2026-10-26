@@ -1,6 +1,6 @@
 # Release checklist (SF6)
 
-Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until Aaron sets the go-live stage (launch.js): `closed` (the default), `preview` (only the people he allow-lists), then `public`, which is the go-live decision. The private preview target is Nov 6 and the public release Nov 20, only on Aaron's go-live decision.
+Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until the go-live stage (launch.js) moves from `closed` (the default) to `public`, which is Aaron's go-live decision. There is no preview stage (Aaron, Oct 24: "NO preview systems"); `preview` counts as closed. Under route B (Oct 26) the remaining steps are Claude's PRs; Aaron approves them.
 
 Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the setup run does it), notices in-app only, and the regional gate in code.
 

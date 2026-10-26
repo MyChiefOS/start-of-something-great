@@ -5,7 +5,7 @@ const github = require('./_github');
 
 const SITE = process.env.SITE_URL || 'https://dayonegreat.com';
 const LABEL = 'uptime';
-const STAGES = ['closed', 'preview', 'public'];
+const STAGES = ['closed', 'public']; // "preview" is no longer a stage (launch.js)
 // The stage the last approved Production setup run set (repository variable EXPECTED_STAGE, written by that run).
 // Empty means "not recorded yet": the live stage is then only checked for being a real one.
 const EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
@@ -36,17 +36,10 @@ const CHECKS = [
     }
   },
   {
-    // D5: the feed answers as the stage requires. Closed or public: 200 with a list of posts. In the private
-    // preview a signed-out request MUST be refused and told never to be cached: a 200 here is a leak. If the stage
-    // couldn't be read, either correct answer passes.
+    // D5: the feed answers as the stage requires. Both stages, closed and public, answer 200 with a list of posts.
+    // ("preview", which refused signed-out visitors, is no longer a stage: launch.js.) Anything else is a fault.
     name: 'Go-live gate', path: '/api/feed',
-    test: (r, t, ctx = {}) => {
-      const refused = r.status === 401 && header(r, 'cache-control').includes('no-store') && String(JSON.parse(t).error || '').includes('private preview');
-      const open = r.status === 200 && Array.isArray(JSON.parse(t).posts);
-      if (ctx.stage === 'preview') return refused;
-      if (ctx.stage === 'closed' || ctx.stage === 'public') return open;
-      return refused || open;
-    }
+    test: (r, t) => r.status === 200 && Array.isArray(JSON.parse(t).posts)
   },
   {
     // Sign-in answers as designed: on, it sends you to GitHub (or back to /join); off (closed), it says exactly that.

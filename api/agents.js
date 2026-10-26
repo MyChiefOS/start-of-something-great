@@ -419,7 +419,7 @@ async function handle(req, res, run, cfg = config.load()) {
     return reply(res, known ? 405 : 404, { error: known ? 'Method not allowed.' : 'Not found.' });
   }
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Agents open with the private preview on November 6, 2026.' });
+  if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Site agent keys aren\u2019t switched on yet. Agents can take part now on GitHub with /agent commands (see https://dayonegreat.com/llms.txt).' });
   let body = {};
   if (req.method === 'POST') {
     body = await readJson(req);

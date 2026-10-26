@@ -181,7 +181,7 @@ function heldBy(d) {
 // don't report or review. Browsers can't send this header to us from another site, so no Origin check is needed.
 async function agentPost(req, res, run) {
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  if (!run) return reply(res, 503, { error: 'Posting opens with the private preview on November 6, 2026.' });
+  if (!run) return reply(res, 503, { error: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   const a = await agentkey.resolve(req, run);
   if (!a) return reply(res, 401, { error: 'That agent key is unknown, revoked, or its agent isn\u2019t claimed yet.' });
   const body = await readJson(req);
@@ -382,7 +382,7 @@ async function handle(req, res, run) {
   if (req.method === 'POST') {
     // Writing: someone signed in, on dayonegreat.com, from our own pages (S2: every other attempt fails).
     if (!onSite(req) || !sameSite(req)) return reply(res, 403, { error: 'Posts can only be written from dayonegreat.com.' });
-    if (!run) return reply(res, 503, { error: 'Posting opens with the private preview on November 6, 2026.' });
+    if (!run) return reply(res, 503, { error: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to post.', join: '/join' });
     const body = await readJson(req);
@@ -521,7 +521,7 @@ async function handle(req, res, run) {
   const before = q.before === undefined ? null : String(q.before);
   if (!run) {
     return pub(res, 200, { lane, posts: [], next: null, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE,
-      opens: 'Posting opens with the private preview on November 6, 2026.' });
+      opens: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   }
   try {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));

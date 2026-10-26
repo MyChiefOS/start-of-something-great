@@ -1291,92 +1291,22 @@ test('PR 15 final re-review, probe J: "sign out everywhere" never quietly ends o
   assert.strictEqual((await q(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n, 0);
 });
 
-// The go-live gate (launch.js) at sign-in: during the private preview only allow-listed people can make an account;
-// existing members still sign in; nothing is stored for someone turned away; the email form answers everyone alike.
-async function inStage(vars, fn) {
-  const saved = {};
-  for (const k of Object.keys(vars)) { saved[k] = process.env[k]; process.env[k] = vars[k]; }
-  try { return await fn(); } finally { for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
-}
-
-test('launch gate: during the preview a new account is made only for an allow-listed GitHub or X account ID', async () => {
-  const env = setup({ accounts: {
-    'github:7001': { accountId: '7001', level: 1, recheckAfter: null },
-    'github:7002': { accountId: '7002', level: 1, recheckAfter: null },
-    'x:7003': { accountId: '7003', level: 1, recheckAfter: null } } });
-  const members = async () => (await q('select count(*)::int as n from app.members'))[0].n;
-  await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'github:7001, x:7003' }, async () => {
-    const before = await members();
-    const outsider = await oauth(env, 'github', '7002');
-    assert.strictEqual(outsider.r.getHeader('Location'), '/join?error=preview');
-    assert.strictEqual((await me(env, outsider.browser)).signed_in, false, 'no session for someone turned away');
-    assert.strictEqual(await members(), before, 'nothing was stored for them');
-    const invited = await oauth(env, 'github', '7001');
-    assert.strictEqual((await me(env, invited.browser)).signed_in, true);
-    const viaX = await oauth(env, 'x', '7003');
-    assert.strictEqual((await me(env, viaX.browser)).signed_in, true);
-  });
-  // Taken off the list later, an existing member still signs in: the list only decides who may make an account.
-  await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: '' }, async () => {
-    const back = await oauth(env, 'github', '7001');
-    assert.strictEqual((await me(env, back.browser)).signed_in, true);
-  });
-  // Public: anyone can join.
-  await inStage({ LAUNCH_STAGE: 'public', LAUNCH_PREVIEW_ALLOW: '' }, async () => {
-    const anyone = await oauth(env, 'github', '7002');
-    assert.strictEqual((await me(env, anyone.browser)).signed_in, true);
-  });
-});
-
-test('launch gate: during the preview the email form answers everyone alike and sends a link only to the allow-listed or members', async () => {
-  const mail = [];
-  const env = setup({ mail });
-  const post = async (email) => {
-    const r = res(); const b = jar();
-    await env.flow.emailStart(req('POST', '/auth/email/start', { body: { ft: stamp(env), email }, origin: ORIGIN, cookie: b.header() }), r);
-    return r;
-  };
-  const tokens = async () => (await q('select count(*)::int as n from app.email_tokens'))[0].n;
-  await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:invited@example.com' }, async () => {
-    const before = await tokens();
-    const stranger = await post('stranger@example.com');
-    assert.strictEqual(stranger.getHeader('Location'), '/join?sent=preview');
-    assert.strictEqual(mail.length, 0, 'no email to someone not in the preview');
-    assert.strictEqual(await tokens(), before, 'no link was stored for them');
-    const invited = await post('Invited@Example.com');
-    assert.strictEqual(invited.getHeader('Location'), '/join?sent=preview', 'the very same answer as for a stranger');
-    assert.strictEqual(mail.length, 1);
-    assert.strictEqual(mail[0].to, 'invited@example.com');
-  });
-});
-
-test('launch gate: an email link sent while public, or while on the list, makes no new account once that has changed', async () => {
-  const mail = [];
-  const env = setup({ mail });
-  const ask = async (email) => {
-    const b = jar(); const r = res();
-    await env.flow.emailStart(req('POST', '/auth/email/start', { body: { ft: stamp(env), email }, origin: ORIGIN, cookie: b.header() }), r);
-    b.take(r);
-    return b;
-  };
-  const use = async (b) => {
-    const t = mail[mail.length - 1].link.split('#t=')[1];
-    const r = res();
-    await env.flow.emailFinish(req('POST', '/auth/email/finish', { body: { t }, origin: ORIGIN, cookie: b.header() }), r);
-    b.take(r);
-    return r;
-  };
-  const members = async () => (await q('select count(*)::int as n from app.members'))[0].n;
-  const b1 = await inStage({ LAUNCH_STAGE: 'public', LAUNCH_PREVIEW_ALLOW: '' }, () => ask('early@example.com'));
-  const before = await members();
-  const r1 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: '' }, () => use(b1));
-  assert.strictEqual(r1.getHeader('Location'), '/join?error=preview', 'sent while public, used during the preview');
-  assert.strictEqual(await members(), before, 'no account was made');
-  const b2 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:listed@example.com' }, () => ask('listed@example.com'));
-  const r2 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: '' }, () => use(b2));
-  assert.strictEqual(r2.getHeader('Location'), '/join?error=preview', 'sent while listed, used after coming off the list');
-  const b3 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:kept@example.com' }, () => ask('kept@example.com'));
-  const r3 = await inStage({ LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'email:kept@example.com' }, () => use(b3));
-  assert.strictEqual(r3.getHeader('Location'), '/', 'still listed: signed in');
-  assert.strictEqual(await members(), before + 1);
+// The go-live gate (launch.js) at sign-in. "preview" is no longer a stage (Aaron, Oct 24: "NO preview systems"):
+// LAUNCH_STAGE=preview counts as closed, so sign-in stays off even with every other setting present. The preview's
+// allow-list paths in signin/flow.js are unreachable and go in the dormant-paths clean-up (R-14).
+test('launch gate: LAUNCH_STAGE=preview keeps sign-in off, exactly as closed, even when fully set up', async () => {
+  const saved = { ...process.env };
+  const key = () => crypto.randomBytes(32).toString('base64');
+  Object.assign(process.env, {
+    SESSION_SECRET: key(), FINGERPRINT_KEY_1: key(), IP_HASH_KEY: key(),
+    DATABASE_URL: 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres', LAUNCH_STAGE: 'preview' });
+  try {
+    assert.strictEqual(require('../signin/config').load().ready, true, 'every sign-in setting is present');
+    delete require.cache[require.resolve('../api/auth.js')];
+    const auth = require('../api/auth.js');
+    for (const route of ['me', 'github/start']) {
+      const r = res(); await auth({ ...req('GET', '/auth/' + route), query: { route } }, r);
+      assert.strictEqual(r.statusCode, 503, 'off: ' + route);
+    }
+  } finally { process.env = saved; delete require.cache[require.resolve('../api/auth.js')]; }
 });

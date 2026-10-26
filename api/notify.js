@@ -139,7 +139,7 @@ async function handle(req, res, run, cfg = ncfg.load(), deps = {}) {
     return reply(res, known ? 405 : 404, { error: known ? 'Method not allowed.' : 'Not found.' });
   }
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  if (!run) return reply(res, 503, { error: 'Notices open with the private preview on November 6, 2026.' });
+  if (!run) return reply(res, 503, { error: 'Notices on the site aren\u2019t switched on yet.' });
   let body = {};
   // SNS reads its own body (text/plain JSON).
   if (req.method === 'POST' && route !== 'sns') {

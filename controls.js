@@ -245,7 +245,7 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
       .then(function (x) {
         if (x.ok && x.d.totals) return render(x.d);
-        if (x.ok) { summary.textContent = 'The database opens with the private preview.'; return; }
+        if (x.ok) { summary.textContent = 'The site\u2019s own database isn\u2019t switched on yet.'; return; }
         summary.textContent = x.status === 401 ? 'Sign in to see the owner controls.' : (x.d.error || 'The controls could not be loaded.');
         if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fcontrols'; clear('totals').appendChild(a); }
       })

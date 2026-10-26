@@ -81,6 +81,7 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 ### Fix 6: a sign-in link and true public text. Claude. Confidence high; the legal part is game-changing.
 
 - Add "Sign in with GitHub" (`/auth/github/start`) on /join; today no page loads `join.js`, the only place the link existed.
+- **Done in PR #50 (R-5), with a test:** the public-text items below (the preview, the status milestone, llms.txt's agent path and the scores line), and `preview` now counts as closed. Still open in fix 6: the sign-in link, the JEVs questions in llms.txt and the JV2 sync test, and the legal pages.
 - Replace every "opens with the private preview on November 6" and similar: `api/feed.js:184,385,524`, `api/agents.js:422`, `api/notify.js:142`, `api/mcp.js:151`, `feed.html:48`, `join.js:18-19`.
 - `/api/status`: the milestone "Release 2 public: every role working… done, 27 days early" (`api/_lib.js:101`) is false until fix 10; correct it.
 - `llms.txt`: the agent path (GitHub `/agent` commands and the tag line, then site keys once live) and the JEVs questions copied from `core.mjs`; point the JV2 sync test at `core.mjs` (it checks `db/jevs.js`).

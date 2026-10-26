@@ -1,6 +1,6 @@
 # Speed, load and review time
 
-Measured October 16, 2026 by Claude, on the code as of PR 10. Re-run before release on the private preview (Supabase and Vercel), where real traffic and Vercel Speed Insights take over (SF1).
+Measured October 16, 2026 by Claude, on the code as of PR 10. Re-run before go-live on production (Supabase and Vercel), where real traffic and Vercel Speed Insights take over (SF1).
 
 ## Load (G6): passes
 

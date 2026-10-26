@@ -54,6 +54,8 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | `CRON_SECRET` is not set on the live site ("Timers are not switched on here."), and no page links to the site's sign-in | checked | curl /api/cron; search of every page | 2026-10-25 |
 | The desktop app's browser refuses every site for Claude, example.com included ("blocked by your organization's policy", on a personal Max plan); GitHub GraphQL is blocked in Claude's sessions; Claude's workspace has no Docker daemon | checked | tool responses | 2026-10-25 |
 | This session's GitHub access is Aaron's own account `MyChiefOS` (id 304218593), so PRs Claude opens show as Aaron's (RK71) | checked | `gh api user` | 2026-10-25 |
+| PR #49 (fixes 3 and 4) merged Oct 26 19:43 UTC as `e11e796`; the runner applied 019 and 020 (ledger 20 rows, ends `020_policy_initplan`); `dog-migrate` is version 5 from `e11e796`, compared by reading (inferred); fix 4's check hasn't run live yet; no `dog_web` role; 0 members, 0 agents; 1 `actor_keys` row | checked | GitHub REST; Supabase read-only SQL and function list; OPERATIONS.md | 2026-10-26 |
+| "Preview" is no longer a stage in code: `LAUNCH_STAGE=preview` counts as closed (launch.js), the setup workflow refuses it, and no served page promises a preview (test/public-text.test.js). The unreachable preview paths (allow-list, signed-in-only reading) are removed in the R-14 clean-up | checked | PR #50, suite | 2026-10-26 |
 
 ## Launch path (what is left, in order)
 
@@ -71,9 +73,11 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/
 | Merge #43: INTEGRITY.md | Aaron merges | done: merged Oct 25 14:27 UTC |
 | Merge the handoff-plan PR: harness/PLAN.md and the reference documents brought in line | Aaron merges | done: PR #44, merged Oct 25 15:52 UTC |
 | Fix 1: the GitHub holes (machine accounts, untagged posts, J10, blank-line slowdown, moderator deletions); redeploy the gate | Claude builds; Aaron merges | done: PR #45 merged Oct 25 18:53 UTC; gate version 4 deployed from `f450b9d`, files identical, refusals 401/401/405 |
-| Fixes 2 to 7: hidden posts kept from agents; the database decides who is acting; the runner allows one site login; migration 019 (the site login); the sign-in link and true text; site JEVs to enforce | Claude builds; Aaron merges | open (harness/PLAN.md, in order) |
-| Fix 8: Vercel settings (database address, sign-in keys, GitHub app, timer secret) | Aaron | open |
-| Fix 9 and go-live: Aaron becomes administrator, then LAUNCH_STAGE public | Aaron decides; Claude builds the step | open |
+| Fixes 2 to 4: hidden posts kept from agents; the database decides who is acting; the runner allows one site login | Claude builds; Aaron merges | done in code: #47 (fix 2, live, switched off) and #49 (fixes 3 and 4, merged and applied Oct 26; not proven live in use) |
+| PR #50: true public text (R-5); preview retired as a stage; records after #49 | Claude builds; Aaron merges | open |
+| Then, one PR at a time: the route B probe (closed unmerged); RK82 (new members capped at level 1); gate hardening (R-4, R-11, R-15, R-16, R-6, R-13); fixes 5 and 8 under route B; runner alerts (R-2, R-3, R-7, R-14); R-9, R-10, R-12; fix 6 (legal pages and sign-in link) | Claude builds; Aaron merges | open (harness/STATUS.md, "What is left") |
+| Fix 8: the site's keys and timers, route B (Aaron, Oct 26): made inside the database, nothing pasted | Claude builds; Aaron merges | open (replaces "Vercel settings, Aaron", route A) |
+| Go-live release: fix 7 (site JEVs to enforce), fix 9 (Aaron becomes administrator), then LAUNCH_STAGE public | Claude builds; Aaron's merge is the go-live decision | open |
 | Fix 10: live proof of every flow, recorded in OPERATIONS.md | Aaron and Claude | open |
 
 ## Aaron's instructions (status)
@@ -104,6 +108,9 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "If i agree to route B if there is an issues can we back track that decision." Answered yes: before the route B PR merges, nothing to undo; afterwards PRs from Claude (a refusing stub, a password change) plus route A's two steps; the site reads Vercel settings first, so no code change is needed to switch | 2026-10-26 | done (answer); the fallback is in plan for the route B PR |
 | "Okay let go with B." Route B for the site's login and keys, with the fallback to Vercel settings and the CSO's controls 1 to 8 | 2026-10-26 | in plan: the probe PR, then fixes 5 and 8 (harness/REVIEW-2026-10-26.md, PR sequence 4 and 5) |
 | "Yes, to … the timer address becomes open to anyone, with the database allowing at most one run every 30 seconds." Accepted with the CSO's conditions (Oct 26): the slot and the timers run in one transaction, so a failed run gives its slot back; a fixed interval of 50 seconds that callers can't change (stricter than the 30 approved); the reply is only `{ok:true}`; the timer-failure and heartbeat alerts (R-8, R-9) ship in the same release; alert-only evidence from the `vercel-cron` user-agent; each instance skips the database if it checked under 25 seconds ago. Residual risk accepted: unbounded function invocations, and at most about twice the timer load | 2026-10-26 | in plan: the fixes 5 and 8 PR |
+| "Claude has to be able to address any recommendation without my assistance except to approve." No recommendation may need a manual step by Aaron or risk a lockout | 2026-10-26 | in force: every PR from #49 on lists "Decisions this PR asks of Aaron: none, only the merge" or names the decision |
+| "The way you wrote that PR you tried to throw me under the bus." Work Claude can do by PR is Claude's, never Aaron's to carry | 2026-10-26 | done in #49 (`3645730`): PLAN fix 8, RK71 and RK82 are Claude's |
+| "Well Can you work and implement the system at this point you don't have any blockers. I want the system." Build continuously, PR by PR; each opens when it is ready and checked | 2026-10-26 | in plan: PR #50, then the order in harness/STATUS.md |
 
 ## Open for Aaron (ask once; record the answer here)
 
@@ -119,6 +126,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | When a moderator (not the author) deletes a post on GitHub, does JEVs keep an IDs-only record, or erase it as today (the privacy page promises erasure) (harness/PLAN.md fix 1.5) | 2026-10-25 | Decided by Claude under the same instruction: erase, as privacy.html promises ("When a post is deleted, our checks erase what they kept about it"); a lawful exception is the legal hold (RK22). Keeping records would need the privacy page changed first. Aaron may reopen |
 | JEVs thresholds: set your own, or accept the public seeded values the GitHub path has enforced with since Oct 24 (RISKS.md RK16; verified Oct 26: live values equal the seed) | 2026-10-26 | |
 | Release rule for rows marked "Not in phase 1" (email sign-in, built and switched off): they wait until the feature is switched on (RISKS.md header; decided by merging the risks PR) | 2026-10-26 | |
+| CHARTER §3 says "pull requests queue up" (Oct 17); harness/RULES.md rule 1 says one PR stays open. RULES says the charter wins and the difference goes to Aaron. Claude follows one open PR at a time (Aaron, Oct 26: "PR by PR"); the route B probe is a short-lived PR that is closed unmerged and doesn't count. Recommend: change §3 to "one PR open at a time, targeting main" | 2026-10-26 | |
 
 ## Parking list (no named owner yet; not built until one is named)
 
