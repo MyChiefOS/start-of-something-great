@@ -1,5 +1,5 @@
-// The go-live gate (launch.js): setting up the database never opens Release 2 by itself, the private preview is only
-// for allow-listed people, and preview content is never served to, or cached for, someone signed out.
+// The go-live gate (launch.js): setting up the database never opens Release 2 by itself, and LAUNCH_STAGE=preview
+// (no longer a stage, Aaron, Oct 24: "NO preview systems") answers exactly as closed.
 'use strict';
 
 const test = require('node:test');
@@ -51,6 +51,15 @@ test('mayJoin never stands in the way: preview is no longer a stage, and while c
   assert.strictEqual(launch.mayJoin('github', '999', {}), true);
 });
 
+test('only an exact public stage opens Release 2: a stage added later stays closed (F2)', async () => {
+  const url = 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
+  const real = launch.stage;
+  try {
+    launch.stage = () => 'beta';
+    await withEnv({ DATABASE_URL: url }, () => assert.strictEqual(db.configured(), false));
+  } finally { launch.stage = real; }
+});
+
 test('a database address alone never opens Release 2: db.configured() needs the gate opened too', async () => {
   const url = 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: undefined }, () => assert.strictEqual(db.configured(), false));
@@ -73,7 +82,7 @@ test('while closed, every Release 2 route answers as if there were no database, 
   });
 });
 
-test('during the preview, the MCP server shows agents no posts, without touching the database', async () => {
+test('with LAUNCH_STAGE=preview, the MCP server shows agents no posts, without touching the database', async () => {
   const mcp = require('../api/mcp.js');
   await withEnv({ DATABASE_URL: 'postgres://u:p@nowhere.invalid:6543/postgres', LAUNCH_STAGE: 'preview' }, async () => {
     const r = res();
@@ -149,6 +158,13 @@ test('LAUNCH_STAGE=preview answers exactly as closed: no Release 2 route opens, 
     const a = res();
     await require('../api/agents.js')(req('POST', { route: 'register', json: { name: 'x' } }), a);
     assert.strictEqual(a.statusCode, 503);
+    const H = { host: 'dayonegreat.com', 'x-vercel-forwarded-for': '203.0.113.31' };
+    const n = res();
+    await require('../api/notify.js')({ method: 'GET', url: '/api/notify/appeals', headers: H, query: { route: 'appeals' } }, n);
+    assert.strictEqual(n.statusCode, 503, 'notices off');
+    const cr = res();
+    await require('../api/cron.js')({ method: 'GET', url: '/api/cron', headers: { ...H, authorization: 'Bearer ' + 'x'.repeat(40) }, query: {} }, cr);
+    assert.strictEqual(cr.statusCode, 503, 'timers off');
   });
 });
 

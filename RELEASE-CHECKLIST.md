@@ -18,7 +18,7 @@ All from GitHub, nothing on your computer: **SETUP.md** has every step and marks
 2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. You read the run's plan before approving it. The site doesn't change.
 3. [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): done Oct 16.
 4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
-5. [ ] **Open the preview** for yourself (SETUP.md, step 4), sign in, then **make yourself the administrator** (step 5).
+5. [x] ~~Open the preview for yourself~~: removed Oct 26, 2026. There is no preview stage (Aaron, Oct 24). Making Aaron administrator is fix 9 (harness/PLAN.md), whose method is his open decision.
 6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
 7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
 8. [x] ~~Before go-live: enrol two passkeys~~: removed Oct 24, 2026: Aaron's instruction, passkeys dropped.
@@ -33,5 +33,5 @@ All from GitHub, nothing on your computer: **SETUP.md** has every step and marks
 
 ## Go live
 
-- [ ] Test the preview yourself, with the stage at `preview` (every automated gate is green).
+- [x] ~~Test the preview yourself~~: removed Oct 26, 2026 (no preview stage). Every automated gate stays green; fix 10's live proof is Claude's (harness/PLAN.md).
 - [ ] Give the go-live decision: run Production setup with the stage `public`. Nothing goes public before it.

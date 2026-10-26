@@ -224,14 +224,31 @@ test('launch checks: the go-live gate, sign-in and security headers are watched,
   const stage = uptime.CHECKS.find((c) => c.name === 'Go-live stage');
   assert.ok(uptime.CHECKS.indexOf(stage) < uptime.CHECKS.indexOf(gate), 'the stage is learned before the gate is judged');
   const ctx = {};
-  assert.ok(stage.test(r(200), '{"name":"Day One Great","stage":"public"}', ctx) === (process.env.EXPECTED_STAGE ? process.env.EXPECTED_STAGE === 'public' : true));
+  assert.strictEqual(stage.test(r(200), '{"name":"Day One Great","stage":"public"}', ctx), uptime.EXPECTED === 'public');
   assert.strictEqual(ctx.stage, 'public');
+  // F1 (CSO review of PR #50): empty, a stale "preview" or nonsense in EXPECTED_STAGE all mean closed, so a hand
+  // switch to public is reported. It only alerts.
+  const saved = process.env.EXPECTED_STAGE;
+  try {
+    for (const [value, want] of [['', 'closed'], ['preview', 'closed'], ['open', 'closed'], [' Public ', 'public'], ['closed', 'closed']]) {
+      process.env.EXPECTED_STAGE = value;
+      delete require.cache[require.resolve('../scripts/uptime')];
+      const u = require('../scripts/uptime');
+      assert.strictEqual(u.EXPECTED, want, JSON.stringify(value));
+      const st = u.CHECKS.find((c) => c.name === 'Go-live stage');
+      assert.strictEqual(st.test(r(200), '{"stage":"public"}', {}), want === 'public', 'live public with EXPECTED_STAGE ' + JSON.stringify(value));
+      assert.strictEqual(st.test(r(200), '{"stage":"closed"}', {}), want === 'closed', 'live closed with EXPECTED_STAGE ' + JSON.stringify(value));
+    }
+  } finally {
+    if (saved === undefined) delete process.env.EXPECTED_STAGE; else process.env.EXPECTED_STAGE = saved;
+    delete require.cache[require.resolve('../scripts/uptime')];
+  }
   assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"preview"}', {}), 'preview is no longer a stage: a fault');
   assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"open"}', {}), 'an unknown stage is a fault');
   assert.ok(!stage.test(r(200), '{"name":"Day One Great"}', {}), 'no stage at all is a fault');
   assert.ok(!stage.test(r(500), '{}', {}));
   const src = read('scripts/uptime.js');
-  assert.match(src, /live === EXPECTED/, 'compares with EXPECTED_STAGE when it is set');
+  assert.match(src, /live === EXPECTED/, 'compares with EXPECTED_STAGE');
   assert.match(read('.github/workflows/uptime.yml'), /EXPECTED_STAGE: \$\{\{ vars\.EXPECTED_STAGE \}\}/, 'the workflow passes the recorded stage in');
   const signin = uptime.CHECKS.find((c) => c.name === 'Sign-in start');
   assert.strictEqual(signin.init.redirect, 'manual');

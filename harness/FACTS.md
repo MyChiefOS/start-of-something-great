@@ -54,8 +54,10 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | `CRON_SECRET` is not set on the live site ("Timers are not switched on here."), and no page links to the site's sign-in | checked | curl /api/cron; search of every page | 2026-10-25 |
 | The desktop app's browser refuses every site for Claude, example.com included ("blocked by your organization's policy", on a personal Max plan); GitHub GraphQL is blocked in Claude's sessions; Claude's workspace has no Docker daemon | checked | tool responses | 2026-10-25 |
 | This session's GitHub access is Aaron's own account `MyChiefOS` (id 304218593), so PRs Claude opens show as Aaron's (RK71) | checked | `gh api user` | 2026-10-25 |
-| PR #49 (fixes 3 and 4) merged Oct 26 19:43 UTC as `e11e796`; the runner applied 019 and 020 (ledger 20 rows, ends `020_policy_initplan`); `dog-migrate` is version 5 from `e11e796`, compared by reading (inferred); fix 4's check hasn't run live yet; no `dog_web` role; 0 members, 0 agents; 1 `actor_keys` row | checked | GitHub REST; Supabase read-only SQL and function list; OPERATIONS.md | 2026-10-26 |
+| PR #49 (fixes 3 and 4) merged Oct 26 19:43 UTC as `e11e796`; the runner applied 019 and 020 (ledger 20 rows, ends `020_policy_initplan`); `dog-migrate` is version 5; no `dog_web` role; 0 members, 0 agents; 1 `actor_keys` row; fix 4's check hasn't run live yet | checked | GitHub REST; Supabase read-only SQL and function list; OPERATIONS.md | 2026-10-26 |
+| `dog-migrate` version 5's deployed files match `e11e796` (inferred, not verified) | assumed | Compared by reading, not by script; R-3's source digest replaces this (OPERATIONS.md) | 2026-10-26 |
 | "Preview" is no longer a stage in code: `LAUNCH_STAGE=preview` counts as closed (launch.js), the setup workflow refuses it, and no served page promises a preview (test/public-text.test.js). The unreachable preview paths (allow-list, signed-in-only reading) are removed in the R-14 clean-up | checked | PR #50, suite | 2026-10-26 |
+| Vercel's identity token is issued to this project's builds, in team issuer mode (`https://oidc.vercel.com/chief-os`), with `project_id`, `owner_id` and `environment` claims as route B expects. `LAUNCH_STAGE` isn't set for Preview. Run-time tokens on production: inferred, not yet seen | checked | Preview builds of branch `oidc-probe`, Vercel build results via GitHub commit statuses; OPERATIONS.md | 2026-10-26 |
 
 ## Launch path (what is left, in order)
 
@@ -78,7 +80,7 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/
 | Then, one PR at a time: the route B probe (closed unmerged); RK82 (new members capped at level 1); gate hardening (R-4, R-11, R-15, R-16, R-6, R-13); fixes 5 and 8 under route B; runner alerts (R-2, R-3, R-7, R-14); R-9, R-10, R-12; fix 6 (legal pages and sign-in link) | Claude builds; Aaron merges | open (harness/STATUS.md, "What is left") |
 | Fix 8: the site's keys and timers, route B (Aaron, Oct 26): made inside the database, nothing pasted | Claude builds; Aaron merges | open (replaces "Vercel settings, Aaron", route A) |
 | Go-live release: fix 7 (site JEVs to enforce), fix 9 (Aaron becomes administrator), then LAUNCH_STAGE public | Claude builds; Aaron's merge is the go-live decision | open |
-| Fix 10: live proof of every flow, recorded in OPERATIONS.md | Aaron and Claude | open |
+| Fix 10: live proof of every flow, recorded in OPERATIONS.md | Claude; Aaron approves. Unknown: how Claude proves the flows that need a real person signed in with GitHub without asking Aaron to use the site | open |
 
 ## Aaron's instructions (status)
 
@@ -126,7 +128,6 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | When a moderator (not the author) deletes a post on GitHub, does JEVs keep an IDs-only record, or erase it as today (the privacy page promises erasure) (harness/PLAN.md fix 1.5) | 2026-10-25 | Decided by Claude under the same instruction: erase, as privacy.html promises ("When a post is deleted, our checks erase what they kept about it"); a lawful exception is the legal hold (RK22). Keeping records would need the privacy page changed first. Aaron may reopen |
 | JEVs thresholds: set your own, or accept the public seeded values the GitHub path has enforced with since Oct 24 (RISKS.md RK16; verified Oct 26: live values equal the seed) | 2026-10-26 | |
 | Release rule for rows marked "Not in phase 1" (email sign-in, built and switched off): they wait until the feature is switched on (RISKS.md header; decided by merging the risks PR) | 2026-10-26 | |
-| CHARTER §3 says "pull requests queue up" (Oct 17); harness/RULES.md rule 1 says one PR stays open. RULES says the charter wins and the difference goes to Aaron. Claude follows one open PR at a time (Aaron, Oct 26: "PR by PR"); the route B probe is a short-lived PR that is closed unmerged and doesn't count. Recommend: change §3 to "one PR open at a time, targeting main" | 2026-10-26 | |
 
 ## Parking list (no named owner yet; not built until one is named)
 

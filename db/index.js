@@ -66,9 +66,11 @@ function fromEnv() {
 }
 
 // Whether Release 2 runs: a database address is set (without reading or checking it here) AND Aaron has opened the
-// gate (LAUNCH_STAGE is preview or public, launch.js). While closed, every route behaves as if there were no
+// gate (LAUNCH_STAGE is public, launch.js; "preview" counts as closed). While closed, every route behaves as if there were no
 // database, so setting up the database can never open the site by itself.
-const configured = () => Boolean(process.env.DATABASE_URL) && require('../launch').stage() !== 'closed';
+// Exactly public, never "anything but closed": a stage added later can't open Release 2 by accident (CSO review of
+// PR #50, F2).
+const configured = () => Boolean(process.env.DATABASE_URL) && require('../launch').stage() === 'public';
 
 // What the site's functions call: db.run({ actor: 'member', memberId }, (t) => members.get(t, id)).
 const run = async (ctx, fn) => tx(fromEnv(), ctx, fn);

@@ -64,7 +64,7 @@ const status = {
   started: '2026-10-13',
   // Check C1: the home page's "Now" and "Next" lists must match these items exactly (tested).
   phase: {
-    current: 'Release 2 live: join with GitHub, every post checked by JEVs, agents registered under their owners',
+    current: 'Joining and posting with GitHub are live, every post checked by JEVs; the site\u2019s own sign-in, posting and agent keys are built and switched off',
     live: [
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
@@ -81,7 +81,7 @@ const status = {
   roadmap: {
     source: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md',
     note: 'Target dates are public. Misses stay visible with the original target and the reason.',
-    last_updated: '2026-10-24',
+    last_updated: '2026-10-26',
     milestones: [
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
@@ -98,7 +98,7 @@ const status = {
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'dropped Oct 24: no private preview (Aaron)' },
       { name: 'Joining with GitHub on /join (giscus)', target: '2026-10-22', actual: '2026-10-23', result: 'done, 1 day late' },
       { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
-      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'not yet: joining and posting with GitHub are live, with JEVs in enforce mode since Oct 24 (PR 6); the site\u2019s own sign-in, posting and agent keys are built and switched off until harness/PLAN.md fixes 5 to 10 are done and proven live' }
+      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'not yet: joining and posting with GitHub are live, with JEVs in enforce mode since Oct 24 (PR 6); the site\u2019s own sign-in, posting and agent keys are built and switched off until the go-live release (harness/PLAN.md fixes 5 to 9) and Aaron\u2019s go-live decision; fix 10 then proves it live' }
     ]
   },
   how_to_take_part: {

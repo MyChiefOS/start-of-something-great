@@ -7,8 +7,11 @@ const SITE = process.env.SITE_URL || 'https://dayonegreat.com';
 const LABEL = 'uptime';
 const STAGES = ['closed', 'public']; // "preview" is no longer a stage (launch.js)
 // The stage the last approved Production setup run set (repository variable EXPECTED_STAGE, written by that run).
-// Empty means "not recorded yet": the live stage is then only checked for being a real one.
-const EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
+// Read as launch.js reads LAUNCH_STAGE: empty, or anything that isn't a stage (a stale "preview" above all), means
+// closed. So a hand switch to public while nothing approved it is always reported (CSO review of PR #50, F1). It only
+// alerts; RK69 accepts the false alarm when an approved run didn't record the stage.
+const RAW_EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
+const EXPECTED = STAGES.includes(RAW_EXPECTED) ? RAW_EXPECTED : 'closed';
 
 const CHECKS = [
   { name: 'Home page', path: '/', test: (r, t) => r.status === 200 && t.includes('Day One Great') },
@@ -32,7 +35,7 @@ const CHECKS = [
       if (r.status !== 200) return false;
       const live = JSON.parse(t).stage;
       ctx.stage = live;
-      return STAGES.includes(live) && (!STAGES.includes(EXPECTED) || live === EXPECTED);
+      return STAGES.includes(live) && live === EXPECTED;
     }
   },
   {
@@ -126,4 +129,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error(e.message); process.exit(1); });
 
-module.exports = { checkAll, report, decide, CHECKS, STAGES };
+module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED };

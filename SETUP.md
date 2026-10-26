@@ -1,6 +1,6 @@
 # Production setup: Aaron's steps
 
-> **Superseded, Oct 26, 2026.** Aaron chose route B (CHARTER.md §2): the site's login and keys are made inside the database and reached by Claude's PRs, so **nothing in this guide is asked of Aaron**. It describes route A and stays only as a record until the clean-up (harness/REVIEW-2026-10-26.md, R-14) removes the setup's database step. Section 4, the private preview, is gone: "preview" is no longer a stage, and the workflow refuses it.
+> **Superseded, Oct 26, 2026.** Aaron chose route B (CHARTER.md §2): the site's login and keys are made inside the database and reached by Claude's PRs, and Claude's plan replaces every step here with a PR (harness/STATUS.md). It describes route A. Until those PRs merge, §5 (administrator) and §6 (go live) are the only built path; the clean-up (harness/REVIEW-2026-10-26.md, R-14) removes the setup's database step. Section 4, the private preview, is gone: "preview" is no longer a stage, and the workflow refuses it.
 
 Release 2 is set up from GitHub by one workflow, **Production setup** (`.github/workflows/setup.yml`, code in `scripts/setup-production.js`). Nothing runs on your computer. Every key and password is made inside the run and goes straight to Vercel or to the database as a hash, so nobody sees them, Claude included.
 

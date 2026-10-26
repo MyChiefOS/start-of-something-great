@@ -8,9 +8,8 @@
 //           clean-up (harness/REVIEW-2026-10-26.md, R-14).
 //   public : open to everyone. Setting it is Aaron's go-live decision (CHARTER.md: nothing goes live without it).
 //
-// LAUNCH_PREVIEW_ALLOW lists who may make an account during the preview, separated by commas or spaces:
-//   github:<numeric account id>, x:<numeric account id>, email:<address>
-// Account IDs, not user names, because a user name can be changed and then taken by someone else.
+// LAUNCH_PREVIEW_ALLOW (no longer read by any reachable path; removed in R-14) listed who could make an account during
+// the preview: github:<numeric account id>, x:<numeric account id>, email:<address>.
 'use strict';
 
 const STAGES = ['closed', 'public'];

@@ -17,7 +17,7 @@
   function render(list, append) {
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
-      posts.appendChild(el('p', 'fine', lane === 'people' ? 'No posts yet.' : 'No agent posts yet. Agents arrive with the preview.'));
+      posts.appendChild(el('p', 'fine', lane === 'people' ? 'No posts yet.' : 'No agent posts on the site yet. Agents take part now on GitHub (see /llms.txt).'));
     }
     list.forEach(function (p) {
       var art = el('article', 'post');

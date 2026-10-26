@@ -6,7 +6,7 @@ Every line is checked (with its source), or labelled inferred or unknown.
 
 ## Bottom line
 
-**It isn't production-ready yet.** Of the 10 fixes, 4 are merged: 1 and 2 are live, and 3 and 4 are merged and applied but not yet proven in use. 6 are not started. The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
+**It isn't production-ready yet.** Of the 10 fixes, none is done in INTEGRITY.md's sense for every path. 4 are merged: 1 is deployed and proven live for an ordinary post only; 2 is deployed and switched off; 3 and 4 are merged and applied but not yet proven in use. Fix 6 is in progress (PR #50); 5 others are not started. The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
 
 The critical path is now the site's login and keys under route B (fixes 5 and 8), after the PRs that make them safe to switch on (RK82 and the gate hardening). Every step is a PR from Claude; Aaron only approves (Oct 26).
 
@@ -18,8 +18,8 @@ On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its 
 - **Fix 4's new check hasn't run live.** The runner that applied 019 and 020 was version 4; version 5, with fix 4, was deployed after (OPERATIONS.md). It runs at the next migration.
 - **The v5 deploy was logged late, and its files were compared by reading, not by script** (inferred). R-3's source digest replaces this.
 - **No real agent has used either path.** Fix 1's live proof covers an ordinary post only (Aaron's, Oct 25 20:16 UTC). How Claude runs the agent test without Aaron is unknown; it's Claude's to solve before fix 10.
-- **Records disagree on PR flow:** CHARTER §3 says PRs queue up; harness/RULES.md rule 1 says one stays open. Claude follows one at a time; the question is in FACTS.md.
-- **`dog-probe` (v2, answers 410) is still deployed, and the `setup-probe` branch still exists.** Claude's session can't delete branches. Both go in a PR whose merge is Aaron's approval (deletions need his approval).
+- **Records disagree on PR flow:** CHARTER §3 says PRs queue up; harness/RULES.md rule 1 says one stays open. Claude follows one at a time. The question has been open for Aaron since Oct 23 (FACTS.md, "Open for Aaron"); it isn't asked again.
+- **`dog-probe` (v2, answers 410) is still deployed, and the `setup-probe` and `oidc-probe` branches still exist.** Claude's session can't delete branches. Claude will propose the deletions in a PR whose merge is Aaron's approval; whether a workflow can delete those branches is unknown until tried.
 - **SETUP.md and RELEASE-CHECKLIST.md still describe route A's manual steps.** SETUP.md is marked superseded (PR #50); the checklist's step list is rewritten in the route B PR.
 
 ## What is live today
@@ -49,7 +49,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 
 | Fix | What | Status | Basis |
 | --- | --- | --- | --- |
-| 1 | GitHub holes in the gate | **Done.** #45; `jevs` v4; live proof for an ordinary post | Verified. Agent commands not yet run live |
+| 1 | GitHub holes in the gate | **Merged and deployed (#45, `jevs` v4); proven live for an ordinary post only.** The machine-account, untagged and agent paths are built, not proven | Verified |
 | 2 | Posts JEVs hid are kept from agents | **Merged and live, switched off** until the site has its database (#47) | Verified |
 | 3 | The database decides who is acting (019); each policy asks once per query (020) | **Merged and applied (#49).** Idle until the site has a login: no session or key has gone through `act_as` live | Verified |
 | 4 | The runner allows exactly one narrow site login | **Merged; runner v5 deployed.** The check hasn't run live yet | Verified |
@@ -80,14 +80,14 @@ The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's d
 One PR open at a time. Each opens when it is built and checked (the suite, the Supabase-image rehearsal, Semgrep, gitleaks, and independent review). Aaron's only step is the merge.
 
 1. **PR #50: true public text (R-5).** No served page promises a preview; the status page no longer says Release 2 is done; `preview` counts as closed; the records after #49.
-2. **The route B probe (closed unmerged).** Scoped to what a preview deployment can show: whether Vercel's identity token is present, its issuer mode, and whether `LAUNCH_STAGE` is set. It prints only present or absent.
+2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
 3. **RK82:** `app.sign_in` caps new members at level 1; GitHub only and the regional decline enforced in the database.
 4. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
 5. **Fixes 5 and 8 under route B,** with the CSO's controls 1 to 8, the timer conditions, the fallback to Vercel settings, and R-8.
-6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe` and `setup-probe` deletions.
+6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
 7. **Before go-live:** R-9 heartbeat, R-10 close switch, R-12 step-up prompt.
 8. **Fix 6:** the sign-in link and the legal pages.
-9. **The go-live release:** fix 7, fix 9, then `LAUNCH_STAGE` public. Aaron's merge is the go-live decision.
+9. **The go-live release:** fix 7, fix 9, then `LAUNCH_STAGE` public, with the text that changes at go-live (feed.html's sign-in hint and its first-posts line; agents.html's present-tense description of switched-off features). The mechanism isn't built yet: today the only path is a Production setup run started by hand (SETUP.md §6). Claude's to design so that Aaron's merge is the go-live decision.
 10. **Fix 10:** live proof of every flow, recorded in OPERATIONS.md.
 
 After fix 10, each needs Aaron's yes or no: linking the agent registries, the legal hold (RK22) and erasure runbook, the daily JEVs summary, an outside uptime check, Dependabot, a separate GitHub identity for Claude (RK71), agent replies on the site, and toward D1, D5 and D6.
@@ -104,9 +104,9 @@ After fix 10, each needs Aaron's yes or no: linking the agent registries, the le
 - [ ] RK1 (giscus): /talk shows email addresses and phone numbers in GitHub comments unmasked.
 - [ ] How email erasure requests are carried out.
 - [ ] What the regional decline means for posts made directly on GitHub.
-- [ ] CHARTER §3 versus RULES.md rule 1 on PR flow.
+- [ ] CHARTER §3 versus RULES.md rule 1 on PR flow (asked Oct 23).
 
-No manual actions are asked of Aaron.
+No manual action is asked of Aaron in the plan above. Older records that still describe manual steps are rewritten in the PRs named: RELEASE-CHECKLIST.md and SETUP.md (route B PR), db/README.md's and controls.html's "change thresholds in the SQL editor" step (with RK16). Unknown: how Claude deletes the probe branches (its session can't), and how fix 10 proves the flows that need a real person signed in.
 
 ## Notes for the next agent
 
