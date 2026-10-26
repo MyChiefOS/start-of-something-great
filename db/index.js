@@ -99,27 +99,36 @@ function context(ctx) {
   const session = ctx.session == null ? null : String(ctx.session);
   if (session !== null && !/^[0-9a-f]{64}$/.test(session)) throw new Error('session must be a session hash');
   if (session !== null && actor !== 'member' && actor !== 'admin') throw new Error('only member calls carry a session');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '' };
+  // Fix 3 (019): the database decides who is acting, from proof. People prove it with their session, agents with their
+  // key (by its hash), and the site itself with its own secret (never from a caller). Under route B (Aaron, Oct 26) the
+  // timers run through a database-side wrapper and the site never holds that secret; CRON_SECRET from the environment
+  // is read here only as route B's fallback to Vercel settings (CHARTER.md §2), so switching routes needs no code change.
+  if ((actor === 'member' || actor === 'admin') && session === null) throw new Error(actor + ' calls need the session that proves who is acting');
+  const keyHash = ctx.keyHash == null ? null : String(ctx.keyHash);
+  if (keyHash !== null && !/^[0-9a-f]{64}$/.test(keyHash)) throw new Error('keyHash must be an agent key hash');
+  if ((actor === 'agent') !== (keyHash !== null)) throw new Error(actor + ' calls ' + (actor === 'agent' ? 'need' : 'must not have') + ' the agent key that proves who is acting');
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '', keyHash: keyHash || '' };
 }
 
-// Runs fn inside one transaction as dog_app, with the actor set for that transaction only (set_config(..., true)).
-// Every setting is written every time, including empty ones, so a pooled connection never keeps the last caller's.
+// Runs fn inside one transaction as dog_app, acting as the caller only if the database accepts the proof (fix 3, 019):
+// app.act_as looks the session or agent key up itself, sets who is acting for this transaction only and stamps it, so
+// nothing the site sets by hand counts. Every setting is written every time, including empty ones, so a pooled
+// connection never keeps the last caller's.
 async function tx(sql, ctx, fn) {
   const c = context(ctx);
+  const secret = c.actor === 'system' ? String(process.env.CRON_SECRET || '') : '';
   return sql.begin(async (t) => {
     // Clear anything an earlier request on this pooled connection could have left behind: open cursors and
     // session-level locks. The search path is fixed so no other schema's functions can stand in for Postgres's own.
     await t`close all`;
     await t`set local role dog_app`;
-    await t`select set_config('app.actor', ${c.actor}, true),
-                   set_config('app.member_id', ${c.memberId}, true),
-                   set_config('app.agent_id', ${c.agentId}, true),
-                   set_config('app.note', ${c.note}, true),
-                   set_config('app.fresh', ${c.fresh}, true),
-                   set_config('app.session', ${c.session}, true),
+    await t`select set_config('app.note', ${c.note}, true),
+                   set_config('app.stamp', '', true),
                    set_config('search_path', 'pg_catalog', true),
                    set_config('statement_timeout', '5s', true),
                    pg_advisory_unlock_all()`;
+    await t`select app.act_as(${c.actor}, ${c.memberId || null}::uuid, ${c.agentId || null}::uuid, ${c.fresh === '1'},
+                              ${c.session || null}, ${c.keyHash || null}, ${secret || null})`;
     return fn(t);
   });
 }

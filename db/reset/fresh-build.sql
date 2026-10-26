@@ -21,7 +21,7 @@ declare
 begin
   for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
            where s.nspname = 'app' and c.relkind in ('r', 'p')
-             and c.relname <> all (array['schema_migrations', 'change_log', 'runner_tokens'])
+             and c.relname <> all (array['schema_migrations', 'change_log', 'runner_tokens', 'actor_keys'])
              and c.relname not like '%\_settings'
            order by c.relname loop
     execute format('select count(*) from app.%I', t) into n;

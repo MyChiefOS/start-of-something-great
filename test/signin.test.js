@@ -16,9 +16,12 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
-const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
-  set_config('app.session', ${ctx.session}, true)`;
+const { trustSystem, TEST_SYSTEM_SECRET } = require('./helpers');
+// Acting as an administrator straight in the database (the test superuser), with the proof the site gives (fix 3):
+// app.act_as, as db/index.js calls it, with the administrator's own session. Settings set by hand now count for nothing.
+const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
+// The same for the site itself (the timers), with its own secret.
+const actAsSystem = (t) => t`select app.act_as('system', null, null, false, null, null, ${TEST_SYSTEM_SECRET})`;
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -229,6 +232,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
+  await trustSystem(su); // fix 3: the site itself acts only with its own secret
   // These tests are about the levels sign-in itself verifies. JEVs's automatic level 2, which now comes at once (no
   // wait, Oct 16, 2026), would lift every clean GitHub sign-up to 2; it is tested in test/jevs.test.js, so here no
   // question can pass it.
@@ -263,6 +267,14 @@ async function admin() {
     adminCtx = { memberId: (await me(env, a.browser)).member_id, session: hashOf(a.browser) };
   }
   return adminCtx;
+}
+// Fix 3: the database checks, from that session, that the member really is an administrator. The owner makes them one
+// (as the setup run does) only while fn runs, so the README's administrator steps below still start with none.
+const setAdmin = (id, on) => su.begin(async (t) => { await t`set local role dog_owner`; await t`update app.members set is_admin = ${on} where id = ${id}`; });
+async function withAdmin(fn) {
+  const boss = await admin();
+  await setAdmin(boss.memberId, true);
+  try { return await fn(boss); } finally { await setAdmin(boss.memberId, false); }
 }
 // The full GitHub or X round trip, as a browser would do it.
 async function oauth(env, provider, account, { browser = jar(), query = '', ip } = {}) {
@@ -453,10 +465,10 @@ test('F10: a banned member can\'t sign back in with the same account, and their 
   const env = setup({ accounts: { 'github:5001': { accountId: '5001', name: 'Banned', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '5001');
   // Banning is Aaron's (PR 6 adds the button); here the test acts as an administrator.
-  await su.begin(async (t) => {
-    await actAsAdmin(t, await admin());
+  await withAdmin((boss) => su.begin(async (t) => {
+    await actAsAdmin(t, boss);
     await t.unsafe(`update app.members set status = 'banned' where id = (select member_id from app.sessions where token_hash = '${c.sha256hex(a.browser.get(SESSION))}')`);
-  });
+  }));
   assert.deepStrictEqual(await me(env, a.browser), { signed_in: false });
   const back = await oauth(env, 'github', '5001');
   assert.strictEqual(back.r.getHeader('Location'), '/join?error=unavailable');
@@ -512,7 +524,7 @@ test('F10, S12: after a fingerprint key rotation, email members keep their accou
   assert.strictEqual((await me(later.env, later.b)).member_id, id, 'the same account after the rotation');
   const banned = await viaEmail([k1], 'gone@example.com');
   const bannedId = (await me(banned.env, banned.b)).member_id;
-  const boss = await admin(); await su.begin(async (t) => { await actAsAdmin(t, boss); await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); });
+  await withAdmin((boss) => su.begin(async (t) => { await actAsAdmin(t, boss); await t.unsafe(`update app.members set status = 'banned' where id = '${bannedId}'`); }));
   const back = await viaEmail([k2, k1], 'gone@example.com');
   assert.strictEqual(back.location, '/join?error=unavailable', 'still banned after the rotation');
 });
@@ -526,8 +538,9 @@ test('the sign-in function can\'t attach a method to someone else, or sign in wh
   await assert.rejects(call({ actor: 'anon' }, victim), /bad sign-in request/, 'someone not signed in naming a member to link to');
   const other = await oauth(setup({ accounts: { 'github:9102': { accountId: '9102', level: 1, recheckAfter: null } } }), 'github', '9102');
   const otherId = (await me(env, other.browser)).member_id;
-  await assert.rejects(call({ actor: 'member', memberId: otherId }, victim), /bad sign-in request/, 'one member linking to another');
-  await assert.rejects(call({ actor: 'member', memberId: otherId }, null), /bad sign-in request/, 'a plain sign-in while acting as a member');
+  const asOther = { actor: 'member', memberId: otherId, session: hashOf(other.browser) }; // fix 3: really that member
+  await assert.rejects(call(asOther, victim), /bad sign-in request/, 'one member linking to another');
+  await assert.rejects(call(asOther, null), /bad sign-in request/, 'a plain sign-in while acting as a member');
   const [lvl] = await q(`select trust_level from app.members where id = '${victim}'`);
   assert.strictEqual(lvl.trust_level, 1, 'the victim was not raised to level 2');
 });
@@ -563,7 +576,8 @@ test('a lapsed X business badge drops back to level 1 when the member next signs
 test('a level Aaron lowers by hand survives the member\'s next sign-in, and no level is raised by hand', async () => {
   const env = setup({ accounts: { 'github:9401': { accountId: '9401', level: 1, recheckAfter: null }, 'github:9402': { accountId: '9402', level: 1, recheckAfter: null } } });
   const members = require('../db/members');
-  const adminAct = (fn) => db.tx(web, { actor: 'admin', memberId: '018f3c2e-7b1a-7cde-8f00-0123456789ab' }, fn);
+  // Fix 3: Aaron is a real administrator with his own session (an invented member ID no longer acts as anyone).
+  const adminAct = (fn) => withAdmin((boss) => db.tx(web, { actor: 'admin', ...boss }, fn));
   const slow = await oauth(env, 'github', '9401');
   const slowId = (await me(env, slow.browser)).member_id;
   assert.strictEqual(await adminAct((t) => members.lowerTrustLevel(t, slowId, 0)), true);
@@ -575,7 +589,7 @@ test('a level Aaron lowers by hand survives the member\'s next sign-in, and no l
   await assert.rejects(adminAct((t) => t`update app.members set trust_level = 2 where id = ${trustedId}`), /never by hand/);
   await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${trustedId}'`);
   assert.strictEqual((await me(env, trusted.browser)).trust_level, 1, 'still the level sign-in verified');
-  await assert.rejects(db.tx(web, { actor: 'member', memberId: trustedId }, (t) => t`update app.members set level_set_by_admin = 3 where id = ${trustedId}`), /permission denied/);
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: trustedId, session: hashOf(trusted.browser) }, (t) => t`update app.members set level_set_by_admin = 3 where id = ${trustedId}`), /permission denied/);
 });
 
 test('the README\'s administrator steps work exactly as written, and change only the one member', async () => {
@@ -597,7 +611,7 @@ test('the site\'s own role can\'t read session hashes, email links or fingerprin
   const env = setup({ accounts: { 'github:8001': { accountId: '8001', name: 'P', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '8001');
   const id = (await q(`select member_id from app.sessions where token_hash = '${c.sha256hex(a.browser.get(SESSION))}'`))[0].member_id;
-  const asMember = (fn) => db.tx(web, { actor: 'member', memberId: id }, fn);
+  const asMember = (fn) => db.tx(web, { actor: 'member', memberId: id, session: hashOf(a.browser) }, fn);
   for (const attempt of [(t) => t`select token_hash from app.sessions`, (t) => t`select fingerprint from app.identities`,
     (t) => t`select * from app.email_tokens`, (t) => t`select * from app.rate_limits`, (t) => t`update app.members set is_admin = true where id = ${id}`]) {
     await assert.rejects(asMember(attempt), /permission denied/);
@@ -730,7 +744,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   assert.strictEqual(await unlink(jar(), { id: xId }), '/join?error=signin');
   await ago(a.browser, 11);
   assert.strictEqual(await unlink(a.browser, { id: xId }), '/account?error=fresh_method');
-  await assert.rejects(db.tx(web, { actor: 'member', memberId: id, fresh: true }, (t) => t`select * from app.identity_unlink(${xId}::uuid, ${hashOf(a.browser)})`), /fresh_sign_in/);
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: id, session: hashOf(a.browser), fresh: true }, (t) => t`select * from app.identity_unlink(${xId}::uuid, ${hashOf(a.browser)})`), /fresh_sign_in/);
   assert.strictEqual(await countIds(id), 2);
   await ago(a.browser, 1);
   const stranger = await oauth(setup({ accounts: { 'github:9543': { accountId: '9543', level: 1, recheckAfter: null } } }), 'github', '9543');
@@ -748,7 +762,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   assert.deepStrictEqual([au.actor_kind, au.detail], ['member', { provider: 'x', sessions_ended: 1, also_unlinked: [], keys_revoked: 0, agents_lowered: 0 }]);
   const githubId = signIns.find((s) => s.provider === 'github').id;
   assert.strictEqual(await unlink(a.browser, { id: githubId }), '/account?error=last_method');
-  await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${githubId}::uuid, ${hashOf(a.browser)})`), /last_method/);
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: id, session: hashOf(a.browser) }, (t) => t`select * from app.identity_unlink(${githubId}::uuid, ${hashOf(a.browser)})`), /last_method/);
   assert.strictEqual(await countIds(id), 1);
   // Unlinked, that X account is a stranger again: signing in with it makes a new account, not this one.
   const back = await oauth(env, 'x', '9542');
@@ -777,7 +791,7 @@ test('PR 15 review F1: seniority. A session may unlink only methods linked after
   const unlink = async (b, identity) => { const r = res(); await env.flow.unlink(req('POST', '/auth/account/unlink', { cookie: b.header(), origin: ORIGIN, body: { id: identity } }), r); return r.getHeader('Location'); };
   assert.strictEqual(await unlink(intruder.browser, ids.github), '/account?error=senior', 'the later method can\'t remove the older one');
   assert.strictEqual(await unlink(shared, ids.github), '/join?error=signin', 'and the copied session is gone');
-  await assert.rejects(db.tx(web, { actor: 'member', memberId: id }, (t) => t`select * from app.identity_unlink(${ids.github}::uuid, ${hashOf(intruder.browser)})`), /not_senior/);
+  await assert.rejects(db.tx(web, { actor: 'member', memberId: id, session: hashOf(intruder.browser) }, (t) => t`select * from app.identity_unlink(${ids.github}::uuid, ${hashOf(intruder.browser)})`), /not_senior/);
   assert.strictEqual(await countIds(id), 2);
   assert.strictEqual((await me(env, ownerAgain.browser)).signed_in, true, 'the intruder\'s refused attempts signed the owner out of nothing');
   // The owner, signed in with the older method, removes the intruder's: the intruder's session ends.
@@ -995,8 +1009,9 @@ test('PR 15 second review R1: the method a session made things with is read by t
   const [own] = await q(`select identity_id from app.sessions where token_hash = '${hashOf(a.browser)}'`);
   assert.ok(own.identity_id);
   assert.strictEqual(await ident(await as(a.browser)), own.identity_id);
-  assert.strictEqual(await ident({ actor: 'member', memberId: ida, session: hashOf(b.browser) }), null, 'another member\'s session counts for nothing');
-  assert.strictEqual(await ident({ actor: 'member', memberId: ida }), null);
+  // fix 3: these used to act as A and record no method; now the database refuses to act as A at all without A's own session.
+  await assert.rejects(ident({ actor: 'member', memberId: ida, session: hashOf(b.browser) }), /not_acting/, 'another member\'s session counts for nothing');
+  await assert.rejects(ident({ actor: 'member', memberId: ida }), /need the session that proves who is acting/);
   await assert.rejects(runAs({ actor: 'anon', session: hashOf(a.browser) }, async () => {}), /only member calls carry a session/);
   await assert.rejects(runAs({ actor: 'member', memberId: ida, session: 'not-a-hash' }, async () => {}), /session must be a session hash/);
   const ag = await runAs(await as(a.browser), (t) => agents.create(t, { name: 'rec', description: null, keyHash: c.sha256hex('rec' + Math.random()) }));
@@ -1059,10 +1074,10 @@ test('PR 15 second review R3 (probe B): a link or an unlink at the same moment a
     let locked; const isLocked = new Promise((r) => { locked = r; });
     const t0 = su.begin(async (t) => { await t.unsafe(`select 1 from app.identities where id = '${ident.id}' for update`); locked(); await gate0; });
     await isLocked;
-    const t1 = runAs({ actor: 'member', memberId: id }, (t) => step(t));
+    const t1 = runAs({ actor: 'member', memberId: id, session: hashOf(browser) }, (t) => step(t));
     await new Promise((r) => setTimeout(r, 300));
     // T2: Aaron bans the member: the update locks the member row, then its trigger ends the sessions.
-    const t2 = su.begin(async (t) => { await t.unsafe(`select set_config('app.actor', 'system', true)`); await t.unsafe(`update app.members set status = 'banned' where id = '${id}'`); });
+    const t2 = su.begin(async (t) => { await actAsSystem(t); await t.unsafe(`update app.members set status = 'banned' where id = '${id}'`); });
     await new Promise((r) => setTimeout(r, 300));
     release0();
     const out = await Promise.allSettled([t0, t1, t2]);
@@ -1141,7 +1156,12 @@ test('PR 15 re-review (probe E): the cascade can\'t be escaped by rotating the k
   const made = await runAs(viaSession(intruder.browser, id), (t) => agents.create(t, { name: 'e', description: null, keyHash: k1 }));
   // The key is rotated from the copied session, which signed in with the owner's own X, while the agent only drafts
   // (no fresh sign-in needed): K2 is not the intruder method's key.
-  assert.strictEqual(await runAs(viaSession(shared, id), (t) => agents.rotate(t, { agent: made.id, keyHash: k2 })), true);
+  // fix 3: that copied session ended with the link (R4), so it can no longer act as anyone; the rotation comes from a
+  // live session of the owner's X instead, no fresher than the copy was.
+  await assert.rejects(runAs(viaSession(shared, id), (t) => agents.rotate(t, { agent: made.id, keyHash: k2 })), /not_acting/);
+  const ownerX = await oauth(env, 'x', '9801o');
+  await ago(ownerX.browser, 20);
+  assert.strictEqual(await runAs(viaSession(ownerX.browser, id), (t) => agents.rotate(t, { agent: made.id, keyHash: k2 })), true);
   assert.ok((await runAs(viaSession(intruder.browser, id, { fresh: true }), (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'act', report: 'draft', dailyCap: 20 }))).rules);
   await containmentCycle(id, intruder.browser);
   assert.deepStrictEqual({ ...(await latest(made.id)), set_by: undefined }, { post_mode: 'act', reply_mode: 'act', report_mode: 'draft', daily_cap: 20, reason: 'containment_lifted', set_by: undefined });
@@ -1185,10 +1205,9 @@ test('PR 15 re-review (probe G): a link ends the session that made it, so a copi
   assert.strictEqual((await q(`select 1 from app.sessions where token_hash = '${hashOf(shared)}'`)).length, 0);
   // Days later it is still dead: nothing made "from" it can be attributed to the owner's method.
   const kh = c.sha256hex('g' + Math.random());
-  const made = await runAs(viaSession(shared, id), (t) => agents.create(t, { name: 'g', description: null, keyHash: kh }));
-  const [k] = await q(`select by_identity from app.agent_keys where key_hash = '${kh}'`);
-  assert.strictEqual(k.by_identity, null, 'an ended session names no method');
-  assert.ok(made.id);
+  // fix 3: an ended session no longer acts as the owner at all (it used to, naming no method), so nothing is made from it.
+  await assert.rejects(runAs(viaSession(shared, id), (t) => agents.create(t, { name: 'g', description: null, keyHash: kh })), /not_acting/);
+  assert.strictEqual((await q(`select 1 from app.agent_keys where key_hash = '${kh}'`)).length, 0, 'an ended session makes nothing');
   // The owner signs in again with X, as the notice says, and the account page explains the sign-out.
   const back = await oauth(env, 'x', '9821o');
   assert.strictEqual((await me(env, back.browser)).member_id, id);

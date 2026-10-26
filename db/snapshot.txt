@@ -1,4 +1,9 @@
 # Reviewed database snapshot. Rebuild with: npm run db:snapshot
+constraint app.actor_keys actor_keys_pkey PRIMARY KEY (id)
+constraint app.actor_keys actor_keys_singleton_check CHECK (singleton)
+constraint app.actor_keys actor_keys_singleton_key UNIQUE (singleton)
+constraint app.actor_keys actor_keys_stamp_key_check CHECK ((octet_length(stamp_key) = 32))
+constraint app.actor_keys actor_keys_system_hash_check CHECK ((octet_length(system_hash) = 32))
 constraint app.admin_notes admin_notes_action_check CHECK ((action = ANY (ARRAY['member.ban'::text, 'member.unban'::text, 'member.level_set'::text])))
 constraint app.admin_notes admin_notes_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.admin_notes admin_notes_note_check CHECK (((char_length(note) >= 1) AND (char_length(note) <= 200)))
@@ -256,6 +261,8 @@ constraint app.watch_settings watch_settings_signup_floor_check CHECK (((signup_
 constraint app.watch_settings watch_settings_signup_multiplier_check CHECK (((signup_multiplier >= 2) AND (signup_multiplier <= 1000)))
 constraint app.watch_settings watch_settings_singleton_check CHECK (singleton)
 constraint app.watch_settings watch_settings_singleton_key UNIQUE (singleton)
+default app.actor_keys.id = app.uuid_v7()
+default app.actor_keys.singleton = true
 default app.admin_notes.created_at = now()
 default app.admin_notes.id = app.uuid_v7()
 default app.agent_drafts.action = 'post'::text
@@ -369,8 +376,10 @@ default app.watch_settings.signup_floor = 20
 default app.watch_settings.signup_multiplier = 5
 default app.watch_settings.singleton = true
 default app.watch_settings.updated_at = now()
+function app.act_as(p_actor text, p_member uuid, p_agent uuid, p_fresh boolean, p_session text, p_key text, p_system text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=97ca4554d4a9f53f782625e07740ba4b
 function app.act_reconfirm_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=23149c747f556bcd077199fafcb92d1e
-function app.actor_kind() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=text body_md5=ff633b08786d9cbc10eea9a14ddc49f8
+function app.actor_kind() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=text body_md5=7777987dd22198273771357bd7ecc74b
+function app.actor_stamp(p_actor text, p_member text, p_agent text, p_fresh text, p_session text) owner=dog_signin execute=dog_signin,dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=f44b245fc7779061313876ede7abdaa8
 function app.agent_actions_today(p_agent uuid) owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=integer body_md5=610f8bd243553962c38d6bf6723e6c1c
 function app.agent_claim(p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=741cc158bc9fc0c9e720c63911381540
 function app.agent_claim_preview(p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, name text, description text, created_at timestamp with time zone) body_md5=0151f2d7dd22822f992a6cadee7723e4
@@ -413,9 +422,9 @@ function app.containments_fill() owner=dog_owner execute=dog_owner language=plpg
 function app.containments_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=dfb3f755933b5c7c835a0d6ca439054a
 function app.containments_start() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=f32a8ef56dedbcdde6992cb98629f407
 function app.current_actor_id() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=uuid body_md5=78082b715a972b0254a50e6555af6789
-function app.current_agent() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=uuid body_md5=739668a7732ef5a425a1d1bda0c3edd5
+function app.current_agent() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=uuid body_md5=bde2ea1728974cb1b0893aa388de59de
 function app.current_identity() owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=c9c345011eb5b2ebc84036b2ba022d29
-function app.current_member() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=uuid body_md5=e46adb2e55a90833fc5dd4176dc9670b
+function app.current_member() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=uuid body_md5=f559f1145c07d34708551a7e86619e3b
 function app.delete_account() owner=dog_erase execute=dog_erase,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=ad8b39a7dce5a8199fc16ecae31b7fc3
 function app.deletion_overdue(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=boolean body_md5=40b018cc745becb89822cdf05d74c422
 function app.deletion_review_decide(p_review uuid, p_decision text) owner=dog_erase execute=dog_erase,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=b3459529e81bced885d49337dfa8b82a
@@ -478,14 +487,16 @@ function app.review_flags_recheck() owner=dog_owner execute=dog_owner language=p
 function app.run_timers() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=e69650e48296b26da5b34644ccbac4e3
 function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b546c8242ddd74e8f612239c3e466d5a
 function app.session_resolve(p_session_hash text, p_idle_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, display_name text, fresh boolean) body_md5=5e60e3f97ef4b11ae3f06ba400e6aa7f
-function app.set_administrator(p_member uuid) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=text body_md5=db17ed1c05e7f30cf591c0c007e6ff9d
+function app.set_administrator(p_member uuid) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=text body_md5=12646810f3c9e773c67ec84f45c2449c
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=f6a124ce78a5ac9723b4c145682efebd
 function app.sign_in_known(p_provider text, p_fingerprints text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=682aa6ef67fe945f0e1b08fa2a1567d1
+function app.stamp_ok() owner=dog_signin execute=dog_signin,dog_app,dog_public,dog_limits,dog_erase,dog_delegate,dog_jevs,dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=b29df82946b44f34f762668db83c2116
 function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=86d0947a67547802e799e7d4c1e292c1
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
+grant app.actor_keys dog_signin SELECT
 grant app.admin_notes dog_app SELECT
 grant app.admin_notes dog_erase DELETE
 grant app.admin_notes.action dog_app INSERT
@@ -955,82 +966,86 @@ grant app.subagent_settings dog_app SELECT
 grant app.subagent_settings dog_jevs SELECT
 grant app.subagent_settings dog_signin SELECT
 grant app.watch_settings dog_app SELECT
+policy app.actor_keys actor_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
+policy app.actor_keys actor_keys_owner_select cmd=r permissive=true to=dog_owner using=true check=
+policy app.actor_keys actor_keys_owner_update cmd=w permissive=true to=dog_owner using=true check=true
+policy app.actor_keys actor_keys_signin cmd=r permissive=true to=dog_signin using=true check=
 policy app.admin_notes admin_notes_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.admin_notes admin_notes_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.admin_notes admin_notes_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'admin'::text)
-policy app.admin_notes admin_notes_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.admin_notes admin_notes_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)
+policy app.admin_notes admin_notes_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.agent_drafts agent_drafts_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.agent_drafts agent_drafts_delegate_update cmd=w permissive=true to=dog_delegate using=true check=true
 policy app.agent_drafts agent_drafts_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agent_drafts agent_drafts_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.agent_drafts agent_drafts_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() = 'agent'::text) AND (agent_id = app.current_agent()) AND (owner_id = app.current_member()) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = app.current_agent()) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text)))))
+policy app.agent_drafts agent_drafts_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent)) AND (owner_id = ( SELECT app.current_member() AS current_member)) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = ( SELECT app.current_agent() AS current_agent)) AND (a.owner_id = ( SELECT app.current_member() AS current_member)) AND (a.status = 'active'::text)))))
 policy app.agent_drafts agent_drafts_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.agent_drafts agent_drafts_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.agent_drafts agent_drafts_public_select cmd=r permissive=true to=dog_public using=(status = 'approved'::text) check=
-policy app.agent_drafts agent_drafts_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR ((app.actor_kind() = 'agent'::text) AND (agent_id = app.current_agent())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.agent_drafts agent_drafts_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.agent_drafts agent_drafts_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agent_drafts agent_drafts_signin_update cmd=w permissive=true to=dog_signin using=true check=true
-policy app.agent_drafts agent_drafts_update cmd=w permissive=true to=dog_app using=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member()))
+policy app.agent_drafts agent_drafts_update cmd=w permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member)))
 policy app.agent_keys agent_keys_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agent_keys agent_keys_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.agent_keys agent_keys_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text)))))
-policy app.agent_keys agent_keys_select cmd=r permissive=true to=dog_app using=((app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'member'::text) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = app.current_member())))))) check=
+policy app.agent_keys agent_keys_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)) AND (a.status = 'active'::text)))))
+policy app.agent_keys agent_keys_select cmd=r permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member))))))) check=
 policy app.agent_keys agent_keys_signin_delete cmd=d permissive=true to=dog_signin using=(EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.status = 'unclaimed'::text) AND (a.claim_expires_at < now())))) check=
 policy app.agent_keys agent_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.agent_keys agent_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agent_keys agent_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
-policy app.agent_keys agent_keys_update cmd=w permissive=true to=dog_app using=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = app.current_member()))))) check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = app.current_member())))))
+policy app.agent_keys agent_keys_update cmd=w permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)))))) check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member))))))
 policy app.agent_rules agent_rules_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.agent_rules agent_rules_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agent_rules agent_rules_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.agent_rules agent_rules_insert cmd=a permissive=true to=dog_app using= check=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (reason = ANY (ARRAY['created'::text, 'owner'::text, 'reconfirmed'::text, 'containment_lifted'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text))))) OR ((app.actor_kind() = 'admin'::text) AND (reason = ANY (ARRAY['report_upheld'::text, 'containment_lifted'::text]))) OR ((app.actor_kind() = 'system'::text) AND (reason = ANY (ARRAY['act_expired'::text, 'containment'::text, 'containment_lifted'::text]))))
+policy app.agent_rules agent_rules_insert cmd=a permissive=true to=dog_app using= check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (reason = ANY (ARRAY['created'::text, 'owner'::text, 'reconfirmed'::text, 'containment_lifted'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)) AND (a.status = 'active'::text))))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (reason = ANY (ARRAY['report_upheld'::text, 'containment_lifted'::text]))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'system'::text) AND (reason = ANY (ARRAY['act_expired'::text, 'containment'::text, 'containment_lifted'::text]))))
 policy app.agent_rules agent_rules_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.agent_rules agent_rules_public_select cmd=r permissive=true to=dog_public using=true check=
-policy app.agent_rules agent_rules_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.owner_id = app.current_member()))))) OR ((app.actor_kind() = 'agent'::text) AND ((agent_id = app.current_agent()) OR (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.parent_id = app.current_agent())))))) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.agent_rules agent_rules_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)))))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND ((agent_id = ( SELECT app.current_agent() AS current_agent)) OR (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_rules.agent_id) AND (a.parent_id = ( SELECT app.current_agent() AS current_agent))))))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.agent_rules agent_rules_signin_insert cmd=a permissive=true to=dog_signin using= check=(reason = ANY (ARRAY['created'::text, 'ban'::text, 'disabled'::text, 'signin_unlinked'::text, 'parent_lowered'::text]))
 policy app.agent_rules agent_rules_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agents agents_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.agents agents_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agents agents_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.agents agents_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member()) AND (status = 'active'::text) AND (EXISTS ( SELECT 1 FROM app.members m WHERE ((m.id = app.current_member()) AND (m.status = 'active'::text) AND ((m.trust_level >= 2) OR m.is_admin)))))
+policy app.agents agents_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member)) AND (status = 'active'::text) AND (EXISTS ( SELECT 1 FROM app.members m WHERE ((m.id = ( SELECT app.current_member() AS current_member)) AND (m.status = 'active'::text) AND ((m.trust_level >= 2) OR m.is_admin)))))
 policy app.agents agents_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.agents agents_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.agents agents_public_select cmd=r permissive=true to=dog_public using=(status <> 'unclaimed'::text) check=
-policy app.agents agents_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR ((app.actor_kind() = 'agent'::text) AND ((id = app.current_agent()) OR (parent_id = app.current_agent()))) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.agents agents_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND ((id = ( SELECT app.current_agent() AS current_agent)) OR (parent_id = ( SELECT app.current_agent() AS current_agent)))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.agents agents_signin_delete cmd=d permissive=true to=dog_signin using=((status = 'unclaimed'::text) AND (claim_expires_at < now())) check=
-policy app.agents agents_signin_insert cmd=a permissive=true to=dog_signin using= check=(((status = 'unclaimed'::text) AND (owner_id IS NULL) AND (parent_id IS NULL)) OR ((status = 'active'::text) AND (parent_id IS NOT NULL) AND (app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent()) AND (owner_id = app.current_member())))
+policy app.agents agents_signin_insert cmd=a permissive=true to=dog_signin using= check=(((status = 'unclaimed'::text) AND (owner_id IS NULL) AND (parent_id IS NULL)) OR ((status = 'active'::text) AND (parent_id IS NOT NULL) AND (( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (parent_id = ( SELECT app.current_agent() AS current_agent)) AND (owner_id = ( SELECT app.current_member() AS current_member))))
 policy app.agents agents_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agents agents_signin_update cmd=w permissive=true to=dog_signin using=(status = ANY (ARRAY['unclaimed'::text, 'active'::text])) check=true
-policy app.agents agents_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR (app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent()))) check=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR (app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'agent'::text) AND (parent_id = app.current_agent())))
-policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_insert_delegate cmd=a permissive=true to=dog_delegate using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_insert_erase cmd=a permissive=true to=dog_erase using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_insert_jevs cmd=a permissive=true to=dog_jevs using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_insert_owner cmd=a permissive=true to=dog_owner using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_insert_signin cmd=a permissive=true to=dog_signin using= check=((actor_kind = app.actor_kind()) AND (NOT (actor_id IS DISTINCT FROM app.current_actor_id())))
-policy app.audit_log audit_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.agents agents_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (parent_id = ( SELECT app.current_agent() AS current_agent)))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (parent_id = ( SELECT app.current_agent() AS current_agent))))
+policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_delegate cmd=a permissive=true to=dog_delegate using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_erase cmd=a permissive=true to=dog_erase using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_jevs cmd=a permissive=true to=dog_jevs using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_owner cmd=a permissive=true to=dog_owner using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_signin cmd=a permissive=true to=dog_signin using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.brakes brakes_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.brakes brakes_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.brakes brakes_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'admin'::text)
+policy app.brakes brakes_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)
 policy app.brakes brakes_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.brakes brakes_limits_select cmd=r permissive=true to=dog_limits using=true check=
-policy app.brakes brakes_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
-policy app.brakes brakes_update cmd=w permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=(app.actor_kind() = 'admin'::text)
+policy app.brakes brakes_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
+policy app.brakes brakes_update cmd=w permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)
 policy app.change_log change_log_owner_only cmd=* permissive=true to=dog_owner using=true check=true
 policy app.containments containments_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.containments containments_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.containments containments_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'system'::text)
-policy app.containments containments_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = app.current_member())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
-policy app.containments containments_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=(((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text])))
+policy app.containments containments_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text)
+policy app.containments containments_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.containments containments_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])))
 policy app.deletion_reviews deletion_reviews_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.deletion_reviews deletion_reviews_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.deletion_reviews deletion_reviews_erase_update cmd=w permissive=true to=dog_erase using=true check=true
 policy app.deletion_reviews deletion_reviews_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.deletion_reviews deletion_reviews_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
-policy app.deletion_reviews deletion_reviews_select cmd=r permissive=true to=dog_app using=((app.actor_kind() = 'admin'::text) OR ((app.actor_kind() = 'member'::text) AND (member_id = app.current_member()))) check=
+policy app.deletion_reviews deletion_reviews_select cmd=r permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member)))) check=
 policy app.deletion_reviews deletion_reviews_signin_select cmd=r permissive=true to=dog_signin using=true check=
-policy app.email_suppressions email_suppressions_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'system'::text)
-policy app.email_suppressions email_suppressions_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'system'::text) check=
+policy app.email_suppressions email_suppressions_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text)
+policy app.email_suppressions email_suppressions_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text) check=
 policy app.email_tokens email_tokens_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.email_tokens email_tokens_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.email_tokens email_tokens_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -1045,7 +1060,7 @@ policy app.identities identities_erase_delete cmd=d permissive=true to=dog_erase
 policy app.identities identities_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_update cmd=w permissive=true to=dog_erase using=true check=true
 policy app.identities identities_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
-policy app.identities identities_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=
+policy app.identities identities_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.identities identities_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.identities identities_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.identities identities_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -1055,12 +1070,12 @@ policy app.jevs_challenges jevs_challenges_erase_select cmd=r permissive=true to
 policy app.jevs_challenges jevs_challenges_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.jevs_challenges jevs_challenges_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.jevs_challenges jevs_challenges_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
-policy app.jevs_challenges jevs_challenges_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=
+policy app.jevs_challenges jevs_challenges_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.jevs_decisions jevs_decisions_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.jevs_decisions jevs_decisions_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.jevs_decisions jevs_decisions_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.jevs_decisions jevs_decisions_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
-policy app.jevs_decisions jevs_decisions_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.jevs_decisions jevs_decisions_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.jevs_marks jevs_marks_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.jevs_marks jevs_marks_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.jevs_marks jevs_marks_jevs_delete cmd=d permissive=true to=dog_jevs using=true check=
@@ -1079,42 +1094,42 @@ policy app.jevs_settings jevs_settings_jevs_select cmd=r permissive=true to=dog_
 policy app.jevs_settings jevs_settings_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.jevs_settings jevs_settings_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.jevs_settings jevs_settings_owner_update cmd=w permissive=true to=dog_owner using=true check=true
-policy app.jevs_settings jevs_settings_select cmd=r permissive=true to=dog_app,dog_delegate using=((key = 'mode'::text) OR (app.actor_kind() = 'admin'::text)) check=
+policy app.jevs_settings jevs_settings_select cmd=r permissive=true to=dog_app,dog_delegate using=((key = 'mode'::text) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.members members_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.members members_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.members members_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.members members_erase_update cmd=w permissive=true to=dog_erase using=true check=true
-policy app.members members_insert cmd=a permissive=true to=dog_app using= check=(app.actor_kind() = 'system'::text)
+policy app.members members_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text)
 policy app.members members_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.members members_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
 policy app.members members_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.members members_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.members members_owner_update cmd=w permissive=true to=dog_owner using=true check=true
 policy app.members members_public_select cmd=r permissive=true to=dog_public using=(status = 'active'::text) check=
-policy app.members members_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'agent'::text])) AND (id = app.current_member())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.members members_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.members members_signin_insert cmd=a permissive=true to=dog_signin using= check=(is_admin = false)
 policy app.members members_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.members members_signin_update cmd=w permissive=true to=dog_signin using=true check=true
-policy app.members members_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text)) check=(((app.actor_kind() = 'member'::text) AND (id = app.current_member())) OR (app.actor_kind() = 'admin'::text))
+policy app.members members_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text))
 policy app.notices notices_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((app.actor_kind() <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text])) OR ((app.actor_kind() = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = app.current_member()))))
+policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))
 policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text]))
-policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = app.current_member())) OR ((app.actor_kind() = 'admin'::text) AND (member_id IS NULL)) OR (app.actor_kind() = 'system'::text)) check=
+policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
 policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text])))
-policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = app.current_member())) OR ((app.actor_kind() = 'admin'::text) AND (member_id IS NULL))) check=(((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = app.current_member())) OR ((app.actor_kind() = 'admin'::text) AND (member_id IS NULL)))
+policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
 policy app.posts posts_delegate_insert cmd=a permissive=true to=dog_delegate using= check=((lane = 'agents'::text) AND (delegation = 'approved'::text) AND (draft_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = posts.agent_id) AND (a.owner_id = posts.author_id) AND (a.status = 'active'::text)))))
 policy app.posts posts_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.posts posts_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.posts posts_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.posts posts_erase_update cmd=w permissive=true to=dog_erase using=true check=true
-policy app.posts posts_insert cmd=a permissive=true to=dog_app using= check=((author_id = app.current_member()) AND (((app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (lane = 'people'::text) AND (agent_id IS NULL)) OR ((app.actor_kind() = 'agent'::text) AND (lane = 'agents'::text) AND (agent_id = app.current_agent()) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = app.current_agent()) AND (a.owner_id = app.current_member()) AND (a.status = 'active'::text)))))))
+policy app.posts posts_insert cmd=a permissive=true to=dog_app using= check=((author_id = ( SELECT app.current_member() AS current_member)) AND (((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (lane = 'people'::text) AND (agent_id IS NULL)) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (lane = 'agents'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent)) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = ( SELECT app.current_agent() AS current_agent)) AND (a.owner_id = ( SELECT app.current_member() AS current_member)) AND (a.status = 'active'::text)))))))
 policy app.posts posts_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.posts posts_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
 policy app.posts posts_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.posts posts_public_select cmd=r permissive=true to=dog_public using=(status = 'live'::text) check=
-policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (author_id = app.current_member())) OR ((app.actor_kind() = 'agent'::text) AND (agent_id = app.current_agent())) OR (app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text]))) check=
-policy app.posts posts_update cmd=w permissive=true to=dog_app using=app.is_reviewer() check=app.is_reviewer()
+policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (author_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
+policy app.posts posts_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
 policy app.rate_limits rate_limits_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.rate_limits rate_limits_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.rate_limits rate_limits_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -1125,29 +1140,29 @@ policy app.region_confirms region_confirms_signin_select cmd=r permissive=true t
 policy app.region_declines region_declines_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.region_declines region_declines_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.region_declines region_declines_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
-policy app.region_declines region_declines_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.region_declines region_declines_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.review_flags review_flags_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.review_flags review_flags_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.review_flags review_flags_insert cmd=a permissive=true to=dog_app using= check=(((source = 'first_posts'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.status = 'waiting'::text) AND ((p.author_id = app.current_member()) OR app.is_reviewer()))))) OR ((source = 'report'::text) AND (app.actor_kind() = ANY (ARRAY['member'::text, 'admin'::text])) AND (reporter_id = app.current_member()) AND app.reportable(post_id, app.current_member())) OR ((source = 'classifier'::text) AND (reporter_id IS NULL) AND (app.actor_kind() = 'system'::text)) OR ((source = 'appeal'::text) AND (reporter_id IS NULL) AND (reason IS NULL) AND app.jevs_appealable(post_id)))
+policy app.review_flags review_flags_insert cmd=a permissive=true to=dog_app using= check=(((source = 'first_posts'::text) AND (reporter_id IS NULL) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.status = 'waiting'::text) AND ((p.author_id = ( SELECT app.current_member() AS current_member)) OR ( SELECT app.is_reviewer() AS is_reviewer)))))) OR ((source = 'report'::text) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (reporter_id = ( SELECT app.current_member() AS current_member)) AND app.reportable(post_id, ( SELECT app.current_member() AS current_member))) OR ((source = 'classifier'::text) AND (reporter_id IS NULL) AND (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) OR ((source = 'appeal'::text) AND (reporter_id IS NULL) AND (reason IS NULL) AND app.jevs_appealable(post_id)))
 policy app.review_flags review_flags_jevs_insert cmd=a permissive=true to=dog_jevs using= check=((source = 'classifier'::text) AND (classifier = 'jevs'::text) AND (reporter_id IS NULL))
 policy app.review_flags review_flags_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
-policy app.review_flags review_flags_select cmd=r permissive=true to=dog_app using=(((app.actor_kind() = 'member'::text) AND (reporter_id = app.current_member())) OR app.is_reviewer()) check=
-policy app.review_flags review_flags_update cmd=w permissive=true to=dog_app using=app.is_reviewer() check=app.is_reviewer()
+policy app.review_flags review_flags_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (reporter_id = ( SELECT app.current_member() AS current_member))) OR ( SELECT app.is_reviewer() AS is_reviewer)) check=
+policy app.review_flags review_flags_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
 policy app.runner_tokens runner_tokens_owner_only cmd=* permissive=true to=dog_owner using=true check=true
 policy app.schema_migrations migrations_owner_only cmd=* permissive=true to=dog_owner using=true check=true
-policy app.sessions sessions_delete cmd=d permissive=true to=dog_app using=((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) check=
+policy app.sessions sessions_delete cmd=d permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member))) check=
 policy app.sessions sessions_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.sessions sessions_erase_select cmd=r permissive=true to=dog_erase using=true check=
-policy app.sessions sessions_select cmd=r permissive=true to=dog_app using=((app.actor_kind() = 'member'::text) AND (member_id = app.current_member())) check=
+policy app.sessions sessions_select cmd=r permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (member_id = ( SELECT app.current_member() AS current_member))) check=
 policy app.sessions sessions_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.sessions sessions_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.sessions sessions_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.sessions sessions_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.subagent_settings subagent_settings_narrow_select cmd=r permissive=true to=dog_signin,dog_jevs using=true check=
 policy app.subagent_settings subagent_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
-policy app.subagent_settings subagent_settings_select cmd=r permissive=true to=dog_app using=(app.actor_kind() <> 'anon'::text) check=
+policy app.subagent_settings subagent_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) check=
 policy app.watch_settings watch_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
-policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = ANY (ARRAY['admin'::text, 'system'::text])) check=
+policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) check=
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_audit AFTER INSERT OR UPDATE ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_audit()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_fill BEFORE INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_fill()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_guard BEFORE UPDATE ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_guard()

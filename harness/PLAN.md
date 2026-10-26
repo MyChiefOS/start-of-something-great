@@ -4,6 +4,8 @@
 
 Line numbers refer to `main` at `8d86549` unless a step says otherwise.
 
+**Latest status (Oct 25, after #48):** [harness/STATUS.md](STATUS.md): what is live, every fix's state, D1–D8, what is left and what is open for Aaron.
+
 ## 1. Aaron's decisions this plan builds on
 
 | Decision (Aaron's words) | Date | Source |
@@ -56,6 +58,8 @@ Each step is done only when INTEGRITY.md's six steps are done (code; a failing-t
 
 ### Fix 3: the database decides who is acting. Claude, plus independent review. Confidence medium (design proven in a prototype).
 
+**Status, Oct 26:** built on branch `fix3-actor-stamp` as migration 019 (`app.act_as`, the stamp, and `app.actor_kind`, `app.current_member` and `app.current_agent` checking it); `db/index.js` asks with proof (session, agent key, or the site's own secret for `system`); `test/actor-stamp.test.js` runs the prototype's attacks against it. `system` needs the hash of `CRON_SECRET` in `app.actor_keys.system_hash`, which fix 8's setup run stores. **PR #49 (Oct 26):** plus migration 020, so each policy asks who is acting once per query (a 20,000-row scan as dog_app, local Postgres 16: 2.0 ms at 018, today's production; 58.5 ms with 019 alone; 1.1 ms with 020); `test/policy-initplan.test.js` proves 020 changes nothing but that wrapping (it fails on a planted widening). The whole-system review (harness/REVIEW-2026-10-26.md, R-1) found 020 had broken the coverage check's hand-written audit list; fixed, suite green. Fix 3 review findings are RK82 to RK87; finding 2 is 020, finding 3 the widened fix 4 check; finding 6 (some functions still marked parallel safe) is harmless, since every function that reads the stamp is parallel unsafe; finding 10 (019 on Supabase) is now verified: the equivalence and runner tests pass on Supabase's 17.11 image (PR #49's independent review and the CLJO).
+
 Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` and `app.fresh` as plain settings, and `app.actor_kind()` (`001_foundation.sql:63-65`) trusts them, so anyone with the site's login could act as Aaron (verified by simulation, Oct 25). **Postgres lets any login set those settings; no grant can stop it**, so the fix is a stamp:
 
 - A key the site can't read, generated inside the database: a table owned by `dog_owner` with row-level security and no grant to `dog_app` (no Vault dependency; whether `dog_owner` may read Vault on Supabase is unknown).
@@ -65,6 +69,8 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 - **Prototype:** `test/prototypes/actor-stamp.js` (run: `node test/prototypes/actor-stamp.js $(pwd)` with a local Postgres). On Oct 25 it passed all 10 checks on a throwaway copy of our schema with a real member and session made by `app.sign_in`: forged admin rejected, made-up stamp rejected, key unreadable to the site, real session works, edited actor rejected, replay rejected, forged "fresh sign-in" rejected. Cost: 41 µs per check, worst case, forced once per row. Not yet proven on Supabase's Postgres 17; measure large scans and, if needed, make policies evaluate the check once per query.
 
 ### Fix 4: the runner allows exactly one site login. Claude. Confidence high.
+
+**Status, Oct 26:** built on the same branch: `dog_web` may sign in only if it is noinherit, not a superuser, can't bypass row-level security, make roles or databases or replicate, and belongs to `dog_app` alone; it is no longer reported as a leftover. After merge, redeploy `dog-migrate` from the merge and compare its files byte for byte, before any run that makes the login. **PR #49:** the check also refuses admin or inherit options on the membership, objects the login owns, and dog_app itself belonging to a role (`test/runner.test.js`).
 
 `supabase/functions/dog-migrate/core.mjs` fails "no database role of ours can sign in" if `dog_web` can sign in (ROLES at 68; checks at 173-176) and `leftovers()` (144-148) reports `dog_web` as a leftover. Change both so `dog_web` may sign in only if it is noinherit, not superuser, not bypassrls, can't create roles or databases, and holds only `dog_app`. **This must be merged and the runner redeployed before fix 5's migration runs**, or every later database run reports failure after committing (verified by simulation).
 
@@ -82,9 +88,18 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 
 ### Fix 7: site JEVs mode to enforce. Claude, migration. Confidence high.
 
+**Oct 26:** moved into the go-live release with fix 9 and `LAUNCH_STAGE`, as this section already says: making enforce the default changes behaviour many tests rely on, and it matters only once the site opens.
+
 One `app.jevs_settings` row (`mode`), changed by migration through the runner. Do it in the same release as go-live, so first posts are never left waiting for Aaron.
 
-### Fix 8: Vercel settings. Aaron (secrets never pass through Claude). Confidence unknown.
+### Fix 8: the site's keys and timers. Claude (route B; secrets never pass through Claude). Confidence medium.
+
+**Oct 26: Aaron chose route B** ("Okay let go with B."), with a fallback to Vercel settings (CHARTER.md §2). Claude builds it all, and Aaron approves the PRs:
+- a migration makes the site login's password and the keys inside the database, in Vault, and stores the hash of the timer secret in `app.actor_keys.system_hash` (fix 3) in the same transaction;
+- a broker Edge Function hands the site its password and session key against Vercel's identity token, with the CSO's controls 1 to 8 (harness/REVIEW-2026-10-26.md, R-8);
+- the timers run through a slot-gated database wrapper, so the site never holds the timer secret (the CSO's conditions, FACTS.md, Oct 26).
+
+The table below lists what the site reads. Under route B they come from the broker, and Vercel settings are only the fallback. The earlier route A plan (a setup run writing Vercel, with Aaron protecting `production` and adding a token) is not being built.
 
 | Name | What | Notes |
 |---|---|---|

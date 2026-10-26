@@ -3,9 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
-const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
-  set_config('app.session', ${ctx.session}, true)`;
+// Acting as an administrator straight in the database (the test superuser), the way the site does it.
+// fix 3: settings set by hand count as an anonymous visitor, so this asks app.act_as with Aaron's real session.
+const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -17,6 +17,7 @@ const posts = require('../db/posts');
 const review = require('../db/review');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { trustSystem, TEST_SYSTEM_SECRET } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -95,6 +96,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
+  await trustSystem(su); // fix 3: the site itself acts only with its own secret
   aaron = await member(1, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
   aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
@@ -210,7 +212,7 @@ test('a flag left open on a removed post can be cleared with Remove, which is of
   await run(aaron.ctx, (t) => review.decide(t, { post: p.id, decision: 'remove' }));
   // However it got there (here, written straight to the table as the site itself), Remove closes it.
   await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'system', true)`;
+    await t`select app.act_as('system', null, null, false, null, null, ${TEST_SYSTEM_SECRET})`; // fix 3: with the site's own secret
     await t.unsafe(`insert into app.review_flags (post_id, source, classifier, score) values ('${p.id}', 'classifier', 'late', 0.5)`);
   });
   assert.strictEqual((await inQueue(p.id)).status, 'removed');

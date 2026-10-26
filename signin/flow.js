@@ -88,6 +88,8 @@ function make(deps) {
   async function finish(res, ctx, args) {
     const token = c.token(32);
     const out = await run(ctx, (t) => store.signIn(t, { ...args, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS }));
+    // The new session's hash, which proves who is acting in the steps right after (fix 3, 019).
+    if (!out.refused) out.sessionHash = c.sha256hex(token);
     if (!out.refused) {
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
       if (args.region && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
@@ -133,7 +135,9 @@ function make(deps) {
   async function afterSignIn(req, out, emailToken = null, confirmed = false) {
     try {
       const f = { ...jevs.facts(req, config.ipKey), ...(confirmed ? { confirmed: true } : {}) };
-      await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId }, async (t) => {
+      // Proved by the session sign-in just made (fix 3). After a link that added a method every session has ended
+      // (R4), so the check waits for the next sign-in, and the failure is logged like any other.
+      await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId, session: out.sessionHash || null }, async (t) => {
         if (emailToken) await jevs.claimMarks(t, emailToken);
         if (out.isNew && f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash });
         await jevs.check(t, { action: out.isNew ? 'signup' : 'account.check', ...f });
@@ -197,7 +201,7 @@ function make(deps) {
       sessionHash: hash, region: country }));
     if (out.refused === 'fresh') return h.redirect(res, FRESH_METHOD);
     if (out.refused) return h.redirect(res, LINK_REFUSED[out.refused] || REFUSED[out.refused] || LINK_FAILED);
-    await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false }, null, Boolean(country));
+    await afterSignIn(req, { memberId: out.memberId, isAdmin: out.isAdmin, isNew: false, sessionHash: hash }, null, Boolean(country));
     // A new method ended every session of the member, this one too (PR 15's re-review, R4): this browser signs in
     // again, with whichever method they like, and the join page says why.
     if (out.linked) {
@@ -426,7 +430,7 @@ function make(deps) {
             if (e && e.code === 'SESSION_BUSY') return h.redirect(res, '/account?error=busy');
             throw e;
           }
-          if (me) await run({ actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId }, (t) => store.sessionsEndAll(t));
+          if (me) await run({ actor: me.isAdmin ? 'admin' : 'member', memberId: me.memberId, session: hash }, (t) => store.sessionsEndAll(t));
         }
         await run(ANON, (t) => store.sessionEnd(t, hash));
       }

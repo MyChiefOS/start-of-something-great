@@ -20,6 +20,7 @@ const region = require('../signin/region');
 const { make, LIMITS, MIN_FILL_MS } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { trustSystem } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -180,6 +181,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
+  await trustSystem(su); // the site's own secret (CRON_SECRET), so the timers can act as the site itself (fix 3)
   aaron = await member({ level: 2, name: 'Aaron' });
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
   aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
@@ -384,7 +386,7 @@ test('enforce: an agent\'s risky post waits for its human owner, and the agent c
     assert.strictEqual(ch.subject.id, p.json.id);
     // An agent can't answer, by any path: the API takes only {"body"} from a key, and the database refuses an agent.
     assert.strictEqual((await feed('POST', { key: made.json.key, json: { challenge: ch.id, answer: 'confirm' } })).status, 400);
-    const asAgent = { actor: 'agent', memberId: owner.id, agentId: made.json.agent_id };
+    const asAgent = { actor: 'agent', memberId: owner.id, agentId: made.json.agent_id, keyHash: c.sha256hex(made.json.key) };
     assert.deepStrictEqual(await run(asAgent, (t) => jevs.answer(t, { challenge: ch.id, answer: 'confirm' })), { refused: 'not_found' });
     assert.strictEqual(await statusOf(p.json.id), 'waiting');
     assert.strictEqual((await feed('POST', { cookie: owner.cookie, json: { challenge: ch.id, answer: 'confirm' } })).status, 200);
@@ -643,9 +645,10 @@ async function riskyMember(env, name, account) {
   const { r2 } = await oauthFlow(env, 'github', account, { country: 'US' });
   const cookie = cookieOf(r2, '__Host-dog_session');
   const [m] = await q(`select member_id as id from app.sessions where token_hash = '${c.sha256hex(cookie.split('=')[1])}'`);
-  await run({ actor: 'member', memberId: m.id }, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
+  const ctx = { actor: 'member', memberId: m.id, session: c.sha256hex(cookie.split('=')[1]) };
+  await run(ctx, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
   await q(`update app.identities set level = 0 where member_id = '${m.id}'`);
-  return { id: m.id, cookie, ctx: { actor: 'member', memberId: m.id, session: c.sha256hex(cookie.split('=')[1]) }, account };
+  return { id: m.id, cookie, ctx, account };
 }
 async function askToDelete(env, who) {
   const r = res();
@@ -715,7 +718,7 @@ test('deletion review: after 24 hours without Aaron\'s decision the account is d
     const [agent] = await run({ ...m.ctx, fresh: true }, (t) => t`insert into app.agents (name) values ('Waiting agent') returning id`);
     await run({ ...m.ctx, fresh: true }, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${agent.id}, ${c.sha256hex('waiting-key')})`);
     await run({ ...m.ctx, fresh: true }, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${agent.id}, 'draft', 'act', 'draft', 20, 'owner')`);
-    await run({ actor: 'agent', memberId: m.id, agentId: agent.id }, (t) => t`insert into app.agent_drafts (body) values ('a waiting draft')`);
+    await run({ actor: 'agent', memberId: m.id, agentId: agent.id, keyHash: c.sha256hex('waiting-key') }, (t) => t`insert into app.agent_drafts (body) values ('a waiting draft')`);
     await say({ cookie: m.cookie }, 'A post the member wrote before asking to leave.');
     assert.strictEqual(await askToDelete(env, m), '/account?error=review');
     const before = { posts: (await q(`select count(*)::int as n from app.posts where author_id = '${m.id}'`))[0].n,
@@ -1049,7 +1052,7 @@ test('regional gate, new sign-ups: declined politely after the provider confirms
   for (const cc of ['GB', 'DE', 'CH', 'NO']) assert.strictEqual(await declinesFor(cc), counts[cc] + 1, cc);
   assert.strictEqual(await declinesFor('FR'), counts.FR, 'going to the provider is not a decline');
   assert.deepStrictEqual(Object.keys((await q(`select * from app.region_declines limit 1`))[0]).sort(), ['country', 'day', 'declines', 'id'], 'nothing but the count');
-  assert.strictEqual((await run({ actor: 'member', memberId: aaron.id }, (t) => t`select * from app.region_declines`)).length, 0, 'only Aaron reads the counts');
+  assert.strictEqual((await run({ ...aaron.ctx, actor: 'member' }, (t) => t`select * from app.region_declines`)).length, 0, 'only Aaron reads the counts');
   // The database itself refuses to make an account for a confirmed traveller.
   const refused = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('never seen')], keyVersion: 1, level: 1,
     displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30, region: 'FR' }));
@@ -1105,7 +1108,7 @@ test('regional gate, members travelling: a confirmation page first; Cancel store
   assert.strictEqual(await declinesFor('FR'), frDeclines, 'a member is not counted as a declined sign-up');
   // While they travel, that session isn't challenged for where it is: J13 scores 0 with the tag, 40 without it, and
   // a tag copied to another session counts for nothing.
-  const memberCtx = { actor: 'member', memberId: mem.id };
+  const memberCtx = { actor: 'member', memberId: mem.id, session: c.sha256hex(session.split('=')[1]) };
   const j13 = async (cookieHeader) => (await run(memberCtx, (t) => jevs.check(t, { action: 'account.check',
     ...jevs.facts({ headers: { cookie: cookieHeader, 'x-vercel-ip-country': 'FR' } }, env.cfg.ipKey) }))).scores.J13;
   assert.strictEqual(await j13(session + '; ' + residentCookie), 0);

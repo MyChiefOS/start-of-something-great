@@ -16,6 +16,7 @@ const review = require('../db/review');
 const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
+const { trustSystem } = require('./helpers');
 
 const SERVER = process.env.TEST_DATABASE_URL;
 if (!SERVER) {
@@ -46,7 +47,7 @@ async function signIn(level, name, fp = c.sha256hex(crypto.randomUUID())) {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
-  return { id: out.memberId, fp, sessionHash: c.sha256hex(token), ctx: { actor: 'member', memberId: out.memberId } };
+  return { id: out.memberId, fp, sessionHash: c.sha256hex(token), ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 
 test.before(async () => {
@@ -56,6 +57,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
+  await trustSystem(su); // fix 3: the site itself acts only with its own secret
 
   // Aaron, so A's footprint includes moderation, brakes and notes.
   const aaron = await signIn(2, 'Aaron');
@@ -65,7 +67,7 @@ test.before(async () => {
   A = await signIn(2, 'Member A');
   const [agent] = await run(A.ctx, (t) => t`insert into app.agents (name) values ('A agent') returning id`);
   await run(A.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${agent.id}, ${c.sha256hex('a-key')})`);
-  const aAgent = { actor: 'agent', memberId: A.id, agentId: agent.id };
+  const aAgent = { actor: 'agent', memberId: A.id, agentId: agent.id, keyHash: c.sha256hex('a-key') };
   await run(aAgent, (t) => t`insert into app.agent_drafts (body) values ('A draft')`);
   // A's post goes through JEVs, which leaves a decision, a text print and a link domain (PR 12).
   const p = await run(A.ctx, async (t) => {
@@ -102,6 +104,7 @@ test.before(async () => {
   await run({ actor: 'system' }, (t) => t`insert into app.containments (member_id, reason, measured, usual_x100, ends_at) values (${A.id}, 'volume', 600, 0, now() + interval '1 day')`);
   // The ban above ended A's sessions, so A signs in again, leaving a session row.
   A.sessionHash = (await signIn(2, 'Member A', A.fp)).sessionHash;
+  A.ctx = { ...A.ctx, session: A.sessionHash };
   // PR 2 (Oct 24, 2026): one change-log row and one used runner token, as the migration runner writes them (dog_owner).
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_owner');
@@ -125,7 +128,7 @@ test.before(async () => {
   B = await signIn(2, 'Member B');
   const [bAgent] = await run(B.ctx, (t) => t`insert into app.agents (name) values ('B agent') returning id`);
   await run(B.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${bAgent.id}, ${c.sha256hex('b-key')})`);
-  BAgent = { actor: 'agent', memberId: B.id, agentId: bAgent.id };
+  BAgent = { actor: 'agent', memberId: B.id, agentId: bAgent.id, keyHash: c.sha256hex('b-key') };
   tables = (await q(`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind in ('r', 'p') order by 1`)).map((r) => r.name);
 });
 test.after(async () => {

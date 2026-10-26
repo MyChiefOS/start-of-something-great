@@ -56,4 +56,24 @@ async function call(handler, method, url, body, reqHeaders) {
   return { status, headers, text: out, json };
 }
 
-module.exports = { fakeIssue, mockGitHub, fresh, call };
+// Fix 3 (019): the database decides who is acting, from proof, so tests give it the same proof production does.
+// An agent acts with a real key (by its hash); the site itself acts with its own secret, whose hash the database keeps.
+// su: a superuser connection to the test database (it may add a key row directly, as the owner's API would).
+const TEST_SYSTEM_SECRET = 'test-only-system-secret-0123456789abcdef';
+async function keyFor(su, agentId) {
+  const hash = require('crypto').randomBytes(32).toString('hex');
+  await su`insert into app.agent_keys (agent_id, key_hash) values (${agentId}, ${hash})`;
+  return hash;
+}
+async function agentCtx(su, ownerId, agentId) {
+  return { actor: 'agent', memberId: ownerId, agentId, keyHash: await keyFor(su, agentId) };
+}
+async function trustSystem(su, secret = TEST_SYSTEM_SECRET) {
+  process.env.CRON_SECRET = secret;
+  await su.begin(async (t) => {
+    await t`set local role dog_owner`;
+    await t`update app.actor_keys set system_hash = sha256(convert_to(${secret}, 'UTF8')) where singleton`;
+  });
+}
+
+module.exports = { fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, TEST_SYSTEM_SECRET };
