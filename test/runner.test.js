@@ -177,7 +177,16 @@ if (!SERVER) {
         assert.strictEqual(fails(await check('no_such_role_' + tag)), false, 'no site login at all is fine (today)');
         // PR #49's review: every clause of the check, one at a time. Each runs in a transaction that is rolled back, so
         // the shared server (roles belong to the whole server) never sees the change.
-        const inTx = async (setup, label) => {
+        // On Supabase's image (the in-place rehearsal) the test connects as Supabase's own "postgres", which is not a
+        // superuser: it can't give a role superuser, bypassrls or replication. There, those cases check instead that
+        // the state can't be made at all, which is why production can't reach it either.
+        const [me] = await sql`select rolsuper as super, rolbypassrls as bypassrls, rolreplication as replication, rolcreatedb as createdb
+          from pg_roles where rolname = current_user`;
+        const inTx = async (setup, label, needs) => {
+          if (needs && !me.super && !me[needs]) {
+            await assert.rejects(sql.begin((t) => t.unsafe(setup)), /permission denied|must be superuser|must have/, label + ' (and the database login can\'t make it)');
+            return;
+          }
           let flagged;
           await sql.begin(async (t) => {
             await t.unsafe(setup);
@@ -187,11 +196,11 @@ if (!SERVER) {
           }).catch((e) => { if (e.message !== 'roll back') throw e; });
           assert.strictEqual(flagged, true, label);
         };
-        await inTx(`alter role web_ok_${tag} superuser`, 'a superuser is refused');
-        await inTx(`alter role web_ok_${tag} bypassrls`, 'a login that skips row-level security is refused');
+        await inTx(`alter role web_ok_${tag} superuser`, 'a superuser is refused', 'super');
+        await inTx(`alter role web_ok_${tag} bypassrls`, 'a login that skips row-level security is refused', 'bypassrls');
         await inTx(`alter role web_ok_${tag} createrole`, 'a login that can make roles is refused');
-        await inTx(`alter role web_ok_${tag} replication`, 'a login that can replicate is refused');
-        await inTx(`alter role web_ok_${tag} createdb`, 'a login that can make databases is refused');
+        await inTx(`alter role web_ok_${tag} replication`, 'a login that can replicate is refused', 'replication');
+        await inTx(`alter role web_ok_${tag} createdb`, 'a login that can make databases is refused', 'createdb');
         await inTx(`alter role web_ok_${tag} inherit`, 'a login that inherits rights is refused');
         await inTx(`create role web_two_${tag} nologin; grant web_two_${tag} to web_ok_${tag}`, 'a login that belongs to a second role is refused');
         await inTx(`grant dog_app to web_ok_${tag} with inherit true`, 'a membership that inherits is refused');
