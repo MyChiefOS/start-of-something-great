@@ -16,7 +16,7 @@ const controls = require('../db/controls');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { agentCtx } = require('./helpers');
+const { agentCtx, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -100,7 +100,8 @@ async function member(level = 2, name = 'Member') {
   const token = c.token(32);
   const fp = c.sha256hex(crypto.randomUUID());
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
-    level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, fp, cookie: SESSION + '=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
@@ -129,7 +130,8 @@ test('the account page shows your name, level and how you sign in, and only to y
   await flow.account(req('GET', '/auth/account', { cookie: m.cookie }), r);
   const d = JSON.parse(r.body);
   assert.deepStrictEqual([r.statusCode, d.signed_in, d.display_name, d.trust_level, d.sessions, d.is_admin], [200, true, 'Page owner', 2, 1, false]);
-  assert.deepStrictEqual(d.sign_ins.map((s) => [s.provider, s.level]), [['github', 2]]);
+  // Level 2 is JEVs's promotion; the GitHub method itself gives level 1 (021).
+  assert.deepStrictEqual(d.sign_ins.map((s) => [s.provider, s.level]), [['github', 1]]);
   assert.ok(!r.body.includes(m.fp), 'fingerprints are never shown');
   assert.strictEqual(r.getHeader('Cache-Control'), 'no-store');
   const anon = res();

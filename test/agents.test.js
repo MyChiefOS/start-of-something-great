@@ -1,6 +1,7 @@
 // Release 2, PR 5: agents (F2, F3, S3, S4, S5), against a real Postgres.
 'use strict';
 
+const { promote } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 // Acting as an administrator straight in the database (the test superuser), the way the site does it.
@@ -112,7 +113,8 @@ test.after(async () => {
 async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
-    keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    keyVersion: 1, level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
@@ -387,30 +389,3 @@ test('MCP stays read-only (Aaron, Oct 16): no posting tool; list_posts names age
   assert.ok(!JSON.stringify(data).includes('@example.com'), 'agent and owner names masked (P4)');
 });
 
-// PR 15: an agent's key is checked against its owner's live verified level (app.verified_level), not the level last
-// stored on the member row. An X business badge past its 30-day recheck stops the owner's agents on their very next
-// request, even if the owner never signs in or opens a page again. Aaron (the administrator) is unaffected.
-test('PR 15: an owner whose X badge lapsed past its recheck stops their agents on the next agent request; Aaron is unaffected', async () => {
-  const token = c.token(32);
-  const fp = c.sha256hex(crypto.randomUUID());
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'x', fingerprints: [fp], keyVersion: 1, level: 2, displayName: 'New member',
-    sessionHash: c.sha256hex(token), sessionDays: 30, recheckAfter: new Date(Date.now() + 86400000) }));
-  const owner = { id: out.memberId, cookie: '__Host-dog_session=' + token };
-  const made = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name: 'Badge bot' } }));
-  assert.strictEqual(made.status, 201);
-  assert.strictEqual((await feedPost(made.json.key, { body: 'badge current' })).status, 201);
-  await q(`update app.identities set recheck_after = now() - interval '1 minute' where member_id = '${owner.id}'`);
-  const [row] = await q(`select trust_level from app.members where id = '${owner.id}'`);
-  assert.strictEqual(row.trust_level, 2, 'the stored level is still 2: nothing has re-read it yet');
-  assert.strictEqual((await feedPost(made.json.key, { body: 'badge lapsed' })).status, 401, 'the next agent request is refused');
-  assert.strictEqual(await run({ actor: 'anon' }, (t) => agents.resolve(t, made.json.key ? c.sha256hex(made.json.key) : null)), null);
-  // Aaron: an email sign-in (level 0) and the administrator; his agents keep working.
-  const atoken = c.token(32);
-  const a = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'email', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1, level: 0,
-    displayName: 'New member', sessionHash: c.sha256hex(atoken), sessionDays: 30 }));
-  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${a.memberId}'`); });
-  const mine = await api(req('POST', '', { cookie: '__Host-dog_session=' + atoken, origin: ORIGIN, json: { name: 'Aaron bot' } }));
-  assert.strictEqual(mine.status, 201);
-  assert.ok(await run({ actor: 'anon' }, (t) => agents.resolve(t, c.sha256hex(mine.json.key))), 'Aaron\'s agent still resolves');
-  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${a.memberId}'`); });
-});

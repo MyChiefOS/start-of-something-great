@@ -10,7 +10,7 @@ const postgres = require('postgres');
 const db = require('../db');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-const { keyFor, trustSystem } = require('./helpers');
+const { keyFor, trustSystem, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -38,7 +38,8 @@ if (!SERVER) {
   async function member(level = 2) {
     const token = crypto.randomBytes(32).toString('base64url');
     const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [sha(crypto.randomUUID())], keyVersion: 1,
-      level, displayName: 'Member', sessionHash: sha(token), sessionDays: 30 }));
+      level: Math.min(level, 1), displayName: 'Member', sessionHash: sha(token), sessionDays: 30 }));
+    if (level >= 2) await promote(su, out.memberId);
     return { id: out.memberId, session: sha(token), ctx: { actor: 'member', memberId: out.memberId, session: sha(token) } };
   }
 

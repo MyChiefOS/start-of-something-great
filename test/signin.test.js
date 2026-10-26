@@ -16,7 +16,7 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, TEST_SYSTEM_SECRET } = require('./helpers');
+const { trustSystem, TEST_SYSTEM_SECRET, promote } = require('./helpers');
 // Acting as an administrator straight in the database (the test superuser), with the proof the site gives (fix 3):
 // app.act_as, as db/index.js calls it, with the administrator's own session. Settings set by hand now count for nothing.
 const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
@@ -351,7 +351,7 @@ test('OAuth: a wrong, missing, swapped or expired state is refused, and so is a 
   assert.strictEqual((await q(`select count(*)::int as n from app.sessions`))[0].n >= 0, true);
 });
 
-test('signing in again finds the same member and replaces the session; an X business account is level 2', async () => {
+test('signing in again finds the same member and replaces the session; an X business account starts at level 1 (021), recorded', async () => {
   const env = setup({ accounts: { 'github:3001': { accountId: '3001', name: 'Same', level: 1, recheckAfter: null },
     'x:9001': { accountId: '9001', name: 'Acme Inc', level: 2, recheckAfter: new Date(Date.now() + 30 * 86400000).toISOString() } } });
   const first = await oauth(env, 'github', '3001');
@@ -362,9 +362,12 @@ test('signing in again finds the same member and replaces the session; an X busi
   assert.deepStrictEqual(await me(env, stale), { signed_in: false }, 'the old session ended');
   const members = await q(`select count(distinct member_id)::int as n from app.identities where provider = 'github'`);
   const x = await oauth(env, 'x', '9001');
-  assert.strictEqual((await me(env, x.browser)).trust_level, 2);
+  // RK82 (021): a sign-in gives level 1 at most, whatever the site asks; level 2 is JEVs's promotion. The cap is recorded.
+  assert.strictEqual((await me(env, x.browser)).trust_level, 1);
   const [row] = await q(`select level, recheck_after is not null as recheck from app.identities where provider = 'x'`);
-  assert.deepStrictEqual({ ...row }, { level: 2, recheck: true });
+  assert.deepStrictEqual({ ...row }, { level: 1, recheck: true });
+  const [capped] = await q(`select detail from app.audit_log where action = 'signup.level_capped' order by at desc limit 1`);
+  assert.deepStrictEqual(capped.detail, { provider: 'x', asked: 2, given: 1 });
   assert.ok(members[0].n >= 1);
 });
 
@@ -545,34 +548,6 @@ test('the sign-in function can\'t attach a method to someone else, or sign in wh
   assert.strictEqual(lvl.trust_level, 1, 'the victim was not raised to level 2');
 });
 
-test('a lapsed X business badge drops back to level 1 at the next sign-in, and during a long session', async () => {
-  const env = setup({ accounts: { 'x:9201': { accountId: '9201', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() },
-    'github:9202': { accountId: '9202', level: 1, recheckAfter: null } } });
-  const x = await oauth(env, 'x', '9201');
-  const id = (await me(env, x.browser)).member_id;
-  assert.strictEqual((await me(env, x.browser)).trust_level, 2);
-  await oauth(env, 'github', '9202', { browser: x.browser, query: '?link=1' });
-  await oauth(env, 'x', '9201', { browser: x.browser }); // a link signs everyone out (R4): sign in again
-  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
-  await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where member_id = '${id}'`);
-  assert.strictEqual((await me(env, x.browser)).trust_level, 1, 'the long session sees the lapse');
-  const audit = await q(`select count(*)::int as n from app.audit_log where subject_id = '${id}' and action = 'member.level_changed'`);
-  assert.ok(audit[0].n >= 1);
-});
-
-test('a lapsed X business badge drops back to level 1 when the member next signs in another way', async () => {
-  const env = setup({ accounts: { 'x:9211': { accountId: '9211', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() },
-    'github:9212': { accountId: '9212', level: 1, recheckAfter: null } } });
-  const x = await oauth(env, 'x', '9211');
-  const id = (await me(env, x.browser)).member_id;
-  await oauth(env, 'github', '9212', { browser: x.browser, query: '?link=1' });
-  await oauth(env, 'x', '9211', { browser: x.browser }); // a link signs everyone out (R4): sign in again
-  assert.strictEqual((await me(env, x.browser)).trust_level, 2, 'still level 2 while the badge is current');
-  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
-  const g = await oauth(env, 'github', '9212');
-  assert.strictEqual((await me(env, g.browser)).trust_level, 1);
-});
-
 test('a level Aaron lowers by hand survives the member\'s next sign-in, and no level is raised by hand', async () => {
   const env = setup({ accounts: { 'github:9401': { accountId: '9401', level: 1, recheckAfter: null }, 'github:9402': { accountId: '9402', level: 1, recheckAfter: null } } });
   const members = require('../db/members');
@@ -729,6 +704,7 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
     'x:9542': { accountId: '9542', level: 2, recheckAfter: new Date(Date.now() + 30 * 86400000).toISOString() } } });
   const a = await oauth(env, 'github', '9541');
   const id = (await me(env, a.browser)).member_id;
+  await promote(su, id); // level 2 is JEVs's promotion (021), not the X method
   await oauth(env, 'x', '9542', { browser: a.browser, query: '?link=1' });
   await oauth(env, 'github', '9541', { browser: a.browser }); // a link signs everyone out (R4): sign in again
   assert.strictEqual((await me(env, a.browser)).trust_level, 2);
@@ -753,7 +729,8 @@ test('PR 15: unlinking a method needs a same-site POST and a fresh session, neve
   assert.strictEqual(await countIds(id), 2);
   assert.strictEqual(await unlink(a.browser, { id: xId }), '/account?saved=unlinked');
   assert.strictEqual(await countIds(id), 1);
-  assert.strictEqual((await me(env, a.browser)).trust_level, 1, 'the level follows the methods that remain');
+  // Since 021 no method gives level 2; this member's level 2 is JEVs's promotion, which stays.
+  assert.strictEqual((await me(env, a.browser)).trust_level, 2, 'JEVs\'s level 2 isn\'t tied to a method');
   assert.deepStrictEqual(await me(env, otherDevice.browser), { signed_in: false }, 'every other session ended');
   assert.strictEqual((await me(env, a.browser)).signed_in, true, 'this one stays');
   const [n] = await q(`select title from app.notices where member_id = '${id}' and kind = 'signin_unlinked'`);
@@ -915,6 +892,7 @@ test('PR 15 second review R1 (probes A and C): unlinking a method undoes what it
     'github:9703': { accountId: '9703', level: 1, recheckAfter: null } } });
   const owner = await oauth(env, 'x', '9701');
   const id = (await me(env, owner.browser)).member_id;
+  await promote(su, id); // level 2 is JEVs's promotion (021), not the X method
   // The owner's own agent, which the owner lets post on its own (fresh): nothing below should undo that.
   const mineKey = c.sha256hex('mine' + Math.random());
   const mine = await runAs(await as(owner.browser), (t) => agents.create(t, { name: 'mine', description: null, keyHash: mineKey }));
@@ -982,6 +960,7 @@ test('PR 15 second review R1: an agent paused by a containment when the method i
   const env = setup({ accounts: { 'x:9741': { accountId: '9741', level: 2, recheckAfter: null }, 'github:9742': { accountId: '9742', level: 1, recheckAfter: null } } });
   const owner = await oauth(env, 'x', '9741');
   const id = (await me(env, owner.browser)).member_id;
+  await promote(su, id); // level 2 is JEVs's promotion (021), not the X method
   await oauth(env, 'github', '9742', { browser: twoBrowsers(owner.browser), query: '?link=1' });
   await oauth(env, 'x', '9741', { browser: owner.browser }); // the link signed the owner out too (R4)
   const intruder = await oauth(env, 'github', '9742');
@@ -1005,6 +984,7 @@ test('PR 15 second review R1: the method a session made things with is read by t
   const a = await oauth(env, 'x', '9711');
   const b = await oauth(env, 'x', '9712');
   const ida = (await me(env, a.browser)).member_id;
+  await promote(su, ida); // level 2 is JEVs's promotion (021), not the X method
   const ident = async (ctx) => (await runAs(ctx, (t) => t`select app.current_identity() as i`))[0].i;
   const [own] = await q(`select identity_id from app.sessions where token_hash = '${hashOf(a.browser)}'`);
   assert.ok(own.identity_id);
@@ -1027,6 +1007,7 @@ test('PR 15 second review R1: the method a session made things with is read by t
 test('PR 15 second review R2 (probe D): the 90-day clock restarts only on a save made with a fresh sign-in; re-saving act rules without one is allowed but doesn\'t move it', async () => {
   const env = setup({ accounts: { 'x:9721': { accountId: '9721', level: 2, recheckAfter: null } } });
   const o = await oauth(env, 'x', '9721');
+  await promote(su, (await me(env, o.browser)).member_id); // level 2 is JEVs's promotion (021)
   const made = await runAs(await as(o.browser), (t) => agents.create(t, { name: 'clock', description: null, keyHash: c.sha256hex('d' + Math.random()) }));
   assert.ok((await runAs(await as(o.browser), (t) => delegation.setRules(t, { agent: made.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 20 }))).rules);
   const age = (days) => q(`alter table app.agent_rules disable trigger agent_rules_guard;
@@ -1126,6 +1107,7 @@ async function takeover(tag) {
   const env = setup({ accounts: { ['x:' + tag + 'o']: { accountId: tag + 'o', level: 2, recheckAfter: null }, ['github:' + tag + 'g']: { accountId: tag + 'g', level: 1, recheckAfter: null } } });
   const owner = await oauth(env, 'x', tag + 'o');
   const id = (await me(env, owner.browser)).member_id;
+  await promote(su, id); // level 2 is JEVs's promotion (021), not the X method
   const shared = twoBrowsers(owner.browser);
   const copied = shared.get(SESSION);
   const linked = await oauth(env, 'github', tag + 'g', { browser: shared, query: '?link=1' });
@@ -1216,34 +1198,6 @@ test('PR 15 re-review (probe G): a link ends the session that made it, so a copi
   assert.match(fs.readFileSync(path.join(root, 'account.html'), 'utf8'), /Adding one signs you out everywhere, this browser too, so you sign in again with any of your methods/);
 });
 
-test('PR 15 re-review (probe H): a page read that lowers a lapsed badge takes the member row before the session, so it can\'t deadlock with a link at the same moment', async () => {
-  const env = setup({ accounts: { 'x:9831': { accountId: '9831', level: 2, recheckAfter: new Date(Date.now() + 86400000).toISOString() } } });
-  const a = await oauth(env, 'x', '9831');
-  const id = (await me(env, a.browser)).member_id;
-  assert.strictEqual((await me(env, a.browser)).trust_level, 2);
-  // The X badge has lapsed and the session hasn't been seen for two hours, so the next read refreshes it and lowers
-  // the level (writing both rows); the session is still fresh enough to link from.
-  await q(`update app.identities set recheck_after = now() - interval '1 day' where member_id = '${id}' and provider = 'x'`);
-  await q(`update app.sessions set last_seen_at = now() - interval '2 hours' where token_hash = '${hashOf(a.browser)}'`);
-  // T0 holds the session row, so the read queues on it first; then the link takes the member row and queues on the
-  // session too. Released, the old order (session, then member) and the link's (member, then session) deadlocked.
-  let release0; const gate0 = new Promise((r) => { release0 = r; });
-  let locked; const isLocked = new Promise((r) => { locked = r; });
-  const t0 = su.begin(async (t) => { await t.unsafe(`select 1 from app.sessions where token_hash = '${hashOf(a.browser)}' for update`); locked(); await gate0; });
-  await isLocked;
-  const read = runAs({ actor: 'anon' }, (t) => store.sessionResolve(t, hashOf(a.browser), 7));
-  await new Promise((r) => setTimeout(r, 300));
-  const link = runAs({ actor: 'member', memberId: id, session: hashOf(a.browser) }, (t) => store.link(t, { provider: 'github', fingerprints: [c.sha256hex('h' + Math.random())], keyVersion: 1, level: 1, sessionHash: hashOf(a.browser) }));
-  await new Promise((r) => setTimeout(r, 300));
-  release0();
-  const out = await Promise.allSettled([t0, read, link]);
-  for (const o of out) assert.strictEqual(o.status, 'fulfilled', o.reason && (o.reason.code + ' ' + o.reason.message));
-  assert.ok(out[1].value && out[1].value.memberId === id, 'the page read signed the member in: ' + JSON.stringify(out[1].value));
-  assert.strictEqual(out[1].value.trustLevel, 1, 'and lowered the lapsed level');
-  assert.strictEqual(out[2].value.linked, true, 'the link went through, not "try again": ' + JSON.stringify(out[2].value));
-  assert.strictEqual((await q(`select trust_level from app.members where id = '${id}'`))[0].trust_level, 1);
-});
-
 test('PR 15 re-review: a page read that loses a race is retried, and never becomes an error page', async () => {
   let calls = 0;
   const row = { member_id: crypto.randomUUID(), trust_level: 1, is_admin: false, display_name: 'z', fresh: false };
@@ -1309,4 +1263,29 @@ test('launch gate: LAUNCH_STAGE=preview keeps sign-in off, exactly as closed, ev
       assert.strictEqual(r.statusCode, 503, 'off: ' + route);
     }
   } finally { process.env = saved; delete require.cache[require.resolve('../api/auth.js')]; }
+});
+
+// RK82 (migration 021): the site's own database login asks app.sign_in for level 2 directly, as an attacker holding it
+// could. The database gives level 1 and records the cap; only JEVs's promotion makes level 2, and no level is raised
+// by an identity update either.
+test('RK82: a direct sign-in asking for level 2 gets level 1, recorded; JEVs alone makes level 2', async () => {
+  const fp = c.sha256hex(crypto.randomUUID());
+  const ask = (level) => runAs({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1, level,
+    displayName: 'Asks for 2', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
+  const out = await ask(2);
+  const [m] = await q(`select trust_level from app.members where id = '${out.memberId}'`);
+  assert.strictEqual(m.trust_level, 1, 'the new member starts at level 1');
+  const [i] = await q(`select level from app.identities where member_id = '${out.memberId}'`);
+  assert.strictEqual(i.level, 1, 'the method is stored at level 1');
+  const [a] = await q(`select detail from app.audit_log where action = 'signup.level_capped' and subject_id = '${out.memberId}'`);
+  assert.deepStrictEqual(a.detail, { provider: 'github', asked: 2, given: 1 });
+  // Signing in again asking for 2 still can't raise it.
+  await ask(2);
+  assert.strictEqual((await q(`select trust_level from app.members where id = '${out.memberId}'`))[0].trust_level, 1);
+  // The database owner writing a level-2 method or member directly is capped too: the trigger runs for every writer.
+  await assert.doesNotReject(q(`update app.identities set level = 2 where member_id = '${out.memberId}'`));
+  assert.strictEqual((await q(`select level from app.identities where member_id = '${out.memberId}'`))[0].level, 1);
+  // JEVs's own promotion is the one way to level 2.
+  await promote(su, out.memberId);
+  assert.strictEqual((await q(`select trust_level from app.members where id = '${out.memberId}'`))[0].trust_level, 2);
 });

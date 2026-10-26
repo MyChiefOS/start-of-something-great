@@ -23,7 +23,7 @@ const { signinSender } = require('../notify/sender');
 const fx = require('./notify-helpers');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { agentCtx, trustSystem } = require('./helpers');
+const { agentCtx, trustSystem, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -87,7 +87,8 @@ test.after(async () => {
 async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
-    level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }

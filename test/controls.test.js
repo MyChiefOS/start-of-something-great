@@ -17,7 +17,7 @@ const posts = require('../db/posts');
 const controls = require('../db/controls');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { keyFor } = require('./helpers');
+const { keyFor, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -105,7 +105,8 @@ async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
   const fp = c.sha256hex(crypto.randomUUID());
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp],
-    keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    keyVersion: 1, level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, fp, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
@@ -421,7 +422,8 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     const mk = async (name, level = 2) => {
       const sessionHash = c.sha256hex(c.token(32));
       const o = await r2({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
-        level, displayName: name, sessionHash, sessionDays: 30 }));
+        level: Math.min(level, 1), displayName: name, sessionHash, sessionDays: 30 }));
+      if (level >= 2) await promote(s2, o.memberId);
       return { id: o.memberId, sessionHash, ctx: { actor: 'member', memberId: o.memberId, session: sessionHash } };
     };
     const boss = await mk('Boss');

@@ -113,6 +113,9 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "Claude has to be able to address any recommendation without my assistance except to approve." No recommendation may need a manual step by Aaron or risk a lockout | 2026-10-26 | in force: every PR from #49 on lists "Decisions this PR asks of Aaron: none, only the merge" or names the decision |
 | "The way you wrote that PR you tried to throw me under the bus." Work Claude can do by PR is Claude's, never Aaron's to carry | 2026-10-26 | done in #49 (`3645730`): PLAN fix 8, RK71 and RK82 are Claude's |
 | "Well Can you work and implement the system at this point you don't have any blockers. I want the system." Build continuously, PR by PR; each opens when it is ready and checked | 2026-10-26 | in plan: PR #50, then the order in harness/STATUS.md |
+| "I want the system to work. Can you make that happen with my approval of PRs?" | 2026-10-26 | in plan: the PR order in harness/STATUS.md, faster path (switch-on PRs first) |
+| "Production system not test production system." Tests check the rules production runs under, never a loosened copy | 2026-10-26 | done in the RK82 PR: level-2 test members come from JEVs's promotion, as in production; no test-only switch |
+| "pr 50 approved" | 2026-10-26 | done: #50 merged 22:57 UTC (`5c338fe`), live text checked (OPERATIONS.md) |
 
 ## Open for Aaron (ask once; record the answer here)
 

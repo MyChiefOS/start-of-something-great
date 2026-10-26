@@ -28,7 +28,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 
 | Part | State | Basis |
 | --- | --- | --- |
-| `main` | `e11e796` (#49 merged 19:43 UTC) | Verified, GitHub REST |
+| `main` | `5c338fe` (#50 merged 22:57 UTC) | Verified, GitHub REST |
 | `main`'s rules | Ruleset 25064724, active, no bypass: no deletion, no force-push, PR required, `checks` must pass, 0 approvals | Verified Oct 26 |
 | Site pages, read API, MCP, proposals, daily queue | Live | Verified Oct 24–25 (PLAN.md §2) |
 | GitHub path: giscus on /join and /talk; JEVs workflow | Live, enforce mode since #42 (Oct 24 23:10 UTC) | Verified |
@@ -41,7 +41,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
 | Site login `dog_web` | Doesn't exist | Verified |
 | Site's own system | Built and tested; switched off (`LAUNCH_STAGE` closed, no database login, no `CRON_SECRET`, no sign-in link on any page) | Verified Oct 25 |
-| Public text | Still promises a "private preview on November 6" until PR #50 merges and deploys | Verified in code |
+| Public text | True: no preview promised, Release 2 "not yet" (#50, read live Oct 26) | Verified live |
 
 ## The fix list
 
@@ -54,7 +54,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | 3 | The database decides who is acting (019); each policy asks once per query (020) | **Merged and applied (#49).** Idle until the site has a login: no session or key has gone through `act_as` live | Verified |
 | 4 | The runner allows exactly one narrow site login | **Merged; runner v5 deployed.** The check hasn't run live yet | Verified |
 | 5 | A migration creates the site login | Not started; route B, after RK82 and the gate hardening | REVIEW-2026-10-26.md |
-| 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text in PR #50; the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
+| 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text done (#50, live); the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
 | 7 | Site JEVs mode to enforce | In the go-live release | Verified (`shadow` today) |
 | 8 | The site's keys and timers, route B (Aaron, Oct 26) | Not started; Claude's | CHARTER §2; PLAN.md fix 8 |
 | 9 | Aaron becomes administrator before sign-up opens | In the go-live release; how is Aaron's decision | `app.set_administrator` (013) |
@@ -79,9 +79,9 @@ The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's d
 
 One PR open at a time. Each opens when it is built and checked (the suite, the Supabase-image rehearsal, Semgrep, gitleaks, and independent review). Aaron's only step is the merge.
 
-1. **PR #50: true public text (R-5).** No served page promises a preview; the status page no longer says Release 2 is done; `preview` counts as closed; the records after #49.
+1. **PR #50: true public text (R-5). Done:** merged Oct 26 22:57 UTC and read live.
 2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
-3. **RK82:** `app.sign_in` caps new members at level 1; GitHub only and the regional decline enforced in the database.
+3. **RK82 (migration 021, in its own PR):** every sign-in level is capped at 1 in the database; level 2 only from JEVs. GitHub-only and the regional decline stay in the site's code: the database can't check them (RISKS.md RK82).
 4. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
 5. **Fixes 5 and 8 under route B,** with the CSO's controls 1 to 8, the timer conditions, the fallback to Vercel settings, and R-8.
 6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
@@ -114,8 +114,8 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
 
 | Item | Value |
 | --- | --- |
-| Repo | `MyChiefOS/start-of-something-great`; `main` at `e11e796` |
-| Work in progress | Branch `public-text`, PR #50 |
+| Repo | `MyChiefOS/start-of-something-great`; `main` at `5c338fe` |
+| Work in progress | Branch `signup-cap` (RK82, migration 021) |
 | Supabase | Project `nksagchwpyljvjiwolmp`; `jevs` v4, `dog-migrate` v5, `dog-probe` v2 (inert); ledger at 020 |
 | Vercel | Project `prj_cXnWySYVpJE9TVZaNPSocXMMzkZI`, team `team_Hv5YS8LhIiKe06SSiDrUucd4`; Claude's connector returns 404 per project |
 | Pooler | `aws-0`/`aws-1-us-east-1.pooler.supabase.com:6543` (transaction mode) |

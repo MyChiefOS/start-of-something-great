@@ -79,6 +79,10 @@
     {
       "version": "020_policy_initplan",
       "sha256": "bf9cddfa6ad1a32cb36182d86b947d9ef8f7e4bef1d7837590f2bad785077cff"
+    },
+    {
+      "version": "021_signup_level_cap",
+      "sha256": "1515e12ca6aaddb9c81cf8b65c3df1ee6443f01a36259af59152e797c41965af"
     }
   ],
   "reset": {

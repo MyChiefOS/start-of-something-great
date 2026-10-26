@@ -16,7 +16,7 @@ const review = require('../db/review');
 const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem } = require('./helpers');
+const { trustSystem, promote } = require('./helpers');
 
 const SERVER = process.env.TEST_DATABASE_URL;
 if (!SERVER) {
@@ -46,7 +46,8 @@ const MAY_SEE = {
 async function signIn(level, name, fp = c.sha256hex(crypto.randomUUID())) {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
-    level, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    level: Math.min(level, 1), displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   return { id: out.memberId, fp, sessionHash: c.sha256hex(token), ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 
@@ -76,6 +77,12 @@ test.before(async () => {
     return made;
   });
   await run(A.ctx, (t) => jevs.mark(t, { kind: 'net', keyHash: c.sha256hex('A network') }));
+  // JEVs keeps a link domain only from a low-risk post. A new GitHub member's linking post isn't low since 021 (J02 = 10),
+  // so A's domain row is written as JEVs writes it.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`insert into app.jevs_post_domains (post_id, domain_hash) values ('${p.id}', '${c.sha256hex('a-example.org')}') on conflict do nothing`);
+  });
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_jevs');
     await t.unsafe(`insert into app.jevs_challenges (decision_id, owner_id, action, subject_kind, subject_id, expires_at)

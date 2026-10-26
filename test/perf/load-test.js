@@ -7,6 +7,7 @@
 // LOAD_TEST_ANY_HOST=1 is set (and then it requires an encrypted connection). Never point it at the preview or production.
 'use strict';
 
+const { promote } = require('../helpers');
 const crypto = require('crypto');
 const postgres = require('postgres');
 const db = require('../../db');
@@ -88,7 +89,8 @@ async function main() {
       const token = c.token(32);
       const level = i % 3 === 0 ? 2 : 1;
       const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('m' + i + NAME)], keyVersion: 1,
-        level, displayName: 'Member ' + i, sessionHash: c.sha256hex(token), sessionDays: 30 }));
+        level: 1, displayName: 'Member ' + i, sessionHash: c.sha256hex(token), sessionDays: 30 }));
+      if (level === 2) await promote(su, out.memberId); // phase 1 (021): level 2 is JEVs's promotion
       members[i] = { id: out.memberId, level, cookie: '__Host-dog_session=' + token };
     };
     for (let i = 0; i < MEMBERS; i += 50) await Promise.all(Array.from({ length: Math.min(50, MEMBERS - i) }, (_, k) => make(i + k)));
@@ -164,7 +166,7 @@ async function main() {
     // An outsider who takes no part in the load, so everything they can see should be only their own sign-in rows.
     const otoken = c.token(32);
     const o = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('outsider' + NAME)], keyVersion: 1,
-      level: 2, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
+      level: 1, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
     const outsider = { id: o.memberId };
     // The sub-agent limits (PR 16) are readable by anyone signed in; they are public in the migration.
     const allowed = { members: 1, identities: 1, sessions: 1, subagent_settings: 1 };

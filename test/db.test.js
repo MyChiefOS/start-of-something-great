@@ -19,7 +19,7 @@ const audit = require('../db/audit');
 const signin = require('../db/signin');
 const { problems } = require('../db/checks');
 const { migrate } = require('../scripts/migrate');
-const { agentCtx, trustSystem } = require('./helpers');
+const { agentCtx, trustSystem, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SNAPSHOT = fs.readFileSync(path.join(root, 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
@@ -232,7 +232,8 @@ async function newAdmin(name) {
 async function signedIn(name, level) {
   const session = crypto.randomBytes(32).toString('hex');
   const out = await as(ANON, (t) => signin.signIn(t, { provider: 'github', fingerprints: [crypto.randomBytes(32).toString('hex')],
-    keyVersion: 1, level, displayName: name, sessionHash: session, sessionDays: 30 }));
+    keyVersion: 1, level: Math.min(level, 1), displayName: name, sessionHash: session, sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   SESSIONS.set(out.memberId, session);
   return { id: out.memberId };
 }
