@@ -113,6 +113,8 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | What does the regional decline mean for posts made directly on GitHub (the gate can't know a poster's country) | 2026-10-25 | |
 | Are untagged posts from a linked machine account hidden (harness/PLAN.md fix 1.2, proposed). Built for now: they alert Aaron once and get a reply asking for the tag, never hidden | 2026-10-25 | Decided by Claude under Aaron's Oct 25 instruction ("implement whats honest and hold true to my intent… what would the CLJO do?"): alert, never hide, per "checks alert, never lock out" (Oct 23) and "members are trusted by default" (Oct 16). Aaron may reopen |
 | When a moderator (not the author) deletes a post on GitHub, does JEVs keep an IDs-only record, or erase it as today (the privacy page promises erasure) (harness/PLAN.md fix 1.5) | 2026-10-25 | Decided by Claude under the same instruction: erase, as privacy.html promises ("When a post is deleted, our checks erase what they kept about it"); a lawful exception is the legal hold (RK22). Keeping records would need the privacy page changed first. Aaron may reopen |
+| JEVs thresholds: set your own, or accept the public seeded values the GitHub path has enforced with since Oct 24 (RISKS.md RK16; verified Oct 26: live values equal the seed) | 2026-10-26 | |
+| Release rule for rows marked "Not in phase 1" (email sign-in, built and switched off): they wait until the feature is switched on (RISKS.md header; decided by merging the risks PR) | 2026-10-26 | |
 
 ## Parking list (no named owner yet; not built until one is named)
 
