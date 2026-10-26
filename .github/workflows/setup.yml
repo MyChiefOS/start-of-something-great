@@ -17,12 +17,8 @@ on:
       stage:
         description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
         type: choice
-        options: [unchanged, closed, preview, public]
+        options: [unchanged, closed, public]
         default: unchanged
-      preview_allow:
-        description: 'For the preview: who may make an account, like github:12345 (numeric account ID; see SETUP.md)'
-        required: false
-        default: ''
       admin_member_id:
         description: 'For the "admin" step: your member_id from https://dayonegreat.com/auth/me after signing in once'
         required: false
@@ -61,7 +57,6 @@ jobs:
         env:
           SETUP_STEPS: ${{ inputs.steps }}
           SETUP_STAGE: ${{ inputs.stage }}
-          SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
           SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: |
@@ -97,7 +92,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SETUP_STEPS: ${{ inputs.steps }}
           SETUP_STAGE: ${{ inputs.stage }}
-          SETUP_PREVIEW_ALLOW: ${{ inputs.preview_allow }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
           SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: node scripts/setup-production.js

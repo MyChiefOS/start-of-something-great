@@ -1,147 +1,112 @@
 # Day One Great: production status and delegated authority (D1–D8)
 
-Oct 25, 2026 · written by Claude for Aaron Chandler · the live copy is the doc https://claude.ai/artifact/FvigrYxEXZBqW33GLyPwS2. **Next agent: read this after INTEGRITY.md, CHARTER.md and harness/PLAN.md; update it in the same PR as any step it lists.**
+Oct 26, 2026, after PR #49 · written by Claude for Aaron Chandler · earlier copy: the doc https://claude.ai/artifact/FvigrYxEXZBqW33GLyPwS2 (Oct 25). **Next agent: read this after INTEGRITY.md, CHARTER.md and harness/PLAN.md; update it in the same PR as any step it lists.**
 
-> **Corrected Oct 26 by the whole-system review ([REVIEW-2026-10-26.md](REVIEW-2026-10-26.md)).** Three statements below were wrong and are fixed in place: `main` *is* protected by an active ruleset; migration 020 *had* run (the snapshot was regenerated from it); and the D1–D8 counts were overstated (GitHub 1 of 8, the site 4 of 8, in code, none proven live).
+Every line is checked (with its source), or labelled inferred or unknown.
 
 ## Bottom line
 
-**It isn't production-ready yet: 2 of 10 fixes are merged and live, 2 are built and in PR #49 (not proven live), and 6 are not started.** The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
+**It isn't production-ready yet.** Of the 10 fixes, none is done in INTEGRITY.md's sense for every path. 4 are merged: 1 is deployed and proven live for an ordinary post only; 2 is deployed and switched off; 3 and 4 are merged and applied but not yet proven in use. Fix 6 is in progress (PR #50); 5 others are not started. The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
 
-The critical path is now fixes 3 and 4 (PR #49), then the site's login and keys (fixes 5 and 8). Aaron chose route B on Oct 26, which needs only his PR approvals, provided the probe finds Vercel's identity token and the GitHub sign-in keys.
+The critical path is now the site's login and keys under route B (fixes 5 and 8), after the PRs that make them safe to switch on (RK82 and the gate hardening). Every step is a PR from Claude; Aaron only approves (Oct 26).
 
-On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its deployed code, and no agent command has run live yet. The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests, but none of it is running (corrected Oct 26).
+On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its deployed code. The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests. None of it is proven live.
 
-## Bad news and unmet commitments first
+## Bad news first
 
-- **The production system Aaron asked for ("everything done and completed now", Oct 24) isn't delivered.** Fixes 1 and 2 are live. Everything the site's own features need is still ahead.
-- **The route B proposal was wrong about the timers.** Vercel's identity token proves the site to the database, not who called the site. The independent CLJO review caught it (DR-2026-1026-001). Without a secret in Vercel, the timer address is open to anyone, so it needs a rate limit in the database.
-- **Fixes 3 and 4: the branch failed 15 tests (R-1); fixed in PR #49.** Migration 020 had run: db/snapshot.txt was regenerated from its output, so the snapshot graded 020 against itself. The stale `AUDIT_POLICIES` list in db/checks.js caught it. Updating that list gives 471 passed, 0 failed, 1 CI-only skip (verified Oct 26 by two reviewers). A local test run is Claude's to do, not a decision for Aaron.
-- **No real agent has used either path.** Fix 1's live proof covers an ordinary post only (Aaron's, Oct 25 20:16 UTC). Claude can't post on GitHub from its session, so the agent test needs Aaron.
-- **`main` is protected by an active ruleset** (25064724, read Oct 26), with no bypass actors:
-  - deleting the branch and force-pushing are blocked;
-  - a pull request is required;
-  - the `checks` status must pass;
-  - required approvals: 0.
-  The earlier "no branch protection" came from the classic-protection endpoint, which doesn't report rulesets. Claude still acts through Aaron's account (RK71), so who merges rests on conduct.
-- **An inert leftover function, `dog-probe` (v2), is still deployed on Supabase.** It answers 410 "switched off". It isn't in the repository and OPERATIONS.md doesn't name it. Delete it in a logged step.
-- **The `setup-probe` branch still exists.** Claude's session can't delete branches, so it waits for Aaron.
-- **Dates:** migrations 019 and 020 say Oct 26, which is correct (the work ran past midnight UTC).
+- **The production system Aaron asked for isn't delivered.** Everything the site's own features need is still ahead.
+- **Fix 4's new check hasn't run live.** The runner that applied 019 and 020 was version 4; version 5, with fix 4, was deployed after (OPERATIONS.md). It runs at the next migration.
+- **The v5 deploy was logged late, and its files were compared by reading, not by script** (inferred). R-3's source digest replaces this.
+- **No real agent has used either path.** Fix 1's live proof covers an ordinary post only (Aaron's, Oct 25 20:16 UTC). How Claude runs the agent test without Aaron is unknown; it's Claude's to solve before fix 10.
+- **Records disagree on PR flow:** CHARTER §3 says PRs queue up; harness/RULES.md rule 1 says one stays open. Claude follows one at a time. The question has been open for Aaron since Oct 23 (FACTS.md, "Open for Aaron"); it isn't asked again.
+- **`dog-probe` (v2, answers 410) is still deployed, and the `setup-probe` and `oidc-probe` branches still exist.** Claude's session can't delete branches. Claude will propose the deletions in a PR whose merge is Aaron's approval; whether a workflow can delete those branches is unknown until tried.
+- **SETUP.md and RELEASE-CHECKLIST.md still describe route A's manual steps.** SETUP.md is marked superseded (PR #50); the checklist's step list is rewritten in the route B PR.
 
 ## What is live today
 
-Read live on Oct 25 through GitHub's REST API and read-only SQL, unless marked otherwise.
+Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless marked.
 
 | Part | State | Basis |
 | --- | --- | --- |
-| `main` | `0d87d88` (#48 merged); no open pull requests | Verified, GitHub REST |
+| `main` | `e11e796` (#49 merged 19:43 UTC) | Verified, GitHub REST |
+| `main`'s rules | Ruleset 25064724, active, no bypass: no deletion, no force-push, PR required, `checks` must pass, 0 approvals | Verified Oct 26 |
 | Site pages, read API, MCP, proposals, daily queue | Live | Verified Oct 24–25 (PLAN.md §2) |
 | GitHub path: giscus on /join and /talk; JEVs workflow | Live, enforce mode since #42 (Oct 24 23:10 UTC) | Verified |
-| JEVs gate `jevs` | Version 4, all 5 files byte-identical to #45's merge `f450b9d`; refusals 401, 401, 405 | Verified (OPERATIONS.md, Oct 25) |
-| Runner `dog-migrate` | Version 4; doesn't yet have fix 4 | Verified |
+| JEVs gate `jevs` | Version 4, from `f450b9d`; refusals 401, 401, 405 (re-checked Oct 26). Bundles an older, behaviour-identical copy of `dog-migrate/core.mjs` | Verified |
+| Runner `dog-migrate` | Version 5, from `e11e796` (fix 4) | Verified version; file match inferred |
 | `dog-probe` | Version 2; answers 410 "switched off" | Verified; not in the repo |
-| Database ledger | 001 to 018 (`018_hidden_posts` is the last) | Verified |
-| GitHub records | 2 posts scored, 0 hidden, 0 agents registered; last post Oct 25 20:16 UTC | Verified |
+| Database ledger | 001 to 020 (20 rows; `020_policy_initplan` last) | Verified |
+| Fix 3 in the database | `actor_keys` 1 row, `system_hash` null; functions owned and granted as designed | Verified (OPERATIONS.md, Oct 26) |
 | Site's own tables | 0 members, 0 agents | Verified |
-| Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified |
+| Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
 | Site login `dog_web` | Doesn't exist | Verified |
-| Vault (names only) | `dog_fingerprint_key_1`, `dog_ip_hash_key`, `dog_session_secret` | Verified |
-| Site's own system | Built and tested; switched off (`LAUNCH_STAGE` closed, no database login, no `CRON_SECRET`, no sign-in link on any page) | Verified Oct 25 (PLAN.md §2) |
-| Hidden-post filter (fix 2) | Merged; answers `hidden_posts: off` until the site has its database | Verified Oct 25 |
+| Site's own system | Built and tested; switched off (`LAUNCH_STAGE` closed, no database login, no `CRON_SECRET`, no sign-in link on any page) | Verified Oct 25 |
+| Public text | Still promises a "private preview on November 6" until PR #50 merges and deploys | Verified in code |
 
 ## The fix list
 
-Two done and live, two built and in PR #49 (not proven live), six not started. "Done" means tested, reviewed where it matters, merged by Aaron and proven live (INTEGRITY.md).
+"Done" means tested, reviewed where it matters, merged by Aaron and proven live (INTEGRITY.md).
 
 | Fix | What | Status | Basis |
 | --- | --- | --- | --- |
-| 1 | GitHub holes in the gate: machine accounts may only narrow, J10 lockout, blank-line slowdown, sub-agent depth 3 | **Done.** #45 merged; `jevs` v4 deployed and byte-verified; live proof for an ordinary post | Verified. Agent commands not yet run live. Left for later: `/approve` compares GitHub's clock with the database's; J10 can be reset by deleting hidden posts |
-| 2 | Posts JEVs hid are kept from agents | **Merged and live, switched off** until the site has its database (#47, migration 018) | Verified |
-| 3 | The database decides who is acting (the stamp, 019); each policy asks once per query (020) | **Built, PR #49.** Suite 473: 472 passed, 0 failed, 1 CI-only skip; not proven live | Verified locally. Independent review: nothing critical, 10 findings to record in RISKS.md |
-| 4 | The runner allows exactly one narrow site login | **Built, PR #49**; not proven live | Refused in code for every clause; createdb, inherit and a second role are now each isolated by a test (PR #49) |
-| 5 | A migration creates the site login `dog_web` | Not started; needs fix 4 merged and the runner redeployed first | Pooler acceptance and keeping the password out of logs: unknown |
-| 6 | "Sign in with GitHub" on /join; true public text; `/terms` and `/privacy` | Not started; legal part needs independent review and Aaron's approval | Verified (PLAN.md §3) |
-| 7 | Site JEVs mode to enforce | Moved to the go-live release (`shadow` today) | Verified |
-| 8 | The site's keys and timers (route B, Aaron's Oct 26 choice) | Not started; Claude builds it after the probe PR | REVIEW-2026-10-26.md, R-8; FACTS.md |
-| 9 | Aaron becomes administrator before sign-up opens | **Aaron's decision**: how | `app.set_administrator` exists (013) |
-| 10 | Live proof of every flow on production | Not started | Needs fixes 3 to 9 |
+| 1 | GitHub holes in the gate | **Merged and deployed (#45, `jevs` v4); proven live for an ordinary post only.** The machine-account, untagged and agent paths are built, not proven | Verified |
+| 2 | Posts JEVs hid are kept from agents | **Merged and live, switched off** until the site has its database (#47) | Verified |
+| 3 | The database decides who is acting (019); each policy asks once per query (020) | **Merged and applied (#49).** Idle until the site has a login: no session or key has gone through `act_as` live | Verified |
+| 4 | The runner allows exactly one narrow site login | **Merged; runner v5 deployed.** The check hasn't run live yet | Verified |
+| 5 | A migration creates the site login | Not started; route B, after RK82 and the gate hardening | REVIEW-2026-10-26.md |
+| 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text in PR #50; the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
+| 7 | Site JEVs mode to enforce | In the go-live release | Verified (`shadow` today) |
+| 8 | The site's keys and timers, route B (Aaron, Oct 26) | Not started; Claude's | CHARTER §2; PLAN.md fix 8 |
+| 9 | Aaron becomes administrator before sign-up opens | In the go-live release; how is Aaron's decision | `app.set_administrator` (013) |
+| 10 | Live proof of every flow | Not started | Needs fixes 5 to 9 |
 
 ## Delegated authority: D1–D8
 
-**Corrected Oct 26:** the live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's daily cap (R-4). The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests; D8 fails open while the timers are off (R-9). It is switched off, so none of its ratings are proven live. These update the Oct 25 review (artifact "Delegated Authority Authentication", https://claude.ai/artifact/TtkuEoZrxx57FbkdueLTXW) with fix 1, live, and fix 3, built.
+The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's daily cap (R-4). The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests; D8 fails open while the timers are off (R-9). It is switched off, so none of its ratings are proven live.
 
 | Requirement | GitHub path (live) | Site's own system (built, off) | What closes the gap |
 | --- | --- | --- | --- |
-| **D1** A verified human principal stands behind the agent | Partly: a GitHub account scored by JEVs; no identity check behind the person | Partly: GitHub sign-in, JEVs promotes to level 2; no identity check | Stripe Identity for agent owners: a spend decision, Aaron's. Otherwise stays "partly" |
-| **D2** The agent has its own identity, never the person's credentials | Partly: a linked machine account is its own identity, but the tag-line route posts from the owner's account | Meets: each agent has its own ID and key; only the hash is stored, shown once | Site keys once the site is live; the tag line stays "partly" by design |
-| **D3** Each agent is bound to one accountable person | Meets: one owner fixed in the database; tagging another's agent scores J17 = 80 | Meets: one level-2 owner, whose live level is checked on every request | Link the two agent registries after fix 10, so a ban in one reaches the other |
-| **D4** The person consents to what the agent may do, scoped | Partly, improved: since fix 1 a machine account may only narrow its limits (off, draft, act, cap). Its untagged posts still skip them: they alert, never hide (Aaron's Oct 25 instruction) | Meets: off, draft or act, a daily cap, approval bound to the exact words | Nothing planned beyond the alert; hiding untagged posts is Aaron's call |
-| **D5** Riskier grants need the person to authenticate again | **Gap**: commands are taken from whichever account posts them | Partly: raising an agent to act, raising its cap, a new key, or deleting the account needs a sign-in in the last 10 minutes. Since fix 3 the database decides "fresh" from the session's own age | A second factor; none planned while passkeys stay out (Oct 23) |
-| **D6** Credentials are short-lived or scoped, revocable, and checked on every request | Partly: GitHub's own sign-in; every post checked as it arrives; `/agent remove` and `unlink` revoke at once | Partly: keys hashed, revoked at once, checked on every request. **Fix 3 (built)** makes the database check the key itself rather than trust the site. No expiry, no proof of possession | Key expiry and signed requests (DPoP), after fix 10: code only |
-| **D7** Sub-agents stay within the person's limits, revocable as a tree | **Partly (corrected Oct 26)**: sub-agents escape the parent's daily cap (R-4). Otherwise since fix 1: same owner, never wider than its parent, depth 3, expires (24 hours default, at most 30 days), removed with its parent. Never run live | Meets: no human step, same owner, never above the parent, depth 3, at most 7 days and never after the parent, whole tree revoked together | A live test: `/agent register` and `/agent subagent` on GitHub, by Aaron |
-| **D8** The grant expires or the person re-confirms it periodically | Partly: sub-agents expire; agents don't, and nothing asks for re-confirmation | **Partly (corrected Oct 26)**, fails open while timers are off (R-9). In code: an acting agent is re-confirmed every 90 days with a fresh sign-in, or goes back to drafting. **Needs the timers**, off until `CRON_SECRET` exists (fix 8) | Fix 8, then key expiry |
-
-- **D1 and D5 can't reach "meets" without Aaron's decisions:** identity verification is a spend decision, and a second factor conflicts with removing passkeys.
-- **D6 and D8 need fix 8 (keys and timers) and the post-10 work** (key expiry, signed requests).
+| **D1** A verified human principal stands behind the agent | Partly: a GitHub account scored by JEVs; no identity check | Partly: GitHub sign-in, JEVs promotes to level 2; no identity check | Stripe Identity for agent owners: a spend decision, Aaron's |
+| **D2** The agent has its own identity | Partly: a linked machine account is its own identity; the tag-line route posts from the owner's account | Meets: own ID and key; only the hash is stored | Site keys once live; the tag line stays "partly" by design |
+| **D3** Each agent is bound to one accountable person | Meets: one owner fixed in the database | Meets: one level-2 owner, checked on every request | Link the two agent registries after fix 10 |
+| **D4** The person consents to what the agent may do, scoped | Partly: a machine account may only narrow its limits; untagged posts alert, never hide (Oct 25) | Meets: off, draft or act, a daily cap, approval bound to the exact words | Nothing planned beyond the alert |
+| **D5** Riskier grants need the person to authenticate again | **Gap** | Partly: a sign-in in the last 10 minutes; since fix 3 the database judges "fresh" | A second factor; none planned while passkeys stay out. R-12 adds a step-up prompt |
+| **D6** Credentials short-lived or scoped, revocable, checked every request | Partly | Partly: keys hashed, revoked at once; **fix 3 (merged)** makes the database check the key itself. No expiry, no proof of possession | Key expiry and DPoP, after fix 10 |
+| **D7** Sub-agents stay within the person's limits, revocable as a tree | Partly: sub-agents escape the parent's daily cap (R-4); otherwise bounded, depth 3, expiring. Never run live | Meets | R-4 in the gate-hardening PR; a live test |
+| **D8** The grant expires or is re-confirmed | Partly: sub-agents expire; agents don't | Partly, fails open while timers are off (R-9) | Fix 8, R-9, then key expiry |
 
 ## What is left for production, in order
 
-Seven steps before every feature (except passkeys) is live, one PR open at a time.
+One PR open at a time. Each opens when it is built and checked (the suite, the Supabase-image rehearsal, Semgrep, gitleaks, and independent review). Aaron's only step is the merge.
 
-1. **Finish fixes 3 and 4 (Claude), as PR #49.**
-   - Run the full test suite on a throwaway local database. Nothing live is touched.
-   - Measure 020's speed on a large scan.
-   - Record the review's 10 findings in RISKS.md, with finding 1 first: the site's login can still create *new* members, though not reach existing ones.
-   - Fix the dates, commit signed, and open the PR.
-   - After Aaron's merge: redeploy `dog-migrate`, compare its files byte for byte, check the ledger shows 019 and 020, and log it in OPERATIONS.md.
-2. **Probe PR for route B (Claude, closed unmerged).** It reports only "present" or "absent" for:
-   - Vercel's identity token (`x-vercel-oidc-token`) on production functions;
-   - `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in production.
-3. **The site's login and keys: fixes 5 and 8 (Claude), route B (Aaron, Oct 26):**
-   - an Edge Function that checks the site's identity token and hands it its password, plus a migration that makes the login and keys inside the database, and a database rate limit on the timers.
-   - with an independent security review, refusal tests (no token, forged, expired, wrong project, preview), and live proof that the login works through the pooler.
-4. **Fix 6: the sign-in link, true public text, and the legal pages (Claude).** The legal part needs an independent review and Aaron's approval (game-changing).
-5. **The go-live release.**
-   - Fix 7: site JEVs to enforce.
-   - Fix 9: Aaron becomes administrator, by the method he chooses.
-   - `LAUNCH_STAGE` set to public, last.
-6. **Fix 10: live proof of every flow (Aaron and Claude), recorded in OPERATIONS.md.**
-   - Sign-in.
-   - Site posts: live, challenged and held; a report.
-   - An agent's full life: registered, claimed, drafting, approved, capped, making a sub-agent, revoked.
-   - Both timer paths: 80 days and 90 days.
-   - A ban and a brake.
-   - A GitHub post in enforce mode: hidden, `/appeal`, `/approve`.
-   - Deletions, and the restore test.
-7. **After fix 10 (Aaron's yes or no on each):**
-   - Link the two agent registries.
-   - The legal hold (RK22) and an erasure-request runbook.
-   - The daily JEVs summary and an outside uptime check.
-   - Scanners for `supabase/` and the workflows; Dependabot.
-   - A separate GitHub identity for Claude (RK71).
-   - Agent replies with a depth limit on the site.
-   - Toward D1, D5 and D6: Stripe Identity (spend), a second factor, key expiry and DPoP.
+1. **PR #50: true public text (R-5).** No served page promises a preview; the status page no longer says Release 2 is done; `preview` counts as closed; the records after #49.
+2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
+3. **RK82:** `app.sign_in` caps new members at level 1; GitHub only and the regional decline enforced in the database.
+4. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
+5. **Fixes 5 and 8 under route B,** with the CSO's controls 1 to 8, the timer conditions, the fallback to Vercel settings, and R-8.
+6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
+7. **Before go-live:** R-9 heartbeat, R-10 close switch, R-12 step-up prompt.
+8. **Fix 6:** the sign-in link and the legal pages.
+9. **The go-live release:** fix 7, fix 9, then `LAUNCH_STAGE` public, with the text that changes at go-live (feed.html's sign-in hint and its first-posts line; agents.html's present-tense description of switched-off features). The mechanism isn't built yet: today the only path is a Production setup run started by hand (SETUP.md §6). Claude's to design so that Aaron's merge is the go-live decision.
+10. **Fix 10:** live proof of every flow, recorded in OPERATIONS.md.
+
+After fix 10, each needs Aaron's yes or no: linking the agent registries, the legal hold (RK22) and erasure runbook, the daily JEVs summary, an outside uptime check, Dependabot, a separate GitHub identity for Claude (RK71), agent replies on the site, and toward D1, D5 and D6.
 
 ## Open for Aaron
 
-**Decisions**
+**Merges:** each PR, in order; #50 next.
 
-- [x] **Route A or route B for the site's login and keys** (fixes 5 and 8): **route B, decided Oct 26** ("Okay let go with B."), with the fallback to Vercel settings.
-  - Under B: whether Aaron accepts an open timer address with a rate limit in the database.
-- [ ] **Approve one logged deletion of `dog-probe`** on Supabase (review decision 3).
-- [ ] **How Aaron becomes administrator** before sign-up opens (fix 9).
-- [ ] **JEVs thresholds (RK16):** today they are the public seed values.
-- [ ] **RK1 (giscus):** /talk shows email addresses and phone numbers in GitHub comments unmasked. Accept it, or ask for a masked view beside it.
-- [ ] **How email erasure requests are carried out:** privacy promises erasure; nothing is built.
-- [ ] **What the regional decline means for posts made directly on GitHub.**
-- [ ] **Yes or no on each item after fix 10**, including Stripe Identity (spend) for D1.
+**Decisions** (each recorded in FACTS.md when answered):
 
-**Actions only Aaron can take**
+- [x] Route B for the site's login and keys (Oct 26), with the open, slot-limited timer address and the CSO's conditions.
+- [ ] How Aaron becomes administrator before sign-up opens (fix 9).
+- [ ] JEVs thresholds (RK16): today the public seed values.
+- [ ] RK1 (giscus): /talk shows email addresses and phone numbers in GitHub comments unmasked.
+- [ ] How email erasure requests are carried out.
+- [ ] What the regional decline means for posts made directly on GitHub.
+- [ ] CHARTER §3 versus RULES.md rule 1 on PR flow (asked Oct 23).
 
-- [ ] **Merge each PR**: #49 first.
-- [ ] **Delete the `setup-probe` branch** from PR #46's page.
-- [ ] **The agent test on GitHub**: `/agent register scout draft`, then `/agent subagent helper of scout`.
-- [ ] **Only if the probe finds no GitHub sign-in keys:** create the GitHub sign-in app in his account (an account action Claude may not take).
+No manual action is asked of Aaron in the plan above. Older records that still describe manual steps are rewritten in the PRs named: RELEASE-CHECKLIST.md and SETUP.md (route B PR), db/README.md's and controls.html's "change thresholds in the SQL editor" step (with RK16). Unknown: how Claude deletes the probe branches (its session can't), and how fix 10 proves the flows that need a real person signed in.
 
 ## Notes for the next agent
 
@@ -149,54 +114,39 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
 
 | Item | Value |
 | --- | --- |
-| Repo, branch | `MyChiefOS/start-of-something-great`; `main` at `0d87d88`; no open PRs |
-| Work in progress | Branch `fix3-actor-stamp` from `0d87d88`, PR #49. New: `db/migrations/019_actor_stamp.sql`, `020_policy_initplan.sql`, `test/actor-stamp.test.js`, `test/policy-initplan.test.js`, this file, REVIEW-2026-10-26.md. Changed: `db/index.js`, `db/checks.js`, `signin/agentkey.js`, `signin/flow.js`, `supabase/functions/dog-migrate/core.mjs`, `test/helpers.js` and about 14 tests |
-| Supabase | Project `nksagchwpyljvjiwolmp`; `jevs` v4, `dog-migrate` v4, `dog-probe` v2 (inert); ledger at 018 |
+| Repo | `MyChiefOS/start-of-something-great`; `main` at `e11e796` |
+| Work in progress | Branch `public-text`, PR #50 |
+| Supabase | Project `nksagchwpyljvjiwolmp`; `jevs` v4, `dog-migrate` v5, `dog-probe` v2 (inert); ledger at 020 |
 | Vercel | Project `prj_cXnWySYVpJE9TVZaNPSocXMMzkZI`, team `team_Hv5YS8LhIiKe06SSiDrUucd4`; Claude's connector returns 404 per project |
 | Pooler | `aws-0`/`aws-1-us-east-1.pooler.supabase.com:6543` (transaction mode) |
-| Local tests | `pg_ctlcluster 16 main start` (it stops often), `npm ci --ignore-scripts`, then `TEST_DATABASE_URL=postgres://postgres@localhost/postgres npm test` |
-| CLJO record | DR-2026-1026-001: fixes 5 and 8, route B conditional on six checks; Aaron chose route B on Oct 26 |
+| Local tests | `pg_ctlcluster 16 main start` (it stops often), `npm ci --ignore-scripts`, then `TEST_DATABASE_URL=postgres://postgres:<local password>@localhost:5432/postgres npm test`. Without `TEST_DATABASE_URL` the database suites skip, and the run still reports 0 failed |
+| Supabase-image rehearsal | Docker `supabase/postgres:17.11.0.003` on port 5433; `RUNNER_TEST_IN_PLACE=1 node --test test/runner.test.js` |
+| CLJO records | DR-2026-1026-001 (route B conditions); DR-2026-1026-004 (Oct 26, the PR order above; given in the session, recorded only here) |
 
 **Rules that bind every session (Aaron's)**
 
 - Aaron only approves PRs; Claude never merges.
-- Claude never sees, handles or asks for secrets, and reads Vault names only.
+- Claude never sees, handles or asks for secrets, and reads Vault names only. Never read `app.actor_keys.stamp_key`.
 - No accounts, spending or terms.
-- Supabase is read-only, except through migrations via the runner, and Edge Function deploys authorized by a merged PR and logged in OPERATIONS.md.
-- One PR at a time, targeting `main`.
-- Commits are signed (author Claude, with the session lines).
-- Don't commit `.claude/`.
-- Every sub-agent gets CHARTER §8 word for word.
-- Every recommendation ends with the alignment footer.
+- Supabase is read-only, except through migrations via the runner, and Edge Function deploys authorized by a merged PR, logged in OPERATIONS.md before or with the deploy.
+- Claude must be able to carry out any recommendation without Aaron, except his approval (Oct 26).
+- One PR at a time, targeting `main`. Commits signed (author Claude, with the session lines). Don't commit `.claude/`.
+- Every sub-agent gets CHARTER §8 word for word. Every recommendation ends with the alignment footer.
 - Checks alert, never lock out.
-- Try before concluding something won't work.
 - "Write like Fable" means short.
 - The instruction-source check (passcode in Aaron's preferences).
 
 **Traps**
 
-- Postgres folds a grant to the old owner into the new owner when a function changes hands. Grant after the handover (`set local role dog_signin`).
-- The deploy tool turns `\uXXXX` into the character itself, so gate files use `\u{...}`. Byte-compare every deploy.
-- From Claude's sessions:
-  - GitHub GraphQL, Actions secrets, variables and environments, and branch deletion are all blocked.
-  - REST can't post GitHub comments.
-  - The desktop browser refuses every site.
+- Postgres folds a grant to the old owner into the new owner when a function changes hands. Grant after the handover.
+- The deploy tool turns `\uXXXX` into the character itself, so gate files use `\u{...}`. Compare every deploy.
+- The Supabase-image rehearsal runs as a non-superuser: a test that sets superuser-only state must expect the refusal there.
+- From Claude's sessions: GitHub GraphQL, Actions secrets, variables and environments, and branch deletion are blocked; REST can't post GitHub comments.
 - The production ledger holds `014_subagents`, so the passkeys reset never runs live.
 
 ## Alignment and sources
 
-- **Loop tier:** 1, 2, 4, 5. This is a status report; route A versus B went through the full loop, including a fresh agent (DR-2026-1026-001).
+- **Loop tier:** status record; the PR order above is the CLJO's (DR-2026-1026-004, Oct 26).
 - **Goals served:** a working, deployed system; trust in AI; building in public honestly.
-- **Standing decisions touched:**
-  - GitHub only in phase 1; passkeys removed.
-  - Giscus on /join and /talk.
-  - No preview systems.
-  - A direct database connection.
-  - "I only approve PRs". Route B, chosen Oct 26, keeps it.
-  - Checks alert, never lock out.
-
-**Sources**
-
-- Live, Oct 25: GitHub REST (`main`, branches, PRs, branch protection) and Supabase (ledger, functions, row counts, Vault names), through read-only calls.
-- Repo: harness/PLAN.md, OPERATIONS.md, RISKS.md, FACTS.md, `supabase/functions/jevs/gate.mjs`.
-- Vercel OIDC: https://vercel.com/docs/oidc and https://vercel.com/docs/oidc/reference
+- **Standing decisions touched:** GitHub only in phase 1; no preview systems; a direct database connection; "I only approve PRs"; route B; checks alert, never lock out.
+- **Sources:** GitHub REST (`main`, open PRs, branches, rulesets); Supabase (ledger, functions, row counts) through read-only calls, Oct 26; OPERATIONS.md; harness/REVIEW-2026-10-26.md.

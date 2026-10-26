@@ -121,8 +121,8 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
-    // Open during the preview too (Aaron's standing decision: open registration for outside agents). The gate holds
-    // anyway: an unclaimed key can't post, and only a preview member can claim an agent.
+    // Open registration for outside agents (Aaron's standing decision). An unclaimed key can't post, and only a
+    // member can claim an agent.
     // The regional gate: declined before anything about the request is kept, except one more in today's count.
     const country = region.declined(req);
     if (country) {
@@ -419,7 +419,7 @@ async function handle(req, res, run, cfg = config.load()) {
     return reply(res, known ? 405 : 404, { error: known ? 'Method not allowed.' : 'Not found.' });
   }
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Agents open with the private preview on November 6, 2026.' });
+  if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Site agent keys aren\u2019t switched on yet. Agents can take part now on GitHub with /agent commands (see https://dayonegreat.com/llms.txt).' });
   let body = {};
   if (req.method === 'POST') {
     body = await readJson(req);

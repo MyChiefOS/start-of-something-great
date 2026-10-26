@@ -2,19 +2,19 @@
 //
 //   closed  (the default, and any unknown value): every Release 2 route stays off, exactly as before the database
 //           existed. db.configured() reports false.
-//   preview: Release 2 runs, but only for people Aaron allow-lists. New accounts are made only for an allow-listed
-//           GitHub or X account ID or email address; existing members sign in as usual. Reading posts, receipts and
-//           profiles needs a signed-in member or a claimed agent's key, and nothing is cached publicly. Agents still
-//           register themselves (open registration), but only a preview member can claim one.
+//   preview: no longer a stage (Aaron, Oct 24: "NO preview systems"). LAUNCH_STAGE=preview now counts as closed, so
+//           setting it can only close the site, never open it. The preview-only code paths it used to switch on
+//           (an allow-list for new accounts, signed-in-only reading) are unreachable and go in the dormant-paths
+//           clean-up (harness/REVIEW-2026-10-26.md, R-14).
 //   public : open to everyone. Setting it is Aaron's go-live decision (CHARTER.md: nothing goes live without it).
 //
-// LAUNCH_PREVIEW_ALLOW lists who may make an account during the preview, separated by commas or spaces:
-//   github:<numeric account id>, x:<numeric account id>, email:<address>
-// Account IDs, not user names, because a user name can be changed and then taken by someone else.
+// LAUNCH_PREVIEW_ALLOW (no longer read by any reachable path; removed in R-14) listed who could make an account during
+// the preview: github:<numeric account id>, x:<numeric account id>, email:<address>.
 'use strict';
 
-const STAGES = ['closed', 'preview', 'public'];
-const PREVIEW_MESSAGE = 'Day One Great is in a private preview. It opens to everyone on November 20, 2026.';
+const STAGES = ['closed', 'public'];
+// Shown only by the unreachable preview paths; kept true in case one is ever reached.
+const PREVIEW_MESSAGE = 'This part of Day One Great isn’t open yet.';
 
 function stage(env = process.env) {
   const s = String(env.LAUNCH_STAGE || '').trim().toLowerCase();

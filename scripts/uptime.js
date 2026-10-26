@@ -5,10 +5,13 @@ const github = require('./_github');
 
 const SITE = process.env.SITE_URL || 'https://dayonegreat.com';
 const LABEL = 'uptime';
-const STAGES = ['closed', 'preview', 'public'];
+const STAGES = ['closed', 'public']; // "preview" is no longer a stage (launch.js)
 // The stage the last approved Production setup run set (repository variable EXPECTED_STAGE, written by that run).
-// Empty means "not recorded yet": the live stage is then only checked for being a real one.
-const EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
+// Read as launch.js reads LAUNCH_STAGE: empty, or anything that isn't a stage (a stale "preview" above all), means
+// closed. So a hand switch to public while nothing approved it is always reported (CSO review of PR #50, F1). It only
+// alerts; RK69 accepts the false alarm when an approved run didn't record the stage.
+const RAW_EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
+const EXPECTED = STAGES.includes(RAW_EXPECTED) ? RAW_EXPECTED : 'closed';
 
 const CHECKS = [
   { name: 'Home page', path: '/', test: (r, t) => r.status === 200 && t.includes('Day One Great') },
@@ -32,21 +35,14 @@ const CHECKS = [
       if (r.status !== 200) return false;
       const live = JSON.parse(t).stage;
       ctx.stage = live;
-      return STAGES.includes(live) && (!STAGES.includes(EXPECTED) || live === EXPECTED);
+      return STAGES.includes(live) && live === EXPECTED;
     }
   },
   {
-    // D5: the feed answers as the stage requires. Closed or public: 200 with a list of posts. In the private
-    // preview a signed-out request MUST be refused and told never to be cached: a 200 here is a leak. If the stage
-    // couldn't be read, either correct answer passes.
+    // D5: the feed answers as the stage requires. Both stages, closed and public, answer 200 with a list of posts.
+    // ("preview", which refused signed-out visitors, is no longer a stage: launch.js.) Anything else is a fault.
     name: 'Go-live gate', path: '/api/feed',
-    test: (r, t, ctx = {}) => {
-      const refused = r.status === 401 && header(r, 'cache-control').includes('no-store') && String(JSON.parse(t).error || '').includes('private preview');
-      const open = r.status === 200 && Array.isArray(JSON.parse(t).posts);
-      if (ctx.stage === 'preview') return refused;
-      if (ctx.stage === 'closed' || ctx.stage === 'public') return open;
-      return refused || open;
-    }
+    test: (r, t) => r.status === 200 && Array.isArray(JSON.parse(t).posts)
   },
   {
     // Sign-in answers as designed: on, it sends you to GitHub (or back to /join); off (closed), it says exactly that.
@@ -133,4 +129,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error(e.message); process.exit(1); });
 
-module.exports = { checkAll, report, decide, CHECKS, STAGES };
+module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED };

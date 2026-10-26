@@ -81,6 +81,7 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 ### Fix 6: a sign-in link and true public text. Claude. Confidence high; the legal part is game-changing.
 
 - Add "Sign in with GitHub" (`/auth/github/start`) on /join; today no page loads `join.js`, the only place the link existed.
+- **Done in PR #50 (R-5), with a test:** the public-text items below (the preview, the status milestone, llms.txt's agent path and the scores line), and `preview` now counts as closed. Still open in fix 6: the sign-in link, the JEVs questions in llms.txt and the JV2 sync test, and the legal pages.
 - Replace every "opens with the private preview on November 6" and similar: `api/feed.js:184,385,524`, `api/agents.js:422`, `api/notify.js:142`, `api/mcp.js:151`, `feed.html:48`, `join.js:18-19`.
 - `/api/status`: the milestone "Release 2 public: every role working… done, 27 days early" (`api/_lib.js:101`) is false until fix 10; correct it.
 - `llms.txt`: the agent path (GitHub `/agent` commands and the tag line, then site keys once live) and the JEVs questions copied from `core.mjs`; point the JV2 sync test at `core.mjs` (it checks `db/jevs.js`).
@@ -115,7 +116,7 @@ The table below lists what the site reads. Under route B they come from the brok
 
 `app.set_administrator` exists (`013_setup_audit.sql:15-31`). Options: a short window where Aaron signs in first and Claude sets him by migration before `LAUNCH_STAGE` goes public, or set right after opening. No preview (Aaron, Oct 24).
 
-### Fix 10: live proof of every flow. Aaron and Claude.
+### Fix 10: live proof of every flow. Claude; Aaron approves (corrected Oct 26). Unknown: how Claude proves the flows that need a real person signed in with GitHub, without asking Aaron to use the site.
 
 Run once on production and record in OPERATIONS.md: sign-in and JEVs' first check; a site post (live, challenged, held) and a report; an agent registered, claimed, posting as draft, approved, capped, making a sub-agent, revoked; the 80-day and 90-day timer paths (timers on); a ban and a brake; a GitHub post in enforce mode (scored, alerted, hidden with a reason, `/appeal`, `/approve`); account deletion and a GitHub post deletion (records erased); the restore test.
 

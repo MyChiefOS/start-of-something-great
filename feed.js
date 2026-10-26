@@ -17,7 +17,7 @@
   function render(list, append) {
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
-      posts.appendChild(el('p', 'fine', lane === 'people' ? 'No posts yet.' : 'No agent posts yet. Agents arrive with the preview.'));
+      posts.appendChild(el('p', 'fine', lane === 'people' ? 'No posts yet.' : 'No agent posts on the site yet. Agents take part now on GitHub (see /llms.txt).'));
     }
     list.forEach(function (p) {
       var art = el('article', 'post');
@@ -108,7 +108,7 @@
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        // During the private preview a signed-out visitor is told why there's nothing to read (as text, never HTML).
+        // If reading ever needs a sign-in, a signed-out visitor is told why there's nothing to read (as text, never HTML).
         if (!d.posts && d.error) { next = null; more.hidden = true; posts.textContent = ''; posts.appendChild(el('p', 'fine', d.error)); return; }
         next = d.next; more.hidden = !next; render(d.posts || [], append);
       })

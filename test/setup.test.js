@@ -70,18 +70,17 @@ test('keys: each is made only when missing; an existing key, FINGERPRINT_KEY_1 a
   assert.strictEqual(JSON.stringify([...v.env]), before, 'a second run changes nothing');
 });
 
-test('stage: unchanged leaves everything alone; closed, preview or public only; the preview needs an allow-list; the stage itself is not secret', async () => {
+test('stage: unchanged leaves everything alone; closed or public only (preview is refused); the stage itself is not secret', async () => {
   const v = fakeVercel();
   const log = logger();
   await s.stepStage(v, { stage: 'unchanged', log });
   assert.strictEqual(v.env.size, 0, 'unchanged sets nothing');
-  await assert.rejects(s.stepStage(v, { stage: 'live', log }), /closed, preview or public/);
-  await assert.rejects(s.stepStage(v, { stage: 'preview', allow: 'github:aaronc', log }), /at least one entry/);
+  await assert.rejects(s.stepStage(v, { stage: 'live', log }), /unchanged, closed or public/);
+  await assert.rejects(s.stepStage(v, { stage: 'preview', log }), /unchanged, closed or public/);
   assert.strictEqual(v.env.size, 0, 'nothing set after a refusal');
-  await s.stepStage(v, { stage: 'preview', allow: 'github:12345', log });
-  assert.deepStrictEqual(v.env.get('LAUNCH_STAGE'), { value: 'preview', type: 'plain' });
-  assert.deepStrictEqual(v.env.get('LAUNCH_PREVIEW_ALLOW'), { value: 'github:12345', type: 'sensitive' });
-  assert.deepStrictEqual(leaked(log.lines, ['github:12345']), [], 'the allow-list isn’t logged');
+  await s.stepStage(v, { stage: 'closed', log });
+  assert.deepStrictEqual(v.env.get('LAUNCH_STAGE'), { value: 'closed', type: 'plain' });
+  assert.strictEqual(v.env.has('LAUNCH_PREVIEW_ALLOW'), false, 'no allow-list is ever set');
   await s.stepStage(v, { stage: 'public', log });
   assert.strictEqual(v.env.get('LAUNCH_STAGE').value, 'public');
 });
@@ -129,9 +128,9 @@ test('plan: says what a run will do from its inputs alone, and refuses bad input
   assert.strictEqual(lines[2], 'stage: unchanged');
   assert.match(s.plan({ ...base, SETUP_ROTATE_DB_PASSWORD: 'yes' })[0], /NEW password/);
   assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[2], /go-live decision/);
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'preview', SETUP_PREVIEW_ALLOW: 'github:1, x:2' })[2], /PREVIEW.*2 allow-listed accounts/);
-  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /at least one entry/);
-  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'open' }), /unchanged, closed, preview or public/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'closed' })[2], /CLOSED/);
+  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /unchanged, closed or public/);
+  assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'open' }), /unchanged, closed or public/);
   assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'admin' }), /member_id/);
   assert.throws(() => s.plan({ SETUP_STEPS: '' }), /nothing to do/);
   assert.match(s.plan({ SETUP_STEPS: 'admin', SETUP_ADMIN_MEMBER_ID: '11111111-2222-3333-4444-555555555555' })[0], /^admin: make member 1111/);
@@ -170,11 +169,11 @@ test('redeploy: rebuilds what production serves now (so it works after a rollbac
   await assert.rejects(v.waitReady('dpl_slow', { sleep: async () => {}, timeoutMs: -1 }), /still building/);
   // verifyLive: a unique address, a 200, and the stage this run set.
   let seen;
-  const site = async (url) => { seen = url; return { status: 200, text: async () => '{"name":"Day One Great","stage":"preview"}' }; };
-  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: 'preview', fetchImpl: site, tag: 'dpl_new' }), 'preview');
+  const site = async (url) => { seen = url; return { status: 200, text: async () => '{"name":"Day One Great","stage":"closed"}' }; };
+  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: 'closed', fetchImpl: site, tag: 'dpl_new' }), 'closed');
   assert.match(seen, /^https:\/\/x\.test\/api\/status\?after=dpl_new$/);
-  await assert.rejects(s.verifyLive({ site: 'https://x.test', stage: 'public', fetchImpl: site }), /reports stage "preview", not "public"/);
-  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: null, fetchImpl: site }), 'preview', 'with no stage set this run, any real answer passes');
+  await assert.rejects(s.verifyLive({ site: 'https://x.test', stage: 'public', fetchImpl: site }), /reports stage "closed", not "public"/);
+  assert.strictEqual(await s.verifyLive({ site: 'https://x.test', stage: null, fetchImpl: site }), 'closed', 'with no stage set this run, any real answer passes');
   await assert.rejects(s.verifyLive({ site: 'https://x.test', fetchImpl: async () => ({ status: 503, text: async () => '' }) }), /answered 503/);
 });
 
@@ -349,7 +348,7 @@ test('the setup workflow starts by hand only, on main only, in the protected env
   assert.match(planJob, /setup-production\.js --plan/);
   assert.match(planJob, /GITHUB_STEP_SUMMARY/);
   assert.match(setupJob, /^    needs: plan$/m);
-  assert.match(y, /options: \[unchanged, closed, preview, public\]\n        default: unchanged/);
+  assert.match(y, /options: \[unchanged, closed, public\]\n        default: unchanged/);
   assert.ok(!/^\s*(push|pull_request|pull_request_target|schedule|workflow_run):/m.test(y), 'no other trigger');
   assert.match(y, /^\s+environment: production$/m, 'the protected environment, so Aaron approves each run');
   assert.match(y, /^\s+if: github\.ref == 'refs\/heads\/main'$/m, 'main only');

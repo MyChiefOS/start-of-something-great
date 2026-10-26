@@ -1,5 +1,5 @@
-// The go-live gate (launch.js): setting up the database never opens Release 2 by itself, the private preview is only
-// for allow-listed people, and preview content is never served to, or cached for, someone signed out.
+// The go-live gate (launch.js): setting up the database never opens Release 2 by itself, and LAUNCH_STAGE=preview
+// (no longer a stage, Aaron, Oct 24: "NO preview systems") answers exactly as closed.
 'use strict';
 
 const test = require('node:test');
@@ -24,12 +24,13 @@ async function withEnv(vars, fn) {
   }
 }
 
-test('the stage is closed unless set to preview or public, whatever else is written', () => {
+test('the stage is closed unless set to public, whatever else is written; preview now counts as closed', () => {
   assert.strictEqual(launch.stage({}), 'closed');
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: '' }), 'closed');
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'open' }), 'closed');
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'live' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: ' Preview ' }), 'preview');
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: ' Preview ' }), 'closed');
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'preview' }), 'closed');
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'PUBLIC' }), 'public');
 });
 
@@ -42,18 +43,21 @@ test('the allow-list takes account IDs and email addresses, and ignores user nam
   assert.strictEqual(launch.allowList({}).size, 0);
 });
 
-test('mayJoin: in preview only the allow-listed; outside the preview it never stands in the way', () => {
-  const preview = { LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'github:12345,email:aaron@example.com' };
-  assert.strictEqual(launch.mayJoin('github', '12345', preview), true);
-  assert.strictEqual(launch.mayJoin('github', 12345, preview), true);
-  assert.strictEqual(launch.mayJoin('x', '12345', preview), false, 'the provider is part of the entry');
-  assert.strictEqual(launch.mayJoin('github', '123456', preview), false);
-  assert.strictEqual(launch.mayJoin('email', ' AARON@example.com ', preview), true);
-  assert.strictEqual(launch.mayJoin('email', 'someone@example.com', preview), false);
-  assert.strictEqual(launch.mayJoin('github', null, preview), false);
+test('mayJoin never stands in the way: preview is no longer a stage, and while closed db.configured() keeps sign-in off', () => {
+  // The allow-list paths are unreachable now (R-14 removes them). Setting LAUNCH_STAGE=preview can't switch them on.
+  const preview = { LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'github:12345' };
+  assert.strictEqual(launch.mayJoin('github', '999', preview), true);
   assert.strictEqual(launch.mayJoin('github', '999', { LAUNCH_STAGE: 'public' }), true);
-  // While closed, db.configured() keeps sign-in off altogether, so mayJoin has nothing to decide.
   assert.strictEqual(launch.mayJoin('github', '999', {}), true);
+});
+
+test('only an exact public stage opens Release 2: a stage added later stays closed (F2)', async () => {
+  const url = 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
+  const real = launch.stage;
+  try {
+    launch.stage = () => 'beta';
+    await withEnv({ DATABASE_URL: url }, () => assert.strictEqual(db.configured(), false));
+  } finally { launch.stage = real; }
 });
 
 test('a database address alone never opens Release 2: db.configured() needs the gate opened too', async () => {
@@ -61,7 +65,7 @@ test('a database address alone never opens Release 2: db.configured() needs the 
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: undefined }, () => assert.strictEqual(db.configured(), false));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'closed' }, () => assert.strictEqual(db.configured(), false));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'nonsense' }, () => assert.strictEqual(db.configured(), false));
-  await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'preview' }, () => assert.strictEqual(db.configured(), true));
+  await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'preview' }, () => assert.strictEqual(db.configured(), false));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'public' }, () => assert.strictEqual(db.configured(), true));
   await withEnv({ DATABASE_URL: undefined, LAUNCH_STAGE: 'public' }, () => assert.strictEqual(db.configured(), false));
 });
@@ -71,14 +75,14 @@ test('while closed, every Release 2 route answers as if there were no database, 
     const r = res();
     await require('../api/feed.js')(req('GET'), r);
     assert.strictEqual(r.statusCode, 200);
-    assert.match(JSON.parse(r.body).opens, /private preview/);
+    assert.match(JSON.parse(r.body).opens, /isn\u2019t switched on yet/);
     const a = res();
     await require('../api/agents.js')(req('POST', { route: 'register', json: { name: 'x' } }), a);
     assert.strictEqual(a.statusCode, 503);
   });
 });
 
-test('during the preview, the MCP server shows agents no posts, without touching the database', async () => {
+test('with LAUNCH_STAGE=preview, the MCP server shows agents no posts, without touching the database', async () => {
   const mcp = require('../api/mcp.js');
   await withEnv({ DATABASE_URL: 'postgres://u:p@nowhere.invalid:6543/postgres', LAUNCH_STAGE: 'preview' }, async () => {
     const r = res();
@@ -144,22 +148,23 @@ async function feed(query, cookie = '') {
   return out;
 }
 
-test('during the preview, posts, receipts and profiles need a signed-in member and are never cached publicly', async () => {
-  await withEnv({ LAUNCH_STAGE: 'preview' }, async () => {
-    for (const query of [{}, { lane: 'agents' }, { receipt: crypto.randomUUID() }, { profile: alice.id }]) {
-      const out = await feed(query);
-      assert.strictEqual(out.statusCode, 401, 'signed out is refused: ' + JSON.stringify(query));
-      assert.strictEqual(out.getHeader('Cache-Control'), 'no-store');
-      assert.strictEqual(out.getHeader('Vercel-CDN-Cache-Control'), undefined, 'nothing for the edge to cache');
-      assert.match(JSON.parse(out.body).error, /private preview/);
-    }
-    const signedIn = await feed({}, alice.cookie);
-    assert.strictEqual(signedIn.statusCode, 200);
-    assert.strictEqual(signedIn.getHeader('Cache-Control'), 'no-store', 'a member’s answer is never stored');
-    assert.strictEqual(signedIn.getHeader('Vercel-CDN-Cache-Control'), undefined);
-    const prof = await feed({ profile: alice.id }, alice.cookie);
-    assert.strictEqual(prof.statusCode, 200);
-    assert.strictEqual(prof.getHeader('Cache-Control'), 'no-store');
+test('LAUNCH_STAGE=preview answers exactly as closed: no Release 2 route opens, even with a database address', async () => {
+  await withEnv({ DATABASE_URL: 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres', LAUNCH_STAGE: 'preview' }, async () => {
+    const r = res();
+    await require('../api/feed.js')(req('GET'), r);
+    assert.strictEqual(r.statusCode, 200);
+    assert.match(JSON.parse(r.body).opens, /isn\u2019t switched on yet/);
+    assert.doesNotMatch(r.body, /private preview|November 6/);
+    const a = res();
+    await require('../api/agents.js')(req('POST', { route: 'register', json: { name: 'x' } }), a);
+    assert.strictEqual(a.statusCode, 503);
+    const H = { host: 'dayonegreat.com', 'x-vercel-forwarded-for': '203.0.113.31' };
+    const n = res();
+    await require('../api/notify.js')({ method: 'GET', url: '/api/notify/appeals', headers: H, query: { route: 'appeals' } }, n);
+    assert.strictEqual(n.statusCode, 503, 'notices off');
+    const cr = res();
+    await require('../api/cron.js')({ method: 'GET', url: '/api/cron', headers: { ...H, authorization: 'Bearer ' + 'x'.repeat(40) }, query: {} }, cr);
+    assert.strictEqual(cr.statusCode, 503, 'timers off');
   });
 });
 
@@ -171,26 +176,3 @@ test('once public, the feed is open to everyone and cached at the edge again', a
   });
 });
 
-test('during the preview agents still register themselves (open registration), but read nothing until a preview member claims them', async () => {
-  const agentsApi = require('../api/agents.js');
-  const withKey = (key) => { const r = req('GET'); r.headers.authorization = 'Bearer ' + key; return r; };
-  await withEnv({ LAUNCH_STAGE: 'preview' }, async () => {
-    const out = res();
-    await agentsApi.handle(req('POST', { route: 'register', json: { name: 'Gate test agent' } }), out, run, { ipKey: crypto.randomBytes(32) });
-    assert.strictEqual(out.statusCode, 201, out.body);
-    const reg = JSON.parse(out.body);
-    // Unclaimed, its key reads nothing.
-    const read = res();
-    await require('../api/feed.js').handle(withKey(reg.key), read, run);
-    assert.strictEqual(read.statusCode, 401);
-    // Claimed by a preview member, it reads the feed, never cached publicly.
-    const code = reg.claim_url.split('#claim=')[1];
-    const claim = res();
-    await agentsApi.handle(req('POST', { route: 'claim', json: { code }, cookie: alice.cookie, origin: ORIGIN }), claim, run, { ipKey: crypto.randomBytes(32) });
-    assert.ok([200, 201].includes(claim.statusCode), claim.body);
-    const read2 = res();
-    await require('../api/feed.js').handle(withKey(reg.key), read2, run);
-    assert.strictEqual(read2.statusCode, 200, read2.body);
-    assert.strictEqual(read2.getHeader('Cache-Control'), 'no-store');
-  });
-});

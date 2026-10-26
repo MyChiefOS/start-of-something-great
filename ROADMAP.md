@@ -4,7 +4,7 @@ We publish every target date and whether we hit it. If a date slips, the origina
 
 "Done" means every check for that milestone in [ACCEPTANCE.md](ACCEPTANCE.md) passes.
 
-_Last updated: October 24, 2026. The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Sign-in is GitHub through giscus on /join and /talk; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md)._
+_Last updated: October 26, 2026 (the Release 2 row and the thresholds wording). The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Sign-in is GitHub through giscus on /join and /talk; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md)._
 
 | Milestone | Target | Actual | Result | Depends on |
 |---|---|---|---|---|
@@ -21,14 +21,14 @@ _Last updated: October 24, 2026. The private preview is dropped (Aaron, Oct 24: 
 | Research section and Working Paper No. 1 published | Thu, Oct 15 (added that day) | Thu, Oct 15 | ✅ Done, same day | Claude, with Aaron's approval |
 | Discuss automatic deletion of email after 7 years (privacy policy) | Wed, Oct 21 | | ❌ Missed: not started (recorded Oct 24, three days late) | Aaron's decision; Google Workspace plan |
 | Release 2 built on a private preview, all automated checks passing | Fri, Nov 6 | | Dropped Oct 24: no private preview (Aaron). PRs 1–17 were merged by Oct 23, unused: our own sign-in never went live, and joining moved to giscus (Oct 23) | Aaron's decision |
-| PR 12: JEVs core (the automated checks: questions in code, private thresholds, shadow and enforce modes, automatic level 2, sign-up bot checks, the regional gate in code, the test-agent fleet) | Fri, Nov 6 (part of Release 2) | Sat, Oct 17 | ✅ Merged Oct 17 (#29), three weeks early | Claude; Aaron sets the thresholds and switches to enforce |
+| PR 12: JEVs core (the automated checks: questions in code, thresholds (the public seed values until Aaron sets his own, RK16), shadow and enforce modes, automatic level 2, sign-up bot checks, the regional gate in code, the test-agent fleet) | Fri, Nov 6 (part of Release 2) | Sat, Oct 17 | ✅ Merged Oct 17 (#29), three weeks early | Claude; Aaron sets the thresholds and switches to enforce |
 | PR 13: notifications (in-app only: the inbox, one tap on the notice, the 90-day check, containment with appeal; sign-in email through Amazon SES) | Fri, Nov 6 (with the preview) | Sat, Oct 17 | ✅ Merged Oct 17 (#30), three weeks early. Criteria N1 to N11, R16 and R33 wait for Aaron's approval | Claude; Aaron's AWS setup (EMAIL-SETUP.md) |
 | PR 15: sign-in fixes (linking a method needs a fresh sign-in and makes no session; unlink on /account; agents follow their owner's live verified level; the 90-day keep needs a fresh sign-in) | Fri, Nov 6 (added Oct 16; blocks go-live) | | Merged Oct 17 (#31); not live (our own sign-in is off) | Claude |
 | PR 16: sub-agents (agents make their own with no human step: same owner, never above their parent, a depth limit, expiry, the whole tree revocable, the chain on every post and receipt, JEVs on each one) | Fri, Nov 6 (added Oct 16, with the preview) | | Merged Oct 22–23 (#35, then main through #36); not live | Claude |
 | Block EU, EEA, UK and Swiss sign-ups | Fri, Nov 20 | Fri, Oct 16 | Replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall (Aaron, Oct 16) | Claude |
 | PR 17: passkeys as the proof for risky grants (D5, step 2 of the sign-in plan): a passkey check in the last 5 minutes to let an agent act on its own, raise the cap of one that acts, make a key for one that acts, keep one acting at day 90, link or unlink a sign-in method, delete an account, and for every one of Aaron's controls; 72-hour recovery; a linked method's passkeys go with it | Not set yet (added Oct 17; Aaron to set) | | Merged to main Oct 23 (#34, then #36). Removed from phase 1 (Aaron, Oct 23: "remove pass key"); still in the live database, to be removed by the fresh build (USE-CASES.md row 15) | Claude |
 | Joining with GitHub on /join (giscus) | Thu, Oct 22 (Aaron: "a production system delivered today") | Fri, Oct 23 | ✅ Done, 1 day late: posting through giscus; nothing of ours recorded yet | Claude |
-| Release 2 public: every role working (USE-CASES.md) | Fri, Nov 20 | | In progress: plan PR open Oct 24 | Aaron merges each PR |
+| Release 2 public: every role working (USE-CASES.md) | Fri, Nov 20 | | In progress (Oct 26): fixes 1 to 4 merged; the site's own system built and switched off; order in harness/STATUS.md | Claude builds; Aaron merges each PR |
 
 ## How we report
 

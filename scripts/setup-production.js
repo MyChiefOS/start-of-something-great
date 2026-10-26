@@ -10,8 +10,8 @@
 //             transaction-pooler address in Vercel as DATABASE_URL, with DATABASE_CA; then the coverage check.
 //   keys      SESSION_SECRET, IP_HASH_KEY, FINGERPRINT_KEY_1 and CRON_SECRET, each made only if it isn't there yet.
 //             An existing key is never replaced: members are recognised by FINGERPRINT_KEY_1.
-//   stage     LAUNCH_STAGE (closed, preview or public; "unchanged", the default, leaves it alone) and, for the
-//             preview, LAUNCH_PREVIEW_ALLOW.
+//   stage     LAUNCH_STAGE (closed or public; "unchanged", the default, leaves it alone). "preview" is no longer a
+//             stage (launch.js) and is refused.
 //   admin     makes SETUP_ADMIN_MEMBER_ID the administrator (after Aaron has signed in once and read it at /auth/me);
 //             refuses if someone else already is (one administrator), and writes an audit row.
 //   redeploy  redeploys the deployment production currently serves (so it works after a rollback too), waits for it
@@ -23,7 +23,7 @@
 // Settings it reads (placeholders until Aaron adds them; see SETUP.md):
 //   secrets  MIGRATION_DATABASE_URL, VERCEL_TOKEN (and MIGRATION_DATABASE_CA only to override the Supabase root
 //            certificate kept in db/certs/supabase-root-2021.crt: it is public, not a secret, so it lives in the repo)
-//   inputs   SETUP_STEPS, SETUP_STAGE, SETUP_PREVIEW_ALLOW, SETUP_ADMIN_MEMBER_ID, SETUP_ROTATE_DB_PASSWORD
+//   inputs   SETUP_STEPS, SETUP_STAGE, SETUP_ADMIN_MEMBER_ID, SETUP_ROTATE_DB_PASSWORD
 'use strict';
 
 const crypto = require('crypto');
@@ -220,16 +220,10 @@ async function stepKeys(v, { log, mask = maskInActions }) {
 
 // 'unchanged' (the workflow's default) leaves the stage exactly as it is, so a re-run of the default steps can never
 // move the site forwards or backwards by accident (S6b).
-async function stepStage(v, { stage, allow, log, gh = null }) {
-  const { STAGES, allowList } = require('../launch');
+async function stepStage(v, { stage, log, gh = null }) {
+  const { STAGES } = require('../launch');
   if (stage === 'unchanged' || stage === '') { log('LAUNCH_STAGE: unchanged'); return; }
-  if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed, preview or public');
-  if (stage === 'preview') {
-    const n = allowList({ LAUNCH_PREVIEW_ALLOW: allow || '' }).size;
-    if (!n) throw new Error('the preview needs at least one entry in SETUP_PREVIEW_ALLOW, like github:<your numeric GitHub account ID>');
-    await v.set('LAUNCH_PREVIEW_ALLOW', allow);
-    log('LAUNCH_PREVIEW_ALLOW: ' + n + ' entr' + (n === 1 ? 'y' : 'ies') + ' set');
-  }
+  if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed or public');
   await v.set('LAUNCH_STAGE', stage, { sensitive: false });
   log('LAUNCH_STAGE: ' + stage);
   if (gh) {
@@ -270,19 +264,15 @@ function plan(env = process.env) {
   const todo = steps(env.SETUP_STEPS);
   if (!todo.length) throw new Error('nothing to do: set SETUP_STEPS');
   const stage = String(env.SETUP_STAGE || 'unchanged').trim().toLowerCase();
-  const { STAGES, allowList } = require('../launch');
+  const { STAGES } = require('../launch');
   const lines = [];
   for (const s of todo) {
     if (s === 'database') lines.push('database: remove ensure_rls if present; apply any new migrations; create dog_web if missing' + (env.SETUP_ROTATE_DB_PASSWORD === 'yes' ? ', and give it a NEW password (DATABASE_URL in Vercel is replaced to match)' : ' (an existing password is kept)') + '; run the coverage check');
     if (s === 'keys') lines.push('keys: create any of ' + KEYS.join(', ') + ' that is missing; an existing key is never replaced');
     if (s === 'stage') {
       if (stage === 'unchanged') lines.push('stage: unchanged');
-      else if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed, preview or public');
-      else if (stage === 'preview') {
-        const n = allowList({ LAUNCH_PREVIEW_ALLOW: env.SETUP_PREVIEW_ALLOW || '' }).size;
-        if (!n) throw new Error('the preview needs at least one entry in SETUP_PREVIEW_ALLOW, like github:<your numeric GitHub account ID>');
-        lines.push('stage: PREVIEW, open to the ' + n + ' allow-listed account' + (n === 1 ? '' : 's') + ' only');
-      } else lines.push(stage === 'public' ? 'stage: PUBLIC. This is the go-live decision: Release 2 opens to everyone' : 'stage: CLOSED. Release 2 is off; the site looks as before');
+      else if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed or public');
+      else lines.push(stage === 'public' ? 'stage: PUBLIC. This is the go-live decision: Release 2 opens to everyone' : 'stage: CLOSED. Release 2 is off; the site looks as before');
     }
     if (s === 'admin') {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(env.SETUP_ADMIN_MEMBER_ID || '').trim())) throw new Error('SETUP_ADMIN_MEMBER_ID must be your member_id from https://dayonegreat.com/auth/me after signing in once');
@@ -330,7 +320,7 @@ async function main(env = process.env, deps = {}) {
         await stepDatabase(sql, v, { migrationUrl: env.MIGRATION_DATABASE_URL, ca: databaseCa(env), rotate: env.SETUP_ROTATE_DB_PASSWORD === 'yes', log, migrate: deps.migrate || migrate, check });
       }
       if (s === 'keys') await stepKeys(v, { log });
-      if (s === 'stage') await stepStage(v, { stage: stageSet, allow: env.SETUP_PREVIEW_ALLOW, log, gh });
+      if (s === 'stage') await stepStage(v, { stage: stageSet, log, gh });
       if (s === 'admin') await stepAdmin(sql, { memberId: String(env.SETUP_ADMIN_MEMBER_ID || '').trim(), log });
       if (s === 'redeploy') {
         const id = await v.redeploy();

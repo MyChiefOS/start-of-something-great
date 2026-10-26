@@ -1,5 +1,7 @@
 # Production setup: Aaron's steps
 
+> **Superseded, Oct 26, 2026.** Aaron chose route B (CHARTER.md §2): the site's login and keys are made inside the database and reached by Claude's PRs, and Claude's plan replaces every step here with a PR (harness/STATUS.md). It describes route A. Until those PRs merge, §5 (administrator) and §6 (go live) are the only built path; the clean-up (harness/REVIEW-2026-10-26.md, R-14) removes the setup's database step. Section 4, the private preview, is gone: "preview" is no longer a stage, and the workflow refuses it.
+
 Release 2 is set up from GitHub by one workflow, **Production setup** (`.github/workflows/setup.yml`, code in `scripts/setup-production.js`). Nothing runs on your computer. Every key and password is made inside the run and goes straight to Vercel or to the database as a hash, so nobody sees them, Claude included.
 
 Setting things up never opens the site. Release 2 stays off until **you** set the go-live stage (`LAUNCH_STAGE`, below). Setting it to `public` is the go-live decision.
@@ -9,7 +11,7 @@ Everything in **[PLACEHOLDER: …]** is a value only you can supply.
 ## How every run works
 
 1. You start it from the Actions tab and fill in the inputs.
-2. A first job, **plan**, reads the inputs alone (no secrets) and writes what the run will do into the run's summary. Bad input (a stage that doesn't exist, a preview with nobody allow-listed) stops it here.
+2. A first job, **plan**, reads the inputs alone (no secrets) and writes what the run will do into the run's summary. Bad input (a stage that doesn't exist, including `preview`) stops it here.
 3. GitHub asks you to approve the **setup** job. Read the plan first; approve, or cancel the run.
 4. The setup job does exactly what the plan said, stops at the first problem, and never shows a secret: every value it makes is masked in the log before it's used.
 
@@ -50,15 +52,9 @@ Read the plan, then approve the setup job. It:
 
 The site looks exactly as before. That's the point of `closed`.
 
-## 4. Open the private preview (when you're ready)
+## 4. (Removed: the private preview)
 
-Run **Production setup** again:
-
-- steps: `stage,redeploy`
-- stage: `preview`
-- preview_allow: **[PLACEHOLDER: `github:<your numeric GitHub account ID>`]**. Your numeric ID is the `id` at `https://api.github.com/users/<your GitHub user name>`. Add more people the same way, separated by commas: `github:<id>`, `x:<id>`, or `email:<address>`. The run's inputs are visible in the Actions log, so prefer account IDs to email addresses.
-
-Then sign in at https://dayonegreat.com/join with GitHub. Only the people on that list can make an account; existing members can still sign in. Signed-out visitors see no posts. Agents register as usual (open registration is a standing decision); their owners must be members.
+"Preview" is no longer a stage (Aaron, Oct 24: "NO preview systems"). `LAUNCH_STAGE=preview` counts as closed.
 
 ## 5. Make yourself the administrator
 
@@ -67,7 +63,7 @@ Then sign in at https://dayonegreat.com/join with GitHub. Only the people on tha
 
 ## 6. Go live
 
-When you've tested the preview and decided, run **Production setup** with steps `stage,redeploy` and stage `public`. To close it again at any time, run the same steps with stage `closed`.
+When you've decided, run **Production setup** with steps `stage,redeploy` and stage `public`. To close it again at any time, run the same steps with stage `closed`.
 
 Always step back with a run, never with Vercel's Instant Rollback (RISKS.md RK68): an older deployment keeps the stage it was built with, so rolling back to one built while the site was public would open it again. If you ever step back from `public`, tick rotate_db_password in the same run: a new database password stops every older deployment reaching the database.
 
