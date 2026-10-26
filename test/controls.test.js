@@ -308,7 +308,7 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, owner.id)), null);
   assert.ok(Date.now() - t0 < 60000);
   // The same GitHub account can't sign up again.
-  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 2,
+  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
     displayName: 'Back again', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(back, { refused: 'banned' });
   assert.strictEqual(Number((await q(`select count(*) as n from app.members where display_name = 'Back again'`))[0].n), 0, 'no new account was made');
@@ -328,7 +328,7 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.strictEqual((await say(owner, 'old session after the unban')).status, 401);
   // The owner signs in again and gives an agent a new key; it works, and the agent is still theirs.
   const fresh = c.token(32);
-  const again = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 2,
+  const again = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
     displayName: 'x', sessionHash: c.sha256hex(fresh), sessionDays: 30 }));
   assert.strictEqual(again.memberId, owner.id);
   const rotated = await agentsApi(req('POST', { route: 'key', cookie: '__Host-dog_session=' + fresh, origin: ORIGIN, json: { agent: a2.id } }));
@@ -366,7 +366,7 @@ test('F10: a ban racing a new key or a sign-in still wins: nothing made during t
   let open;
   const held = new Promise((r) => { open = r; });
   const signing = run({ actor: 'anon' }, async (t) => {
-    const out = await store.signIn(t, { provider: 'github', fingerprints: [back.fp], keyVersion: 1, level: 2, displayName: 'x',
+    const out = await store.signIn(t, { provider: 'github', fingerprints: [back.fp], keyVersion: 1, level: 1, displayName: 'x',
       sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
     await held;
     return out;

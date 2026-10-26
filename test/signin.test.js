@@ -1279,13 +1279,38 @@ test('RK82: a direct sign-in asking for level 2 gets level 1, recorded; JEVs alo
   assert.strictEqual(i.level, 1, 'the method is stored at level 1');
   const [a] = await q(`select detail from app.audit_log where action = 'signup.level_capped' and subject_id = '${out.memberId}'`);
   assert.deepStrictEqual(a.detail, { provider: 'github', asked: 2, given: 1 });
+  const [joined] = await q(`select detail from app.audit_log where action = 'member.joined' and subject_id = '${out.memberId}'`);
+  assert.strictEqual(joined.detail.level, 1, 'the record says the level given, not the one asked for');
+  const alerts = await q(`select member_id, kind, link from app.notices where dedupe_key = 'signin:capped:${out.memberId}'`);
+  assert.deepStrictEqual(alerts.map((r) => ({ ...r })), [{ member_id: null, kind: 'alert', link: '/controls' }], 'Aaron is alerted in-app, once');
   // Signing in again asking for 2 still can't raise it.
   await ask(2);
   assert.strictEqual((await q(`select trust_level from app.members where id = '${out.memberId}'`))[0].trust_level, 1);
   // The database owner writing a level-2 method or member directly is capped too: the trigger runs for every writer.
   await assert.doesNotReject(q(`update app.identities set level = 2 where member_id = '${out.memberId}'`));
   assert.strictEqual((await q(`select level from app.identities where member_id = '${out.memberId}'`))[0].level, 1);
+  // Replication mode can't switch the cap off: both triggers fire always (the CSO's review).
+  const [rep] = await su.begin(async (t) => {
+    await t.unsafe(`set local session_replication_role = replica`);
+    return t.unsafe(`insert into app.members (display_name, trust_level) values ('Replica', 2) returning id, trust_level`);
+  });
+  assert.strictEqual(rep.trust_level, 1, 'a new member is capped in replication mode too');
+  await su.begin(async (t) => {
+    await t.unsafe(`set local session_replication_role = replica`);
+    await t.unsafe(`update app.identities set level = 2 where member_id = '${out.memberId}'`);
+  });
+  assert.strictEqual((await q(`select level from app.identities where member_id = '${out.memberId}'`))[0].level, 1, 'and a method too');
   // JEVs's own promotion is the one way to level 2.
   await promote(su, out.memberId);
   assert.strictEqual((await q(`select trust_level from app.members where id = '${out.memberId}'`))[0].trust_level, 2);
+});
+
+// A tripwire (the CLJO's and CSO's reviews, Oct 26): the cap is 1 in phase 1. Raising it brings back sign-in level 2
+// (an X business account), and with it code no test covers today: agent_resolve's live-level check (RK58),
+// session_resolve lowering a lapsed badge, and its lock order (probe H).
+test('RK82 tripwire: the sign-in level cap is 1; raising it must bring back the tests removed in 7f99ed8', () => {
+  const src = fs.readFileSync(path.join(root, 'db', 'migrations', '021_signup_level_cap.sql'), 'utf8');
+  assert.strictEqual((src.match(/cap constant smallint := 1;/g) || []).length, 2,
+    'a migration that raises the cap must restore the four tests removed in commit 7f99ed8 (git show 7f99ed8^:test/signin.test.js ' +
+    'and test/agents.test.js: two X badge lapse tests, probe H, and the RK58 agent test) before it merges');
 });

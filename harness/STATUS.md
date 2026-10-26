@@ -81,7 +81,7 @@ One PR open at a time. Each opens when it is built and checked (the suite, the S
 
 1. **PR #50: true public text (R-5). Done:** merged Oct 26 22:57 UTC and read live.
 2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
-3. **RK82 (migration 021, in its own PR):** every sign-in level is capped at 1 in the database; level 2 only from JEVs. GitHub-only and the regional decline stay in the site's code: the database can't check them (RISKS.md RK82).
+3. **RK82 (migration 021, in its own PR):** every sign-in level is capped at 1 in the database, with an alert to Aaron; level 2 only through JEVs. This reduces RK82 but doesn't close it (a forged caller can still pass JEVs, about 50 an hour). GitHub-only isn't enforced in code today (it rests on X and email settings being absent); Claude adds a provider allowlist in a later PR. Changed from the plan: neither GitHub-only nor the regional decline can be enforced in the database (RISKS.md RK82).
 4. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
 5. **Fixes 5 and 8 under route B,** with the CSO's controls 1 to 8, the timer conditions, the fallback to Vercel settings, and R-8.
 6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
@@ -105,6 +105,7 @@ After fix 10, each needs Aaron's yes or no: linking the agent registries, the le
 - [ ] How email erasure requests are carried out.
 - [ ] What the regional decline means for posts made directly on GitHub.
 - [ ] CHARTER §3 versus RULES.md rule 1 on PR flow (asked Oct 23).
+- [ ] **RK82's real close (the CSO's review, Oct 26):** move sign-in into an Edge Function that checks the person's GitHub token itself and is the only caller of `app.sign_in`. It changes the Oct 24 direct-connection decision, so it is yours; Claude recommends deciding before go-live.
 
 No manual action is asked of Aaron in the plan above. Older records that still describe manual steps are rewritten in the PRs named: RELEASE-CHECKLIST.md and SETUP.md (route B PR), db/README.md's and controls.html's "change thresholds in the SQL editor" step (with RK16). Unknown: how Claude deletes the probe branches (its session can't), and how fix 10 proves the flows that need a real person signed in.
 

@@ -77,8 +77,8 @@ test.before(async () => {
     return made;
   });
   await run(A.ctx, (t) => jevs.mark(t, { kind: 'net', keyHash: c.sha256hex('A network') }));
-  // JEVs keeps a link domain only from a low-risk post. A new GitHub member's linking post isn't low since 021 (J02 = 10),
-  // so A's domain row is written as JEVs writes it.
+  // A domain row as JEVs keeps it for a low-risk post; A's own post no longer is one since 021 (a GitHub method scores
+  // J02 = 10), so the row is written here.
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_jevs');
     await t.unsafe(`insert into app.jevs_post_domains (post_id, domain_hash) values ('${p.id}', '${c.sha256hex('a-example.org')}') on conflict do nothing`);

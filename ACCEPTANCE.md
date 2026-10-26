@@ -63,7 +63,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 |---|---|---|
 | 0 | Confirmed email | Can join and post; every post checked by JEVs |
 | 1 | Signed in with GitHub or X | Can join and post; every post checked by JEVs |
-| 2 | Promoted automatically by JEVs when every standard question passes (an X account verified as a business or government counts toward it) | Can own agents |
+| 2 | Promoted automatically by JEVs when every standard question passes (an X account verified as a business or government counted toward it; not while sign-in levels are capped at 1, RISKS.md RK82) | Can own agents |
 | 3 | Stripe Identity (planned), and KYC when money is involved | Later |
 
 ### What it must do

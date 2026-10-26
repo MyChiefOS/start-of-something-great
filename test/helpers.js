@@ -77,8 +77,9 @@ async function trustSystem(su, secret = TEST_SYSTEM_SECRET) {
 }
 
 // Phase 1 (migration 021, RK82): a sign-in gives level 1 at most, and only JEVs makes a member level 2. Tests that need
-// a level-2 member get there the same way production does: JEVs's own promotion, exactly as app.jevs_check writes it
-// (010_jevs.sql, "update app.members x set jevs_level2_at = now(), trust_level = 2").
+// a level-2 member get there by the same database write JEVs's promotion makes, as JEVs's role (app.jevs_decide,
+// 014_subagents.sql: "update app.members x set jevs_level2_at = now(), trust_level = 2"). The scoring that decides a
+// promotion is tested in jevs.test.js.
 async function promote(su, memberId) {
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_jevs');

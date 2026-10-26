@@ -176,8 +176,8 @@ test('F8: deleting an account removes the member and all their personal data at 
   await run({ ...aaron.ctx, note: 'Leaving slowed down for now' }, (t) => t`update app.members set trust_level = 1 where id = ${m.id}`);
   // The ban ended their sessions; they sign in again.
   m.cookie = SESSION + '=' + await (async () => { const tok = c.token(32); await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github',
-    fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(tok), sessionDays: 30 })); return tok; })();
-  await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x',
+    fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x', sessionHash: c.sha256hex(tok), sessionDays: 30 })); return tok; })();
+  await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(await everything(m.id), { member: 1, identities: 1, sessions: 2, posts: 2, reports: 1, agents: 1, brakes: 1 });
 
@@ -206,7 +206,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   assert.strictEqual(after.statusCode, 401);
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, m.id)), null);
   // They can come back with the same account, as a new member.
-  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2,
+  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1,
     displayName: 'New member', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.ok(back.isNew && back.memberId !== m.id);
 });
@@ -305,7 +305,7 @@ test('F8: a report or a sign-in already under way when the deletion starts is wa
   const n = await member(2, 'Signing in as I leave');
   gate = new Promise((r) => { release = r; });
   const signing = run({ actor: 'anon' }, async (t) => {
-    const out = await store.signIn(t, { provider: 'github', fingerprints: [n.fp], keyVersion: 1, level: 2, displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
+    const out = await store.signIn(t, { provider: 'github', fingerprints: [n.fp], keyVersion: 1, level: 1, displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
     await gate;
     return out;
   });
@@ -328,7 +328,7 @@ test('F8: a sign-in that starts while a deletion is waiting can\'t deadlock with
   await new Promise((r) => setTimeout(r, 150));
   const deleting = del(m);
   await new Promise((r) => setTimeout(r, 150));
-  const signing = run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 2, displayName: 'x',
+  const signing = run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 })).then((x) => x, (e) => ({ error: e.code }));
   await new Promise((r) => setTimeout(r, 150));
   release();
