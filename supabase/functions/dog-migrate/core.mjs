@@ -7,7 +7,8 @@
 //   3. applies every pending migration, recording each in app.schema_migrations, all in ONE transaction with the
 //      reset, under an advisory lock (a migration already applied must still match; one missing from the manifest stops);
 //   4. checks the result: every app table has row-level security forced, the ledger equals the manifest, no
-//      passkey table or step-up trigger exists, and no dog_* role can sign in;
+//      passkey table or step-up trigger exists, no dog_* role can sign in but the site login, and that one is no
+//      wider than dog_app (fix 4);
 //   5. writes one app.change_log row if anything changed; the token's ID is recorded as soon as it is checked.
 // It returns versions, counts and check names only: no data, settings or secrets.
 
@@ -64,8 +65,12 @@ async function ledger(t) {
 }
 
 const LOCK = 'dayonegreat.migrate';
-// The roles the migrations use, and dog_web, the login 017 made. None may sign in.
-const ROLES = ['dog_owner', 'dog_app', 'dog_public', 'dog_signin', 'dog_jevs', 'dog_limits', 'dog_delegate', 'dog_erase', 'dog_web'];
+// The roles the migrations use. None may sign in.
+const ROLES = ['dog_owner', 'dog_app', 'dog_public', 'dog_signin', 'dog_jevs', 'dog_limits', 'dog_delegate', 'dog_erase'];
+// The site's own database login (harness/PLAN.md fix 5). It is the one role of ours that may sign in, and only this
+// narrow (fix 4): no rights of its own (noinherit), not a superuser, can't skip row-level security, make roles or
+// databases or replicate, and belonging to dog_app alone, which it switches to for every request (db/index.js).
+const SITE_LOGIN = 'dog_web';
 
 // Records a token ID the moment the token passes every other check, so the same token can never be used twice,
 // even if the run then fails. Returns true if it was already used. Before 015 exists there is nothing to record.
@@ -141,11 +146,9 @@ export async function run(sql, { files, reset }, claims) {
 // Things the fresh build tries to remove but treats as notes, not failures, if Supabase doesn't allow it.
 export async function leftovers(sql) {
   const [r] = await sql`select
-      exists (select 1 from pg_roles where rolname = 'dog_web') as web,
       to_regprocedure('public.rls_auto_enable()') is not null as rls_fn,
       to_regclass('vault.secrets') is not null as vault`;
   const out = [];
-  if (r.web) out.push('dog_web still exists (it cannot sign in)');
   if (r.rls_fn) out.push('public.rls_auto_enable() still exists');
   if (r.vault) {
     const [{ n }] = await sql`select count(*)::int as n from vault.secrets where name = 'dog_web_password'`.catch(() => [{ n: -1 }]);
@@ -155,7 +158,8 @@ export async function leftovers(sql) {
 }
 
 // Names of the checks that failed; empty when all pass.
-export async function checks(sql, files) {
+// siteLogin: the site login's name (tests use their own, since roles are shared by every database on a server).
+export async function checks(sql, files, { siteLogin = SITE_LOGIN } = {}) {
   const failed = [];
   const have = await sql.begin(ledger);
   const same = have.size === files.length && files.every((f) => have.get(f.version) === f.sha256);
@@ -170,9 +174,23 @@ export async function checks(sql, files) {
         where n.nspname = 'app' and g.tgname ilike '%step_up%')::int as step_up_triggers,
       (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'app' and (p.proname ilike '%passkey%' or p.proname ilike '%step_up%'))::int as passkey_functions,
-      (select count(*) from pg_roles where rolcanlogin and rolname = any (${ROLES}))::int as login_roles`;
+      (select count(*) from pg_roles where rolcanlogin and rolname = any (${ROLES}))::int as login_roles,
+      (select count(*) from pg_roles w where w.rolname = ${siteLogin} and (w.rolsuper or w.rolinherit or w.rolbypassrls or w.rolcreaterole
+        or w.rolcreatedb or w.rolreplication
+        or exists (select 1 from pg_auth_members a join pg_roles g on g.oid = a.roleid where a.member = w.oid and g.rolname <> 'dog_app')
+        -- Its one membership is plain: it may switch to dog_app, never grant it on or inherit it (fix 3's review, finding 3).
+        or exists (select 1 from pg_auth_members a join pg_roles g on g.oid = a.roleid where a.member = w.oid and (a.admin_option or a.inherit_option))
+        -- No rights or objects of its own in this database: nothing granted to it directly, nothing it owns, no policy naming it.
+        or exists (select 1 from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = w.oid
+                     and d.dbid = (select oid from pg_database where datname = current_database()))
+        -- No settings of its own (PR #49 review): only a superuser could give it one, such as session_replication_role.
+        or exists (select 1 from pg_db_role_setting s where s.setrole = w.oid)
+        -- And dog_app itself belongs to no role, so it can't carry another role's rights to the login.
+        or exists (select 1 from pg_auth_members a join pg_roles g on g.oid = a.member where g.rolname = 'dog_app')
+        or (w.rolcanlogin and not exists (select 1 from pg_auth_members a join pg_roles g on g.oid = a.roleid where a.member = w.oid and g.rolname = 'dog_app'))))::int as wide_site_login`;
   if (r.open_tables) failed.push('row-level security forced on every app table');
   if (r.passkey_objects || r.step_up_triggers || r.passkey_functions) failed.push('no passkey tables, functions or step-up triggers');
   if (r.login_roles) failed.push('no database role of ours can sign in');
+  if (r.wide_site_login) failed.push('the site login (dog_web) is no wider than dog_app');
   return failed;
 }

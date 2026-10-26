@@ -23,6 +23,7 @@ const { signinSender } = require('../notify/sender');
 const fx = require('./notify-helpers');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { agentCtx, trustSystem } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -67,6 +68,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
+  await trustSystem(su, SECRET);
   aaron = await member(2, 'Aaron');
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
   aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
@@ -91,7 +93,7 @@ async function member(level = 2, name = 'Owner') {
 }
 async function agentOf(owner, name = 'Helper', { act = false } = {}) {
   const [a] = await run(owner.ctx, (t) => t`insert into app.agents (name) values (${name}) returning id`);
-  const ag = { id: a.id, ctx: { actor: 'agent', memberId: owner.id, agentId: a.id } };
+  const ag = { id: a.id, ctx: await agentCtx(su, owner.id, a.id) };
   if (act) await run({ ...owner.ctx, fresh: true }, (t) => delegation.setRules(t, { agent: a.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 1000 }));
   return ag;
 }
@@ -328,8 +330,10 @@ test('PR 15: keeping an agent acting on its own (R33) needs a fresh sign-in, fro
   assert.strictEqual(await versions(), n0, 'nothing was confirmed');
   const same = (x) => x`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag.id}, 'act', 'draft', 'draft', 1000, 'reconfirmed')`;
   await assert.rejects(run(owner.ctx, same), /fresh_sign_in/, 'the database refuses it without a fresh sign-in');
-  await run({ ...owner.ctx, fresh: true }, same);
+  await assert.rejects(run({ ...owner.ctx, fresh: true }, same), /fresh_sign_in/,
+    'fix 3: the site saying "fresh" for an 11-minute-old session counts for nothing; the database asks the session itself');
   await q(`update app.sessions set created_at = now() where member_id = '${owner.id}'`);
+  await run({ ...owner.ctx, fresh: true }, same);
   const now = (await agentsApi('GET', 'activity', owner)).json.agents.find((x) => x.id === ag.id);
   assert.strictEqual((await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: now.rules.version })).status, 201);
   assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /x\.d\.reauth/, 'the notice offers to sign in again');
@@ -364,7 +368,7 @@ test('N6: while a pause is in force the owner can\'t raise any agent, existing o
     // A new agent made during the pause starts at draft and can't be raised either.
     const made = await agentsApi('POST', '', owner, { name: 'Fresh helper' });
     assert.strictEqual(made.status, 201, JSON.stringify(made.json));
-    const fresh = { id: made.json.agent_id, ctx: { actor: 'agent', memberId: owner.id, agentId: made.json.agent_id } };
+    const fresh = { id: made.json.agent_id, ctx: await agentCtx(su, owner.id, made.json.agent_id) };
     assert.strictEqual((await agentsApi('POST', 'rules', owner, { agent: fresh.id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 20 })).status, 409);
     assert.ok((await say(fresh, 'new agent, still drafting')).drafted);
     // Lowering is always open; a cap raised is a raise too.
@@ -755,8 +759,9 @@ test('JEVs: a deletion review tells the member their account was flagged and ale
     // The cron's timers: nothing before 24 hours; after, the account is disabled (not deleted), and the timers say so.
     let out = await timers();
     assert.strictEqual(out.deletion_reviews_disabled, 0);
-    await rewrite('deletion_reviews', 'deletion_reviews_guard', `update app.deletion_reviews set created_at = now() - interval '25 hours' where id = '${r.id}'`);
+    // The mark first: once the review is overdue the account can't act at all (fix 3: the database checks the session).
     await run(o.ctx, (t) => jevs.mark(t, { kind: 'net', keyHash: c.sha256hex('an old network') }));
+    await rewrite('deletion_reviews', 'deletion_reviews_guard', `update app.deletion_reviews set created_at = now() - interval '25 hours' where id = '${r.id}'`);
     await q(`update app.jevs_marks set created_at = now() - interval '31 days' where member_id = '${o.id}' and kind = 'net'`);
     out = await timers();
     assert.strictEqual(out.deletion_reviews_disabled, 1);

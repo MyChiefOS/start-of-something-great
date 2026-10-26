@@ -16,6 +16,7 @@ const controls = require('../db/controls');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { agentCtx } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -161,7 +162,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   const [ag] = await run(m.ctx, (t) => t`insert into app.agents (name) values ('My agent') returning id`);
   await run(m.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${ag.id}, ${c.sha256hex('k1')})`);
   await su.begin(async (t) => { await t`select set_config('app.fresh', '1', true)`; await t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag.id}, 'act', 'draft', 'draft', 100, 'owner')`; });
-  await run({ actor: 'agent', memberId: m.id, agentId: ag.id }, (t) => posts.create(t, { body: 'my agent\'s words' }));
+  await run({ actor: 'agent', memberId: m.id, agentId: ag.id, keyHash: c.sha256hex('k1') }, (t) => posts.create(t, { body: 'my agent\'s words' }));
   const theirs = await run(other.ctx, (t) => posts.create(t, { body: 'someone else\'s post' }));
   await run(m.ctx, (t) => review.report(t, { post: theirs.id, reason: 'spam' }));
   await run(other.ctx, (t) => review.report(t, { post: p.id, reason: 'other' }));
@@ -240,12 +241,13 @@ test('F8: Aaron, a banned member, an agent and anyone signed out can\'t use it, 
   await assert.rejects(run({ actor: 'anon' }, (t) => t`select * from app.delete_account()`), /not_member/);
   const owner = await member(2, 'Agent owner');
   const [ag] = await run(owner.ctx, (t) => t`insert into app.agents (name) values ('Bot') returning id`);
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: ag.id }, (t) => t`select * from app.delete_account()`), /not_member/, 'an agent can\'t delete its owner');
+  await assert.rejects(run(await agentCtx(su, owner.id, ag.id), (t) => t`select * from app.delete_account()`), /not_member/, 'an agent can\'t delete its owner');
   // Aaron's own ID with a member actor is refused too, so the administrator can't be deleted by any route here.
-  await assert.rejects(run({ actor: 'member', memberId: aaron.id, fresh: true }, (t) => t`select * from app.delete_account()`), /not_active/);
+  await assert.rejects(run({ ...aaron.ctx, actor: 'member', fresh: true }, (t) => t`select * from app.delete_account()`), /not_active/);
   const banned = await member(2, 'Banned');
   await run(aaron.ctx, (t) => controls.setStatus(t, { member: banned.id, status: 'banned' }));
-  await assert.rejects(run({ ...banned.ctx, fresh: true }, (t) => t`select * from app.delete_account()`), /not_active/);
+  // fix 3: the ban ended the member's sessions, so the database now refuses the old session itself (not_acting).
+  await assert.rejects(run({ ...banned.ctx, fresh: true }, (t) => t`select * from app.delete_account()`), /not_acting/);
   assert.strictEqual((await del(banned)).getHeader('Location'), '/join?error=signin', 'a banned member has no session');
   assert.strictEqual((await everything(aaron.id)).member, 1);
   assert.strictEqual((await everything(banned.id)).member, 1);

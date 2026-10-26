@@ -86,11 +86,20 @@ test.after(async () => {
 // A member with a session; { stale: true } makes the session an hour old (not a fresh sign-in).
 async function member(level = 2, name = 'Owner', { stale = false } = {}) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const fp = c.sha256hex(crypto.randomUUID());
+  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
-  return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
+  return { id: out.memberId, fp, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
+}
+// The same member signing in again with the same GitHub account: a new session (fix 3: the proof a person acts with).
+async function signInAgain(m) {
+  const token = c.token(32);
+  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1,
+    level: m.level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  assert.strictEqual(out.memberId, m.id, 'the same member');
+  return { ...m, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: m.id, session: c.sha256hex(token) } };
 }
 async function api(r) {
   const out = res();
@@ -107,7 +116,8 @@ const publicGet = (query) => feed({ method: 'GET', url: '/api/feed', headers: { 
 async function newAgent(owner, name = 'Helper') {
   const r = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name } }));
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
-  return { id: r.json.agent_id, key: r.json.key };
+  // ctx: the agent acting with its own key (by its hash), as signin/agentkey.js does for a request (fix 3).
+  return { id: r.json.agent_id, key: r.json.key, ctx: { actor: 'agent', memberId: owner.id, agentId: r.json.agent_id, keyHash: c.sha256hex(r.json.key) } };
 }
 const rules = (owner, agent, set) => api(req('POST', 'rules', { cookie: owner.cookie, origin: ORIGIN, json: { agent: agent.id, post: 'draft', reply: 'draft', report: 'draft', daily_cap: 20, ...set } }));
 const activity = (owner) => api(req('GET', 'activity', { cookie: owner.cookie }));
@@ -135,9 +145,9 @@ test('A1: a new agent starts at draft for everything, and its owner can switch e
   assert.deepStrictEqual([p.status, p.json.delegation], [201, 'rules']);
   // The database holds each mode even past the site: an agent can't post directly while drafting, or draft while off.
   await rules(owner, a, { post: 'draft' });
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`insert into app.posts (body) values ('skipping the inbox')`), /agent_drafts/);
+  await assert.rejects(run(a.ctx, (t) => t`insert into app.posts (body) values ('skipping the inbox')`), /agent_drafts/);
   await rules(owner, a, { post: 'off' });
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`insert into app.agent_drafts (body) values ('while off')`), /agent_off/);
+  await assert.rejects(run(a.ctx, (t) => t`insert into app.agent_drafts (body) values ('while off')`), /agent_off/);
   await rules(owner, a, { post: 'act' });
   // Bad input is refused, and nobody else can set this agent's rules.
   assert.strictEqual((await rules(owner, a, { post: 'always' })).status, 400);
@@ -157,8 +167,8 @@ test('R17: letting an agent act alone, or raising its cap, needs a sign-in in th
   // The database holds the line even if the site forgets: an owner call without the fresh flag can't raise.
   assert.deepStrictEqual(await run(owner.ctx, (t) => delegation.setRules(t, { agent: a.id, post: 'act', reply: 'off', report: 'off', dailyCap: 5 })), { refused: 'fresh' });
   // An agent can never set its own rules.
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${a.id}, 'act', 'act', 'act', 1000, 'owner')`), /row-level security|fresh_sign_in/);
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id, fresh: true }, (t) => t`select 1`), /only member calls can be fresh/);
+  await assert.rejects(run(a.ctx, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${a.id}, 'act', 'act', 'act', 1000, 'owner')`), /row-level security|fresh_sign_in/);
+  await assert.rejects(run({ ...a.ctx, fresh: true }, (t) => t`select 1`), /only member calls can be fresh/);
   // A new key for an agent that acts on its own needs a fresh sign-in too, so an old session can't mint one.
   const fresh = await member(2, 'Fresh owner');
   const acting = await newAgent(fresh, 'Already acting');
@@ -206,7 +216,7 @@ test('A2, A6: a draft waits for its owner, who approves the exact words with one
   // A draft's words never change.
   await assert.rejects(q(`update app.agent_drafts set body = 'swapped' where id = '${d2.json.draft_id}'`), /words never change/);
   // An agent can't approve its own draft, or write a draft while acting directly.
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`select * from app.approve_draft(${d.json.draft_id}::uuid, ${c.sha256hex('x')})`), /not_found/);
+  await assert.rejects(run(a.ctx, (t) => t`select * from app.approve_draft(${d.json.draft_id}::uuid, ${c.sha256hex('x')})`), /not_found/);
 });
 
 test('A3, A4: every agent post says how it went out, in the API and MCP, and has a public receipt naming the agent, its owner and the rules version', async () => {
@@ -301,7 +311,10 @@ test('a ban takes back what the owner\'s agents were allowed: rules drop to draf
   const d = await say(b.key, 'waiting when the ban lands');
   assert.deepStrictEqual(await run(aaron.ctx, (t) => controls.setStatus(t, { member: owner.id, status: 'banned' })), { status: 'banned' });
   assert.deepStrictEqual(await run(aaron.ctx, (t) => controls.setStatus(t, { member: owner.id, status: 'active' })), { status: 'active' });
-  const ra = await run(owner.ctx, (t) => delegation.current(t, a.id));
+  // fix 3: the ban ended the owner's sessions, so the owner reads their rules after signing in again, as on the site.
+  await assert.rejects(run(owner.ctx, (t) => t`select 1`), /not_acting/, 'the ended session proves nothing');
+  const back = await signInAgain(owner);
+  const ra = await run(back.ctx, (t) => delegation.current(t, a.id));
   assert.deepStrictEqual([ra.post, ra.reason], ['draft', 'ban']);
   assert.strictEqual((await q(`select status from app.agent_drafts where id = '${d.json.draft_id}'`))[0].status, 'declined');
 });
@@ -340,7 +353,7 @@ test('approving still respects the emergency brake, a revoked agent, a banned ow
   assert.strictEqual((await approve(owner, d.json.draft_id, 'braked')).status, 403, 'revoked agent');
   // Nobody can insert an "approved" post except through approval.
   const b = await newAgent(owner, 'Forger');
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: b.id }, (t) => t`insert into app.posts (body, delegation) values ('forged', 'approved')`), /permission denied/);
+  await assert.rejects(run(b.ctx, (t) => t`insert into app.posts (body, delegation) values ('forged', 'approved')`), /permission denied/);
 });
 
 test('deleting an account also deletes its agents\' rules and drafts', async () => {

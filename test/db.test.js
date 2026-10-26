@@ -16,8 +16,10 @@ const db = require('../db');
 const v = require('../db/validate');
 const members = require('../db/members');
 const audit = require('../db/audit');
+const signin = require('../db/signin');
 const { problems } = require('../db/checks');
 const { migrate } = require('../scripts/migrate');
+const { agentCtx, trustSystem } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SNAPSHOT = fs.readFileSync(path.join(root, 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
@@ -84,14 +86,18 @@ test('S8 code check: raw SQL, the driver, and identity or session changes appear
 test('S8: every database call says who is acting, and the combination must make sense', async () => {
   const m = '018f3c2e-7b1a-7cde-8f00-0123456789ab';
   const a = '018f3c2e-7b1a-7cde-9f00-0123456789ab';
+  const s = 'a'.repeat(64);
   for (const bad of [undefined, null, {}, { actor: 'root' }, { actor: 'member' }, { actor: 'anon', memberId: m },
     { actor: 'agent', memberId: m }, { actor: 'member', memberId: m, agentId: a }, { actor: 'system', memberId: m },
-    { actor: 'member', memberId: 'not-an-id' }, { actor: 'member', memberId: "x' or '1'='1" }]) {
+    { actor: 'member', memberId: 'not-an-id' }, { actor: 'member', memberId: "x' or '1'='1" },
+    // fix 3: a person's call without the session that proves it, or an agent's without its key, never reaches the database.
+    { actor: 'member', memberId: m }, { actor: 'admin', memberId: m }, { actor: 'agent', memberId: m, agentId: a },
+    { actor: 'member', memberId: m, session: s, keyHash: s }, { actor: 'system', keyHash: s }]) {
     let reached = false;
     await assert.rejects(db.tx({ begin: async () => { reached = true; } }, bad, () => {}), (e) => !reached && /acting|actor|ID|must/.test(e.message), JSON.stringify(bad));
   }
   let reached = false;
-  await db.tx({ begin: async () => { reached = true; } }, { actor: 'member', memberId: m }, () => {});
+  await db.tx({ begin: async () => { reached = true; } }, { actor: 'member', memberId: m, session: s }, () => {});
   assert.ok(reached, 'a valid actor does reach the database');
 });
 
@@ -178,6 +184,7 @@ test.before(async () => {
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
+  await trustSystem(su); // fix 3: the site itself acts only with its own secret, whose hash the setup run stores
   // Production setup (db/README.md): a login role with no rights of its own that may switch to dog_app.
   await admin.unsafe(`create role ${WEB} login noinherit password '${WEB_PASSWORD}'`);
   await admin.unsafe(`grant dog_app to ${WEB}`);
@@ -203,9 +210,32 @@ test.after(async () => {
 const as = (ctx, fn, conn = web) => db.tx(conn, ctx, fn);
 const SYSTEM = { actor: 'system' };
 const ANON = { actor: 'anon' };
-const member = (id) => ({ actor: 'member', memberId: id });
-const AARON = (id) => ({ actor: 'admin', memberId: id });
-async function newMember(name) { return as(SYSTEM, (t) => members.create(t, { displayName: name })); }
+// Fix 3 (019): the database decides who is acting from proof, so each member made here gets a real session (a row the
+// sign-in function would write, added by the superuser as helpers.keyFor adds a key), and acts with its hash.
+const SESSIONS = new Map();
+const member = (id) => ({ actor: 'member', memberId: id, session: SESSIONS.get(id) });
+const AARON = (id) => ({ actor: 'admin', memberId: id, session: SESSIONS.get(id) });
+async function newMember(name) {
+  const m = await as(SYSTEM, (t) => members.create(t, { displayName: name }));
+  const hash = crypto.randomBytes(32).toString('hex');
+  await su`insert into app.sessions (member_id, token_hash, expires_at) values (${m.id}, ${hash}, now() + interval '30 days')`;
+  SESSIONS.set(m.id, hash);
+  return m;
+}
+// An administrator: a member the database owner made one (as the setup run does), acting with their own session.
+async function newAdmin(name) {
+  const m = await newMember(name);
+  await su.begin(async (t) => { await t`set local role dog_owner`; await t`update app.members set is_admin = true where id = ${m.id}`; });
+  return m;
+}
+// A member who joined through the sign-in function itself, at a verified level (an agent's owner needs level 2).
+async function signedIn(name, level) {
+  const session = crypto.randomBytes(32).toString('hex');
+  const out = await as(ANON, (t) => signin.signIn(t, { provider: 'github', fingerprints: [crypto.randomBytes(32).toString('hex')],
+    keyVersion: 1, level, displayName: name, sessionHash: session, sessionDays: 30 }));
+  SESSIONS.set(out.memberId, session);
+  return { id: out.memberId };
+}
 async function fails(promise, re) { await assert.rejects(promise, (e) => re.test(e.message) || re.test(e.code || '')); }
 
 test('S1: the coverage check passes on the database the migrations build, which matches the reviewed snapshot', async () => {
@@ -321,7 +351,7 @@ test('S3 groundwork: only the site creates members, nobody raises a trust level 
   await fails(as(member(a.id), (t) => t`update app.members set trust_level = 2 where id = ${a.id}`), /only an administrator/);
   await fails(as(member(a.id), (t) => t`update app.members set id = app.uuid_v7() where id = ${a.id}`), /permission denied/);
   await fails(as(member(a.id), (t) => t`delete from app.members where id = ${a.id}`), /permission denied/);
-  const aaron = await newMember('Aaron');
+  const aaron = await newAdmin('Aaron');
   // No trust levels promoted by hand (Oct 16, 2026): not even Aaron. JEVs or a verified sign-in raises a level.
   await fails(as(AARON(aaron.id), (t) => t`update app.members set trust_level = 2 where id = ${a.id}`), /never by hand/);
   assert.strictEqual((await as(SYSTEM, (t) => t`update app.members set trust_level = 1 where id = ${a.id}`)).count, 0, 'the site itself can\'t reach a member\'s level');
@@ -332,7 +362,7 @@ test('S3 groundwork: only the site creates members, nobody raises a trust level 
 
 test('S7, G4: the audit log takes new rows, shows them only to Aaron, and refuses every edit or deletion', async () => {
   const a = await newMember('Member D');
-  const aaron = await newMember('Aaron again');
+  const aaron = await newAdmin('Aaron again');
   await as(member(a.id), (t) => audit.record(t, { action: 'test.member_did_something', subjectKind: 'member', subjectId: a.id, detail: { n: 1 } }));
   assert.strictEqual((await as(member(a.id), (t) => t`select id from app.audit_log`)).length, 0, 'members cannot read the log');
   const [row] = await as(AARON(aaron.id), (t) => t`select id, actor_kind, actor_id, action, at from app.audit_log where subject_id = ${a.id} and action = 'test.member_did_something'`);
@@ -368,9 +398,11 @@ test('S7, G4: the audit log takes new rows, shows them only to Aaron, and refuse
 // PR 5 decided what an agent sees (001 left it open): its own owner's row, read-only, because posting checks the
 // author's level and status. Nothing of any other member, and it can change nothing.
 test('S3: an agent acting for its owner reads only its owner\'s row and can\'t change it', async () => {
-  const owner = await newMember('Agent owner');
+  // Fix 3: an agent acts only with a live key of its own, for an owner at level 2, so this one is real.
+  const owner = await signedIn('Agent owner', 2);
   const other = await newMember('Someone else');
-  const agent = { actor: 'agent', memberId: owner.id, agentId: '018f3c2e-7b1a-7cde-9f00-0123456789ab' };
+  const [made] = await as(member(owner.id), (t) => t`insert into app.agents (name) values ('Helper') returning id`);
+  const agent = await agentCtx(su, owner.id, made.id);
   assert.strictEqual((await as(agent, (t) => members.get(t, owner.id))).display_name, 'Agent owner');
   assert.strictEqual(await as(agent, (t) => members.get(t, other.id)), null);
   assert.strictEqual((await as(agent, (t) => t`select id from app.members`)).length, 1);
@@ -378,7 +410,7 @@ test('S3: an agent acting for its owner reads only its owner\'s row and can\'t c
   assert.strictEqual((await as(member(owner.id), (t) => members.get(t, owner.id))).display_name, 'Agent owner');
   // An agent's audit rows name the agent, not the owner.
   await as(agent, (t) => audit.record(t, { action: 'test.agent_acted' }));
-  const aaron = await newMember('Aaron, agents');
+  const aaron = await newAdmin('Aaron, agents');
   const [r] = await as(AARON(aaron.id), (t) => t`select actor_kind, actor_id from app.audit_log where action = 'test.agent_acted'`);
   assert.deepStrictEqual({ ...r }, { actor_kind: 'agent', actor_id: agent.agentId });
 });
@@ -386,7 +418,7 @@ test('S3: an agent acting for its owner reads only its owner\'s row and can\'t c
 test('S1: nothing a request makes outlives its transaction on a pooled connection', async () => {
   await fails(as(SYSTEM, (t) => t`create temp table leak as select * from app.members`, one), /permission denied/);
   // A cursor kept open past its transaction, or a session lock, is cleared before the next request starts.
-  const aaron = await newMember('Aaron, cursors');
+  const aaron = await newAdmin('Aaron, cursors');
   await as(AARON(aaron.id), async (t) => { await t`declare leak cursor with hold for select id, display_name from app.members`; await t`select pg_advisory_lock(42)`; }, one);
   await fails(as(ANON, (t) => t`fetch all from leak`, one), /cursor "leak" does not exist/);
   const [{ held }] = await as(ANON, (t) => t`select count(*)::int as held from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()`, one);
@@ -404,7 +436,9 @@ test('S7: nobody can write an audit row in someone else\'s name', async () => {
   const blocked = await su.begin(async (t) => {
     await t.unsafe('grant insert (actor_kind, actor_id) on app.audit_log to dog_app');
     await t`set local role dog_app`;
-    await t`select set_config('app.actor', 'member', true), set_config('app.member_id', ${a.id}, true)`;
+    // Fix 3: really acting as A (A's own session, as db/index.js asks), so it is the policy that refuses B's name here,
+    // not the anonymous visitor that hand-set settings now count as.
+    await t`select app.act_as('member', ${a.id}::uuid, null, false, ${SESSIONS.get(a.id)}, null, null)`;
     await t`insert into app.audit_log (actor_kind, actor_id, action) values ('member', ${b.id}, 'test.forged')`;
   }).then(() => 'inserted', (e) => e.message);
   assert.match(blocked, /row-level security/);

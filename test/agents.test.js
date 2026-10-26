@@ -3,9 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
-const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
-  set_config('app.session', ${ctx.session}, true)`;
+// Acting as an administrator straight in the database (the test superuser), the way the site does it.
+// fix 3: settings set by hand count as an anonymous visitor, so this asks app.act_as with the admin's real session.
+const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -116,8 +116,15 @@ async function member(level = 2, name = 'Owner') {
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
-let adminMember; // a real member with a session
-const asAdmin = async (sqlText) => { adminMember = adminMember || await member(2, 'Admin'); return su.begin(async (t) => { await actAsAdmin(t, adminMember.ctx); await t.unsafe(sqlText); }); };
+let adminMember; // a real member with a session, and (fix 3: the database now checks it) really an administrator
+const theAdmin = async () => {
+  if (!adminMember) {
+    adminMember = await member(2, 'Admin');
+    await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${adminMember.id}'`); });
+  }
+  return adminMember;
+};
+const asAdmin = async (sqlText) => { const adm = await theAdmin(); return su.begin(async (t) => { await actAsAdmin(t, adm.ctx); await t.unsafe(sqlText); }); };
 // Agents start by drafting (PR 7). Tests of other behaviour let an agent act on its own first, as its owner could
 // after a fresh sign-in.
 const letAct = (sql, agentId) => sql.begin(async (t) => {
@@ -190,7 +197,7 @@ test('an owner creates an agent while signed in and gets its key once; nobody ca
   assert.ok(!JSON.stringify(listed.json).includes(made.json.key) && !JSON.stringify(listed.json).includes(c.sha256hex(made.json.key)));
   // The hash can't be read by the owner, by Aaron, or by the agent itself.
   await assert.rejects(run(owner.ctx, (t) => t`select key_hash from app.agent_keys`), /permission denied/);
-  await assert.rejects(run({ actor: 'admin', memberId: owner.id }, (t) => t`select key_hash from app.agent_keys`), /permission denied/);
+  await assert.rejects(run({ ...(await theAdmin()).ctx, actor: 'admin' }, (t) => t`select key_hash from app.agent_keys`), /permission denied/); // fix 3: a real admin
   await assert.rejects(run(owner.ctx, (t) => t`select claim_hash from app.agents`), /permission denied/);
 });
 
@@ -235,15 +242,17 @@ test('S4: a key acts only as its own agent, and stops at once when rotated, revo
   const [row] = await q(`select lane, agent_id, author_id from app.posts where id = '${pa.json.id}'`);
   assert.deepStrictEqual({ ...row }, { lane: 'agents', agent_id: a.json.agent_id, author_id: owner.id });
   // Even straight to the table, an agent posts only as itself, for its owner.
-  const ctxA = { actor: 'agent', memberId: owner.id, agentId: a.json.agent_id };
+  const ctxA = { actor: 'agent', memberId: owner.id, agentId: a.json.agent_id, keyHash: c.sha256hex(a.json.key) };
   const [direct] = await run(ctxA, (t) => t`insert into app.posts (body) values ('direct') returning agent_id, lane`);
   assert.deepStrictEqual({ ...direct }, { agent_id: a.json.agent_id, lane: 'agents' });
   const stranger = await member(2);
-  await assert.rejects(run({ actor: 'agent', memberId: stranger.id, agentId: a.json.agent_id }, (t) => posts.create(t, { body: 'not my owner' })), /row-level security/);
+  // fix 3: claiming another owner for a real key is now refused before anything runs: the database reads the owner from the key.
+  await assert.rejects(run({ ...ctxA, memberId: stranger.id }, (t) => posts.create(t, { body: 'not my owner' })), /not_acting/);
   await assert.rejects(run(ctxA, (t) => t`insert into app.posts (body, lane) values ('x', 'people')`), /permission denied/);
   // The second lock: even a role with every column right (the superuser here) gets the lane and agent from who is acting.
   const [forced] = await su.begin(async (t) => {
-    await t`select set_config('app.actor', 'agent', true), set_config('app.member_id', ${owner.id}, true), set_config('app.agent_id', ${a.json.agent_id}, true)`;
+    // fix 3: acting as agent A with its real key, the way the site does (settings set by hand would count as anonymous).
+    await t`select app.act_as('agent', ${owner.id}::uuid, ${a.json.agent_id}::uuid, false, null, ${ctxA.keyHash}, null)`;
     return t`insert into app.posts (body, lane, agent_id) values ('forged', 'people', ${b.json.agent_id}) returning lane, agent_id`;
   });
   assert.deepStrictEqual({ ...forced }, { lane: 'agents', agent_id: a.json.agent_id });
@@ -285,10 +294,11 @@ test('S3: member A can never read or change member B\'s agents or keys', async (
   // Someone not signed in sees no agents and no keys; an agent sees only itself.
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select id from app.agents`)).length, 0);
   const other = await api(req('POST', '', { cookie: a.cookie, origin: ORIGIN, json: { name: 'A\'s second' } }));
-  assert.deepStrictEqual((await run({ actor: 'agent', memberId: a.id, agentId: id }, (t) => t`select id from app.agents`)).map((r) => r.id), [id]);
+  const ctxAgentA = { actor: 'agent', memberId: a.id, agentId: id, keyHash: c.sha256hex(agentA.json.key) };
+  assert.deepStrictEqual((await run(ctxAgentA, (t) => t`select id from app.agents`)).map((r) => r.id), [id]);
   assert.ok(other.json.agent_id);
   // Agents can't create agents or issue keys.
-  await assert.rejects(run({ actor: 'agent', memberId: a.id, agentId: id }, (t) => t`insert into app.agents (name) values ('child')`), /only a signed-in owner/);
+  await assert.rejects(run(ctxAgentA, (t) => t`insert into app.agents (name) values ('child')`), /only a signed-in owner/);
 });
 
 test('the record: registering, claiming, keys and revoking are all in the audit log, written by the database', async () => {

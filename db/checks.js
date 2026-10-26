@@ -60,6 +60,11 @@ const DEFINERS = {
   'app.delete_account()': 'dog_erase',
   // Fix 2 (018, Oct 25, 2026): which of the GitHub posts the site already has JEVs hid; only those IDs, nothing more.
   'app.gh_hidden(text[])': 'dog_jevs',
+  // Fix 3 (019, Oct 26, 2026): the database decides who is acting. The stamp is made only by the sign-in role and the
+  // owner; any role that runs checks of who is acting may test one; only the site's role may ask to act as someone.
+  'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner' },
+  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_public' },
+  'app.act_as(text, uuid, uuid, boolean, text, text, text)': 'dog_signin',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
   'app.receipt(uuid)': 'dog_public',
@@ -93,15 +98,16 @@ const DEFINERS = {
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
 // The audit log's reviewed policies, compared with spaces and brackets removed so Postgres versions that print
-// them slightly differently still match.
+// them slightly differently still match. Since 020 each call of who is acting is a sub-select, "(SELECT app.actor_kind()
+// AS actor_kind)", run once per query; test/policy-initplan.test.js proves 020 changed nothing else.
 const AUDIT_POLICIES = {
-  audit_insert: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_select: { cmd: 'r', using: "app.actor_kind()='admin'::text", check: '' },
-  audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" },
-  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=app.actor_kind()ANDNOTactor_idISDISTINCTFROMapp.current_actor_id()" }
+  audit_insert: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  audit_select: { cmd: 'r', using: "SELECTapp.actor_kind()ASactor_kind='admin'::text", check: '' },
+  audit_insert_signin: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 

@@ -3,9 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
-const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
-  set_config('app.session', ${ctx.session}, true)`;
+// Acting as an administrator straight in the database (the test superuser), the way the site does it.
+// fix 3: settings set by hand count as an anonymous visitor, so this asks app.act_as with Aaron's real session.
+const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -17,6 +17,7 @@ const posts = require('../db/posts');
 const controls = require('../db/controls');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { keyFor } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -357,7 +358,8 @@ test('F10: a ban racing a new key or a sign-in still wins: nothing made during t
   assert.strictEqual((await banning).status, 200);
   assert.ok(newKey, 'the key was issued before the ban landed');
   // A key requested after the ban committed is refused outright.
-  assert.strictEqual(await run(owner.ctx, (t) => require('../db/agents').rotate(t, { agent: a.id, keyHash: c.sha256hex('late') })), false);
+  // fix 3: the ban ended the owner's sessions, so the database now refuses the old session itself, before rotate runs.
+  await assert.rejects(run(owner.ctx, (t) => require('../db/agents').rotate(t, { agent: a.id, keyHash: c.sha256hex('late') })), /not_acting/);
   // A sign-in that started before the ban: the ban waits, then ends that session too.
   const back = await member(2, 'Signing in during the ban');
   let open;
@@ -420,22 +422,23 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
       const sessionHash = c.sha256hex(c.token(32));
       const o = await r2({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
         level, displayName: name, sessionHash, sessionDays: 30 }));
-      return { id: o.memberId, sessionHash, ctx: { actor: 'member', memberId: o.memberId } };
+      return { id: o.memberId, sessionHash, ctx: { actor: 'member', memberId: o.memberId, session: sessionHash } };
     };
     const boss = await mk('Boss');
     await s2.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.id}'`); });
     const bossCtx = { actor: 'admin', memberId: boss.id, session: boss.sessionHash };
     const ann = await mk('Ann'), ben = await mk('Ben'), quiet = await mk('Quiet');
     // Ann: 2 agents; 3 people posts (two the same text apart from case and punctuation), 4 agent posts.
-    const agentIds = [];
+    const agentIds = [], agentKeys = [];
     for (const n of ['A1', 'A2']) {
       const [a] = await r2(ann.ctx, (t) => t`insert into app.agents (name) values (${n}) returning id`);
       await letAct(s2, a.id);
       agentIds.push(a.id);
+      agentKeys.push(await keyFor(s2, a.id)); // fix 3: an agent acts with a real key
     }
     for (const b of ['Buy now!', 'buy NOW', 'something else']) await r2(ann.ctx, (t) => posts.create(t, { body: b }));
     for (const [i, b] of ['agent hello', 'agent hello', 'Agent... hello!', 'unique agent text'].entries()) {
-      await r2({ actor: 'agent', memberId: ann.id, agentId: agentIds[i % 2] }, (t) => posts.create(t, { body: b }));
+      await r2({ actor: 'agent', memberId: ann.id, agentId: agentIds[i % 2], keyHash: agentKeys[i % 2] }, (t) => posts.create(t, { body: b }));
     }
     // Ben: 1 post, the same text as one of Ann's, so it is a repeat too.
     await r2(ben.ctx, (t) => posts.create(t, { body: 'Something else.' }));

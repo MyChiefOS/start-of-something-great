@@ -19,6 +19,7 @@ const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
+const { trustSystem } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -83,6 +84,7 @@ test.before(async () => {
   await migrate(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
+  await trustSystem(su); // the site's own secret (CRON_SECRET), so the timers can act as the site itself (fix 3)
   aaron = await member(2, 'Aaron');
   await asOwner(`update app.members set is_admin = true where id = '${aaron.id}'`);
   aaron.ctx = { ...aaron.ctx, actor: 'admin' }; // admin, with Aaron's own session
@@ -137,6 +139,8 @@ async function newAgent(owner, name = 'Lead') {
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   return { id: r.json.agent_id, key: r.json.key };
 }
+// An agent acting with its own key (by its hash), as signin/agentkey.js does for a request (fix 3).
+const asAgent = (owner, a) => ({ actor: 'agent', memberId: owner.id, agentId: a.id, keyHash: c.sha256hex(a.key) });
 const spawnRaw = (parent, json) => api(req('POST', 'subagents', { key: parent.key, json }));
 async function spawn(parent, json = {}) {
   const r = await spawnRaw(parent, { name: 'Worker', ...json });
@@ -223,7 +227,7 @@ test('SA2: a sub-agent is never allowed more than its parent, at creation or lat
   // An agent never writes rules, even within its parent's (itself can't even see its parent's rules; its parent is
   // refused by row-level security).
   for (const a of [w, lead]) {
-    await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: a.id }, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${w.id}, 'draft', 'draft', 'draft', 1, 'owner')`), /row-level security|parent has no rules/);
+    await assert.rejects(run(asAgent(owner, a), (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${w.id}, 'draft', 'draft', 'draft', 1, 'owner')`), /row-level security|parent has no rules/);
   }
   // Only the database lowers a sub-agent to match its parent: a forged 'parent_lowered' is refused, exact or not.
   await assert.rejects(run(owner.ctx, (t) => t`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${w.id}, 'draft', 'draft', 'draft', 1, 'parent_lowered')`), /lowered only to match its parent/);
@@ -263,7 +267,7 @@ test('SA4: sub-agents go at most 3 levels down; a fourth is refused; only the da
   assert.deepStrictEqual([deeper.status, deeper.json.refused], [403, 'depth']);
   assert.match(deeper.json.error, /at most 3 levels/);
   // Nobody acting through the site can change the limits: not the owner, an agent or Aaron.
-  for (const ctx of [owner.ctx, aaron.ctx, { actor: 'agent', memberId: owner.id, agentId: a.id }, { actor: 'system' }]) {
+  for (const ctx of [owner.ctx, aaron.ctx, asAgent(owner, a), { actor: 'system' }]) {
     await assert.rejects(run(ctx, (t) => t`update app.subagent_settings set max_depth = 10`), /permission denied/);
   }
   await assert.rejects(asOwner('update app.subagent_settings set max_depth = 11'), /check constraint/);
@@ -327,7 +331,7 @@ test('SA6: revoking cascades: an owner revoking an agent, or a parent revoking i
   assert.strictEqual((await api(req('POST', 'subagents/revoke', { key: lead.key, json: { agent: b.id } }))).status, 404, 'a grandchild is its parent\'s to manage');
   assert.strictEqual((await api(req('POST', 'subagents/revoke', { key: sib.key, json: { agent: a.id } }))).status, 404, 'not a sibling');
   assert.strictEqual((await api(req('POST', 'subagents/revoke', { key: a.key, json: { agent: lead.id } }))).status, 404, 'never its parent');
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: lead.id }, (t) => t`update app.agents set name = 'Renamed' where id = ${a.id}`), /only revoke its own sub-agents/);
+  await assert.rejects(run(asAgent(owner, lead), (t) => t`update app.agents set name = 'Renamed' where id = ${a.id}`), /only revoke its own sub-agents/);
   // The parent revokes A: B goes with it, in the same transaction; the sibling goes on.
   const r = await api(req('POST', 'subagents/revoke', { key: lead.key, json: { agent: a.id } }));
   assert.deepStrictEqual([r.status, r.json.status], [200, 'revoked']);
@@ -522,9 +526,10 @@ test('SA12: a sub-agent can\'t claim agents, make agents for anyone else, or use
   }
   // In the database: an agent can't make an agent directly, can't make one for another owner, and a member can't
   // call the sub-agent function at all.
-  await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: w.id }, (t) => t`insert into app.agents (name) values ('direct')`), /only a signed-in owner creates an agent here|row-level security/);
-  const forged = { actor: 'agent', memberId: stranger.id, agentId: w.id };
-  await assert.rejects(run(forged, (t) => t`select * from app.subagent_create('For someone else', null, ${c.sha256hex('k1')}, null, null, null, null, null, false, ${c.sha256hex(w.key)})`), /parent_not_active/);
+  await assert.rejects(run(asAgent(owner, w), (t) => t`insert into app.agents (name) values ('direct')`), /only a signed-in owner creates an agent here|row-level security/);
+  // fix 3: w's own key with another owner claimed is refused when the database checks the key, before anything runs.
+  const forged = { ...asAgent(owner, w), memberId: stranger.id };
+  await assert.rejects(run(forged, (t) => t`select * from app.subagent_create('For someone else', null, ${c.sha256hex('k1')}, null, null, null, null, null, false, ${c.sha256hex(w.key)})`), /not_acting/);
   await assert.rejects(run(owner.ctx, (t) => t`select * from app.subagent_create('From a member', null, ${c.sha256hex('k2')}, null, null, null, null, null, false, ${c.sha256hex(w.key)})`), /not_agent/);
   assert.strictEqual((await q(`select count(*)::int as n from app.agents where owner_id = '${stranger.id}'`))[0].n, 0);
   // A sub-agent can make its own sub-agents, which stay its owner's.
@@ -639,9 +644,13 @@ test('review F2: a key rotation racing a creation with the old key never leaves 
 test('review F2: after a rotation commits, a request that resolved the old key earlier can\'t make a sub-agent with it', async () => {
   const owner = await member(2, 'Late request');
   const lead = await newAgent(owner);
-  const resolved = { actor: 'agent', memberId: owner.id, agentId: lead.id }; // what the request resolved before the rotation
-  await run(owner.ctx, (t) => agentsDb.rotate(t, { agent: lead.id, keyHash: c.sha256hex('rotated ' + crypto.randomUUID()) }));
-  const out = await run(resolved, (t) => agentsDb.createSub(t, { name: 'Late', keyHash: c.sha256hex('k ' + crypto.randomUUID()), callerKeyHash: c.sha256hex(lead.key) }));
+  const resolved = asAgent(owner, lead); // what the request resolved before the rotation, with the key it came with
+  const rotated = c.sha256hex('rotated ' + crypto.randomUUID());
+  await run(owner.ctx, (t) => agentsDb.rotate(t, { agent: lead.id, keyHash: rotated }));
+  // fix 3: the old key is checked again when the request acts, so it is refused at once (not_acting), not later.
+  await assert.rejects(run(resolved, (t) => agentsDb.createSub(t, { name: 'Late', keyHash: c.sha256hex('k ' + crypto.randomUUID()), callerKeyHash: c.sha256hex(lead.key) })), /not_acting/);
+  // And the creation's own check still holds: acting with the new key while naming the old one as the caller's is refused.
+  const out = await run({ ...resolved, keyHash: rotated }, (t) => agentsDb.createSub(t, { name: 'Late', keyHash: c.sha256hex('k ' + crypto.randomUUID()), callerKeyHash: c.sha256hex(lead.key) }));
   assert.deepStrictEqual(out, { refused: 'not_active' });
   assert.strictEqual(await activeChildren(lead.id), 0);
 });
@@ -652,7 +661,7 @@ test('review F3: a busy tree never pushes the agents the owner made off /agents'
     const owner = await member(2, 'Busy tree');
     const lead = await newAgent(owner, 'Lead');
     const quiet = await newAgent(owner, 'Quiet');
-    const ctx = { actor: 'agent', memberId: owner.id, agentId: lead.id };
+    const ctx = asAgent(owner, lead);
     await run(ctx, async (t) => {
       for (let i = 0; i < 520; i++) {
         const k = 'dogk_' + crypto.randomBytes(32).toString('base64url').slice(0, 43);
@@ -741,11 +750,11 @@ test('review: a tree of a few thousand sub-agents posting keeps a post under 500
     const lead = await newAgent(owner, 'Lead');
     await rules(owner, lead, { post: 'act', daily_cap: 1000 });
     const kids = [];
-    await run({ actor: 'agent', memberId: owner.id, agentId: lead.id }, async (t) => {
+    await run(asAgent(owner, lead), async (t) => {
       for (let i = 0; i < 3000; i++) {
         const k = 'dogk_' + crypto.randomBytes(32).toString('base64url').slice(0, 43);
         const r = await agentsDb.createSub(t, { name: 'W' + i, keyHash: c.sha256hex(k), callerKeyHash: c.sha256hex(lead.key), rules: { post: 'act', daily_cap: 1000 } });
-        kids.push({ id: r.id, ctx: { actor: 'agent', memberId: owner.id, agentId: r.id } });
+        kids.push({ id: r.id, ctx: asAgent(owner, { id: r.id, key: k }) });
       }
     });
     const delegation = require('../db/delegation');

@@ -3,9 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-// Acting as an administrator straight in the database (the test superuser): the settings the site sets.
-const actAsAdmin = (t, ctx) => t`select set_config('app.actor', 'admin', true), set_config('app.member_id', ${ctx.memberId}, true),
-  set_config('app.session', ${ctx.session}, true)`;
+// Acting as an administrator straight in the database (the test superuser), the way the site does it.
+// fix 3: settings set by hand count as an anonymous visitor, so this asks app.act_as with the admin's real session.
+const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -109,9 +109,14 @@ async function member(level = 1, name = 'New member') {
 }
 // Changing a post's status is a reviewer's decision (PR 4), even for the database superuser.
 // A reviewer always acts under their member ID, which closed flags record.
-// That member is real, with a session.
+// That member is real, with a session, and (fix 3: the database now checks it) really an administrator.
 let reviewer;
-const asReviewer = async (sqlText) => { reviewer = reviewer || await member(2, 'Reviewer'); return su.begin(async (t) => {
+const makeReviewer = async () => {
+  const r = await member(2, 'Reviewer');
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${r.id}'`); });
+  return r;
+};
+const asReviewer = async (sqlText) => { reviewer = reviewer || await makeReviewer(); return su.begin(async (t) => {
   await actAsAdmin(t, reviewer.ctx);
   await t.unsafe(sqlText);
 }); };
@@ -131,7 +136,7 @@ test('F6: level 0 and 1 posts wait until the author has 3 live posts; level 2 an
   assert.strictEqual((await run(two.ctx, (t) => posts.create(t, { body: 'verified' }))).status, 'live');
   const aaron = await member(1);
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
-  assert.strictEqual((await run({ actor: 'admin', memberId: aaron.id }, (t) => posts.create(t, { body: 'from Aaron' }))).status, 'live');
+  assert.strictEqual((await run({ ...aaron.ctx, actor: 'admin' }, (t) => posts.create(t, { body: 'from Aaron' }))).status, 'live');
 });
 
 test('S2, S3: nobody sets a post\'s status, author or lane, posts for someone else, or posts without being signed in', async () => {

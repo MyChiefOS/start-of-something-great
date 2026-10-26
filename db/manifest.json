@@ -71,11 +71,19 @@
     {
       "version": "018_hidden_posts",
       "sha256": "d82ca8424b5059e5c0954a5ada8381e8a694c2456d439273c59c0fb4560f27f7"
+    },
+    {
+      "version": "019_actor_stamp",
+      "sha256": "8f3e42e12d8e0eb8bbb34d483f6bdf85514898334b020e42d75b9ad0b3b43284"
+    },
+    {
+      "version": "020_policy_initplan",
+      "sha256": "bf9cddfa6ad1a32cb36182d86b947d9ef8f7e4bef1d7837590f2bad785077cff"
     }
   ],
   "reset": {
     "file": "db/reset/fresh-build.sql",
-    "sha256": "989e1bfd6e0171763ec86d637e743da47a312fb713bd076be4fc01cd2c3e5923",
+    "sha256": "bf7974641014002d8d4499661ef1f6a6fc00187a573c57fa5c674f61de6299d0",
     "when": {
       "version": "014_passkeys",
       "sha256": "56e45811f334653cbd3cd40f10dd840f525c60e8758e852dc89fa99803c14854"

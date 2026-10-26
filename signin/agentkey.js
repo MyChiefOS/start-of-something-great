@@ -28,9 +28,11 @@ function fromRequest(req) {
 async function resolve(req, run) {
   const k = fromRequest(req);
   if (!k.hash) return null;
-  return run({ actor: 'anon' }, (t) => agents.resolve(t, k.hash));
+  const a = await run({ actor: 'anon' }, (t) => agents.resolve(t, k.hash));
+  // The key's hash travels with the agent, so the database can check it again when the agent acts (fix 3, 019).
+  return a ? { ...a, keyHash: k.hash } : null;
 }
 
-const actorFor = (a) => ({ actor: 'agent', memberId: a.ownerId, agentId: a.agentId });
+const actorFor = (a) => ({ actor: 'agent', memberId: a.ownerId, agentId: a.agentId, keyHash: a.keyHash });
 
 module.exports = { PREFIX, KEY, newKey, fromRequest, resolve, actorFor };

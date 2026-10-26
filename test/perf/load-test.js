@@ -175,7 +175,7 @@ async function main() {
     const stopAt = Date.now() + SECONDS * 1000;
     const breakin = (async () => {
       while (Date.now() < stopAt) {
-        for (const [label, ctx] of [['anon', { actor: 'anon' }], ['member', { actor: 'member', memberId: outsider.id }]]) {
+        for (const [label, ctx] of [['anon', { actor: 'anon' }], ['member', { actor: 'member', memberId: outsider.id, session: c.sha256hex(otoken) }]]) {
           for (const t of tables) {
             try {
               const [{ n }] = await run(ctx, (x) => x.unsafe(`select count(*)::int as n from app.${t}`));

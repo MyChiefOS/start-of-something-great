@@ -148,6 +148,64 @@ if (!SERVER) {
     });
   });
 
+  test('fix 4: the runner allows exactly one site login, and only one no wider than dog_app', async () => {
+    await withDatabase(async (sql) => {
+      await buildLive(sql);
+      const built = await freshBuild();
+      const r = await core.run(sql, built, claims());
+      assert.deepStrictEqual(r.failed, []);
+      const tag = crypto.randomBytes(3).toString('hex');
+      const check = (name) => core.checks(sql, built.files, { siteLogin: name });
+      const fails = (out) => out.includes('the site login (dog_web) is no wider than dog_app');
+      try {
+        // As the setup run will make it: a login, noinherit, belonging to dog_app alone.
+        await sql.unsafe(`create role web_ok_${tag} login noinherit; grant dog_app to web_ok_${tag}`);
+        assert.strictEqual(fails(await check('web_ok_' + tag)), false, 'the narrow site login passes');
+        // A login that doesn't belong to dog_app, or that may make databases, fails (never flagged by other files'
+        // checks, which look at dog_app's members, so the shared server stays clean for them).
+        await sql.unsafe(`create role web_bare_${tag} login noinherit`);
+        assert.strictEqual(fails(await check('web_bare_' + tag)), true, 'a login outside dog_app is refused');
+        await sql.unsafe(`create role web_db_${tag} login noinherit createdb`);
+        assert.strictEqual(fails(await check('web_db_' + tag)), true, 'a login that can make databases is refused');
+        await sql.unsafe(`create role web_inh_${tag} login inherit`);
+        assert.strictEqual(fails(await check('web_inh_' + tag)), true, 'a login that inherits rights is refused');
+        // Fix 3's review, finding 3: rights of its own, or a grant it could pass on, are refused too.
+        await sql.unsafe(`create role web_own_${tag} login noinherit; grant dog_app to web_own_${tag}; grant usage on schema app to web_own_${tag}`);
+        assert.strictEqual(fails(await check('web_own_' + tag)), true, 'a login with a right granted to it directly is refused');
+        await sql.unsafe(`create role web_adm_${tag} login noinherit; grant dog_app to web_adm_${tag} with admin option`);
+        assert.strictEqual(fails(await check('web_adm_' + tag)), true, 'a login that may grant dog_app on is refused');
+        assert.strictEqual(fails(await check('no_such_role_' + tag)), false, 'no site login at all is fine (today)');
+        // PR #49's review: every clause of the check, one at a time. Each runs in a transaction that is rolled back, so
+        // the shared server (roles belong to the whole server) never sees the change.
+        const inTx = async (setup, label) => {
+          let flagged;
+          await sql.begin(async (t) => {
+            await t.unsafe(setup);
+            t.begin = (f) => t.savepoint(f); // checks() opens its own transaction; inside this one it becomes a savepoint
+            flagged = fails(await core.checks(t, built.files, { siteLogin: 'web_ok_' + tag }));
+            throw new Error('roll back');
+          }).catch((e) => { if (e.message !== 'roll back') throw e; });
+          assert.strictEqual(flagged, true, label);
+        };
+        await inTx(`alter role web_ok_${tag} superuser`, 'a superuser is refused');
+        await inTx(`alter role web_ok_${tag} bypassrls`, 'a login that skips row-level security is refused');
+        await inTx(`alter role web_ok_${tag} createrole`, 'a login that can make roles is refused');
+        await inTx(`alter role web_ok_${tag} replication`, 'a login that can replicate is refused');
+        await inTx(`alter role web_ok_${tag} createdb`, 'a login that can make databases is refused');
+        await inTx(`alter role web_ok_${tag} inherit`, 'a login that inherits rights is refused');
+        await inTx(`create role web_two_${tag} nologin; grant web_two_${tag} to web_ok_${tag}`, 'a login that belongs to a second role is refused');
+        await inTx(`grant dog_app to web_ok_${tag} with inherit true`, 'a membership that inherits is refused');
+        await inTx(`create role web_extra_${tag} nologin; grant web_extra_${tag} to dog_app`, 'dog_app belonging to another role is refused');
+        await inTx(`alter role web_ok_${tag} set work_mem = '1MB'`, 'a login with settings of its own is refused');
+        assert.strictEqual(fails(await check('web_ok_' + tag)), false, 'and after every rollback the narrow login passes again');
+        assert.ok(!(await core.leftovers(sql)).some((w) => /dog_web still exists/.test(w)), 'dog_web is no longer a leftover');
+      } finally {
+        await sql.unsafe(`revoke usage on schema app from web_own_${tag}`).catch(() => {});
+        for (const n of ['ok', 'bare', 'db', 'inh', 'own', 'adm']) await sql.unsafe(`drop role if exists web_${n}_${tag}`);
+      }
+    });
+  });
+
   test('row 15: one real row stops the fresh build, and nothing changes', async () => {
     await withDatabase(async (sql) => {
       await buildLive(sql);
