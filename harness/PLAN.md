@@ -92,9 +92,14 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 
 One `app.jevs_settings` row (`mode`), changed by migration through the runner. Do it in the same release as go-live, so first posts are never left waiting for Aaron.
 
-### Fix 8: Vercel settings. Aaron (secrets never pass through Claude). Confidence unknown.
+### Fix 8: the site's keys and timers. Claude (route B; secrets never pass through Claude). Confidence medium.
 
-**Oct 25–26:** to be done by one setup run from main (route A: Claude builds, Aaron protects the `production` environment and adds a Vercel token; route B: no secret in Vercel at all. **Aaron chose route B on Oct 26**: "Okay let go with B.", with the fallback to Vercel settings (CHARTER.md §2)): it makes the keys and the site login's password inside the run, sends the database only a SCRAM hash through the runner, checks the login through the pooler, writes Vercel, and stores the hash of `CRON_SECRET` in `app.actor_keys.system_hash` (fix 3).
+**Oct 26: Aaron chose route B** ("Okay let go with B."), with a fallback to Vercel settings (CHARTER.md §2). Claude builds it all, and Aaron approves the PRs:
+- a migration makes the site login's password and the keys inside the database, in Vault, and stores the hash of the timer secret in `app.actor_keys.system_hash` (fix 3) in the same transaction;
+- a broker Edge Function hands the site its password and session key against Vercel's identity token, with the CSO's controls 1 to 8 (harness/REVIEW-2026-10-26.md, R-8);
+- the timers run through a slot-gated database wrapper, so the site never holds the timer secret (the CSO's conditions, FACTS.md, Oct 26).
+
+The table below lists what the site reads. Under route B they come from the broker, and Vercel settings are only the fallback. The earlier route A plan (a setup run writing Vercel, with Aaron protecting `production` and adding a token) is not being built.
 
 | Name | What | Notes |
 |---|---|---|

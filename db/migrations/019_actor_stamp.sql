@@ -5,8 +5,9 @@
 --     * a person: their session (by its hash); the database looks the session up itself, and decides from it whether
 --       they are Aaron and whether they signed in within the last 10 minutes ("fresh");
 --     * an agent: its key (by its hash), looked up the same way;
---     * the site itself ("system", the timers): the site's own secret, checked against its hash (empty until the setup
---       run stores it, fix 8; until then nothing can act as the site itself).
+--     * the site itself ("system", the timers): the site's own secret, checked against its hash (empty until fix 8
+--       stores it: under route B, Aaron's Oct 26 choice, a migration makes the secret and its hash inside the database;
+--       until then nothing can act as the site itself).
 --   app.act_as checks the proof, sets the settings and adds a stamp: a SHA-256 over a key the site's role can never read
 --   (only the sign-in and owner roles can), the settings, and the transaction's ID. Everything that asks who is acting checks the stamp, so a
 --   setting the site edits, invents or copies from another transaction counts as nobody (an anonymous visitor).
@@ -24,7 +25,7 @@ create table app.actor_keys (
 alter table app.actor_keys enable row level security;
 alter table app.actor_keys force row level security;
 create policy actor_keys_signin on app.actor_keys for select to dog_signin using (true);
--- The owner makes the row here and, in the setup run (fix 8), stores the hash of the site's own secret.
+-- The owner makes the row here and, in fix 8 (route B: a migration), stores the hash of the site's own secret.
 create policy actor_keys_owner_select on app.actor_keys for select to dog_owner using (true);
 create policy actor_keys_owner_insert on app.actor_keys for insert to dog_owner with check (true);
 create policy actor_keys_owner_update on app.actor_keys for update to dog_owner using (true) with check (true);

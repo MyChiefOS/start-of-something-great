@@ -100,7 +100,9 @@ function context(ctx) {
   if (session !== null && !/^[0-9a-f]{64}$/.test(session)) throw new Error('session must be a session hash');
   if (session !== null && actor !== 'member' && actor !== 'admin') throw new Error('only member calls carry a session');
   // Fix 3 (019): the database decides who is acting, from proof. People prove it with their session, agents with their
-  // key (by its hash), and the site itself with its own secret (CRON_SECRET, from the environment, never from a caller).
+  // key (by its hash), and the site itself with its own secret (never from a caller). Under route B (Aaron, Oct 26) the
+  // timers run through a database-side wrapper and the site never holds that secret; CRON_SECRET from the environment
+  // is read here only as route B's fallback to Vercel settings (CHARTER.md §2), so switching routes needs no code change.
   if ((actor === 'member' || actor === 'admin') && session === null) throw new Error(actor + ' calls need the session that proves who is acting');
   const keyHash = ctx.keyHash == null ? null : String(ctx.keyHash);
   if (keyHash !== null && !/^[0-9a-f]{64}$/.test(keyHash)) throw new Error('keyHash must be an agent key hash');

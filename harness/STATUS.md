@@ -8,7 +8,7 @@ Oct 25, 2026 · written by Claude for Aaron Chandler · the live copy is the doc
 
 **It isn't production-ready yet: 2 of 10 fixes are merged and live, 2 are built and in PR #49 (not proven live), and 6 are not started.** The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
 
-The critical path is now fixes 3 and 4 (built, waiting for Aaron's go-ahead to test), then the site's login and keys (fixes 5 and 8). Those two are blocked until Aaron chooses route A (two GitHub steps by him) or route B (PR approvals only, if two probes pass).
+The critical path is now fixes 3 and 4 (PR #49), then the site's login and keys (fixes 5 and 8). Aaron chose route B on Oct 26, which needs only his PR approvals, provided the probe finds Vercel's identity token and the GitHub sign-in keys.
 
 On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its deployed code, and no agent command has run live yet. The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests, but none of it is running (corrected Oct 26).
 
@@ -62,7 +62,7 @@ Two done and live, two built and in PR #49 (not proven live), six not started. "
 | 5 | A migration creates the site login `dog_web` | Not started; needs fix 4 merged and the runner redeployed first | Pooler acceptance and keeping the password out of logs: unknown |
 | 6 | "Sign in with GitHub" on /join; true public text; `/terms` and `/privacy` | Not started; legal part needs independent review and Aaron's approval | Verified (PLAN.md §3) |
 | 7 | Site JEVs mode to enforce | Moved to the go-live release (`shadow` today) | Verified |
-| 8 | The site's keys and settings (Vercel, or route B) | **Blocked on Aaron's decision**: A or B | See "Open for Aaron" |
+| 8 | The site's keys and timers (route B, Aaron's Oct 26 choice) | Not started; Claude builds it after the probe PR | REVIEW-2026-10-26.md, R-8; FACTS.md |
 | 9 | Aaron becomes administrator before sign-up opens | **Aaron's decision**: how | `app.set_administrator` exists (013) |
 | 10 | Live proof of every flow on production | Not started | Needs fixes 3 to 9 |
 
@@ -97,10 +97,9 @@ Seven steps before every feature (except passkeys) is live, one PR open at a tim
 2. **Probe PR for route B (Claude, closed unmerged).** It reports only "present" or "absent" for:
    - Vercel's identity token (`x-vercel-oidc-token`) on production functions;
    - `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in production.
-3. **The site's login and keys: fixes 5 and 8 (Claude), by the route Aaron chooses.**
-   - Route A: the setup run, after Aaron's two GitHub steps.
-   - Route B: an Edge Function that checks the site's identity token and hands it its password, plus a migration that makes the login and keys inside the database, and a database rate limit on the timers.
-   - Either way: an independent security review, refusal tests (no token, forged, expired, wrong project, preview), and live proof that the login works through the pooler.
+3. **The site's login and keys: fixes 5 and 8 (Claude), route B (Aaron, Oct 26):**
+   - an Edge Function that checks the site's identity token and hands it its password, plus a migration that makes the login and keys inside the database, and a database rate limit on the timers.
+   - with an independent security review, refusal tests (no token, forged, expired, wrong project, preview), and live proof that the login works through the pooler.
 4. **Fix 6: the sign-in link, true public text, and the legal pages (Claude).** The legal part needs an independent review and Aaron's approval (game-changing).
 5. **The go-live release.**
    - Fix 7: site JEVs to enforce.
@@ -129,7 +128,6 @@ Seven steps before every feature (except passkeys) is live, one PR open at a tim
 
 - [x] **Route A or route B for the site's login and keys** (fixes 5 and 8): **route B, decided Oct 26** ("Okay let go with B."), with the fallback to Vercel settings.
   - Under B: whether Aaron accepts an open timer address with a rate limit in the database.
-- [ ] **RK82 (fix 3 review, finding 1):** whether the site's login may keep creating new members on its own, at a level it chooses up to 2. Claude proposes capping new members at level 1 inside `app.sign_in` in a later PR.
 - [ ] **Approve one logged deletion of `dog-probe`** on Supabase (review decision 3).
 - [ ] **How Aaron becomes administrator** before sign-up opens (fix 9).
 - [ ] **JEVs thresholds (RK16):** today they are the public seed values.
@@ -143,7 +141,6 @@ Seven steps before every feature (except passkeys) is live, one PR open at a tim
 - [ ] **Merge each PR**: #49 first.
 - [ ] **Delete the `setup-probe` branch** from PR #46's page.
 - [ ] **The agent test on GitHub**: `/agent register scout draft`, then `/agent subagent helper of scout`.
-- [ ] **Route A only:** protect the `production` environment, and add a Vercel token as a secret.
 - [ ] **Only if the probe finds no GitHub sign-in keys:** create the GitHub sign-in app in his account (an account action Claude may not take).
 
 ## Notes for the next agent
@@ -158,7 +155,7 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
 | Vercel | Project `prj_cXnWySYVpJE9TVZaNPSocXMMzkZI`, team `team_Hv5YS8LhIiKe06SSiDrUucd4`; Claude's connector returns 404 per project |
 | Pooler | `aws-0`/`aws-1-us-east-1.pooler.supabase.com:6543` (transaction mode) |
 | Local tests | `pg_ctlcluster 16 main start` (it stops often), `npm ci --ignore-scripts`, then `TEST_DATABASE_URL=postgres://postgres@localhost/postgres npm test` |
-| CLJO record | DR-2026-1026-001: fixes 5 and 8, route B conditional on six checks; Aaron's decision pending |
+| CLJO record | DR-2026-1026-001: fixes 5 and 8, route B conditional on six checks; Aaron chose route B on Oct 26 |
 
 **Rules that bind every session (Aaron's)**
 
@@ -195,7 +192,7 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
   - Giscus on /join and /talk.
   - No preview systems.
   - A direct database connection.
-  - "I only approve PRs". Route A conflicts with this.
+  - "I only approve PRs". Route B, chosen Oct 26, keeps it.
   - Checks alert, never lock out.
 
 **Sources**

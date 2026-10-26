@@ -117,11 +117,11 @@ if (!SERVER) {
     await assert.rejects(run({ actor: 'agent', memberId: owner.id, agentId: ag.id, keyHash: key }, who), /not_acting/, 'a revoked key');
   });
 
-  test('fix 3: the site itself acts only with its own secret, and only once the setup run has stored its hash', async () => {
+  test('fix 3: the site itself acts only with its own secret, and only once fix 8 has stored its hash (route B: by migration)', async () => {
     delete process.env.CRON_SECRET;
     await assert.rejects(run({ actor: 'system' }, who), /not_acting/, 'no secret');
     process.env.CRON_SECRET = 'a-guess-at-the-secret';
-    await assert.rejects(run({ actor: 'system' }, who), /not_acting/, 'no hash stored yet (until the setup run, fix 8)');
+    await assert.rejects(run({ actor: 'system' }, who), /not_acting/, 'no hash stored yet (until fix 8)');
     await trustSystem(su);
     assert.strictEqual((await run({ actor: 'system' }, who)).kind, 'system');
     process.env.CRON_SECRET = 'a-guess-at-the-secret';
