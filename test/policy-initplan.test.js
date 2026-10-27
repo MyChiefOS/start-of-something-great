@@ -29,7 +29,7 @@ if (!SERVER) {
   test('policy rewrite tests need TEST_DATABASE_URL', { skip: !process.env.CI && 'set TEST_DATABASE_URL' }, () => { if (process.env.CI) assert.fail('no database'); });
 } else {
   const names = ['dog_initplan_a_', 'dog_initplan_b_'].map((p) => p + crypto.randomBytes(4).toString('hex'));
-  let server, before, after, upTo019;
+  let server, before, after, upTo019, upTo020;
   const at = (name) => { const u = new URL(SERVER); u.pathname = '/' + name; return u.toString(); };
 
   test.before(async () => {
@@ -40,15 +40,21 @@ if (!SERVER) {
     for (const f of fs.readdirSync(path.join(root, 'db', 'migrations'))) {
       if (/^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) <= 19) fs.copyFileSync(path.join(root, 'db', 'migrations', f), path.join(upTo019, f));
     }
+    // And up to 020, so a later migration that changes a policy on purpose (021's sign-in alert) isn't counted as 020's.
+    upTo020 = fs.mkdtempSync(path.join(os.tmpdir(), 'dog-020-'));
+    for (const f of fs.readdirSync(path.join(root, 'db', 'migrations'))) {
+      if (/^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) <= 20) fs.copyFileSync(path.join(root, 'db', 'migrations', f), path.join(upTo020, f));
+    }
     before = postgres(at(names[0]), { max: 1, onnotice: () => {} });
     after = postgres(at(names[1]), { max: 1, onnotice: () => {} });
     await migrate(before, { dir: upTo019 });
-    await migrate(after);
+    await migrate(after, { dir: upTo020 });
   });
   test.after(async () => {
     for (const x of [before, after]) if (x) await x.end({ timeout: 5 });
     if (server) { for (const n of names) await server.unsafe(`drop database if exists ${n} with (force)`); await server.end({ timeout: 5 }); }
     if (upTo019) fs.rmSync(upTo019, { recursive: true, force: true });
+    if (upTo020) fs.rmSync(upTo020, { recursive: true, force: true });
   });
 
   test('R-1: 020 changes nothing in any policy except asking who is acting once per query', async () => {

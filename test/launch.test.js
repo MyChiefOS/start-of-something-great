@@ -130,7 +130,7 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
-    keyVersion: 1, level: 2, displayName: 'Alice', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    keyVersion: 1, level: 1, displayName: 'Alice', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   alice = { id: out.memberId, cookie: '__Host-dog_session=' + token };
 });
 test.after(async () => {

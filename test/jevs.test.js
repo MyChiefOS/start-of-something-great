@@ -20,7 +20,7 @@ const region = require('../signin/region');
 const { make, LIMITS, MIN_FILL_MS } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { trustSystem } = require('./helpers');
+const { trustSystem, promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -226,10 +226,12 @@ function res() {
 // ageDays makes the account that old; stale makes the session an hour old (not a fresh sign-in).
 async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale = false } = {}) {
   const token = c.token(32);
-  const prov = provider || (level === 2 ? 'x' : level === 1 ? 'github' : 'email');
+  // Phase 1 (021): a sign-in gives level 1 at most; level 2 is JEVs's promotion, as in production.
+  const prov = provider || (level === 0 ? 'email' : 'github');
   const fp = c.sha256hex(crypto.randomUUID());
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: prov, fingerprints: [fp], keyVersion: 1,
-    level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   if (ageDays) await q(`update app.members set created_at = now() - interval '${ageDays} days' where id = '${out.memberId}'`);
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
@@ -375,12 +377,14 @@ test('enforce mode is one switch: first-post review stops, medium risk waits for
 test('enforce: an agent\'s risky post waits for its human owner, and the agent can never answer the challenge', async () => {
   await setMode('enforce');
   try {
-    const owner = await member({ level: 2, name: 'Agent owner' });
+    // A month-old owner: since 021 caps sign-in at level 1, a GitHub owner scores J02 = 10, and the account age keeps
+    // this two-link post at medium, as an X business owner's did before.
+    const owner = await member({ level: 2, name: 'Agent owner', ageDays: 30 });
     const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Linky' } });
     assert.strictEqual(made.status, 201);
     assert.strictEqual((await agentsApi('POST', 'rules', { cookie: owner.cookie, json: { agent: made.json.agent_id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 50 } })).status, 201);
     const p = await agentSay(made.json.key, 'Have a look: ' + links(2));
-    assert.strictEqual(p.status, 202);
+    assert.strictEqual(p.status, 202, JSON.stringify(p.json));
     assert.strictEqual(p.json.challenge, undefined, 'the agent is never handed the challenge');
     const [ch] = (await feed('GET', { cookie: owner.cookie, query: { challenges: '1' } })).json.challenges;
     assert.strictEqual(ch.subject.id, p.json.id);

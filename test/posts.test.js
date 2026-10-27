@@ -1,6 +1,7 @@
 // Release 2, PR 3: posting and lanes (F5, F6 groundwork, S2, S9, G2, P4, C7), against a real Postgres.
 'use strict';
 
+const { promote } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 // Acting as an administrator straight in the database (the test superuser), the way the site does it.
@@ -103,7 +104,8 @@ test.after(async () => {
 async function member(level = 1, name = 'New member') {
   const token = c.token(32);
   const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: level === 0 ? 'email' : 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
-    keyVersion: 1, level: Math.min(level, 2), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    keyVersion: 1, level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  if (level >= 2) await promote(su, out.memberId);
   if (name !== 'New member') await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
   return { id: out.memberId, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }

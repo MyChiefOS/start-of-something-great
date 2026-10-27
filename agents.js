@@ -180,7 +180,7 @@
     if (activity && activity.unread_notices) document.getElementById('unread-link').textContent = activity.unread_notices + (activity.unread_notices === 1 ? ' unread notice' : ' unread notices') + ' in your account';
     list.textContent = '';
     form.hidden = !d.can_own;
-    status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk, and a verified X business or government account counts toward it.';
+    status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk.';
     // The tree (PR 16): every agent under the one that made it, parents first.
     var agentById = {}, kids = {};
     d.agents.forEach(function (a) { agentById[a.id] = a; });

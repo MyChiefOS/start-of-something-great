@@ -338,6 +338,15 @@ async function problems(sql, { snapshot } = {}) {
     if (t.type !== type || !t.plain) add(label + ' no longer runs before ' + what + ' without conditions (S3, S7)');
     if (t.fn !== fn || !/raise\s+exception/i.test(t.src) || (fn === 'audit_log_append_only' && /\breturn\b/i.test(t.src))) add(label + ' no longer refuses the change (S3, S7)');
   }
+  // RK82 (021): the sign-in level cap. These lower a level instead of refusing, so they are checked by their own rule:
+  // present, firing always, before every new (or, for methods, re-levelled) row, and still capping at 1.
+  for (const [tbl, name, type] of [['identities', 'identities_level_cap', 23], ['members', 'members_level_cap', 7]]) {
+    const t = trig.find((x) => x.tbl === tbl && x.name === name);
+    const label = 'the app.' + tbl + ' trigger ' + name;
+    if (!t) { add('app.' + tbl + ' is missing its ' + name + ' trigger (RK82)'); continue; }
+    if (t.enabled !== 'A') add(label + ' is not set to fire always (RK82)');
+    if (t.type !== type || t.fn !== name || !/cap constant smallint := 1;/.test(t.src)) add(label + ' no longer caps sign-in levels at 1 (RK82)');
+  }
 
   // ---- Columns and keys (S8, S12, G3) ----
   const seqs = await sql`
