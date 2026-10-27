@@ -53,10 +53,10 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | 2 | Posts JEVs hid are kept from agents | **Merged and live, switched off** until the site has its database (#47) | Verified |
 | 3 | The database decides who is acting (019); each policy asks once per query (020) | **Merged and applied (#49).** Idle until the site has a login: no session or key has gone through `act_as` live | Verified |
 | 4 | The runner allows exactly one narrow site login | **Merged; runner v5 deployed.** The check hasn't run live yet | Verified |
-| 5 | A migration creates the site login | Not started; route B, after RK82 and the gate hardening | REVIEW-2026-10-26.md |
+| 5 | A migration creates the site login | **Built (connection PR, migration 022)**: made inside the database, password in Vault; proven on Supabase's image; not live | test/runner.test.js |
 | 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text done (#50, live); the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
 | 7 | Site JEVs mode to enforce | In the go-live release | Verified (`shadow` today) |
-| 8 | The site's keys and timers, route B (Aaron, Oct 26) | Not started; Claude's | CHARTER §2; PLAN.md fix 8 |
+| 8 | The site's keys and timers, route B (Aaron, Oct 26) | **Keys built (connection PR):** the broker `dog-keys` and `db/sitekeys.js`; `/api/ready` proves them live while closed. **Timers not started** | PLAN.md fix 8; RISKS.md RK88 |
 | 9 | Aaron becomes administrator before sign-up opens | In the go-live release; how is Aaron's decision | `app.set_administrator` (013) |
 | 10 | Live proof of every flow | Not started | Needs fixes 5 to 9 |
 

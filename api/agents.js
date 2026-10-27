@@ -435,6 +435,7 @@ async function handle(req, res, run, cfg = config.load()) {
 
 module.exports = async (req, res) => {
   try {
+    await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null);
   } catch {
     if (!res.headersSent) reply(res, 500, { error: 'Something went wrong. Please try again.' });

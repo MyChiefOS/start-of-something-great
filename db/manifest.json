@@ -83,6 +83,10 @@
     {
       "version": "021_signup_level_cap",
       "sha256": "789b78a58143c26db74f2011e411db8cae55e38e0ecdab54909870c7557d4ac7"
+    },
+    {
+      "version": "022_site_login",
+      "sha256": "a31d7a62fdcebc23411855b7c097aafef9ee5ecbbc75301f7a701e7c7ea953e7"
     }
   ],
   "reset": {

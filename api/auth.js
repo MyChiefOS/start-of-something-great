@@ -56,6 +56,7 @@ function plain(res, status, text) {
 }
 
 module.exports = async (req, res) => {
+  await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
   const route = String((req.query && req.query.route) || '').replace(/^\/+|\/+$/g, '');
   const handler = ROUTES[req.method + ' ' + route];
   if (!handler) {

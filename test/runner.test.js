@@ -129,7 +129,22 @@ if (!SERVER) {
       const [gone] = await sql`select to_regclass('app.passkeys') as p, to_regprocedure('app.step_up_check()') as f,
         (select count(*) from pg_trigger where tgname like '%step_up%')::int as triggers,
         (select count(*) from pg_roles where rolname = 'dog_web' and rolcanlogin)::int as web`;
-      assert.deepStrictEqual(gone, { p: null, f: null, triggers: 0, web: 0 });
+      // The Oct 23 dog_web is removed by the reset; migration 022 (route B) makes the site's login again, narrow.
+      assert.deepStrictEqual(gone, { p: null, f: null, triggers: 0, web: 1 });
+      if (IN_PLACE) {
+        const [{ n }] = await sql`select count(*)::int as n from vault.secrets where name = 'dog_web_password'`;
+        assert.strictEqual(n, 1, '022 keeps exactly one password for it in Vault');
+        // Route B end to end on Supabase's own image (a throwaway database): the password 022 made logs dog_web in, and
+        // dog_web can become dog_app and nothing more. Production's password is never read: only the broker reads it.
+        const [{ pw }] = await sql`select decrypted_secret as pw from vault.decrypted_secrets where name = 'dog_web_password'`;
+        const u = new URL(SERVER); u.username = 'dog_web'; u.password = pw;
+        const web = postgres(u.toString(), { max: 1, prepare: false, onnotice: () => {} });
+        try {
+          const [me] = await web.begin(async (t) => { await t`set local role dog_app`; return t`select current_user as u, session_user as s`; });
+          assert.deepStrictEqual({ ...me }, { u: 'dog_app', s: 'dog_web' }, 'the made-in-the-database password works');
+          await assert.rejects(web.begin((t) => t`set local role dog_owner`), /permission denied/, 'and dog_web can become nothing else');
+        } finally { await web.end({ timeout: 5 }); }
+      }
       const log = await sql.begin(async (t) => { await t`set local role dog_owner`; return t`select commit_sha, actor, event, reset, applied, result from app.change_log`; });
       assert.strictEqual(log.length, 1);
       assert.deepStrictEqual({ ...log[0], applied: log[0].applied.length }, { commit_sha: c.sha, actor: 'test', event: 'push', reset: true, applied: newList().length, result: 'ok' });
@@ -137,7 +152,7 @@ if (!SERVER) {
       const fresh = crypto.randomUUID();
       assert.strictEqual(await core.tokenUsed(sql, fresh), false, 'a new token is accepted once');
       assert.strictEqual(await core.tokenUsed(sql, fresh), true, '... and recorded the moment it is checked');
-      assert.deepStrictEqual(r.warnings, [], 'dog_web, its Vault password and rls_auto_enable are all gone');
+      assert.deepStrictEqual(r.warnings, [], 'nothing left over, and the new site login passes fix 4');
       assert.deepStrictEqual(await problems(sql, { snapshot: SNAPSHOT }), [], 'the runner builds exactly the reviewed snapshot, coverage check passing');
 
       const again = await core.run(sql, await freshBuild(), claims());

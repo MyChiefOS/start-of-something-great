@@ -40,7 +40,9 @@ function tls(ca) {
 // per function instance, and short timeouts so a slow database can't hang a request. Settings written into the
 // address itself (such as sslmode or channel_binding) are dropped: the driver would send them to Postgres as
 // session settings, and the options below are the ones that count.
-function connect(url, { ssl = tls(process.env.DATABASE_CA), max = 3 } = {}) {
+// Without a DATABASE_CA setting (route B sets none), Supabase's root certificate from the repository is used: it is
+// public, and kept as db/certs/supabase-root.js so it is bundled with every function.
+function connect(url, { ssl = tls(process.env.DATABASE_CA || require('./certs/supabase-root')), max = 3 } = {}) {
   const u = new URL(url);
   u.search = '';
   return postgres(u.toString(), {
@@ -135,4 +137,14 @@ async function tx(sql, ctx, fn) {
   });
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS };
+// Route B (db/sitekeys.js): the address the key broker made, set only when Vercel set none, and the one place that
+// says whether an address is set. G1: DATABASE_URL is still read and written only in this file.
+const hasAddress = (env = process.env) => Boolean(env.DATABASE_URL);
+function setAddress(url, env = process.env) { if (!env.DATABASE_URL) env.DATABASE_URL = pooledUrl(url); }
+// For /api/ready: "select 1" on one address, or on Vercel's when none is given; a fresh connection, closed after.
+async function ping(url, { connectImpl = connect } = {}) {
+  const sql = connectImpl(pooledUrl(url || process.env.DATABASE_URL), { max: 1 });
+  try { const [r] = await sql`select 1 as one`; return Boolean(r && r.one === 1); } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
+}
+
+module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, ping };

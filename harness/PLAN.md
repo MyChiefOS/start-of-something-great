@@ -100,6 +100,8 @@ One `app.jevs_settings` row (`mode`), changed by migration through the runner. D
 - a broker Edge Function hands the site its password and session key against Vercel's identity token, with the CSO's controls 1 to 8 (harness/REVIEW-2026-10-26.md, R-8);
 - the timers run through a slot-gated database wrapper, so the site never holds the timer secret (the CSO's conditions, FACTS.md, Oct 26).
 
+**Built Oct 26 (the connection PR; the site stays closed):** migration 022 makes `dog_web` and its password inside the database, in Vault; the broker `dog-keys` (Vercel token checked by `_shared/vercel-oidc.mjs`, production only); the site's `db/sitekeys.js` (asks the broker only while open, keeps the answer, falls back to Vercel settings); `/api/ready`, which proves each piece live while closed. The keys the broker hands out are the three already in Vault, sent as base64 of their exact bytes. Not yet: the timers' slot-gated wrapper, controls 2 and 3 (RK88).
+
 The table below lists what the site reads. Under route B they come from the broker, and Vercel settings are only the fallback. The earlier route A plan (a setup run writing Vercel, with Aaron protecting `production` and adding a token) is not being built.
 
 | Name | What | Notes |

@@ -143,17 +143,12 @@ export async function run(sql, { files, reset }, claims) {
   return { ok: failed.length === 0, commit: claims.sha, reset: didReset, applied, total: files.length, failed, warnings };
 }
 
-// Things the fresh build tries to remove but treats as notes, not failures, if Supabase doesn't allow it.
+// Things the fresh build tries to remove but treats as notes, not failures, if Supabase doesn't allow it. Since
+// migration 022 (route B) makes dog_web and its Vault password again, they are no longer leftovers.
 export async function leftovers(sql) {
-  const [r] = await sql`select
-      to_regprocedure('public.rls_auto_enable()') is not null as rls_fn,
-      to_regclass('vault.secrets') is not null as vault`;
+  const [r] = await sql`select to_regprocedure('public.rls_auto_enable()') is not null as rls_fn`;
   const out = [];
   if (r.rls_fn) out.push('public.rls_auto_enable() still exists');
-  if (r.vault) {
-    const [{ n }] = await sql`select count(*)::int as n from vault.secrets where name = 'dog_web_password'`.catch(() => [{ n: -1 }]);
-    if (n !== 0) out.push(n < 0 ? 'Vault could not be read to confirm dog_web_password is gone' : 'dog_web_password is still in Vault');
-  }
   return out;
 }
 
