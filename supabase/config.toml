@@ -8,3 +8,8 @@ verify_jwt = false
 # The JEVs gate checks its callers the same way: only jevs.yml on main.
 [functions.jevs]
 verify_jwt = false
+
+# The site's key broker (route B) checks its callers itself: only a production function of our own Vercel project,
+# proved by Vercel's identity token (supabase/functions/_shared/vercel-oidc.mjs).
+[functions.dog-keys]
+verify_jwt = false

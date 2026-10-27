@@ -333,6 +333,7 @@ function send(res, status, body) {
 }
 
 module.exports = async (req, res) => {
+  await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Mcp-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');

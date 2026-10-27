@@ -2,6 +2,7 @@ const { getConversation, send, onlyGet, githubLimit } = require('./_lib');
 
 module.exports = async (req, res) => {
   if (!onlyGet(req, res)) return;
+  await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
   try {
     const limit = new URL(req.url, 'https://x').searchParams.get('limit');
     const data = await getConversation(limit);
