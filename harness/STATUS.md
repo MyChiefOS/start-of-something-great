@@ -20,7 +20,7 @@ On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its 
 - **No real agent has used either path.** Fix 1's live proof covers an ordinary post only (Aaron's, Oct 25 20:16 UTC). How Claude runs the agent test without Aaron is unknown; it's Claude's to solve before fix 10.
 - **Records disagree on PR flow:** CHARTER §3 says PRs queue up; harness/RULES.md rule 1 says one stays open. Claude follows one at a time. The question has been open for Aaron since Oct 23 (FACTS.md, "Open for Aaron"); it isn't asked again.
 - **`dog-probe` (v2, answers 410) is still deployed, and the `setup-probe` and `oidc-probe` branches still exist.** Claude's session can't delete branches. Claude will propose the deletions in a PR whose merge is Aaron's approval; whether a workflow can delete those branches is unknown until tried.
-- **SETUP.md and RELEASE-CHECKLIST.md still describe route A's manual steps.** SETUP.md is marked superseded (PR #50); the checklist's step list is rewritten in the route B PR.
+- **SETUP.md and RELEASE-CHECKLIST.md still describe route A's manual steps.** SETUP.md is marked superseded (PR #50). Both are rewritten in the open PR (5b below), when route B's steps are final; the connection PR didn't, as first promised.
 
 ## What is live today
 
@@ -28,14 +28,14 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 
 | Part | State | Basis |
 | --- | --- | --- |
-| `main` | `5c338fe` (#50 merged 22:57 UTC) | Verified, GitHub REST |
+| `main` | `2de478a` (#51 merged Oct 27 00:22 UTC) | Verified, GitHub REST |
 | `main`'s rules | Ruleset 25064724, active, no bypass: no deletion, no force-push, PR required, `checks` must pass, 0 approvals | Verified Oct 26 |
 | Site pages, read API, MCP, proposals, daily queue | Live | Verified Oct 24–25 (PLAN.md §2) |
 | GitHub path: giscus on /join and /talk; JEVs workflow | Live, enforce mode since #42 (Oct 24 23:10 UTC) | Verified |
 | JEVs gate `jevs` | Version 4, from `f450b9d`; refusals 401, 401, 405 (re-checked Oct 26). Bundles an older, behaviour-identical copy of `dog-migrate/core.mjs` | Verified |
 | Runner `dog-migrate` | Version 5, from `e11e796` (fix 4) | Verified version; file match inferred |
 | `dog-probe` | Version 2; answers 410 "switched off" | Verified; not in the repo |
-| Database ledger | 001 to 020 (20 rows; `020_policy_initplan` last) | Verified |
+| Database ledger | 001 to 021 (21 rows; `021_signup_level_cap` last) | Verified Oct 27 |
 | Fix 3 in the database | `actor_keys` 1 row, `system_hash` null; functions owned and granted as designed | Verified (OPERATIONS.md, Oct 26) |
 | Site's own tables | 0 members, 0 agents | Verified |
 | Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
@@ -53,10 +53,10 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | 2 | Posts JEVs hid are kept from agents | **Merged and live, switched off** until the site has its database (#47) | Verified |
 | 3 | The database decides who is acting (019); each policy asks once per query (020) | **Merged and applied (#49).** Idle until the site has a login: no session or key has gone through `act_as` live | Verified |
 | 4 | The runner allows exactly one narrow site login | **Merged; runner v5 deployed.** The check hasn't run live yet | Verified |
-| 5 | A migration creates the site login | **Built (connection PR, migration 022)**: made inside the database, password in Vault; proven on Supabase's image; not live | test/runner.test.js |
+| 5 | A migration creates the site login | **Built (connection PR, migration 022)**: made inside the database, password in Vault; tested on Supabase's image (the CI rehearsal); not live | test/runner.test.js |
 | 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text done (#50, live); the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
 | 7 | Site JEVs mode to enforce | In the go-live release | Verified (`shadow` today) |
-| 8 | The site's keys and timers, route B (Aaron, Oct 26) | **Keys built (connection PR):** the broker `dog-keys` and `db/sitekeys.js`; `/api/ready` proves them live while closed. **Timers not started** | PLAN.md fix 8; RISKS.md RK88 |
+| 8 | The site's keys and timers, route B (Aaron, Oct 26) | **Keys built (connection PR):** the broker `dog-keys` and `db/sitekeys.js`; `/api/ready` will prove them after merge, with the site still closed. **Timers not started** (control 6) | PLAN.md fix 8; RISKS.md RK88 |
 | 9 | Aaron becomes administrator before sign-up opens | In the go-live release; how is Aaron's decision | `app.set_administrator` (013) |
 | 10 | Live proof of every flow | Not started | Needs fixes 5 to 9 |
 
@@ -81,20 +81,18 @@ One PR open at a time. Each opens when it is built and checked (the suite, the S
 
 1. **PR #50: true public text (R-5). Done:** merged Oct 26 22:57 UTC and read live.
 2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
-3. **RK82 (migration 021, in its own PR):** every sign-in level is capped at 1 in the database, with an alert to Aaron; level 2 only through JEVs. This reduces RK82 but doesn't close it (a forged caller can still pass JEVs, about 50 an hour). GitHub-only isn't enforced in code today (it rests on X and email settings being absent); Claude adds a provider allowlist in a later PR. Changed from the plan: neither GitHub-only nor the regional decline can be enforced in the database (RISKS.md RK82).
-4. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
-5. **Fixes 5 and 8 under route B,** with the CSO's controls 1 to 8, the timer conditions, the fallback to Vercel settings, and R-8.
-6. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
-7. **Before go-live:** R-9 heartbeat, R-10 close switch, R-12 step-up prompt.
-8. **Fix 6:** the sign-in link and the legal pages.
-9. **The go-live release:** fix 7, fix 9, then `LAUNCH_STAGE` public, with the text that changes at go-live (feed.html's sign-in hint and its first-posts line; agents.html's present-tense description of switched-off features). The mechanism isn't built yet: today the only path is a Production setup run started by hand (SETUP.md §6). Claude's to design so that Aaron's merge is the go-live decision.
-10. **Fix 10:** live proof of every flow, recorded in OPERATIONS.md.
+3. **RK82 (migration 021, PR #51). Done in code, checked live Oct 27 00:22 UTC (OPERATIONS.md); the cap is exercised live only once the site's login exists:** every sign-in level is capped at 1 in the database, with an alert to Aaron; level 2 only through JEVs. This reduces RK82 but doesn't close it (a forged caller can still pass JEVs, about 50 an hour). GitHub-only isn't enforced in code today (it rests on X and email settings being absent); Claude adds a provider allowlist in a later PR. Changed from the plan: neither GitHub-only nor the regional decline can be enforced in the database (RISKS.md RK82).
+4. **5a, the route B connection (moved ahead of the gate hardening, Oct 27):** migration 022 (the site's login), the broker `dog-keys`, `db/sitekeys.js`, `/api/ready`. It delivers the CSO's controls 1, 4, 5 and 8 and R-8's stripping; the site stays closed. Why first: it keeps the site closed and proves the database connection, the biggest unknown; the hardening protects the GitHub path and still merges before 5b.
+5. **Gate hardening:** R-4, R-11, R-15, R-16, R-6, R-13; then redeploy `jevs`, compared by script.
+6. **5b, the open PR (the go-live release):** the timers (control 6), the close switch (control 7, R-10), broker alerts (control 3), two-role rotation (control 2), the R-9 heartbeat and R-12 step-up prompt, the pooler address `/api/ready` shows answers, JEVs enforce on the site (fix 7), Aaron as administrator (fix 9), the sign-in link, RELEASE-CHECKLIST.md and SETUP.md rewritten, then the go-live stage. Aaron's merge is the go-live decision. The legal pages (fix 6) go with it or just before.
+7. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
+8. **Fix 10:** live proof of every flow, recorded in OPERATIONS.md.
 
 After fix 10, each needs Aaron's yes or no: linking the agent registries, the legal hold (RK22) and erasure runbook, the daily JEVs summary, an outside uptime check, Dependabot, a separate GitHub identity for Claude (RK71), agent replies on the site, and toward D1, D5 and D6.
 
 ## Open for Aaron
 
-**Merges:** each PR, in order; #50 next.
+**Merges:** each PR, in order; the route B connection PR next.
 
 **Decisions** (each recorded in FACTS.md when answered):
 
@@ -107,7 +105,7 @@ After fix 10, each needs Aaron's yes or no: linking the agent registries, the le
 - [ ] CHARTER §3 versus RULES.md rule 1 on PR flow (asked Oct 23).
 - [ ] **RK82's real close (the CSO's review, Oct 26):** move sign-in into an Edge Function that checks the person's GitHub token itself and is the only caller of `app.sign_in`. It changes the Oct 24 direct-connection decision, so it is yours; Claude recommends deciding before go-live.
 
-No manual action is asked of Aaron in the plan above. Older records that still describe manual steps are rewritten in the PRs named: RELEASE-CHECKLIST.md and SETUP.md (route B PR), db/README.md's and controls.html's "change thresholds in the SQL editor" step (with RK16). Unknown: how Claude deletes the probe branches (its session can't), and how fix 10 proves the flows that need a real person signed in.
+No manual action is asked of Aaron in the plan above. Older records that still describe manual steps are rewritten in the PRs named: RELEASE-CHECKLIST.md and SETUP.md (the open PR, 5b), db/README.md's and controls.html's "change thresholds in the SQL editor" step (with RK16). Unknown: how Claude deletes the probe branches (its session can't), and how fix 10 proves the flows that need a real person signed in.
 
 ## Notes for the next agent
 
@@ -115,9 +113,9 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
 
 | Item | Value |
 | --- | --- |
-| Repo | `MyChiefOS/start-of-something-great`; `main` at `5c338fe` |
+| Repo | `MyChiefOS/start-of-something-great`; `main` at `2de478a` |
 | Work in progress | Branch `signup-cap` (RK82, migration 021) |
-| Supabase | Project `nksagchwpyljvjiwolmp`; `jevs` v4, `dog-migrate` v5, `dog-probe` v2 (inert); ledger at 020 |
+| Supabase | Project `nksagchwpyljvjiwolmp`; `jevs` v4, `dog-migrate` v5, `dog-probe` v2 (inert); ledger at 021 |
 | Vercel | Project `prj_cXnWySYVpJE9TVZaNPSocXMMzkZI`, team `team_Hv5YS8LhIiKe06SSiDrUucd4`; Claude's connector returns 404 per project |
 | Pooler | `aws-0`/`aws-1-us-east-1.pooler.supabase.com:6543` (transaction mode) |
 | Local tests | `pg_ctlcluster 16 main start` (it stops often), `npm ci --ignore-scripts`, then `TEST_DATABASE_URL=postgres://postgres:<local password>@localhost:5432/postgres npm test`. Without `TEST_DATABASE_URL` the database suites skip, and the run still reports 0 failed |

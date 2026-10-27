@@ -141,10 +141,16 @@ async function tx(sql, ctx, fn) {
 // says whether an address is set. G1: DATABASE_URL is still read and written only in this file.
 const hasAddress = (env = process.env) => Boolean(env.DATABASE_URL);
 function setAddress(url, env = process.env) { if (!env.DATABASE_URL) env.DATABASE_URL = pooledUrl(url); }
+// A rotated password (the CSO's review, M1): the new address replaces the old, and the old pool is ended so no new
+// connection uses the old password. Requests already running finish on their own connections.
+function replaceAddress(url, env = process.env) {
+  env.DATABASE_URL = pooledUrl(url);
+  if (shared) { const old = shared; shared = null; old.end({ timeout: 5 }).catch(() => {}); }
+}
 // For /api/ready: "select 1" on one address, or on Vercel's when none is given; a fresh connection, closed after.
 async function ping(url, { connectImpl = connect } = {}) {
   const sql = connectImpl(pooledUrl(url || process.env.DATABASE_URL), { max: 1 });
   try { const [r] = await sql`select 1 as one`; return Boolean(r && r.one === 1); } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, ping };
+module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping };

@@ -8,7 +8,9 @@
 --   The password never appears in any statement's text, so the database's statement log (log_statement = ddl) holds
 --   only this file: it is made and used inside the block below (EXECUTE runs it there, and only top-level statements
 --   are logged).
---   If dog_web already exists, this gives it a new password (the same path rotates it later). Where Vault isn't
+--   If dog_web already exists, this gives it a new password. A later rotation would do the same in a new migration;
+--   until two-role rotation is built (RISKS.md RK88), a running site picks the new password up at its next refresh from
+--   the broker, within 10 minutes, and its new connections fail until then. Where Vault isn't
 --   installed (plain Postgres in the local tests) the password is made and dropped: the login can't be used there.
 --   This part runs as the runner's own login (postgres on Supabase), which may create logins and write to Vault;
 --   dog_owner may do neither. A new role has no other attributes by default; one wider than this is caught by the

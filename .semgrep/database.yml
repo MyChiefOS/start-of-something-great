@@ -49,3 +49,20 @@ rules:
   - pattern: $X.get('x-vercel-oidc-token')
   - pattern: process.env.VERCEL_OIDC_TOKEN
   - pattern: getVercelOidcToken(...)
+- id: dayonegreat.routeb.no-whole-header-copies
+  message: A request's headers can carry Vercel's identity token (route B). Don't send, spread, serialise or log them
+    whole; pick the headers you need by name (the CSO's review of route B, M3). db/sitekeys.js also removes the token
+    from the request as soon as it is read.
+  languages: [javascript]
+  severity: ERROR
+  paths:
+    exclude: [test/]
+  patterns:
+  - pattern-either:
+    - pattern: 'fetch(..., { ..., headers: $R.headers, ... })'
+    - pattern: '{ ..., ...$R.headers, ... }'
+    - pattern: JSON.stringify($R.headers, ...)
+    - pattern: console.$F(..., $R.headers, ...)
+  - metavariable-regex:
+      metavariable: $R
+      regex: ^(req|request|r)$

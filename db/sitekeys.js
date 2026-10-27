@@ -1,15 +1,17 @@
 // Route B (Aaron, Oct 26; harness/PLAN.md fixes 5 and 8): the site gets its database login and its three keys from the
 // key broker (supabase/functions/dog-keys), proving itself with the Vercel identity token each production request
 // carries (x-vercel-oidc-token). Nothing is pasted into Vercel.
-//   * The fallback to Vercel settings (CHARTER.md §2): when the database address is set in Vercel, the broker isn't asked at all
-//     and every setting comes from Vercel, exactly as before route B.
-//   * The CSO's control 4, site resilience: what the broker gave is kept for this function instance and refreshed in
-//     the background after 10 minutes; if the broker can't be reached, the last good answer keeps working.
-//   * Settings already present (from Vercel) are never overwritten.
-//   * Only while the site is open (launch.js stage "public"), or for the readiness check (/api/ready). While closed,
-//     nothing is fetched, so the closed site behaves exactly as before.
-// The values are kept only in this function instance's memory (process.env, which is where the rest of the site already
-// reads them; the address through db/index.js, G1), never written to a log, a file or a reply.
+//   * The fallback to Vercel settings (CHARTER.md §2): when the database address is set in Vercel, the broker isn't
+//     asked at all and every setting comes from Vercel, exactly as before route B.
+//   * The CSO's control 4, site resilience: what the broker gave is kept for this function instance and asked again
+//     after 10 minutes; if the broker can't be reached, the last good answer keeps working. A changed password (a
+//     rotation) replaces the address and ends the old connection pool (the CSO's review, M1).
+//   * Settings Vercel set are never overwritten; only what the broker gave is replaced.
+//   * The token is removed from the request as soon as it is read, so no later code can echo or forward it (M3).
+//   * The site's settings are written only while the site is open (launch.js stage "public"). The readiness check
+//     (/api/ready) can ask the broker while closed, but its answer stays inside the check (L2).
+// The values are kept only in this function instance's memory (process.env, where the rest of the site already reads
+// them; the address through db/index.js, G1), never written to a log, a file or a reply.
 'use strict';
 
 const BROKER = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-keys';
@@ -17,7 +19,8 @@ const REFRESH_MS = 10 * 60_000;
 const TIMEOUT_MS = 3000;
 
 let last = null; // { at, body }
-let inflight = null;
+let applied = null; // { url, keys: {name: value} } what this instance put in place from the broker
+const inflight = new Map(); // token -> promise, so one bad token can't fail another request (L1)
 
 function urlFor(d, host) {
   const u = new URL('postgres://' + host + ':' + d.port + '/' + d.database);
@@ -26,14 +29,31 @@ function urlFor(d, host) {
   return u.toString();
 }
 
-// Puts the broker's answer where the site reads it, without overwriting anything Vercel set.
+// Puts the broker's answer where the site reads it. Values Vercel set are left alone; values the broker gave earlier
+// are replaced when they change.
 function apply(body, env = process.env) {
-  require('./index').setAddress(urlFor(body.database, body.database.hosts[0]), env);
-  for (const [k, v] of Object.entries(body.keys || {})) if (!env[k]) env[k] = v;
+  const db = require('./index');
+  const url = urlFor(body.database, body.database.hosts[0]);
+  if (!applied) {
+    if (db.hasAddress(env)) return; // Vercel's settings win
+    db.setAddress(url, env);
+    const keys = {};
+    for (const [k, v] of Object.entries(body.keys || {})) if (!env[k]) { env[k] = v; keys[k] = v; }
+    applied = { url, keys };
+    return;
+  }
+  if (applied.url !== url) { db.replaceAddress(url, env); applied.url = url; }
+  for (const [k, v] of Object.entries(body.keys || {})) {
+    if (k in applied.keys && applied.keys[k] !== v) { env[k] = v; applied.keys[k] = v; }
+  }
 }
 
-function tokenOf(req) {
-  const h = req && req.headers ? req.headers['x-vercel-oidc-token'] : null;
+// Reads the token and removes it from the request (M3).
+function takeToken(req) {
+  const headers = req && req.headers;
+  if (!headers) return null;
+  const h = headers['x-vercel-oidc-token'];
+  delete headers['x-vercel-oidc-token'];
   return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
 }
 
@@ -50,34 +70,36 @@ async function ask(token, fetchImpl) {
   return body;
 }
 
-// Makes sure this instance has its settings. Returns where they came from, for /api/ready: 'vercel', 'broker',
-// 'cached' (the broker failed; the last good answer is used), 'closed' (not asked) or 'none' (with the reason).
+function askOnce(token, fetchImpl) {
+  if (!inflight.has(token)) inflight.set(token, ask(token, fetchImpl).finally(() => inflight.delete(token)));
+  return inflight.get(token);
+}
+
+// Makes sure this instance has its settings. Returns where they came from: 'vercel', 'broker', 'cached' (the broker
+// failed; the last good answer is used), 'closed' (not asked) or 'none' (with the reason). With force (the readiness
+// check), it also returns the broker's answer, which is applied only while the site is open.
 async function ensure(req, { fetchImpl = fetch, force = false, env = process.env, stage = () => require('../launch').stage(env) } = {}) {
-  if (require('./index').hasAddress(env) && !last) return { source: 'vercel' };
-  if (!force && stage() !== 'public') return { source: 'closed' };
-  if (last && Date.now() - last.at < REFRESH_MS) { apply(last.body, env); return { source: 'broker' }; }
-  const token = tokenOf(req);
-  if (!token) {
-    if (last) { apply(last.body, env); return { source: 'cached', error: 'no_token' }; }
-    return { source: 'none', error: 'no_token' };
-  }
+  const token = takeToken(req);
+  const open = stage() === 'public';
+  if (require('./index').hasAddress(env) && !applied && !last) return { source: 'vercel' };
+  if (!open && !force) return { source: 'closed' };
+  const use = (body, source, extra = {}) => { if (open) apply(body, env); return { source, body, ...extra }; };
+  if (last && Date.now() - last.at < REFRESH_MS) return use(last.body, 'broker');
+  if (!token) return last ? use(last.body, 'cached', { error: 'no_token' }) : { source: 'none', error: 'no_token' };
   try {
-    if (!inflight) inflight = ask(token, fetchImpl).finally(() => { inflight = null; });
-    const body = await inflight;
-    last = { at: Date.now(), body };
-    apply(body, env);
-    return { source: 'broker' };
+    const body = await askOnce(token, fetchImpl);
+    if (open) last = { at: Date.now(), body }; // while closed, the answer stays inside the check (L2)
+    return use(body, 'broker');
   } catch (e) {
-    if (last) { apply(last.body, env); return { source: 'cached', error: e.message }; }
-    return { source: 'none', error: e.message };
+    return last ? use(last.body, 'cached', { error: e.message }) : { source: 'none', error: e.message };
   }
 }
 
 // For /api/ready: every pooler address the broker named, each with the login it gave.
-function candidates() {
-  return last ? last.body.database.hosts.map((h) => ({ host: h, url: urlFor(last.body.database, h) })) : [];
+function candidates(body = last && last.body) {
+  return body ? body.database.hosts.map((h) => ({ host: h, url: urlFor(body.database, h) })) : [];
 }
 
-const _reset = () => { last = null; inflight = null; };
+const _reset = () => { last = null; applied = null; inflight.clear(); };
 
-module.exports = { ensure, candidates, apply, BROKER, _reset };
+module.exports = { ensure, candidates, BROKER, _reset };
