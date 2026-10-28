@@ -96,8 +96,8 @@ const DEFINERS = {
   'app.agent_tree_cap()': 'dog_limits',
   // 023 (Aaron, Oct 28, 2026): signing in by posting a one-time code through giscus. The site makes a code and signs in
   // with a claimed one; only the JEVs gate's role may claim a code, for the GitHub account that posted it.
-  'app.code_issue(text, text)': 'dog_signin',
-  'app.code_claim(text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
+  'app.code_issue(text, text, text)': 'dog_signin',
+  'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
   'app.code_sign_in(text, text, text, integer, text)': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record

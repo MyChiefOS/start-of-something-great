@@ -36,7 +36,8 @@
 
       <section id="code-signin" hidden>
         <h2>Sign in to the site</h2>
-        <p>Get a one-time code, then post exactly that code in the box below. A few seconds later this page signs you in, for 30 days. The code works once, only in this browser, for 10 minutes. Only post a code this page showed you.</p>
+        <p>Type your GitHub username and get a one-time code, then post exactly that code in the box below, signed in to GitHub as that username. A few seconds later this page signs you in, for 30 days. The code works once, only in this browser and only for that username, for 10 minutes. Only post a code this page showed you.</p>
+        <p><label for="code-login">Your GitHub username</label> <input id="code-login" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40"></p>
         <p><button type="button" id="code-get" class="button">Get a sign-in code</button></p>
         <p id="code-show" hidden>Your code: <code id="code-value"></code> <button type="button" id="code-copy">Copy</button></p>
         <div id="code-region" hidden><p id="code-region-text"></p><p><button type="button" id="code-region-yes" class="button">I’m a member who lives elsewhere: continue</button></p></div>

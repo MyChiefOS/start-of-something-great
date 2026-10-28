@@ -218,8 +218,9 @@ const HIDDEN_BECAUSE = {
 const SIGNED_IN = (login) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
   + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account), '
   + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once and is hidden now.';
-const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it has expired (codes last 10 minutes), was already used, or wasn\'t '
-  + 'one the site gave out. Get a new one at https://dayonegreat.com/join. The code is hidden now.';
+const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it was made for a different GitHub username, has expired (codes '
+  + 'last 10 minutes), was already used, or wasn\'t one the site gave out. Get a new one at https://dayonegreat.com/join. '
+  + 'The code is hidden now.';
 
 // /approve and /appeal, replied under a post in the same thread.
 async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banned }) {
@@ -455,7 +456,8 @@ export async function handle(sql, raw, { key }) {
     if (code) {
       let claimed = false;
       if (!banned) {
-        const [c] = await t`select app.code_claim(${await J.keyed(key, 'signin-code:' + code)}, ${await J.keyed(key, 'github:' + ev.author.id)}) as ok`;
+        const [c] = await t`select app.code_claim(${await J.keyed(key, 'signin-code:' + code)}, ${await J.keyed(key, 'github:' + ev.author.id)},
+          ${await J.keyed(key, 'signin-login:' + ev.author.login.toLowerCase())}) as ok`;
         claimed = Boolean(c && c.ok);
       }
       const founderClaim = claimed && ev.author.id === FOUNDER_ID;

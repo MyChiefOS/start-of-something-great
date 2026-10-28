@@ -105,9 +105,9 @@ test.before(async () => {
     browserHash: c.sha256hex('browser'), keyVersion: 1 }));
   await run({ actor: 'anon' }, (t) => store.rateLimitHit(t, { bucket: 'breakin', keyHash: c.sha256hex('a'), windowSeconds: 60, max: 5 }));
   // 023 (Oct 28, 2026): a waiting sign-in code, and one the JEVs gate claimed (only its role may), as they are written.
-  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code one'), browserHash: c.sha256hex('code browser') }));
-  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code two'), browserHash: c.sha256hex('code browser 2') }));
-  await su.begin(async (t) => { await t.unsafe('set local role dog_jevs'); await t.unsafe(`select app.code_claim('${c.sha256hex('code two')}', '${'e'.repeat(64)}')`); });
+  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code one'), browserHash: c.sha256hex('code browser'), loginHash: c.sha256hex('login one') }));
+  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code two'), browserHash: c.sha256hex('code browser 2'), loginHash: c.sha256hex('login two') }));
+  await su.begin(async (t) => { await t.unsafe('set local role dog_jevs'); await t.unsafe(`select app.code_claim('${c.sha256hex('code two')}', '${'e'.repeat(64)}', '${c.sha256hex('login two')}')`); });
   // PR 15's review (F6): a used traveller confirmation.
   await run({ actor: 'anon' }, (t) => store.regionConfirmUse(t, c.sha256hex('a traveller nonce')));
   // PR 13: A's notices (the brake and the draft above left some), a suppressed sign-in address and a containment.

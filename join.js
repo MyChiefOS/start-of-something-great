@@ -98,7 +98,11 @@
   }
   function getCode() {
     say('Getting a code\u2026');
-    post('/auth/code/start', confirmed ? { confirm: '1' } : {}).then(function (d) {
+    var login = (document.getElementById('code-login').value || '').trim();
+    if (!login) { say('Type your GitHub username first.'); return; }
+    var body = { login: login };
+    if (confirmed) body.confirm = '1';
+    post('/auth/code/start', body).then(function (d) {
       if (d.region) { askRegion(d.region, 'start'); return; }
       if (!d.code) { say(d.error || 'Couldn\u2019t get a code. Please try again.'); return; }
       document.getElementById('code-value').textContent = d.code;

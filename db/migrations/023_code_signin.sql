@@ -2,11 +2,13 @@
 --   this feature"; harness/FACTS.md). No GitHub sign-in app and no secret are needed: the proof of who someone is is
 --   GitHub's own record of who posted the code, which reaches the database only through the JEVs gate (it accepts only
 --   jevs.yml on main, proved by GitHub's identity token).
---     1. The site makes a code for one browser: app.code_issue keeps a keyed hash of the code and of a random tag in that
---        browser's cookie, for 10 minutes. Never the code or the tag.
+--     1. The person types their GitHub username, and the site makes a code for this browser and that username (Aaron,
+--        Oct 28: option 2): app.code_issue keeps keyed hashes of the code, of a random tag in that browser's cookie and of
+--        the username, for 10 minutes. Never the code, the tag or the username.
 --     2. The person posts the code in the giscus box on /join. The JEVs gate hashes it the same way and, with the
---        poster's GitHub fingerprint (the same keyed hash GitHub sign-in uses, signin/crypto.js), claims it:
---        app.code_claim, which only the gate's role may call.
+--        poster's GitHub fingerprint (the same keyed hash GitHub sign-in uses, signin/crypto.js), claims it, but only if
+--        the poster's username is the one the code was made for: app.code_claim, which only the gate's role may call. So
+--        someone who copies a code from the thread and reposts it claims nothing.
 --     3. The browser asks app.code_sign_in, with its tag. The database takes the GitHub account from the claimed code
 --        itself and signs that account in through app.sign_in. The site never says who is signing in, so on this path
 --        it can't sign in as anyone else (RISKS.md RK82; RK82 closes only when the site's other route to app.sign_in,
@@ -20,6 +22,9 @@ create table app.code_signins (
   id uuid primary key default app.uuid_v7(),
   code_hash text not null unique check (char_length(code_hash) = 64 and code_hash ~ '^[0-9a-f]+$'),
   browser_hash text not null check (char_length(browser_hash) = 64 and browser_hash ~ '^[0-9a-f]+$'),
+  -- A keyed hash of the GitHub username the person typed when asking for the code: only a post by that account claims
+  -- it, so nobody else can repost the code and claim it first (Aaron, Oct 28: option 2).
+  login_hash text not null check (char_length(login_hash) = 64 and login_hash ~ '^[0-9a-f]+$'),
   fingerprint text check (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$'), -- null until claimed
   status text not null default 'waiting' check (status = any (array['waiting', 'claimed', 'used'])),
   created_at timestamptz not null default now(),
@@ -38,49 +43,53 @@ create policy code_signins_signin_insert on app.code_signins for insert to dog_s
 create policy code_signins_signin_update on app.code_signins for update to dog_signin using (true) with check (true);
 create policy code_signins_signin_delete on app.code_signins for delete to dog_signin using (true);
 grant select, delete on app.code_signins to dog_signin;
-grant insert (code_hash, browser_hash, expires_at) on app.code_signins to dog_signin;
+grant insert (code_hash, browser_hash, login_hash, expires_at) on app.code_signins to dog_signin;
 grant update (fingerprint, status, claimed_at, used_at) on app.code_signins to dog_signin;
 
 -- The three functions are made here, then handed to dog_signin (as in 002), so they run with its narrow rights.
 
--- 1. A new code for one browser, for 10 minutes. Every call also clears codes that expired more than an hour ago, so
+-- 1. A new code for one browser and one GitHub username, for 10 minutes. Every call also clears codes that expired more than an hour ago, so
 --    nothing about a code (or the account that claimed it) is kept long (the CSO's review, finding 4).
-create function app.code_issue(p_code_hash text, p_browser_hash text)
+create function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text)
 returns void
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
-  if p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' or p_browser_hash is null or p_browser_hash !~ '^[0-9a-f]{64}$' then
+  if p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' or p_browser_hash is null or p_browser_hash !~ '^[0-9a-f]{64}$'
+     or p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'bad code request' using errcode = '22023';
   end if;
   if app.actor_kind() <> 'anon' then
     raise exception 'bad code request' using errcode = '22023';
   end if;
   delete from app.code_signins where expires_at < now() - interval '1 hour';
-  insert into app.code_signins (code_hash, browser_hash, expires_at) values (p_code_hash, p_browser_hash, now() + interval '10 minutes');
+  insert into app.code_signins (code_hash, browser_hash, login_hash, expires_at)
+    values (p_code_hash, p_browser_hash, p_login_hash, now() + interval '10 minutes');
 end
 $$;
 
--- 2. The JEVs gate claims a posted code for the GitHub account that posted it. True for a waiting, unexpired code, and
+-- 2. The JEVs gate claims a posted code for the GitHub account that posted it, only if that account's username is the
+--    one the code was made for (p_login_hash). True for a waiting, unexpired code, and
 --    again for any unexpired code that same account already claimed, so a retried workflow run gets the right reply
 --    (the CSO's review, finding 8). That is per account, not per post: the same account reposting its own code also
 --    answers true, and can't sign in twice, since only a 'claimed' code signs in. A used-up, expired or unknown code,
---    or one another account claimed, changes nothing and answers false.
-create function app.code_claim(p_code_hash text, p_fingerprint text)
+--    a code made for another username, changes nothing and answers false.
+create function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text)
 returns boolean
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
-  if p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' or p_fingerprint is null or p_fingerprint !~ '^[0-9a-f]{64}$' then
+  if p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' or p_fingerprint is null or p_fingerprint !~ '^[0-9a-f]{64}$'
+     or p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' then
     return false;
   end if;
   update app.code_signins c set fingerprint = p_fingerprint, status = 'claimed', claimed_at = now()
-    where c.code_hash = p_code_hash and c.status = 'waiting' and c.expires_at > now();
+    where c.code_hash = p_code_hash and c.login_hash = p_login_hash and c.status = 'waiting' and c.expires_at > now();
   if found then
     return true;
   end if;
-  return exists (select 1 from app.code_signins c where c.code_hash = p_code_hash and c.fingerprint = p_fingerprint
-                   and c.expires_at > now());
+  return exists (select 1 from app.code_signins c where c.code_hash = p_code_hash and c.login_hash = p_login_hash
+                   and c.fingerprint = p_fingerprint and c.expires_at > now());
 end
 $$;
 
@@ -128,16 +137,16 @@ $$;
 
 -- Who may call them, set before handing them over, while dog_owner can still grant: the site's role makes and uses
 -- codes; only the JEVs gate's role claims one.
-revoke execute on function app.code_issue(text, text), app.code_claim(text, text),
+revoke execute on function app.code_issue(text, text, text), app.code_claim(text, text, text),
   app.code_sign_in(text, text, text, integer, text) from public;
-grant execute on function app.code_issue(text, text), app.code_sign_in(text, text, text, integer, text) to dog_app;
-grant execute on function app.code_claim(text, text) to dog_jevs;
+grant execute on function app.code_issue(text, text, text), app.code_sign_in(text, text, text, integer, text) to dog_app;
+grant execute on function app.code_claim(text, text, text) to dog_jevs;
 
 -- Postgres hands a function only to a role that may create objects in its schema, so dog_signin has that right for
 -- these lines only.
 grant create on schema app to dog_signin;
-alter function app.code_issue(text, text) owner to dog_signin;
-alter function app.code_claim(text, text) owner to dog_signin;
+alter function app.code_issue(text, text, text) owner to dog_signin;
+alter function app.code_claim(text, text, text) owner to dog_signin;
 alter function app.code_sign_in(text, text, text, integer, text) owner to dog_signin;
 revoke create on schema app from dog_signin;
 

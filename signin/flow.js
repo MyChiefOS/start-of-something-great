@@ -321,12 +321,17 @@ function make(deps) {
     async codeStart(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
       if (!codeKey) return json(res, 503, { error: 'Sign-in with a code isn\u2019t switched on here yet.' });
+      const form = (await h.form(req)) || {};
       const country = region.declined(req);
-      if (country && ((await h.form(req)) || {}).confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      // The GitHub username this code is for (Aaron, Oct 28: option 2): only a post by that account claims it.
+      const login = String(form.login || '').trim().replace(/^@/, '');
+      if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) return json(res, 200, { error: 'Type your GitHub username: letters, numbers and dashes.' });
       const code = newCode();
       const tag = c.token(32);
-      await run(ANON, (t) => store.codeIssue(t, { codeHash: codeHash(code), browserHash: c.sha256hex(tag) }));
+      await run(ANON, (t) => store.codeIssue(t, { codeHash: codeHash(code), browserHash: c.sha256hex(tag),
+        loginHash: c.hmacHex(codeKey.key, 'signin-login:' + login.toLowerCase()) }));
       h.addCookie(res, h.cookie(CODE_BROWSER, tag, { maxAge: CODE_MINUTES * 60 }));
       return json(res, 200, { code, expires_in: CODE_MINUTES * 60 });
     },

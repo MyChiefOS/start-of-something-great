@@ -106,8 +106,10 @@ if (!SERVER) {
     }
   });
 
+  // Asks for a code for a GitHub username (opts.login), as /join does (Aaron, Oct 28: option 2).
   const start = async (browser, opts = {}) => {
-    const r = res(); await flow.codeStart(req('POST', '/auth/code/start', { cookie: browser.header(), ...opts }), r);
+    const { login = 'someone', body = {}, ...rest } = opts;
+    const r = res(); await flow.codeStart(req('POST', '/auth/code/start', { cookie: browser.header(), body: { login, ...body }, ...rest }), r);
     browser.take(r);
     return { status: r.statusCode, ...JSON.parse(r.body) };
   };
@@ -131,7 +133,7 @@ if (!SERVER) {
 
   test('a person gets a code, posts it through giscus, and is signed in for 30 days; nothing names them but GitHub', async () => {
     const b = jar();
-    const s = await start(b);
+    const s = await start(b, { login: 'coder' });
     assert.strictEqual(s.status, 200);
     assert.match(s.code, /^DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
     assert.strictEqual(s.expires_in, 600);
@@ -159,8 +161,8 @@ if (!SERVER) {
 
   test('a code works once, only for the browser that asked for it', async () => {
     const b = jar(), thief = jar();
-    const s = await start(b);
-    await start(thief);
+    const s = await start(b, { login: 'once' });
+    await start(thief, { login: 'thief' });
     await post(8002, 'once', s.code);
     assert.deepStrictEqual(await finish(thief), { status: 200, waiting: true }, 'another browser gets nothing from this code');
     assert.strictEqual((await finish(b)).signed_in, true);
@@ -173,13 +175,13 @@ if (!SERVER) {
 
   test('a code expires after 10 minutes, and an edited comment never claims one', async () => {
     const b = jar();
-    const s = await start(b);
+    const s = await start(b, { login: 'slow' });
     await owner(`update app.code_signins set expires_at = now() - interval '1 second' where status = 'waiting'`);
     const late = await post(8004, 'slow', s.code);
     assert.deepStrictEqual(late.signin, { claimed: false, founder: false });
     assert.deepStrictEqual(await finish(b), { status: 200, expired: true });
     const b2 = jar();
-    const s2 = await start(b2);
+    const s2 = await start(b2, { login: 'editor' });
     n += 1;
     const edited = await G.handle(su, { event: 'discussion_comment', action: 'edited', mode: 'enforce', discussion: 1,
       post: { node_id: 'DC_code_e' + n, thread_node_id: 'ce' + n, body: s2.code, created_at: new Date().toISOString() },
@@ -193,7 +195,7 @@ if (!SERVER) {
     const s = await start(b);
     const tagHash = c.sha256hex(b.get('__Host-dog_code'));
     const codeHash = c.hmacHex(SITE_KEYS[0].key, 'signin-code:' + s.code);
-    await assert.rejects(web.begin(async (t) => { await t`set local role dog_app`; await t`select app.code_claim(${codeHash}, ${'a'.repeat(64)})`; }),
+    await assert.rejects(web.begin(async (t) => { await t`set local role dog_app`; await t`select app.code_claim(${codeHash}, ${'a'.repeat(64)}, ${'b'.repeat(64)})`; }),
       /permission denied/, 'the site\'s role can\'t claim a code for any account');
     const [args] = await owner(`select pg_get_function_identity_arguments('app.code_sign_in(text, text, text, integer, text)'::regprocedure) as a`);
     assert.doesNotMatch(args.a, /fingerprint|github|account/i, 'sign-in takes no account from the caller');
@@ -203,21 +205,23 @@ if (!SERVER) {
 
   test('a banned account\'s post claims nothing; the founder\'s account is never banned, and its claims alert', async () => {
     const b = jar();
-    const s = await start(b);
+    const s = await start(b, { login: 'banned-one' });
     const banned = await post(8006, 'banned-one', s.code, { bans: [8006] });
     assert.deepStrictEqual(banned.signin, { claimed: false, founder: false });
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true });
-    const f = await post(304218593, 'MyChiefOS', s.code, { bans: [304218593] });
+    const b2 = jar();
+    const s2 = await start(b2, { login: 'MyChiefOS' });
+    const f = await post(304218593, 'MyChiefOS', s2.code, { bans: [304218593] });
     assert.deepStrictEqual(f.signin, { claimed: true, founder: true }, 'Aaron can always sign in, whatever the ban list says');
     assert.strictEqual(f.alert, true, 'a code claimed by the founder\'s account (Aaron\'s, which Claude also posts as) alerts on the JEVs alerts issue (the CSO\'s finding 1)');
-    assert.strictEqual((await finish(b)).signed_in, true);
+    assert.strictEqual((await finish(b2)).signed_in, true);
   });
 
   test('only from our own pages: a cross-site start or finish is refused', async () => {
     const b = jar();
     assert.strictEqual((await start(b, { origin: 'https://evil.example' })).status, 403);
     assert.strictEqual(b.get('__Host-dog_code'), undefined);
-    const s = await start(b);
+    const s = await start(b, { login: 'csrf' });
     await post(8007, 'csrf', s.code);
     assert.strictEqual((await finish(b, { origin: 'https://evil.example' })).status, 403);
     assert.strictEqual((await finish(b)).signed_in, true);
@@ -225,9 +229,9 @@ if (!SERVER) {
 
   test('from a declined region: the page asks where the person lives before any code is made; a new person is declined and nothing of the code is kept; a member signs in', async () => {
     const b = jar();
-    assert.deepStrictEqual(await start(b, { country: 'FR' }), { status: 200, region: 'France' }, 'no code yet');
+    assert.deepStrictEqual(await start(b, { login: 'newfr', country: 'FR' }), { status: 200, region: 'France' }, 'no code yet');
     assert.strictEqual(b.get('__Host-dog_code'), undefined);
-    const s = await start(b, { country: 'FR', body: { confirm: '1' } });
+    const s = await start(b, { login: 'newfr', country: 'FR', body: { confirm: '1' } });
     assert.match(s.code, /^DOG-/);
     await post(8008, 'newfr', s.code);
     assert.deepStrictEqual(await finish(b, { country: 'FR', body: { confirm: '1' } }), { status: 200, declined: true });
@@ -239,14 +243,32 @@ if (!SERVER) {
     assert.strictEqual(left, 0, 'the claimed code and the fingerprint it held are deleted at once (Oct 16 rule; the CSO\'s finding 4)');
     // A member who lives elsewhere, travelling.
     const home = jar();
-    const s1 = await start(home);
+    const s1 = await start(home, { login: 'traveller' });
     await post(8009, 'traveller', s1.code);
     assert.strictEqual((await finish(home)).signed_in, true);
     const away = jar();
-    assert.deepStrictEqual(await start(away, { country: 'DE' }), { status: 200, region: 'Germany' });
-    const s2 = await start(away, { country: 'DE', body: { confirm: '1' } });
+    assert.deepStrictEqual(await start(away, { login: 'traveller', country: 'DE' }), { status: 200, region: 'Germany' });
+    const s2 = await start(away, { login: 'traveller', country: 'DE', body: { confirm: '1' } });
     await post(8009, 'traveller', s2.code);
     assert.strictEqual((await finish(away, { country: 'DE', body: { confirm: '1' } })).signed_in, true);
+  });
+
+  test('a code is for one GitHub username: a copy reposted by anyone else claims nothing, and its owner can still use it (Aaron, Oct 28: option 2)', async () => {
+    const b = jar();
+    const s = await start(b, { login: '@Owner-One' });
+    const copy = await post(8010, 'watcher', s.code);
+    assert.deepStrictEqual(copy.signin, { claimed: false, founder: false }, 'a watcher who reposts the code first gets nothing');
+    assert.match(copy.reply, /made for a different GitHub username/);
+    assert.deepStrictEqual(await finish(b), { status: 200, waiting: true }, 'the owner\'s browser is untouched');
+    const own = await post(8011, 'owner-one', s.code);
+    assert.deepStrictEqual(own.signin, { claimed: true, founder: false }, 'the username matches whatever its case, with or without @');
+    const f = await finish(b);
+    assert.strictEqual(f.signed_in, true);
+    const [row] = await owner(`select count(*)::int as n from app.identities where fingerprint = '${c.fingerprints(SITE_KEYS, 'github', '8011')[0]}'`);
+    assert.strictEqual(row.n, 1, 'signed in as the owner, never as the watcher');
+    for (const bad of ['', 'a b', '-starts-with-dash', 'x'.repeat(40), 'name!']) {
+      assert.match((await start(jar(), { login: bad })).error, /GitHub username/, JSON.stringify(bad));
+    }
   });
 
   test('codes that expired more than an hour ago are cleared every time a code is made', async () => {

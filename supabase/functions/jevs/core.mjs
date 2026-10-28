@@ -93,7 +93,12 @@ const HIDDEN = [
   ['role_marker', /^[^\S\r\n\u{2028}\u{2029}]*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/imu]
 ];
 export function hiddenSignals(body) {
-  return HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
+  const found = HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
+  // Text that grows past MAX_SCAN when normalised (U+FDFA becomes 18 characters) has its end cut before the contact
+  // and copy checks (R-16), so padding could hide an address there: such a post is flagged instead of passed (the
+  // CSO's review of the sign-in PR, F2).
+  if (String(body).slice(0, MAX_SCAN).normalize('NFKC').length > MAX_SCAN) found.push('expanded_text');
+  return found;
 }
 
 // J17: claiming to be someone it isn't. A tag naming another owner's agent is checked by the gate (80); this is text
@@ -203,7 +208,7 @@ export const QUESTIONS = [
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
   { id: 'J15', title: 'Sub-agent spawning', description: 'Sub-agents an owner made in the last hour: 20 or more scores 25, 50 or more 45, 150 or more 70. Never more than 70.',
     score: (s) => band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]]) },
-  { id: 'J16', title: 'Hidden instructions', description: 'Text hidden from people but read by agents: HTML comments, invisible characters, long encoded blobs, "ignore previous instructions" and role markers. 20 for each kind, at most 40: an alert, never a hide on its own.',
+  { id: 'J16', title: 'Hidden instructions', description: 'Text hidden from people but read by agents: HTML comments, invisible characters, long encoded blobs, "ignore previous instructions", role markers, and text that grows past 70,000 characters when normalised. 20 for each kind, at most 40: an alert, never a hide on its own.',
     score: (s) => Math.min(40, 20 * (s.hidden || []).length) },
   { id: 'J17', title: 'Impersonation', description: 'A tag naming another owner\u{2019}s agent scores 80. Text claiming to be Aaron, Day One Great, JEVs or Claude, from anyone but the founder\u{2019}s account, scores 40: worth a look, never a hide on its own.',
     score: (s) => (s.impersonation ? 80 : s.claims ? 40 : 0) }

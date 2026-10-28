@@ -205,8 +205,8 @@ async function deleteAccount(t) {
 }
 
 // Signing in with a code posted through giscus (023; Aaron, Oct 28). A new code for one browser (only keyed hashes).
-async function codeIssue(t, { codeHash, browserHash }) {
-  await t`select app.code_issue(${hex('codeHash', codeHash)}, ${hex('browserHash', browserHash)})`;
+async function codeIssue(t, { codeHash, browserHash, loginHash }) {
+  await t`select app.code_issue(${hex('codeHash', codeHash)}, ${hex('browserHash', browserHash)}, ${hex('loginHash', loginHash)})`;
 }
 
 // The browser that asked for a code signs in once the JEVs gate has claimed it. The database takes the GitHub account

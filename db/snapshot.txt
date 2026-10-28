@@ -73,6 +73,7 @@ constraint app.code_signins code_signins_check CHECK (((status = 'waiting'::text
 constraint app.code_signins code_signins_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_code_hash_key UNIQUE (code_hash)
 constraint app.code_signins code_signins_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
+constraint app.code_signins code_signins_login_hash_check CHECK (((char_length(login_hash) = 64) AND (login_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_pkey PRIMARY KEY (id)
 constraint app.code_signins code_signins_status_check CHECK ((status = ANY (ARRAY['waiting'::text, 'claimed'::text, 'used'::text])))
 constraint app.containments containments_appeal_decision_check CHECK ((appeal_decision = ANY (ARRAY['lifted'::text, 'kept'::text])))
@@ -426,8 +427,8 @@ function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql vo
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
 function app.brakes_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=28e005648dc066cc06b44c249b1cdacf
 function app.change_log_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=beae6be75fab0d889053d9044f4b1aa5
-function app.code_claim(p_code_hash text, p_fingerprint text) owner=dog_signin execute=dog_signin,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=5f8ecc2be6fa1af7ecabed0cb30b4606
-function app.code_issue(p_code_hash text, p_browser_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=8b64204d8629fedb10974a2f65d647de
+function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=2179a5e58dc7677d0f719025513eeabc
+function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=8cde290162e15121324f1ae27a681a30
 function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=ee334e85650ce71bf1e9b0ab3835fb17
 function app.containment_lift_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=integer body_md5=ee6ec02d2a3446ccc4ca320dbfdc9096
 function app.containments_after() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=00cce9d586929f29763ca18d90877142
@@ -686,6 +687,7 @@ grant app.code_signins.claimed_at dog_signin UPDATE
 grant app.code_signins.code_hash dog_signin INSERT
 grant app.code_signins.expires_at dog_signin INSERT
 grant app.code_signins.fingerprint dog_signin UPDATE
+grant app.code_signins.login_hash dog_signin INSERT
 grant app.code_signins.status dog_signin UPDATE
 grant app.code_signins.used_at dog_signin UPDATE
 grant app.containments dog_app SELECT
