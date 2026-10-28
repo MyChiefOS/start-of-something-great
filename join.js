@@ -48,12 +48,15 @@
 })();
 
 // Signing in with a code posted through giscus (023; Aaron, Oct 28, 2026). Shown only when sign-in is switched on
-// (/auth/me answers). The code comes from /auth/code/start; this page then asks /auth/code/finish every 2 seconds until
-// the JEVs gate has seen the code posted below, and the server signs this browser in.
+// (/auth/me answers). The code comes from /auth/code/start; this page then asks /auth/code/finish every 2 seconds, one
+// request at a time, until the JEVs gate has seen the code posted below and the server signs this browser in. From a
+// declined region the page asks where the person lives before any code is made.
 (function () {
   var box = document.getElementById('code-signin');
   if (!box || !window.fetch) return;
   var status = document.getElementById('code-status');
+  var show = document.getElementById('code-show');
+  var ask = document.getElementById('code-region');
   var say = function (t) { status.textContent = t; };
   var post = function (path, body) {
     return fetch(path, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
@@ -61,47 +64,54 @@
       .then(function (r) { return r.json(); });
   };
   fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
-    if (!r.ok) return;
-    box.hidden = false;
+    if (r.ok) box.hidden = false;
   }).catch(function () { /* sign-in stays hidden */ });
 
-  var timer = null, started = 0, confirmed = false;
-  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  var timer = null, deadline = null, busy = false, started = 0, confirmed = false;
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (deadline) { clearTimeout(deadline); deadline = null; }
+  }
+  function expired() { stop(); show.hidden = true; say('That code has expired or was used. Get a new one.'); }
   function check() {
+    if (busy) return; // one request at a time, so two answers can't race (the CSO's review, finding 5)
+    busy = true;
     post('/auth/code/finish', confirmed ? { confirm: '1' } : {}).then(function (d) {
+      if (!timer) return;
       if (d.signed_in) { stop(); say('Signed in. Taking you to your feed\u2026'); location.href = d.go || '/'; return; }
-      if (d.region) {
-        stop();
-        document.getElementById('code-region-text').textContent = 'You appear to be in ' + d.region + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland. If you live elsewhere and are travelling, you can continue.';
-        document.getElementById('code-region').hidden = false;
-        return;
-      }
-      if (d.declined) { stop(); say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
-      if (d.refused) { stop(); say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
-      if (d.expired) { stop(); say('That code has expired or was used. Get a new one.'); document.getElementById('code-show').hidden = true; return; }
+      if (d.declined) { stop(); show.hidden = true; say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
+      if (d.refused) { stop(); show.hidden = true; say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
+      if (d.expired) { expired(); return; }
       var secs = Math.round((Date.now() - started) / 1000);
       say('Waiting for your post to reach us through GitHub\u2026 ' + secs + ' s. This usually takes 10 to 20 seconds.');
-    }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026'); });
+    }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026'); })
+      .then(function () { busy = false; });
   }
-  document.getElementById('code-region-yes').addEventListener('click', function () {
-    confirmed = true;
-    document.getElementById('code-region').hidden = true;
-    if (!timer) timer = setInterval(check, 2000);
-    check();
-  });
-  document.getElementById('code-get').addEventListener('click', function () {
+  function getCode() {
     say('Getting a code\u2026');
-    post('/auth/code/start').then(function (d) {
+    post('/auth/code/start', confirmed ? { confirm: '1' } : {}).then(function (d) {
+      if (d.region) {
+        document.getElementById('code-region-text').textContent = 'You appear to be in ' + d.region + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland. If you live elsewhere and are travelling, you can continue.';
+        ask.hidden = false;
+        say('');
+        return;
+      }
       if (!d.code) { say(d.error || 'Couldn\u2019t get a code. Please try again.'); return; }
       document.getElementById('code-value').textContent = d.code;
-      document.getElementById('code-show').hidden = false;
+      show.hidden = false;
       say('Post exactly this code in the box below. This page signs you in once GitHub tells us.');
       started = Date.now();
       stop();
       timer = setInterval(check, 2000);
-      setTimeout(stop, (d.expires_in || 600) * 1000);
+      deadline = setTimeout(expired, (d.expires_in || 600) * 1000);
     }).catch(function () { say('Couldn\u2019t get a code. Please try again.'); });
+  }
+  document.getElementById('code-region-yes').addEventListener('click', function () {
+    confirmed = true;
+    ask.hidden = true;
+    getCode();
   });
+  document.getElementById('code-get').addEventListener('click', getCode);
   document.getElementById('code-copy').addEventListener('click', function () {
     var text = document.getElementById('code-value').textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {});

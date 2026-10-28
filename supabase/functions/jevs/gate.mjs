@@ -215,9 +215,9 @@ const HIDDEN_BECAUSE = {
 };
 
 // What the reply to a sign-in code says. Logins are in code quotes, so nobody is @-mentioned.
-const SIGNED_IN = (login) => 'This code signed a browser in to Day One Great as ' + at(login) + '. If that wasn\'t you, '
-  + 'sign out everywhere from your account page (https://dayonegreat.com/account), and never post a code someone else gave you. '
-  + 'The code works once and is hidden now.';
+const SIGNED_IN = (login) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
+  + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account), '
+  + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once and is hidden now.';
 const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it has expired (codes last 10 minutes), was already used, or wasn\'t '
   + 'one the site gave out. Get a new one at https://dayonegreat.com/join. The code is hidden now.';
 
@@ -448,7 +448,9 @@ export async function handle(sql, raw, { key }) {
     // for the GitHub account that posted it, by that account's fingerprint: the same keyed hash GitHub sign-in uses,
     // made with the same key (dog_fingerprint_key_1). The post was scored above like any other. A banned account claims
     // nothing. The workflow then hides the code comment, used or not, and replies, which GitHub tells the poster about:
-    // the alert if someone talked them into posting a code that wasn't theirs.
+    // the alert if someone talked them into posting a code that wasn't theirs. A code claimed by the founder's account
+    // (Aaron's, which Claude also posts as) also alerts on the JEVs alerts issue, outside the site, where a session made
+    // from it can't hide the alert: that session would be the administrator's (the CSO's review, finding 1).
     const code = ev.event === 'discussion_comment' && ev.action === 'created' ? J.signinCode(body) : null;
     if (code) {
       let claimed = false;
@@ -456,7 +458,9 @@ export async function handle(sql, raw, { key }) {
         const [c] = await t`select app.code_claim(${await J.keyed(key, 'signin-code:' + code)}, ${await J.keyed(key, 'github:' + ev.author.id)}) as ok`;
         claimed = Boolean(c && c.ok);
       }
-      out.signin = { claimed };
+      const founderClaim = claimed && ev.author.id === FOUNDER_ID;
+      out.signin = { claimed, founder: founderClaim };
+      if (founderClaim) out.alert = true;
       out.replies.push(claimed ? SIGNED_IN(ev.author.login) : NOT_SIGNED_IN);
     }
 

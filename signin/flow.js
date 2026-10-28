@@ -26,8 +26,10 @@
 //   /auth/code/start (POST) makes a code for this browser, kept 10 minutes as keyed hashes only. The person posts the
 //   code in the giscus box on /join; the JEVs gate claims it for the GitHub account that posted it. /auth/code/finish
 //   (POST, asked every 2 seconds by /join.js) signs in once the code is claimed: the database takes the account from
-//   the claimed code, so the site never names who signs in. From a declined region it asks first where the person
-//   lives, as every other sign-in does, and a new person is declined there.
+//   the claimed code, so the site never names who signs in. From a declined region the page asks where the person
+//   lives before any code is made (the CLJO's review, B1), and a new person is declined at sign-in, which deletes the
+//   claimed code and the fingerprint it held. The JEVs gate still records every GitHub post, from anywhere, as it
+//   always has (it can't know where a poster is): the gap between the Oct 24 and Oct 16 decisions, put to Aaron.
 'use strict';
 
 const nodeCrypto = require('crypto');
@@ -314,10 +316,13 @@ function make(deps) {
       return h.redirect(res, saved.r || '/');
     },
 
-    // 023: a sign-in code for this browser. Same-site POST only; within the usual sign-in rate limit.
+    // 023: a sign-in code for this browser. Same-site POST only; within the usual sign-in rate limit. From a declined
+    // region, { region } first, and nothing is made until the person says they live elsewhere (confirm=1).
     async codeStart(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
       if (!codeKey) return json(res, 503, { error: 'Sign-in with a code isn\u2019t switched on here yet.' });
+      const country = region.declined(req);
+      if (country && ((await h.form(req)) || {}).confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       const code = newCode();
       const tag = c.token(32);
@@ -341,7 +346,7 @@ function make(deps) {
       if (out.status === 'waiting') return json(res, 200, { waiting: true });
       h.addCookie(res, h.clear(CODE_BROWSER));
       if (out.status === 'expired') return json(res, 200, { expired: true });
-      if (out.refused === 'region') {
+      if (out.status === 'region' || out.refused === 'region') {
         await countDecline(country);
         return json(res, 200, { declined: true });
       }

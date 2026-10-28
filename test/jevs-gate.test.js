@@ -86,7 +86,9 @@ test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s C
   const n = 65000;
   const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x', '\r'.repeat(n) + 'x', '\u{00A0}'.repeat(n) + 'x', '\u{3000}'.repeat(n) + 'system',
     '\u{2028}'.repeat(n) + 'x', 'system' + ' \n'.repeat(n / 2) + 'x',
-    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2)];
+    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2),
+    // R-16: one U+FDFA is 18 characters after NFKC; 65,536 of them took about 1.3 s before the cut after normalising.
+    '\u{FDFA}'.repeat(65536)];
   for (const body of hostile) {
     const t0 = Date.now();
     J.analyze(body); J.agentTag(body); J.parseCommands(body); J.parseActions(body);

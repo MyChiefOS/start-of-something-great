@@ -141,6 +141,23 @@ test('route B, the site: Vercel settings win; closed asks nothing; open asks the
   assert.match(none.error, /^broker 500/);
 });
 
+test('code sign-in, /api/ready: says whether the site hashes codes with the gate\'s own key, never the key (the CSO\'s finding 3)', async () => {
+  const sk = require('../db/sitekeys');
+  const ready = require('../api/ready.js');
+  const body = { ok: true, database: { user: 'dog_web.ref', password: 'secret-password-value-1234567890abcdef', hosts: ['aws-0-us-east-1.pooler.supabase.com'], port: 6543, database: 'postgres' },
+    keys: { SESSION_SECRET: 'c2Vzcw==', IP_HASH_KEY: 'aXA=', FINGERPRINT_KEY_1: 'ZnA=' } };
+  const fetchImpl = async () => ({ status: 200, json: async () => body });
+  const connect = () => { const sql = async () => [{ one: 1 }]; sql.end = async () => {}; return sql; };
+  const ask = async (env) => {
+    sk._reset(); ready._reset();
+    return ready.check({ method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'x'.repeat(40) + '.sig' } }, { env, connect, fetchImpl });
+  };
+  assert.strictEqual((await ask({})).code_signin_keys, 'same_as_gate');
+  const differs = await ask({ FINGERPRINT_KEY_1: 'b3RoZXI=' });
+  assert.strictEqual(differs.code_signin_keys, 'vercel_settings', 'a Vercel setting that wins over the broker\'s key is reported');
+  assert.ok(!JSON.stringify(differs).includes('b3RoZXI=') && !JSON.stringify(differs).includes('ZnA='), 'never a key');
+});
+
 test('route B, /api/ready: says what is present and which step failed, never a value', async () => {
   const sk = require('../db/sitekeys');
   const ready = require('../api/ready.js');
@@ -159,7 +176,7 @@ test('route B, /api/ready: says what is present and which step failed, never a v
   const req = { method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'x'.repeat(40) + '.sig' } };
   const out = await ready.check(req, { env, connect, fetchImpl });
   assert.deepStrictEqual(out, { identity_token: true, broker: 'ok', keys: true, github_signin: true, github_setting_names: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
-    database: { 'aws-0-us-east-1': 'reached' }, stage: 'closed', launch_stage_set: false }, 'stops at the first address that answers');
+    database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', launch_stage_set: false }, 'stops at the first address that answers');
   assert.ok(!JSON.stringify(out).includes('"x"'), 'names only, never a value');
   // L2: while closed, the check's answer stays inside the check: nothing is written where the site reads settings.
   assert.deepStrictEqual(Object.keys(env).sort(), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']);
