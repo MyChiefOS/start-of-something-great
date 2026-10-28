@@ -115,6 +115,16 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 
 Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, and a traveller's confirmation a third, in the same role (see "Sign-in fixes" below).
 
+### Signing in with giscus (Oct 28, 2026)
+
+Aaron chose this on Oct 28. People already sign in to giscus with GitHub in the comment box on /join and /talk; giscus keeps that sign-in in the page's own storage (`giscus-session`, encrypted by giscus). **Built and tested; not yet proven live** (fix 10), and off until the go-live merge opens the site.
+
+1. On /join the person presses "Sign in" (`POST /auth/giscus`, from the page's own script). The page sends the giscus sign-in it holds.
+2. The site checks its shape, sends it only to giscus.app, which answers with the person's GitHub token, and sends that token only to GitHub's `/user`, which says whose it is. Only the account's number is kept, as its fingerprint: the same one GitHub sign-in makes, so both ways reach one member. The token is then dropped (it is giscus's, so it isn't revoked).
+3. The site signs that account in through `app.sign_in`, at level 1 on a first sign-in, for a flat 30 days (Aaron, Oct 28: `IDLE_DAYS` is 30, and `app.act_as` uses the same, migration 023).
+
+Nothing is posted. From a declined region a new person is declined before anything is stored, and a member confirms where they live first. If giscus.app or GitHub doesn't answer, nobody is signed in and the page says so; everyone already signed in stays signed in. Risks: RISKS.md RK89. Tests: `test/giscus-signin.test.js`.
+
 ### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
 
 - **Server code can still act as anyone.** As with everything in this database, if our server code ran SQL of its own, it could claim to be any member and create a working session for them. The checks inside the sign-in functions stop honest mistakes, not deliberate code. That's why the stronger lock (a signed claim from sign-in that the database verifies) is on the list before 1,000 members.

@@ -7,7 +7,8 @@ const ORIGIN = 'https://dayonegreat.com';
 const HOST = 'dayonegreat.com';
 
 const SESSION_DAYS = 30; // absolute limit
-const IDLE_DAYS = 7; // ends after a week unused
+// Aaron, Oct 28, 2026: sessions last a flat 30 days ("it will last 30 days"); the 7-day idle limit is gone.
+const IDLE_DAYS = 30; // the same as the absolute limit, so an unused session lasts the full 30 days
 const STATE_MINUTES = 10; // an unfinished GitHub or X sign-in expires after this
 
 // Fingerprint keys, one setting each: FINGERPRINT_KEY_1, FINGERPRINT_KEY_2, ... The highest number is the

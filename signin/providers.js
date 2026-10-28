@@ -90,4 +90,30 @@ const PROVIDERS = {
   }
 };
 
-module.exports = { PROVIDERS, call };
+// Sign in with giscus (Aaron, Oct 28, 2026). People sign in to giscus in the comment box on /join and /talk; giscus
+// keeps that sign-in in the page's own storage as an encrypted session (giscus client.ts, "giscus-session"), which
+// giscus.app turns back into the person's GitHub token (pages/api/oauth/token.ts). The page sends the session here; we
+// ask giscus.app for the token and GitHub itself who it belongs to, keep only the account's number, and drop the token.
+// The token belongs to giscus's own GitHub app, so it is not revoked: that would sign the person out of giscus.
+const GISCUS_TOKEN_URL = 'https://giscus.app/api/oauth/token';
+// giscus's session: the AES-GCM IV in hex, then the ciphertext in base64 (giscus lib/oauth/encryption.ts).
+const GISCUS_SESSION = /^[0-9a-f]{24}[A-Za-z0-9+/]{16,1500}={0,2}$/;
+async function identifyGiscus(session) {
+  if (typeof session !== 'string' || !GISCUS_SESSION.test(session)) return null;
+  const t = await call(GISCUS_TOKEN_URL, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'dayonegreat-signin' },
+    body: JSON.stringify({ session })
+  });
+  const token = t.ok && t.json && typeof t.json.token === 'string' && t.json.token.length >= 20 && t.json.token.length <= 255 ? t.json.token : null;
+  if (!token) return null;
+  const u = await call('https://api.github.com/user', {
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'dayonegreat-signin', 'X-GitHub-Api-Version': '2022-11-28' }
+  });
+  if (!u.ok || !u.json || !Number.isSafeInteger(u.json.id) || u.json.id < 1) return null;
+  // Only the account's number is used (for the fingerprint, the same as GitHub sign-in's). Names are not kept (S12).
+  return { accountId: String(u.json.id), level: 1, recheckAfter: null };
+}
+PROVIDERS.giscus = { identifySession: identifyGiscus };
+
+module.exports = { PROVIDERS, call, GISCUS_TOKEN_URL };

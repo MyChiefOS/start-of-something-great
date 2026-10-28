@@ -46,3 +46,61 @@
     .then(function (d) { if (d && typeof d.token === 'string') f.value = d.token; })
     .catch(function () { /* the form still works; the server says if the stamp is missing */ });
 })();
+
+// Sign in with giscus (Aaron, Oct 28, 2026). Shown only when sign-in is switched on (/auth/me answers). giscus keeps the
+// person's sign-in in this page's storage ("giscus-session"); this sends it to /auth/giscus, which asks giscus and GitHub
+// who it is and signs that GitHub account in. Nothing is posted, and the session isn't kept anywhere else.
+(function () {
+  var box = document.getElementById('giscus-signin');
+  if (!box || !window.fetch) return;
+  var status = document.getElementById('giscus-status');
+  var ask = document.getElementById('giscus-region');
+  var say = function (t) { status.textContent = t; };
+  var words = {
+    giscus: 'We couldn\u2019t confirm your giscus sign-in. Sign in again in the comment box below, then press Sign in.',
+    slow: 'Too many tries in a short time. Please wait a few minutes.',
+    disabled: 'This account is disabled while a request to delete it is reviewed.',
+    unavailable: 'Sign-in isn\u2019t available for this account right now.',
+    expired: 'Please reload this page and try again.'
+  };
+  fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
+    if (r.ok) box.hidden = false;
+  }).catch(function () { /* sign-in stays hidden */ });
+  function session() {
+    try {
+      var raw = localStorage.getItem('giscus-session');
+      var s = raw ? JSON.parse(raw) : '';
+      return typeof s === 'string' ? s : '';
+    } catch (e) { return ''; }
+  }
+  var busy = false;
+  function go(confirm) {
+    if (busy) return;
+    var s = session();
+    if (!s) { say('First sign in with GitHub in the comment box below. Then press Sign in.'); return; }
+    busy = true;
+    say('Signing you in\u2026');
+    var rt = new URLSearchParams(location.search).get('return_to') || '';
+    var body = { session: s };
+    if (rt) body.return_to = rt;
+    if (confirm) body.confirm = '1';
+    fetch('/auth/giscus', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body).toString() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.signed_in) { say('Signed in. Taking you on\u2026'); location.href = d.go || '/feed'; return; }
+        if (d.region) {
+          document.getElementById('giscus-region-text').textContent = 'You appear to be in ' + d.region + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland. If you\u2019re a member who lives elsewhere (for example, you\u2019re travelling), you can continue.';
+          ask.hidden = false;
+          say('');
+          return;
+        }
+        if (d.declined) { say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
+        say(words[d.error] || words.unavailable);
+      })
+      .catch(function () { say('Couldn\u2019t reach the site just now. Please try again.'); })
+      .then(function () { busy = false; });
+  }
+  document.getElementById('giscus-go').addEventListener('click', function () { go(false); });
+  document.getElementById('giscus-region-yes').addEventListener('click', function () { ask.hidden = true; go(true); });
+})();

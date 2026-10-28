@@ -37,7 +37,7 @@ The D1–D8 delegated-authority review of Oct 25 (artifact "Delegated authority 
 
 ## 3. The work, in order
 
-Each step is done only when INTEGRITY.md's six steps are done (code; a failing-then-passing test; full suite and scanners; independent review where it touches security, money, legal or people's data; Aaron's merge; live proof in OPERATIONS.md). One PR open at a time, targeting `main` (harness rule 1).
+Each step is done only when INTEGRITY.md's six steps are done (code; a failing-then-passing test; full suite and scanners; independent review where it touches security, money, legal or people's data; Aaron's merge; live proof in OPERATIONS.md). PRs queue up, each built on the one before and targeting `main` (harness rule 1, Oct 28).
 
 ### Fix 1: the GitHub holes (gate). Claude. Confidence high.
 

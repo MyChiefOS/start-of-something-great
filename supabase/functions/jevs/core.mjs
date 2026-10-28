@@ -39,8 +39,10 @@ function digitValue(ch) {
   while (k < 60 && /\p{Nd}/u.test(String.fromCodePoint(cp - 1))) { cp--; k++; }
   return String(k % 10);
 }
+// NFKC can make text up to 18 times longer (one U+FDFA becomes 18 characters), so the folded text is cut to MAX_SCAN
+// again after normalising: 65,536 of them took about 1 s here, half the gate's CPU limit (review R-16).
 function fold(text) {
-  return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC')
+  return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC').slice(0, MAX_SCAN)
     .replace(/[^\x00-\x7F]/gu, (ch) => (/\p{Nd}/u.test(ch) ? digitValue(ch) : ch))
     .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '')
     .replace(/[\u{3002}\u{FF61}]/gu, '.');
@@ -63,7 +65,8 @@ function fnv64(word) {
   return h;
 }
 export function simhash(body) {
-  const words = String(body).normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  // Cut to MAX_SCAN before and after normalising, as fold() does (R-16).
+  const words = String(body).slice(0, MAX_SCAN).normalize('NFKC').slice(0, MAX_SCAN).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   if (words.length < MIN_WORDS || words.join(' ').length < MIN_CHARS) return null;
   const weights = new Array(64).fill(0);
   for (const w of words) {

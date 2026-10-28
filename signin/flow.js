@@ -22,6 +22,10 @@
 //   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
 //   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
 //   and a traveller's sealed confirmation is used once.
+//   Oct 28, 2026 (Aaron): sign in with giscus. /auth/giscus (POST, from /join's own script) takes the giscus sign-in
+//   the browser already holds, asks giscus.app and then GitHub who it is (signin/providers.js), and signs that GitHub
+//   account in, as GitHub sign-in does: the same fingerprint, so both ways reach one member. Nothing is posted. From a
+//   declined region a new person is declined before anything is stored, and a member confirms where they live first.
 'use strict';
 
 const launch = require('../launch');
@@ -284,6 +288,44 @@ function make(deps) {
       const old = sessionHash(req);
       if (old) await run(ANON, (t) => store.sessionEnd(t, old));
       return h.redirect(res, saved.r || '/');
+    },
+
+    // Sign in with giscus: JSON answers for /join.js, since that page may not post forms (its content security policy).
+    async giscusSignIn(req, res) {
+      const json = (status, body) => {
+        res.statusCode = status;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(JSON.stringify(body));
+      };
+      if (!h.sameSite(req)) return json(403, { error: 'expired' });
+      const g = providers.giscus;
+      if (!g) return json(503, { error: 'unavailable' });
+      const country = region.declined(req);
+      if (!country && await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(429, { error: 'slow' });
+      const body = (await h.form(req)) || {};
+      let who;
+      try { who = await g.identifySession(body.session); } catch { who = null; }
+      if (!who) return json(200, { error: 'giscus' });
+      const args = { provider: 'github', fingerprints: c.fingerprints(keys, 'github', who.accountId), keyVersion: keys[0].version,
+        level: who.level, displayName: NEW_NAME, recheckAfter: who.recheckAfter };
+      if (country) {
+        // As for every sign-in from a declined region: a new person is declined before anything is stored (only the
+        // day's count); a member confirms where they live first (confirm=1), and only that confirmation is recorded.
+        if (!(await run(ANON, (t) => store.known(t, { provider: 'github', fingerprints: args.fingerprints })))) {
+          await countDecline(country);
+          return json(200, { declined: true });
+        }
+        if (body.confirm !== '1') return json(200, { region: region.countryName(country) || country });
+        args.region = country;
+      }
+      const out = await finish(res, ANON, args);
+      if (out.refused === 'region') { await countDecline(country); return json(200, { declined: true }); }
+      if (out.refused) return json(200, { error: out.refused === 'disabled' ? 'disabled' : 'unavailable' });
+      await afterSignIn(req, out, null, Boolean(country));
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return json(200, { signed_in: true, go: body.return_to ? h.returnPath(body.return_to) : '/feed' });
     },
 
     async emailStart(req, res) {

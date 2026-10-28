@@ -376,7 +376,7 @@ default app.watch_settings.signup_floor = 20
 default app.watch_settings.signup_multiplier = 5
 default app.watch_settings.singleton = true
 default app.watch_settings.updated_at = now()
-function app.act_as(p_actor text, p_member uuid, p_agent uuid, p_fresh boolean, p_session text, p_key text, p_system text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=97ca4554d4a9f53f782625e07740ba4b
+function app.act_as(p_actor text, p_member uuid, p_agent uuid, p_fresh boolean, p_session text, p_key text, p_system text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=a80c174a73355376bba4c19872ab20fc
 function app.act_reconfirm_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=23149c747f556bcd077199fafcb92d1e
 function app.actor_kind() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_erase,dog_delegate,dog_jevs language=sql volatile=s definer=false config= returns=text body_md5=7777987dd22198273771357bd7ecc74b
 function app.actor_stamp(p_actor text, p_member text, p_agent text, p_fresh text, p_session text) owner=dog_signin execute=dog_signin,dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=f44b245fc7779061313876ede7abdaa8
