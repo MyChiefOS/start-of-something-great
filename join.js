@@ -67,7 +67,7 @@
     if (r.ok) box.hidden = false;
   }).catch(function () { /* sign-in stays hidden */ });
 
-  var timer = null, deadline = null, busy = false, started = 0, confirmed = false;
+  var timer = null, deadline = null, busy = false, started = 0, confirmed = false, askedAt = 'start';
   function stop() {
     if (timer) { clearInterval(timer); timer = null; }
     if (deadline) { clearTimeout(deadline); deadline = null; }
@@ -79,6 +79,9 @@
     post('/auth/code/finish', confirmed ? { confirm: '1' } : {}).then(function (d) {
       if (!timer) return;
       if (d.signed_in) { stop(); say('Signed in. Taking you to your feed\u2026'); location.href = d.go || '/'; return; }
+      // The region can look different by the time the code is used (a network that changed while travelling): ask
+      // then, and carry on with the same code once they confirm (the CSO's re-check, N1).
+      if (d.region) { clearInterval(timer); timer = null; askRegion(d.region, 'finish'); return; }
       if (d.declined) { stop(); show.hidden = true; say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
       if (d.refused) { stop(); show.hidden = true; say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
       if (d.expired) { expired(); return; }
@@ -87,15 +90,16 @@
     }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026'); })
       .then(function () { busy = false; });
   }
+  function askRegion(name, at) {
+    askedAt = at;
+    document.getElementById('code-region-text').textContent = 'You appear to be in ' + name + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland. If you live elsewhere and are travelling, you can continue.';
+    ask.hidden = false;
+    say('');
+  }
   function getCode() {
     say('Getting a code\u2026');
     post('/auth/code/start', confirmed ? { confirm: '1' } : {}).then(function (d) {
-      if (d.region) {
-        document.getElementById('code-region-text').textContent = 'You appear to be in ' + d.region + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland. If you live elsewhere and are travelling, you can continue.';
-        ask.hidden = false;
-        say('');
-        return;
-      }
+      if (d.region) { askRegion(d.region, 'start'); return; }
       if (!d.code) { say(d.error || 'Couldn\u2019t get a code. Please try again.'); return; }
       document.getElementById('code-value').textContent = d.code;
       show.hidden = false;
@@ -109,7 +113,7 @@
   document.getElementById('code-region-yes').addEventListener('click', function () {
     confirmed = true;
     ask.hidden = true;
-    getCode();
+    if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else getCode();
   });
   document.getElementById('code-get').addEventListener('click', getCode);
   document.getElementById('code-copy').addEventListener('click', function () {
