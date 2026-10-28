@@ -62,8 +62,10 @@ end
 $$;
 
 -- 2. The JEVs gate claims a posted code for the GitHub account that posted it. True for a waiting, unexpired code, and
---    again for the same account's own code if the same post is sent twice (a retried workflow run; the CSO's review,
---    finding 8). A used, expired or unknown code, or one another account claimed, changes nothing and answers false.
+--    again for any unexpired code that same account already claimed, so a retried workflow run gets the right reply
+--    (the CSO's review, finding 8). That is per account, not per post: the same account reposting its own code also
+--    answers true, and can't sign in twice, since only a 'claimed' code signs in. A used-up, expired or unknown code,
+--    or one another account claimed, changes nothing and answers false.
 create function app.code_claim(p_code_hash text, p_fingerprint text)
 returns boolean
 language plpgsql security definer set search_path = pg_catalog
