@@ -115,6 +115,16 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 
 Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, and a traveller's confirmation a third, in the same role (see "Sign-in fixes" below).
 
+### Signing in with a code posted through giscus (023, Oct 28, 2026)
+
+Aaron chose this on Oct 28 ("Okay you can implement this feature"). It needs no GitHub sign-in app and no secret: the proof of who someone is, is GitHub's own record of who posted the code.
+
+1. On /join, "Get a sign-in code" (`POST /auth/code/start`) gives this browser a code such as `DOG-7K4M-Q2XH` and a random tag in a `__Host-dog_code` cookie. The database keeps only keyed hashes of both (`app.code_signins`), for 10 minutes.
+2. The person posts exactly that code in the giscus box on the same page. The JEVs workflow sends the comment to the JEVs gate as it does every post, and the post is scored like any other. The gate hashes the code the same way and claims it for the GitHub account that posted it, by that account's fingerprint (`app.code_claim`, which only the gate's role `dog_jevs` may call). A banned account claims nothing; the founder's account is never banned. The workflow hides the code comment and replies to it, so GitHub tells the poster a browser was signed in as them.
+3. The page asks `POST /auth/code/finish` every 2 seconds. Once the code is claimed, `app.code_sign_in` takes the GitHub account from the claimed code itself and signs it in through `app.sign_in`. The site never names who is signing in, so on this path it can't sign in as anyone else.
+
+A code works once, for the browser that asked for it. From a declined region the page asks first where the person lives; a new person is declined there, a member travelling signs in, as with every other sign-in. Sessions last a flat 30 days (Aaron, Oct 28): `IDLE_DAYS` is 30, and `app.act_as` uses the same. The gate holds only the first fingerprint key, so a key rotation must move the gate too (RISKS.md RK89). Tests: `test/code-signin.test.js`.
+
 ### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
 
 - **Server code can still act as anyone.** As with everything in this database, if our server code ran SQL of its own, it could claim to be any member and create a working session for them. The checks inside the sign-in functions stop honest mistakes, not deliberate code. That's why the stronger lock (a signed claim from sign-in that the database verifies) is on the list before 1,000 members.
