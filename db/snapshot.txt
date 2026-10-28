@@ -68,6 +68,13 @@ constraint app.change_log change_log_event_check CHECK ((event = ANY (ARRAY['pus
 constraint app.change_log change_log_pkey PRIMARY KEY (id)
 constraint app.change_log change_log_result_check CHECK ((result = ANY (ARRAY['ok'::text, 'checks_failed'::text])))
 constraint app.change_log change_log_run_id_check CHECK ((char_length(run_id) <= 40))
+constraint app.code_signins code_signins_browser_hash_check CHECK (((char_length(browser_hash) = 64) AND (browser_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.code_signins code_signins_check CHECK (((status = 'waiting'::text) = (fingerprint IS NULL)))
+constraint app.code_signins code_signins_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.code_signins code_signins_code_hash_key UNIQUE (code_hash)
+constraint app.code_signins code_signins_fingerprint_check CHECK (((fingerprint IS NULL) OR ((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text))))
+constraint app.code_signins code_signins_pkey PRIMARY KEY (id)
+constraint app.code_signins code_signins_status_check CHECK ((status = ANY (ARRAY['waiting'::text, 'claimed'::text, 'used'::text])))
 constraint app.containments containments_appeal_decision_check CHECK ((appeal_decision = ANY (ARRAY['lifted'::text, 'kept'::text])))
 constraint app.containments containments_appeal_note_check CHECK ((char_length(appeal_note) <= 500))
 constraint app.containments containments_check CHECK (((lifted_at IS NULL) = (lifted_by IS NULL)))
@@ -290,6 +297,9 @@ default app.change_log.applied = '[]'::jsonb
 default app.change_log.at = now()
 default app.change_log.id = app.uuid_v7()
 default app.change_log.reset = false
+default app.code_signins.created_at = now()
+default app.code_signins.id = app.uuid_v7()
+default app.code_signins.status = 'waiting'::text
 default app.containments.id = app.uuid_v7()
 default app.containments.started_at = now()
 default app.deletion_reviews.created_at = now()
@@ -416,6 +426,9 @@ function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql vo
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
 function app.brakes_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=28e005648dc066cc06b44c249b1cdacf
 function app.change_log_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=beae6be75fab0d889053d9044f4b1aa5
+function app.code_claim(p_code_hash text, p_fingerprint text) owner=dog_signin execute=PUBLIC,dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=75173ff14e622f7723c5e7f7e1293577
+function app.code_issue(p_code_hash text, p_browser_hash text) owner=dog_signin execute=PUBLIC,dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=f10fb7f882d30953f95ec356080269bc
+function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=PUBLIC,dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=b36238f6068ddfc063ce3ccb11f6b7a2
 function app.containment_lift_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=integer body_md5=ee6ec02d2a3446ccc4ca320dbfdc9096
 function app.containments_after() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=00cce9d586929f29763ca18d90877142
 function app.containments_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=eacbdc1f35b247f621b91972af93cec8
@@ -666,6 +679,15 @@ grant app.brakes.member_id dog_jevs SELECT
 grant app.brakes.new_agents_per_day dog_app INSERT
 grant app.brakes.note dog_app INSERT
 grant app.brakes.people_per_hour dog_app INSERT
+grant app.code_signins dog_signin DELETE
+grant app.code_signins dog_signin SELECT
+grant app.code_signins.browser_hash dog_signin INSERT
+grant app.code_signins.claimed_at dog_signin UPDATE
+grant app.code_signins.code_hash dog_signin INSERT
+grant app.code_signins.expires_at dog_signin INSERT
+grant app.code_signins.fingerprint dog_signin UPDATE
+grant app.code_signins.status dog_signin UPDATE
+grant app.code_signins.used_at dog_signin UPDATE
 grant app.containments dog_app SELECT
 grant app.containments dog_erase DELETE
 grant app.containments.appeal_decision dog_app UPDATE
@@ -1034,6 +1056,10 @@ policy app.brakes brakes_limits_select cmd=r permissive=true to=dog_limits using
 policy app.brakes brakes_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.brakes brakes_update cmd=w permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)
 policy app.change_log change_log_owner_only cmd=* permissive=true to=dog_owner using=true check=true
+policy app.code_signins code_signins_signin_delete cmd=d permissive=true to=dog_signin using=true check=
+policy app.code_signins code_signins_signin_insert cmd=a permissive=true to=dog_signin using= check=true
+policy app.code_signins code_signins_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.code_signins code_signins_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.containments containments_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.containments containments_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.containments containments_insert cmd=a permissive=true to=dog_app using= check=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text)
