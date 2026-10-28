@@ -45,7 +45,10 @@ const ROUTES = {
   // a region where we don't sign people up (Continue finishes signing in; Cancel stores nothing).
   'GET form': (f, q, s) => f.formToken(q, s),
   'POST region/continue': (f, q, s) => f.regionContinue(q, s),
-  'POST region/cancel': (f, q, s) => f.regionCancel(q, s)
+  'POST region/cancel': (f, q, s) => f.regionCancel(q, s),
+  // 023 (Aaron, Oct 28, 2026): sign in by posting a one-time code through giscus on /join.
+  'POST code/start': (f, q, s) => f.codeStart(q, s),
+  'POST code/finish': (f, q, s) => f.codeFinish(q, s)
 };
 
 function plain(res, status, text) {

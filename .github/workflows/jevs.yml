@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
   id-token: write # only to ask GitHub for the identity token the gate checks
-  discussions: write # only to reply to /agent commands and, in enforce mode, hide a post
+  discussions: write # only to reply to /agent commands and sign-in codes, hide a sign-in code, and in enforce mode hide a post
   issues: write # only to add alerts to the "JEVs alerts" issue
 
 # No concurrency group: GitHub cancels a pending run when a third one queues in the same group, which would drop
@@ -148,6 +148,20 @@ jobs:
             -f id="$(cat node_id.txt)" > /dev/null
           echo "hidden"
 
+      - name: Hide a sign-in code (used or not, in either mode)
+        # A comment that is exactly a sign-in code (023) is hidden as outdated once the gate has seen it, so a code
+        # never stays readable in the thread. Hiding fails safe: the code works once and expires in 10 minutes anyway.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e '.signin != null' result.json > /dev/null || exit 0
+          [ "$GITHUB_EVENT_NAME" = discussion_comment ] || exit 0
+          gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }' \
+            -f id="$(cat node_id.txt)" > /dev/null
+          echo "code hidden"
+
       - name: Show approved drafts again
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,7 +174,7 @@ jobs:
             gh api graphql -f query='mutation($id: ID!) { unminimizeComment(input: {subjectId: $id}) { unminimizedComment { isMinimized } } }' -f id="$id" > /dev/null || true
           done < unhide.txt
 
-      - name: Reply to /agent commands
+      - name: Reply to /agent commands and sign-in codes
         # A reply that fails (a locked thread, a rate limit) must not stop anything else.
         continue-on-error: true
         env:

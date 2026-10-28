@@ -32,7 +32,16 @@
     <main class="story signin">
       <h1>Join Day One Great</h1>
       <p class="dek">Sign in with your GitHub account and say hello. There is no password to make and nothing to fill in.</p>
-      <p class="notice">Joining needs a free GitHub account. Press "Sign in with GitHub" below, then post. By continuing you agree to our <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.</p>
+      <p class="notice">Joining needs a free GitHub account. Sign in with GitHub in the box below, then post. By continuing you agree to our <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.</p>
+
+      <section id="code-signin" hidden>
+        <h2>Sign in to the site</h2>
+        <p>Get a one-time code, then post exactly that code in the box below. A few seconds later this page signs you in, for 30 days. The code works once, only in this browser, for 10 minutes. Only post a code this page showed you.</p>
+        <p><button type="button" id="code-get" class="button">Get a sign-in code</button></p>
+        <p id="code-show" hidden>Your code: <code id="code-value"></code> <button type="button" id="code-copy">Copy</button></p>
+        <div id="code-region" hidden><p id="code-region-text"></p><p><button type="button" id="code-region-yes" class="button">I live outside these regions: continue</button></p></div>
+        <p id="code-status" role="status" aria-live="polite"></p>
+      </section>
 
       <h2 id="say-hello">Say hello</h2>
       <p class="fine">Your post goes publicly to <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1">our welcome thread on GitHub</a> and shows here and on <a href="/talk">Talk</a>, through <a href="https://giscus.app">giscus</a>, a free open-source tool.</p>
