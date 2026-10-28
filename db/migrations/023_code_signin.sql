@@ -19,7 +19,7 @@ create table app.code_signins (
   id uuid primary key default app.uuid_v7(),
   code_hash text not null unique check (char_length(code_hash) = 64 and code_hash ~ '^[0-9a-f]+$'),
   browser_hash text not null check (char_length(browser_hash) = 64 and browser_hash ~ '^[0-9a-f]+$'),
-  fingerprint text check (fingerprint is null or (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$')),
+  fingerprint text check (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$'), -- null until claimed
   status text not null default 'waiting' check (status = any (array['waiting', 'claimed', 'used'])),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
@@ -39,8 +39,7 @@ grant select, delete on app.code_signins to dog_signin;
 grant insert (code_hash, browser_hash, expires_at) on app.code_signins to dog_signin;
 grant update (fingerprint, status, claimed_at, used_at) on app.code_signins to dog_signin;
 
-grant create on schema app to dog_signin;
-set local role dog_signin;
+-- The three functions are made here, then handed to dog_signin (as in 002), so they run with its narrow rights.
 
 -- 1. A new code for one browser, for 10 minutes. Old rows are cleared now and then (a day after they expire).
 create function app.code_issue(p_code_hash text, p_browser_hash text)
@@ -110,10 +109,17 @@ begin
 end
 $$;
 
-set local role dog_owner;
-revoke create on schema app from dog_signin;
-
+-- Who may call them, set before handing them over, while dog_owner can still grant: the site's role makes and uses
+-- codes; only the JEVs gate's role claims one.
 revoke execute on function app.code_issue(text, text), app.code_claim(text, text),
   app.code_sign_in(text, text, text, integer, text) from public;
 grant execute on function app.code_issue(text, text), app.code_sign_in(text, text, text, integer, text) to dog_app;
 grant execute on function app.code_claim(text, text) to dog_jevs;
+
+-- Postgres hands a function only to a role that may create objects in its schema, so dog_signin has that right for
+-- these lines only.
+grant create on schema app to dog_signin;
+alter function app.code_issue(text, text) owner to dog_signin;
+alter function app.code_claim(text, text) owner to dog_signin;
+alter function app.code_sign_in(text, text, text, integer, text) owner to dog_signin;
+revoke create on schema app from dog_signin;

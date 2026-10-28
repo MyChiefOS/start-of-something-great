@@ -179,10 +179,10 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel']]);
+    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
-      'POST region/continue', 'POST region/cancel'],
+      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish'],
     'only these change anything, and all are POSTs');
 });
 
@@ -478,12 +478,14 @@ test('F10: a banned member can\'t sign back in with the same account, and their 
   assert.ok(!back.browser.get(SESSION));
 });
 
-test('sessions end after a week idle or 30 days at most, and logging out is a same-site POST', async () => {
+test('sessions last a flat 30 days (Aaron, Oct 28: no 7-day idle limit), and logging out is a same-site POST', async () => {
   const env = setup({ accounts: { 'github:6001': { accountId: '6001', name: 'L', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '6001');
   const hash = c.sha256hex(a.browser.get(SESSION));
-  await q(`update app.sessions set last_seen_at = now() - interval '8 days' where token_hash = '${hash}'`);
-  assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'idle');
+  await q(`update app.sessions set last_seen_at = now() - interval '29 days' where token_hash = '${hash}'`);
+  assert.strictEqual((await me(env, a.browser)).signed_in, true, 'unused for 29 days: still signed in');
+  await q(`update app.sessions set last_seen_at = now() - interval '31 days' where token_hash = '${hash}'`);
+  assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'unused past 30 days');
   await q(`update app.sessions set last_seen_at = now(), expires_at = now() - interval '1 second' where token_hash = '${hash}'`);
   assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'expired');
 
