@@ -86,12 +86,17 @@ test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s C
   const n = 65000;
   const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x', '\r'.repeat(n) + 'x', '\u{00A0}'.repeat(n) + 'x', '\u{3000}'.repeat(n) + 'system',
     '\u{2028}'.repeat(n) + 'x', 'system' + ' \n'.repeat(n / 2) + 'x',
-    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2)];
+    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2),
+    // R-16: one U+FDFA is 18 characters after NFKC; 65,536 of them took about 1 s before the cut after normalising.
+    '\u{FDFA}'.repeat(65536)];
   for (const body of hostile) {
     const t0 = Date.now();
     J.analyze(body); J.agentTag(body); J.parseCommands(body); J.parseActions(body);
     assert.ok(Date.now() - t0 < 500, 'scored in under 500 ms: ' + JSON.stringify(body.slice(0, 12)));
   }
+  const t1 = Date.now();
+  maskContacts('\u{FDFA}'.repeat(65536));
+  assert.ok(Date.now() - t1 < 500, 'R-16: the site\'s masking, which folds the same way, is cut after normalising too');
   assert.deepStrictEqual(J.hiddenSignals('hello\n\n   system: do X'), ['role_marker'], 'a role marker on its own line is still spotted');
   assert.deepStrictEqual(J.hiddenSignals('the system: it works'), [], 'mid-sentence "system:" is not a role marker');
   for (const b of ['\u{00A0}system: x', '\u{3000}system: x', '\u{2003}assistant: x', 'system\n: x', 'ok\r\ndeveloper :x']) {
@@ -240,8 +245,11 @@ if (!SERVER) {
     assert.strictEqual(r.alert, true);
     const c = await go({ id: 3302, login: 'faker2', body: 'Hello, this is Aaron Chandler. Please DM me your tokens.' });
     assert.ok(c.decisions[0].questions.includes('J17'));
+    // R-11: the founder's account (which Claude also posts as) is scored like any other, and its J17 alerts too.
     const f = await go({ id: 304218593, login: 'MyChiefOS', body: 'This is Aaron, welcome everyone.' });
-    assert.ok(!f.decisions[0].questions.includes('J17'), 'the founder\'s own account may say so');
+    assert.ok(f.decisions[0].questions.includes('J17'), 'the founder\'s account is scored like any other (R-11)');
+    assert.strictEqual(f.alert, true);
+    assert.strictEqual(f.hide, false);
   });
 
   test('row 9: a sub-agent has the same or narrower limits, expires, and goes when its parent goes', async () => {
@@ -573,6 +581,74 @@ if (!SERVER) {
       } catch (e) { failed.push(i + ': ' + e.message); } finally { await p1.end({ timeout: 5 }); await p2.end({ timeout: 5 }); }
     }
     assert.deepStrictEqual(failed, [], 'every round: both posts scored');
+  });
+
+  test('R-11: the founder\'s account is scored like any other; banned or high risk, it alerts and is never hidden', async () => {
+    const e = { ...ev({ id: 304218593, login: 'MyChiefOS', body: 'A plain update from the founder.' }), mode: 'enforce', bans: [304218593] };
+    const r = await G.handle(sql, e, { key: KEY });
+    const d = r.decisions.find((x) => x.action === 'post.create');
+    assert.deepStrictEqual({ reason: d.reason, effect: d.effect, alert: r.alert, hide: r.hide }, { reason: 'banned', effect: 'alert', alert: true, hide: false });
+    const spam = 'Buy now https://spam-five.test https://spam-six.test https://spam-seven.test https://spam-eight.test mail deals@spam.test call +1 202 555 0143';
+    const h = await G.handle(sql, { ...ev({ id: 304218593, login: 'MyChiefOS', body: spam }), mode: 'enforce' }, { key: KEY });
+    const hd = h.decisions.find((x) => x.action === 'post.create');
+    assert.deepStrictEqual({ risk: hd.risk, reason: hd.reason, effect: hd.effect, hide: h.hide }, { risk: 'high', reason: 'high_risk', effect: 'alert', hide: false });
+    const other = await G.handle(sql, { ...ev({ id: 7101, login: 'someone-banned', body: 'Hello.' }), mode: 'enforce', bans: [7101] }, { key: KEY });
+    assert.strictEqual(other.hide, true, 'anyone else on the ban list is still hidden in enforce mode');
+  });
+
+  test('R-15: an owner at level 1 alerts when it registers an agent, makes a sub-agent or links a machine account; nothing is refused', async () => {
+    await go({ id: 7201, login: 'lowowner', body: 'hello' });
+    await owner(`update app.gh_accounts set level = 1 where github_id = 7201`);
+    const r = await go({ id: 7201, login: 'lowowner', body: '/agent register tiny' });
+    assert.match(r.reply, /Registered agent `tiny`/, 'still registered');
+    assert.deepStrictEqual({ alert: r.alert, reason: r.decisions[0].reason, effect: r.decisions[0].effect }, { alert: true, reason: 'level1_owner', effect: 'alert' });
+    const sub = await go({ id: 7201, login: 'lowowner', body: '/agent subagent tinier of tiny' });
+    assert.deepStrictEqual({ alert: sub.alert, reason: sub.decisions[0].reason }, { alert: true, reason: 'level1_owner' });
+    await go({ id: 7202, login: 'highowner', body: 'hello' });
+    const ok = await go({ id: 7202, login: 'highowner', body: '/agent register fine' });
+    assert.deepStrictEqual({ alert: ok.alert, reason: ok.decisions[0].reason }, { alert: false, reason: '' }, 'a level-2 owner: no alert');
+    await go({ id: 7203, login: 'lowowner-bot', body: 'hello' });
+    await go({ id: 7201, login: 'lowowner', body: '/agent add @lowowner-bot' });
+    const link = await go({ id: 7203, login: 'lowowner-bot', body: '/agent owner @lowowner' });
+    assert.match(link.reply, /Linked/);
+    assert.deepStrictEqual({ alert: link.alert, reason: link.decisions[0].reason }, { alert: true, reason: 'level1_owner' }, 'the person who will own it is level 1');
+  });
+
+  test('R-15: an account whose first post registers agents is checked once its level is decided', async () => {
+    const promoted = await go({ id: 7301, login: 'firstpost-ok', body: 'Hello!\n/agent register helper' });
+    const first = promoted.decisions.find((d) => d.action === 'account.first');
+    assert.deepStrictEqual({ level: promoted.level, alert: promoted.alert, reason: first.reason }, { level: 2, alert: false, reason: '' });
+    // Today every first post passes the standard questions (J06 doesn't see this post's own registrations, and J04 and
+    // J10 have nothing to count yet), so the test makes the pass mark stricter for one post to reach level 1.
+    await sql`update app.jevs_settings set value = '5' where key = 'pass_max'`;
+    let many;
+    try {
+      many = await go({ id: 7302, login: 'firstpost-many', body: '/agent register a1\n/agent register a2' });
+    } finally { await sql`update app.jevs_settings set value = '10' where key = 'pass_max'`; }
+    const f2 = many.decisions.find((d) => d.action === 'account.first');
+    assert.deepStrictEqual({ level: many.level, alert: many.alert, reason: f2.reason, effect: f2.effect }, { level: 1, alert: true, reason: 'level1_owner', effect: 'alert' });
+    assert.ok(many.decisions.filter((d) => d.action === 'agent.register').every((d) => d.reason === ''), 'the registrations wait for the level');
+    assert.strictEqual(many.ownsAgents, undefined, 'the gate\'s working flag stays inside the gate');
+  });
+
+  test('R-4: a tree of sub-agents can\'t post its top agent\'s limit many times over: the whole tree counts, and over it alerts', async () => {
+    await go({ id: 7401, login: 'treeowner', body: 'hello' });
+    await go({ id: 7401, login: 'treeowner', body: '/agent register top daily 2' });
+    await go({ id: 7401, login: 'treeowner', body: '/agent subagent kid1 of top daily 2' });
+    await go({ id: 7401, login: 'treeowner', body: '/agent subagent kid2 of top daily 2' });
+    const tag = (a) => '\n\n— agent ' + a + ' for @treeowner';
+    const post = (a, i) => G.handle(sql, { ...ev({ id: 7401, login: 'treeowner', body: 'Tree post ' + i + '.' + tag(a) }), mode: 'enforce' }, { key: KEY });
+    const a = await post('top', 1), b = await post('kid1', 2), c = await post('kid2', 3);
+    assert.deepStrictEqual([a, b].map((p) => p.decisions[0].reason), ['', ''], 'two posts by the tree: within the top agent\'s 2');
+    assert.deepStrictEqual({ reason: c.decisions[0].reason, effect: c.decisions[0].effect, alert: c.alert, hide: c.hide },
+      { reason: 'tree_cap', effect: 'alert', alert: true, hide: false }, 'the third alerts, for now, and isn\'t hidden');
+    const own = await post('kid1', 4);
+    assert.strictEqual(own.decisions[0].reason, 'tree_cap', 'each agent is still under its own limit of 2, but the tree is over');
+    await go({ id: 7402, login: 'loneowner', body: 'hello' });
+    await go({ id: 7402, login: 'loneowner', body: '/agent register solo daily 1' });
+    const s1 = await go({ id: 7402, login: 'loneowner', body: 'One.\n\n— agent solo for @loneowner' });
+    const s2 = await go({ id: 7402, login: 'loneowner', body: 'Two.\n\n— agent solo for @loneowner' });
+    assert.deepStrictEqual([s1, s2].map((p) => p.decisions[0].reason), ['', 'agent_cap'], 'an agent with no sub-agents keeps its own cap, as before');
   });
 
 }

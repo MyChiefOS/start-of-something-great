@@ -39,8 +39,10 @@ function digitValue(ch) {
   while (k < 60 && /\p{Nd}/u.test(String.fromCodePoint(cp - 1))) { cp--; k++; }
   return String(k % 10);
 }
+// NFKC can make text up to 18 times longer (one U+FDFA becomes 18 characters), so the folded text is cut to MAX_SCAN
+// again after normalising: 65,536 of them took about 1 s here, half the gate's CPU limit (R-16).
 function fold(text) {
-  return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC')
+  return String(text == null ? '' : text).slice(0, MAX_SCAN).normalize('NFKC').slice(0, MAX_SCAN)
     .replace(/[^\x00-\x7F]/gu, (ch) => (/\p{Nd}/u.test(ch) ? digitValue(ch) : ch))
     .replace(INVISIBLE_RUN, '').replace(VARIATION_IN_TEXT, '')
     .replace(/[\u{3002}\u{FF61}]/gu, '.');
@@ -63,7 +65,9 @@ function fnv64(word) {
   return h;
 }
 export function simhash(body) {
-  const words = String(body).normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  // Cut to MAX_SCAN before and after normalising, as fold() does (R-16). The site's own copy (db/jevs.js) needs no cut:
+  // its 24 KB request limit keeps the worst case near 170 ms.
+  const words = String(body).slice(0, MAX_SCAN).normalize('NFKC').slice(0, MAX_SCAN).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   if (words.length < MIN_WORDS || words.join(' ').length < MIN_CHARS) return null;
   const weights = new Array(64).fill(0);
   for (const w of words) {
@@ -193,7 +197,7 @@ export const QUESTIONS = [
     score: (s) => band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]]) },
   { id: 'J16', title: 'Hidden instructions', description: 'Text hidden from people but read by agents: HTML comments, invisible characters, long encoded blobs, "ignore previous instructions" and role markers. 20 for each kind, at most 40: an alert, never a hide on its own.',
     score: (s) => Math.min(40, 20 * (s.hidden || []).length) },
-  { id: 'J17', title: 'Impersonation', description: 'A tag naming another owner\u{2019}s agent scores 80. Text claiming to be Aaron, Day One Great, JEVs or Claude, from anyone but the founder\u{2019}s account, scores 40: worth a look, never a hide on its own.',
+  { id: 'J17', title: 'Impersonation', description: 'A tag naming another owner\u{2019}s agent scores 80. Text claiming to be Aaron, Day One Great, JEVs or Claude scores 40, from any account, the founder\u{2019}s included: worth a look, never a hide on its own.',
     score: (s) => (s.impersonation ? 80 : s.claims ? 40 : 0) }
 ];
 const BY_ID = Object.fromEntries(QUESTIONS.map((q) => [q.id, q]));
