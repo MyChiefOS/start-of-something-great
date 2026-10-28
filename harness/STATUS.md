@@ -18,7 +18,7 @@ On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its 
 - **Fix 4's new check hasn't run live.** The runner that applied 019 and 020 was version 4; version 5, with fix 4, was deployed after (OPERATIONS.md). It runs at the next migration.
 - **The v5 deploy was logged late, and its files were compared by reading, not by script** (inferred). R-3's source digest replaces this.
 - **No real agent has used either path.** Fix 1's live proof covers an ordinary post only (Aaron's, Oct 25 20:16 UTC). How Claude runs the agent test without Aaron is unknown; it's Claude's to solve before fix 10.
-- **Records disagree on PR flow:** CHARTER §3 says PRs queue up; harness/RULES.md rule 1 says one stays open. Claude follows one at a time. The question has been open for Aaron since Oct 23 (FACTS.md, "Open for Aaron"); it isn't asked again.
+- **PR flow settled (Oct 28):** PRs queue up, each built on the one before and targeting `main`, as CHARTER §3 says (Aaron, Oct 17, reaffirmed Oct 28). Until then Claude had followed one open at a time, which made each merge a wait; harness/RULES.md rule 1 now matches the charter.
 - **`dog-probe` (v2, answers 410) is still deployed, and the `setup-probe` and `oidc-probe` branches still exist.** Claude's session can't delete branches. Claude will propose the deletions in a PR whose merge is Aaron's approval; whether a workflow can delete those branches is unknown until tried.
 - **SETUP.md and RELEASE-CHECKLIST.md still describe route A's manual steps.** SETUP.md is marked superseded (PR #50). Both are rewritten in the open PR (5b below), when route B's steps are final; the connection PR didn't, as first promised.
 
@@ -77,7 +77,7 @@ The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's d
 
 ## What is left for production, in order
 
-One PR open at a time. Each opens when it is built and checked (the suite, the Supabase-image rehearsal, Semgrep, gitleaks, and independent review). Aaron's only step is the merge.
+PRs queue up, each built on the one before and targeting `main` (harness rule 1, Oct 28). Each opens when it is built and checked (the suite, the Supabase-image rehearsal, Semgrep, gitleaks, and independent review). Aaron's only step is the merge.
 
 1. **PR #50: true public text (R-5). Done:** merged Oct 26 22:57 UTC and read live.
 2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.

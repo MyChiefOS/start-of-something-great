@@ -29,7 +29,8 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 
 | Fact | Status | Source | Date |
 |---|---|---|---|
-| GitHub sign-in app exists and its keys are in Vercel | stated | Aaron: "it is in vercel for git hub" (Oct 17); "I gave you everything to set up sign in with GitHub" (Oct 23) | 2026-10-23 |
+| GitHub sign-in app exists and its keys are in Vercel | replaced | Aaron: "it is in vercel for git hub" (Oct 17); "I gave you everything to set up sign in with GitHub" (Oct 23) | 2026-10-23 |
+| No site GitHub sign-in app exists: production has no `GITHUB_CLIENT_ID` or `GITHUB_CLIENT_SECRET` (only `GITHUB_TOKEN`), and Aaron's GitHub Apps page lists none. What Aaron set up earlier was giscus's sign-in ("We were using sign in with GitHub Giscus", Oct 27), which only giscus.app can use. Replaces the row above | checked | `/api/ready` on production, Oct 27 and 28; Aaron's screenshot of GitHub Apps, Oct 27 | 2026-10-28 |
 | X sign-in app exists; its OAuth 2.0 Client ID and Secret are in Vercel, but not under the names the code reads (X_CLIENT_ID, X_CLIENT_SECRET) | stated | Aaron: "Those bother are in Vercel They Just are not named that way." | 2026-10-23 |
 | Claude set up the start-of-something-great project in Vercel for Aaron when the site was first built (Oct 13 to 15), so the Vercel connector could reach that project then; by Oct 22 it could not. When and how the grant narrowed is not known; the Vercel audit log or Anthropic support can tell | stated | Aaron: "You set everything up with vercel for this project." | 2026-10-23 |
 | Vercel team ChiefOS (chief-os) is on the Pro plan, which the every-minute timers need | checked | Aaron's screenshot of the project overview | 2026-10-23 |
@@ -116,13 +117,15 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | "I want the system to work. Can you make that happen with my approval of PRs?" | 2026-10-26 | in plan: the PR order in harness/STATUS.md, faster path (switch-on PRs first) |
 | "Production system not test production system." Tests check the rules production runs under, never a loosened copy | 2026-10-26 | done in the RK82 PR: level-2 test members are made by the same database write JEVs's promotion makes; no test-only switch |
 | "pr 50 approved" | 2026-10-26 | done: #50 merged 22:57 UTC (`5c338fe`), live text checked (OPERATIONS.md) |
+| "Look at the handshake and what I've stated as my intent for the system is the goal of not having to be the bottleneck." Claude named where it had diverged: it followed one PR open at a time (harness rule 1) over Aaron's Oct 17 rule that PRs queue up; it put hardening ahead of go-live; it ended replies with questions it could decide. From now on PRs are built back to back, each on the one before, and open when ready; Claude asks only what only Aaron can do | 2026-10-28 | in effect from the gate-hardening PR |
+| "Okay you can implement this feature and it will last 30 days?" Site sign-in by posting a one-time code through giscus (option 1: nothing needed from Aaron on GitHub), and signed-in sessions last a flat 30 days (the 7-day idle limit goes; Aaron may keep it by saying so) | 2026-10-28 | in plan: the code sign-in PR, on top of the gate-hardening PR |
 
 ## Open for Aaron (ask once; record the answer here)
 
 | Question | Asked | Answer |
 |---|---|---|
 | Keep the 24-hour deletion rule (RK62), or switch to the oldest-method rule | 2026-10-22 | |
-| Charter section 3 says each PR "is built on the one before it". Change it to "every PR targets main" (harness rule 1) | 2026-10-23 | |
+| Charter section 3 says each PR "is built on the one before it". Change it to "every PR targets main" (harness rule 1) | 2026-10-23 | Settled by Aaron's Oct 17 rule, which stands (Oct 28, his intent: "not having to be the bottleneck"): PRs queue up, each built on the one before; harness rule 1 follows the charter |
 | Is PK13 (two passkeys, one a hardware key) required for today's launch, or is one synced passkey enough until a hardware key arrives | 2026-10-23 | No longer applies: passkeys removed by Aaron's Oct 23 instruction (noted by Claude, Oct 25) |
 | How does Aaron become administrator before sign-up opens (harness/PLAN.md fix 9) | 2026-10-25 | |
 | How are email erasure requests carried out (privacy promises erasure; nothing is built) | 2026-10-25 | |
