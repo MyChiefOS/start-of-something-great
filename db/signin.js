@@ -212,7 +212,7 @@ async function codeIssue(t, { codeHash, browserHash, loginHash, fileKey }) {
     ${hex('fileKey', fileKey)})`;
 }
 
-// Signing in again with the key file (Aaron, Oct 28). { status: 'ok' | 'no_match' | 'post_needed' } or { refused }.
+// Signing in again with the key file (Aaron, Oct 28). { status: 'ok' | 'no_match' | 'start_again' } or { refused }.
 async function fileSignIn(t, { loginHash, keyHash, displayName, sessionHash, sessionDays, region = null }) {
   const args = {
     login: hex('loginHash', loginHash), key: hex('keyHash', keyHash),

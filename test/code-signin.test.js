@@ -316,7 +316,7 @@ if (!SERVER) {
     assert.strictEqual((await me(back)).member_id, who.member_id, 'the same account after starting again');
   });
 
-  test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), an administrator always posts a code, and a deleted account\'s file is gone', async () => {
+  test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
     const b = jar();
     const s = await start(b, { login: 'tries', file: FILE_A });
     await post(8021, 'tries', s.code);
@@ -363,14 +363,16 @@ if (!SERVER) {
     assert.match((await key({ login: 'renamed', file: FILE_A }, '198.51.100.62')).error, /don’t match/, 'the older account\'s file for that name is gone');
     assert.match((await key({ login: 'renamed', file: sha('wrong') }, '198.51.100.63')).error, /don’t match/, 'a wrong file is counted, not an error');
     assert.strictEqual((await key({ login: 'renamed', file: FILE_B }, '198.51.100.64')).signed_in, true);
-    // An administrator: the file signs nobody in as administrator.
+    // An administrator: the reset works for Aaron's account too (Aaron, Oct 28).
     const a = jar();
     const sa = await start(a, { login: 'boss', file: FILE_A });
     await post(8022, 'boss', sa.code);
     const boss = (await finish(a)).signed_in && await me(a);
     await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.member_id}'`); });
     const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'boss', file: FILE_A }, ip: '192.0.2.50' }), r);
-    assert.deepStrictEqual(JSON.parse(r.body), { post_needed: true, error: 'This account signs in by posting a code each time. Get a new code.' });
+    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' }, 'the administrator signs in with the key file, no post');
+    const [adm] = await owner(`select s.member_id from app.sessions s where s.member_id = '${boss.member_id}' order by s.created_at desc limit 1`);
+    assert.strictEqual(adm.member_id, boss.member_id, 'into the administrator\'s own account');
     await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${boss.member_id}'`); });
     // Deleting the account takes its key file with it.
     await su.unsafe(`delete from app.file_keys where member_id = '${boss.member_id}'`);

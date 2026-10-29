@@ -19,8 +19,8 @@
 --   access to get another token"): with the username, the person picks a private file. Their browser hashes it (SHA-256)
 --   and sends only that hash; the file never leaves their device. The site keys it again (HMAC, with the username) and
 --   the database keeps only that, in app.file_keys, once the code sign-in succeeds. Later, the same username and file
---   sign the person in again without a post (app.file_sign_in), and they get an in-app notice each time. An
---   administrator always posts a code: a file alone never makes anyone administrator. A new code sign-in with another
+--   sign the person in again without a post (app.file_sign_in), and they get an in-app notice each time. The
+--   same for everyone, Aaron's administrator account included (Aaron, Oct 28). A new code sign-in with another
 --   file replaces the old one, in the same account (the account belongs to the GitHub account, not the file).
 --   After 10 wrong files for a username, its key file is cancelled and the member is told; they start again with a new
 --   code (Aaron, Oct 28: "10 Key file tries then the user is requested to begin the process again"). "Sign out
@@ -188,8 +188,8 @@ $$;
 
 -- 4. Signing in again with the key file: the username and the file (both keyed by the site) match a member's key file.
 --    status: 'ok' with who signed in (and an in-app notice to them), 'no_match', 'start_again' (the 10th wrong file
---    for that username: its key file is cancelled), or 'post_needed' for an administrator, who always signs in by
---    posting a code. app.sign_in's refusals (banned, disabled, region) are raised as they are.
+--    for that username: its key file is cancelled). The same for every account, the administrator's included
+--    (Aaron, Oct 28). app.sign_in's refusals (banned, disabled, region) are raised as they are.
 create function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text,
                                  p_session_days integer, p_region text)
 returns table (status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean)
@@ -197,7 +197,6 @@ language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
   k app.file_keys%rowtype;
-  admin boolean;
   s record;
 begin
   if p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' or p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
@@ -218,11 +217,6 @@ begin
       return;
     end if;
     return query select 'no_match'::text, null::uuid, null::boolean, null::smallint, null::boolean;
-    return;
-  end if;
-  select m.is_admin into admin from app.members m where m.id = k.member_id;
-  if admin then
-    return query select 'post_needed'::text, null::uuid, null::boolean, null::smallint, null::boolean;
     return;
   end if;
   select * into s from app.sign_in('github', array[k.fingerprint], 1::smallint, 1::smallint, p_display_name,

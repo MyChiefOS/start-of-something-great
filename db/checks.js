@@ -99,7 +99,7 @@ const DEFINERS = {
   'app.code_issue(text, text, text, text)': 'dog_signin',
   'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
   'app.code_sign_in(text, text, text, integer, text)': 'dog_signin',
-  // The key file (Aaron, Oct 28): signing in again with the username and file, never as an administrator.
+  // The key file (Aaron, Oct 28): signing in again with the username and file, for every account.
   'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',
   // "Sign out everywhere" cancels the member's own key file.
   'app.file_key_revoke()': 'dog_signin'

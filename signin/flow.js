@@ -379,7 +379,7 @@ function make(deps) {
 
     // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
     // network; the 10th wrong file for a username cancels its key file (the database counts), and the person is asked
-    // to start again with a new code. Each sign-in leaves the member an in-app notice. An administrator posts a code.
+    // to start again with a new code. Each sign-in leaves the member an in-app notice. The same for every account, the administrator's included.
     async keyFileSignIn(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
       if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
@@ -396,7 +396,6 @@ function make(deps) {
         displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
       if (out.status === 'start_again') return json(res, 200, { start_again: true, error: 'Too many wrong key files. Please start again: get a new code, post it, and choose a new key file. You\u2019ll be back in your same account.' });
       if (out.status === 'no_match') return json(res, 200, { error: 'That username and key file don\u2019t match. Check both, or get a new code.' });
-      if (out.status === 'post_needed') return json(res, 200, { post_needed: true, error: 'This account signs in by posting a code each time. Get a new code.' });
       if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
       if (out.refused) return json(res, 200, { refused: out.refused });
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
