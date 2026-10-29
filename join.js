@@ -96,13 +96,45 @@
     ask.hidden = false;
     say('');
   }
+  // The key file's SHA-256, made here: the file itself never leaves this device (Aaron, Oct 28).
+  function fileHash() {
+    var input = document.getElementById('code-file');
+    var f = input && input.files && input.files[0];
+    if (!f) return Promise.resolve('');
+    if (f.size > 100 * 1024 * 1024) return Promise.reject(new Error('big'));
+    return f.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (d) {
+      return Array.prototype.map.call(new Uint8Array(d), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    });
+  }
+  function keyFileSignIn() {
+    var login = (document.getElementById('code-login').value || '').trim();
+    if (!login) { say('Type your GitHub username first.'); return; }
+    say('Checking your key file\u2026');
+    fileHash().then(function (h) {
+      if (!h) { say('Choose your key file first.'); return null; }
+      var body = { login: login, file: h };
+      if (confirmed) body.confirm = '1';
+      return post('/auth/key', body);
+    }).then(function (d) {
+      if (!d) return;
+      if (d.signed_in) { say('Signed in. Taking you to your feed\u2026'); location.href = d.go || '/'; return; }
+      if (d.region) { askRegion(d.region, 'key'); return; }
+      if (d.declined) { say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
+      if (d.refused) { say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
+      say(d.error || 'Couldn\u2019t sign you in. Please try again.');
+    }).catch(function (e) { say(e && e.message === 'big' ? 'That file is over 100 MB. Choose a smaller one.' : 'Couldn\u2019t read that file or reach the site. Please try again.'); });
+  }
   function getCode() {
     say('Getting a code\u2026');
     var login = (document.getElementById('code-login').value || '').trim();
     if (!login) { say('Type your GitHub username first.'); return; }
-    var body = { login: login };
-    if (confirmed) body.confirm = '1';
-    post('/auth/code/start', body).then(function (d) {
+    fileHash().then(function (h) {
+      if (!h) { say('Choose your key file first.'); return null; }
+      var body = { login: login, file: h };
+      if (confirmed) body.confirm = '1';
+      return post('/auth/code/start', body);
+    }).then(function (d) {
+      if (!d) return;
       if (d.region) { askRegion(d.region, 'start'); return; }
       if (!d.code) { say(d.error || 'Couldn\u2019t get a code. Please try again.'); return; }
       document.getElementById('code-value').textContent = d.code;
@@ -112,14 +144,15 @@
       stop();
       timer = setInterval(check, 2000);
       deadline = setTimeout(expired, (d.expires_in || 600) * 1000);
-    }).catch(function () { say('Couldn\u2019t get a code. Please try again.'); });
+    }).catch(function (e) { say(e && e.message === 'big' ? 'That file is over 100 MB. Choose a smaller one.' : 'Couldn\u2019t get a code. Please try again.'); });
   }
   document.getElementById('code-region-yes').addEventListener('click', function () {
     confirmed = true;
     ask.hidden = true;
-    if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else getCode();
+    if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else if (askedAt === 'key') keyFileSignIn(); else getCode();
   });
   document.getElementById('code-get').addEventListener('click', getCode);
+  document.getElementById('key-signin').addEventListener('click', keyFileSignIn);
   document.getElementById('code-copy').addEventListener('click', function () {
     var text = document.getElementById('code-value').textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {});

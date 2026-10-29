@@ -24,6 +24,9 @@ const ORIGIN = 'https://dayonegreat.com';
 // FINGERPRINT_KEY_1 (route B). The same stand-in here for both.
 const GATE_KEY = 'f'.repeat(40);
 const SITE_KEYS = [{ version: 1, key: Buffer.from(GATE_KEY, 'utf8') }];
+// Key files (Aaron, Oct 28) as the browser sends them: the SHA-256 of the file, never the file.
+const sha = (x) => crypto.createHash('sha256').update(x).digest('hex');
+const FILE_A = sha('an original photo nobody else has'), FILE_B = sha('another private file');
 
 // ---- Fake requests, responses and a browser's cookie jar (as in test/signin.test.js) ----
 function req(method, url, { cookie = '', origin = ORIGIN, body, ip = '203.0.113.9', country } = {}) {
@@ -108,8 +111,8 @@ if (!SERVER) {
 
   // Asks for a code for a GitHub username (opts.login), as /join does (Aaron, Oct 28: option 2).
   const start = async (browser, opts = {}) => {
-    const { login = 'someone', body = {}, ...rest } = opts;
-    const r = res(); await flow.codeStart(req('POST', '/auth/code/start', { cookie: browser.header(), body: { login, ...body }, ...rest }), r);
+    const { login = 'someone', file = FILE_A, body = {}, ...rest } = opts;
+    const r = res(); await flow.codeStart(req('POST', '/auth/code/start', { cookie: browser.header(), body: { login, file, ...body }, ...rest }), r);
     browser.take(r);
     return { status: r.statusCode, ...JSON.parse(r.body) };
   };
@@ -269,6 +272,62 @@ if (!SERVER) {
     for (const bad of ['', 'a b', '-starts-with-dash', 'x'.repeat(40), 'name!']) {
       assert.match((await start(jar(), { login: bad })).error, /GitHub username/, JSON.stringify(bad));
     }
+  });
+
+  test('the key file: after a code sign-in, the same username and file sign in again on any browser, with no post, and the member is told (Aaron, Oct 28)', async () => {
+    const first = jar();
+    const s = await start(first, { login: 'keeper', file: FILE_A });
+    await post(8020, 'keeper', s.code);
+    const who = (await finish(first)).signed_in && await me(first);
+    assert.ok(who.signed_in);
+    const key = async (browser, body, opts = {}) => {
+      const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { cookie: browser.header(), body, ...opts }), r);
+      browser.take(r);
+      return { status: r.statusCode, ...JSON.parse(r.body) };
+    };
+    const laptop = jar();
+    assert.deepStrictEqual(await key(laptop, { login: 'Keeper', file: FILE_A }), { status: 200, signed_in: true, go: '/feed' }, 'the username in any case');
+    assert.strictEqual((await me(laptop)).member_id, who.member_id, 'the same member');
+    const [n] = await owner(`select count(*)::int as n from app.notices where member_id = '${who.member_id}' and kind = 'signin_keyfile'`);
+    assert.strictEqual(n.n, 1, 'an in-app notice each time the key file is used');
+    assert.match((await key(jar(), { login: 'keeper', file: FILE_B })).error, /don’t match/, 'another file');
+    assert.match((await key(jar(), { login: 'someone-else', file: FILE_A })).error, /don’t match/, 'another username with the same file');
+    assert.match((await key(jar(), { login: 'keeper' })).error, /choose your key file/, 'no file');
+    assert.strictEqual((await key(jar(), { login: 'keeper', file: FILE_A }, { origin: 'https://evil.example' })).status, 403);
+    const dump = JSON.stringify(await owner(`select * from app.file_keys`)) + JSON.stringify(await owner(`select * from app.code_signins`));
+    assert.ok(!dump.includes(FILE_A) && !dump.includes('keeper'), 'neither the file\'s hash nor the username is stored as sent, only keyed again');
+    // A new code sign-in with a new file replaces the old one.
+    const again = jar();
+    const s2 = await start(again, { login: 'keeper', file: FILE_B });
+    await post(8020, 'keeper', s2.code);
+    assert.strictEqual((await finish(again)).signed_in, true);
+    assert.match((await key(jar(), { login: 'keeper', file: FILE_A })).error, /don’t match/, 'the old file no longer works');
+    assert.strictEqual((await key(jar(), { login: 'keeper', file: FILE_B })).signed_in, true);
+  });
+
+  test('the key file: tries are limited per username, an administrator always posts a code, and a deleted account\'s file is gone', async () => {
+    const b = jar();
+    const s = await start(b, { login: 'tries', file: FILE_A });
+    await post(8021, 'tries', s.code);
+    assert.strictEqual((await finish(b)).signed_in, true);
+    const key = async (body, ip) => { const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body, ip }), r); return { status: r.statusCode, ...JSON.parse(r.body) }; };
+    for (let i = 0; i < 10; i++) await key({ login: 'tries', file: sha('guess ' + i) }, '198.51.100.' + (i + 1));
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.99')).status, 429, 'ten tries an hour per username, from any network');
+    // An administrator: the file signs nobody in as administrator.
+    const a = jar();
+    const sa = await start(a, { login: 'boss', file: FILE_A });
+    await post(8022, 'boss', sa.code);
+    const boss = (await finish(a)).signed_in && await me(a);
+    await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.member_id}'`); });
+    const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'boss', file: FILE_A }, ip: '192.0.2.50' }), r);
+    assert.deepStrictEqual(JSON.parse(r.body), { post_needed: true, error: 'This account signs in by posting a code each time. Get a new code.' });
+    await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${boss.member_id}'`); });
+    // Deleting the account takes its key file with it.
+    await su.unsafe(`delete from app.file_keys where member_id = '${boss.member_id}'`);
+    const [{ n }] = await owner(`select count(*)::int as n from app.file_keys f join app.members m on m.id = f.member_id where m.id = '${boss.member_id}'`);
+    assert.strictEqual(n, 0);
+    const [fk] = await owner(`select confdeltype from pg_constraint where conrelid = 'app.file_keys'::regclass and contype = 'f'`);
+    assert.strictEqual(fk.confdeltype, 'c', 'a member\'s key file is deleted with the member (on delete cascade)');
   });
 
   test('codes that expired more than an hour ago are cleared every time a code is made', async () => {

@@ -48,7 +48,9 @@ const ROUTES = {
   'POST region/cancel': (f, q, s) => f.regionCancel(q, s),
   // 023 (Aaron, Oct 28, 2026): sign in by posting a one-time code through giscus on /join.
   'POST code/start': (f, q, s) => f.codeStart(q, s),
-  'POST code/finish': (f, q, s) => f.codeFinish(q, s)
+  'POST code/finish': (f, q, s) => f.codeFinish(q, s),
+  // Signing in again with the key file (Aaron, Oct 28): the same username and file, no post.
+  'POST key': (f, q, s) => f.keyFileSignIn(q, s)
 };
 
 function plain(res, status, text) {

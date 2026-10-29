@@ -179,10 +179,10 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish']]);
+    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
-      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish'],
+      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish', 'POST key'],
     'only these change anything, and all are POSTs');
 });
 
@@ -196,10 +196,13 @@ test('form bodies: read the same whether Vercel has already parsed them or not, 
   assert.strictEqual(await h.form({ headers: { 'content-type': 'application/json' }, body: { t: 'abc' } }), null);
 });
 
-test('SF4, S5: the join page signs people in with GitHub through giscus: no fields, no password, no form', () => {
+test('SF4, S5: the join page signs people in with GitHub through giscus: two fields at most, no password, no form', () => {
   const html = fs.readFileSync(path.join(root, 'join.html'), 'utf8');
-  const fields = html.match(/<(input|select|textarea|form)\b/g) || [];
-  assert.strictEqual(fields.length, 0, 'phase 1 (Aaron, Oct 23): GitHub users only, signed in by giscus');
+  const fields = html.match(/<(input|select|textarea|form)\b[^>]*>/g) || [];
+  // Phase 1 (Aaron, Oct 23): GitHub users only. Since Oct 28 sign-in asks for two things: the GitHub username and a key
+  // file, which never leaves the device (SF4 allows up to 5 fields and no new password).
+  assert.deepStrictEqual(fields, ['<input id="code-login" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40">',
+    '<input id="code-file" name="file" type="file">']);
   assert.ok(!/type="password"|autocomplete="(new|current)-password"/.test(html));
   assert.match(html, /<script src="https:\/\/giscus\.app\/client\.js"/);
   assert.match(html, /data-repo="MyChiefOS\/start-of-something-great"/);

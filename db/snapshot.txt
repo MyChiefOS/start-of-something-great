@@ -72,6 +72,7 @@ constraint app.code_signins code_signins_browser_hash_check CHECK (((char_length
 constraint app.code_signins code_signins_check CHECK (((status = 'waiting'::text) = (fingerprint IS NULL)))
 constraint app.code_signins code_signins_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_code_hash_key UNIQUE (code_hash)
+constraint app.code_signins code_signins_file_key_check CHECK (((char_length(file_key) = 64) AND (file_key ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_login_hash_check CHECK (((char_length(login_hash) = 64) AND (login_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.code_signins code_signins_pkey PRIMARY KEY (id)
@@ -102,6 +103,13 @@ constraint app.email_tokens email_tokens_key_version_check CHECK (((key_version 
 constraint app.email_tokens email_tokens_pkey PRIMARY KEY (id)
 constraint app.email_tokens email_tokens_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.email_tokens email_tokens_token_hash_key UNIQUE (token_hash)
+constraint app.file_keys file_keys_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
+constraint app.file_keys file_keys_fingerprint_key UNIQUE (fingerprint)
+constraint app.file_keys file_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.file_keys file_keys_login_hash_check CHECK (((char_length(login_hash) = 64) AND (login_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.file_keys file_keys_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.file_keys file_keys_member_id_key UNIQUE (member_id)
+constraint app.file_keys file_keys_pkey PRIMARY KEY (id)
 constraint app.gh_accounts gh_accounts_github_id_check CHECK ((github_id > 0))
 constraint app.gh_accounts gh_accounts_github_id_key UNIQUE (github_id)
 constraint app.gh_accounts gh_accounts_level_check CHECK (((level >= 1) AND (level <= 2)))
@@ -191,7 +199,7 @@ constraint app.notices notices_body_check CHECK ((char_length(body) <= 2000))
 constraint app.notices notices_check CHECK (((member_id IS NOT NULL) OR (kind = 'alert'::text)))
 constraint app.notices notices_dedupe_key_check CHECK ((((char_length(dedupe_key) >= 1) AND (char_length(dedupe_key) <= 160)) AND (dedupe_key ~ '^[a-z0-9_:.-]+$'::text)))
 constraint app.notices notices_dedupe_key_key UNIQUE (dedupe_key)
-constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['draft_waiting'::text, 'draft_expired'::text, 'report_upheld'::text, 'brake_on'::text, 'contained'::text, 'containment_lifted'::text, 'appeal_decided'::text, 'act_reconfirm'::text, 'act_expired'::text, 'challenge'::text, 'account_flagged'::text, 'alert'::text, 'signin_linked'::text, 'signin_unlinked'::text])))
+constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['draft_waiting'::text, 'draft_expired'::text, 'report_upheld'::text, 'brake_on'::text, 'contained'::text, 'containment_lifted'::text, 'appeal_decided'::text, 'act_reconfirm'::text, 'act_expired'::text, 'challenge'::text, 'account_flagged'::text, 'alert'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text])))
 constraint app.notices notices_link_check CHECK (((char_length(link) <= 200) AND (link ~ '^/([A-Za-z0-9?=&#._~%-][A-Za-z0-9/?=&#._~%-]*)?$'::text)))
 constraint app.notices notices_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.notices notices_pkey PRIMARY KEY (id)
@@ -309,6 +317,8 @@ default app.email_suppressions.created_at = now()
 default app.email_suppressions.id = app.uuid_v7()
 default app.email_tokens.created_at = now()
 default app.email_tokens.id = app.uuid_v7()
+default app.file_keys.created_at = now()
+default app.file_keys.id = app.uuid_v7()
 default app.gh_accounts.first_seen_at = now()
 default app.gh_accounts.id = app.uuid_v7()
 default app.gh_accounts.level = 1
@@ -428,8 +438,8 @@ function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql v
 function app.brakes_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=28e005648dc066cc06b44c249b1cdacf
 function app.change_log_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=beae6be75fab0d889053d9044f4b1aa5
 function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=2179a5e58dc7677d0f719025513eeabc
-function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=8cde290162e15121324f1ae27a681a30
-function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=ee334e85650ce71bf1e9b0ab3835fb17
+function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text, p_file_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=dfdb967262c0b3a7b88baeffe8010a86
+function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=e4becb31950f2ed22830b997e877284e
 function app.containment_lift_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=integer body_md5=ee6ec02d2a3446ccc4ca320dbfdc9096
 function app.containments_after() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=00cce9d586929f29763ca18d90877142
 function app.containments_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=eacbdc1f35b247f621b91972af93cec8
@@ -450,6 +460,7 @@ function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_b
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=535ea91b8aa8e22fe80658bba6d9f9e2
+function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=e5625f9ae6a6d1e28c742ed4e4932c2a
 function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.gh_hidden(p_nodes text[]) owner=dog_jevs execute=dog_jevs,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF text body_md5=ad846da3a078644d20feb1901d0cb575
 function app.identities_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=7515e26c8188fcc76cc26f3ef97c412b
@@ -686,6 +697,7 @@ grant app.code_signins.browser_hash dog_signin INSERT
 grant app.code_signins.claimed_at dog_signin UPDATE
 grant app.code_signins.code_hash dog_signin INSERT
 grant app.code_signins.expires_at dog_signin INSERT
+grant app.code_signins.file_key dog_signin INSERT
 grant app.code_signins.fingerprint dog_signin UPDATE
 grant app.code_signins.login_hash dog_signin INSERT
 grant app.code_signins.status dog_signin UPDATE
@@ -728,6 +740,17 @@ grant app.email_tokens.expires_at dog_signin INSERT
 grant app.email_tokens.key_version dog_signin INSERT
 grant app.email_tokens.token_hash dog_signin INSERT
 grant app.email_tokens.used_at dog_signin UPDATE
+grant app.file_keys dog_signin DELETE
+grant app.file_keys dog_signin SELECT
+grant app.file_keys.created_at dog_signin UPDATE
+grant app.file_keys.fingerprint dog_signin INSERT
+grant app.file_keys.key_hash dog_signin INSERT
+grant app.file_keys.key_hash dog_signin UPDATE
+grant app.file_keys.login_hash dog_signin INSERT
+grant app.file_keys.login_hash dog_signin UPDATE
+grant app.file_keys.member_id dog_signin INSERT
+grant app.file_keys.member_id dog_signin UPDATE
+grant app.file_keys.used_at dog_signin UPDATE
 grant app.gh_accounts dog_jevs DELETE
 grant app.gh_accounts dog_jevs INSERT
 grant app.gh_accounts dog_jevs SELECT
@@ -1080,6 +1103,10 @@ policy app.email_tokens email_tokens_signin_delete cmd=d permissive=true to=dog_
 policy app.email_tokens email_tokens_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.email_tokens email_tokens_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.email_tokens email_tokens_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.file_keys file_keys_signin_delete cmd=d permissive=true to=dog_signin using=true check=
+policy app.file_keys file_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
+policy app.file_keys file_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.file_keys file_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.gh_accounts gh_accounts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_agents gh_agents_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_decisions gh_decisions_jevs cmd=* permissive=true to=dog_jevs using=true check=true
@@ -1146,7 +1173,7 @@ policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using
 policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))
 policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text]))
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
-policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND (dedupe_key ~~ 'signin:capped:%'::text)))
+policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND (dedupe_key ~~ 'signin:capped:%'::text)))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
 policy app.posts posts_delegate_insert cmd=a permissive=true to=dog_delegate using= check=((lane = 'agents'::text) AND (delegation = 'approved'::text) AND (draft_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = posts.agent_id) AND (a.owner_id = posts.author_id) AND (a.status = 'active'::text)))))
 policy app.posts posts_delegate_select cmd=r permissive=true to=dog_delegate using=true check=

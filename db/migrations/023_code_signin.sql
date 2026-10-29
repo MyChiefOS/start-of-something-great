@@ -15,6 +15,13 @@
 --        the switched-off GitHub and X sign-in, is retired or moved behind proof of its own).
 --   A code works once, for the browser that asked for it, within 10 minutes. Level 1 at sign-in, as for every sign-in
 --   (021); JEVs promotes from the GitHub post itself.
+--   The key file (Aaron, Oct 28: "We should keep the hash so if a user needs access again they can provide the file for
+--   access to get another token"): with the username, the person picks a private file. Their browser hashes it (SHA-256)
+--   and sends only that hash; the file never leaves their device. The site keys it again (HMAC, with the username) and
+--   the database keeps only that, in app.file_keys, once the code sign-in succeeds. Later, the same username and file
+--   sign the person in again without a post (app.file_sign_in), and they get an in-app notice each time. An
+--   administrator always posts a code: a file alone never makes anyone administrator. A new code sign-in with another
+--   file replaces the old one.
 --   Also here: sessions last a flat 30 days with no idle limit (Aaron, Oct 28), at the end of this file.
 set local role dog_owner;
 
@@ -25,6 +32,8 @@ create table app.code_signins (
   -- A keyed hash of the GitHub username the person typed when asking for the code: only a post by that account claims
   -- it, so nobody else can repost the code and claim it first (Aaron, Oct 28: option 2).
   login_hash text not null check (char_length(login_hash) = 64 and login_hash ~ '^[0-9a-f]+$'),
+  -- The key file, keyed again with the username by the site: kept as the member's key file if this code signs in.
+  file_key text not null check (char_length(file_key) = 64 and file_key ~ '^[0-9a-f]+$'),
   fingerprint text check (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$'), -- null until claimed
   status text not null default 'waiting' check (status = any (array['waiting', 'claimed', 'used'])),
   created_at timestamptz not null default now(),
@@ -43,28 +52,59 @@ create policy code_signins_signin_insert on app.code_signins for insert to dog_s
 create policy code_signins_signin_update on app.code_signins for update to dog_signin using (true) with check (true);
 create policy code_signins_signin_delete on app.code_signins for delete to dog_signin using (true);
 grant select, delete on app.code_signins to dog_signin;
-grant insert (code_hash, browser_hash, login_hash, expires_at) on app.code_signins to dog_signin;
+grant insert (code_hash, browser_hash, login_hash, file_key, expires_at) on app.code_signins to dog_signin;
+
+-- Each member's key file: one per GitHub account, replaced by the next code sign-in, gone with the account.
+create table app.file_keys (
+  id uuid primary key default app.uuid_v7(),
+  member_id uuid not null unique references app.members (id) on delete cascade,
+  fingerprint text not null unique check (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$'),
+  login_hash text not null check (char_length(login_hash) = 64 and login_hash ~ '^[0-9a-f]+$'),
+  key_hash text not null check (char_length(key_hash) = 64 and key_hash ~ '^[0-9a-f]+$'),
+  created_at timestamptz not null default now(),
+  used_at timestamptz
+);
+create index file_keys_login on app.file_keys (login_hash);
+alter table app.file_keys enable row level security;
+alter table app.file_keys force row level security;
+create policy file_keys_signin_select on app.file_keys for select to dog_signin using (true);
+create policy file_keys_signin_insert on app.file_keys for insert to dog_signin with check (true);
+create policy file_keys_signin_update on app.file_keys for update to dog_signin using (true) with check (true);
+create policy file_keys_signin_delete on app.file_keys for delete to dog_signin using (true);
+grant select, delete on app.file_keys to dog_signin;
+grant insert (member_id, fingerprint, login_hash, key_hash) on app.file_keys to dog_signin;
+grant update (member_id, login_hash, key_hash, created_at, used_at) on app.file_keys to dog_signin;
+
+-- The notice a member gets each time their key file signs them in, from inside the sign-in functions.
+alter table app.notices drop constraint notices_kind_check;
+alter table app.notices add constraint notices_kind_check check (kind = any (array['draft_waiting', 'draft_expired', 'report_upheld', 'brake_on',
+  'contained', 'containment_lifted', 'appeal_decided', 'act_reconfirm', 'act_expired', 'challenge', 'account_flagged', 'alert',
+  'signin_linked', 'signin_unlinked', 'signin_keyfile']));
+drop policy notices_signin_insert on app.notices;
+create policy notices_signin_insert on app.notices for insert to dog_signin
+  with check ((member_id is not null and kind in ('signin_linked', 'signin_unlinked', 'signin_keyfile'))
+              or (member_id is null and kind = 'alert' and dedupe_key like 'signin:capped:%'));
 grant update (fingerprint, status, claimed_at, used_at) on app.code_signins to dog_signin;
 
 -- The three functions are made here, then handed to dog_signin (as in 002), so they run with its narrow rights.
 
 -- 1. A new code for one browser and one GitHub username, for 10 minutes. Every call also clears codes that expired more than an hour ago, so
 --    nothing about a code (or the account that claimed it) is kept long (the CSO's review, finding 4).
-create function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text)
+create function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text, p_file_key text)
 returns void
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
   if p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' or p_browser_hash is null or p_browser_hash !~ '^[0-9a-f]{64}$'
-     or p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' then
+     or p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' or p_file_key is null or p_file_key !~ '^[0-9a-f]{64}$' then
     raise exception 'bad code request' using errcode = '22023';
   end if;
   if app.actor_kind() <> 'anon' then
     raise exception 'bad code request' using errcode = '22023';
   end if;
   delete from app.code_signins where expires_at < now() - interval '1 hour';
-  insert into app.code_signins (code_hash, browser_hash, login_hash, expires_at)
-    values (p_code_hash, p_browser_hash, p_login_hash, now() + interval '10 minutes');
+  insert into app.code_signins (code_hash, browser_hash, login_hash, file_key, expires_at)
+    values (p_code_hash, p_browser_hash, p_login_hash, p_file_key, now() + interval '10 minutes');
 end
 $$;
 
@@ -104,6 +144,7 @@ language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
   c app.code_signins%rowtype;
+  s record;
 begin
   if p_browser_hash is null or p_browser_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'bad code request' using errcode = '22023';
@@ -122,32 +163,77 @@ begin
   update app.code_signins x set status = 'used', used_at = now() where x.id = c.id;
   -- Key version 1: the gate holds the first fingerprint key (dog_fingerprint_key_1). A rotation must move the gate too.
   begin
-    return query select 'ok'::text, s.member_id, s.is_new, s.trust_level, s.is_admin
-      from app.sign_in('github', array[c.fingerprint], 1::smallint, 1::smallint, p_display_name, p_session_hash,
-                       p_session_days, null::timestamptz, null::uuid, p_region) s;
+    select * into s from app.sign_in('github', array[c.fingerprint], 1::smallint, 1::smallint, p_display_name,
+                                     p_session_hash, p_session_days, null::timestamptz, null::uuid, p_region);
   exception when sqlstate 'P0001' then
     if sqlerrm <> 'region' then
       raise;
     end if;
     delete from app.code_signins x where x.id = c.id;
     return query select 'region'::text, null::uuid, null::boolean, null::smallint, null::boolean;
+    return;
   end;
+  -- The key file chosen with this code becomes the member's, replacing any earlier one.
+  insert into app.file_keys (member_id, fingerprint, login_hash, key_hash) values (s.member_id, c.fingerprint, c.login_hash, c.file_key)
+    on conflict (fingerprint) do update set member_id = excluded.member_id, login_hash = excluded.login_hash,
+      key_hash = excluded.key_hash, created_at = now(), used_at = null;
+  return query select 'ok'::text, s.member_id, s.is_new, s.trust_level, s.is_admin;
+end
+$$;
+
+-- 4. Signing in again with the key file: the username and the file (both keyed by the site) match a member's key file.
+--    status: 'ok' with who signed in (and an in-app notice to them), 'no_match', or 'post_needed' for an administrator,
+--    who always signs in by posting a code. app.sign_in's refusals (banned, disabled, region) are raised as they are.
+create function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text,
+                                 p_session_days integer, p_region text)
+returns table (status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean)
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  k app.file_keys%rowtype;
+  admin boolean;
+  s record;
+begin
+  if p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' or p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'bad key file request' using errcode = '22023';
+  end if;
+  select * into k from app.file_keys f where f.login_hash = p_login_hash and f.key_hash = p_key_hash for update;
+  if not found then
+    return query select 'no_match'::text, null::uuid, null::boolean, null::smallint, null::boolean;
+    return;
+  end if;
+  select m.is_admin into admin from app.members m where m.id = k.member_id;
+  if admin then
+    return query select 'post_needed'::text, null::uuid, null::boolean, null::smallint, null::boolean;
+    return;
+  end if;
+  select * into s from app.sign_in('github', array[k.fingerprint], 1::smallint, 1::smallint, p_display_name,
+                                   p_session_hash, p_session_days, null::timestamptz, null::uuid, p_region);
+  update app.file_keys f set used_at = now() where f.id = k.id;
+  perform app.notify(s.member_id, 'signin_keyfile', 'Signed in with your key file',
+    'Your key file was used to sign in to Day One Great. If that wasn''t you, sign out everywhere from your account page '
+    || 'and sign in again with a new code and a new key file.', '/account', 'member', s.member_id,
+    'signin:keyfile:' || p_session_hash);
+  return query select 'ok'::text, s.member_id, s.is_new, s.trust_level, s.is_admin;
 end
 $$;
 
 -- Who may call them, set before handing them over, while dog_owner can still grant: the site's role makes and uses
--- codes; only the JEVs gate's role claims one.
-revoke execute on function app.code_issue(text, text, text), app.code_claim(text, text, text),
+-- codes and key files; only the JEVs gate's role claims a code.
+revoke execute on function app.file_sign_in(text, text, text, text, integer, text) from public;
+revoke execute on function app.code_issue(text, text, text, text), app.code_claim(text, text, text),
   app.code_sign_in(text, text, text, integer, text) from public;
-grant execute on function app.code_issue(text, text, text), app.code_sign_in(text, text, text, integer, text) to dog_app;
+grant execute on function app.code_issue(text, text, text, text), app.code_sign_in(text, text, text, integer, text),
+  app.file_sign_in(text, text, text, text, integer, text) to dog_app;
 grant execute on function app.code_claim(text, text, text) to dog_jevs;
 
 -- Postgres hands a function only to a role that may create objects in its schema, so dog_signin has that right for
 -- these lines only.
 grant create on schema app to dog_signin;
-alter function app.code_issue(text, text, text) owner to dog_signin;
+alter function app.code_issue(text, text, text, text) owner to dog_signin;
 alter function app.code_claim(text, text, text) owner to dog_signin;
 alter function app.code_sign_in(text, text, text, integer, text) owner to dog_signin;
+alter function app.file_sign_in(text, text, text, text, integer, text) owner to dog_signin;
 revoke create on schema app from dog_signin;
 
 -- ---- Sessions last a flat 30 days (Aaron, Oct 28, 2026: "it will last 30 days") ----

@@ -65,6 +65,8 @@ const ANON = { actor: 'anon' };
 // Rate limits (S6): sign-in attempts per IP range, email links per IP range and per address.
 const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
+  // The key file (Aaron, Oct 28): tries per username, so nobody can try file after file against one account.
+  keyfile_login: { windowSeconds: 3600, max: 10 },
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
@@ -102,6 +104,15 @@ function make(deps) {
     const pick = () => Array.from({ length: 4 }, () => CODE_ALPHABET[nodeCrypto.randomInt(CODE_ALPHABET.length)]).join('');
     return 'DOG-' + pick() + '-' + pick();
   };
+  // The username, and the key file's SHA-256 as the browser sends it, both keyed with the gate's key (the key file
+  // with the username too, so the same file is a different key for each account).
+  const loginOf = (form) => {
+    const l = String(form.login || '').trim().replace(/^@/, '');
+    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(l) ? l : null;
+  };
+  const fileOf = (form) => (typeof form.file === 'string' && /^[0-9a-f]{64}$/.test(form.file) ? form.file : null);
+  const loginHash = (login) => c.hmacHex(codeKey.key, 'signin-login:' + login.toLowerCase());
+  const fileKey = (login, file) => c.hmacHex(codeKey.key, 'signin-file:' + login.toLowerCase() + ':' + file);
   const json = (res, status, body) => {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -326,12 +337,15 @@ function make(deps) {
       if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       // The GitHub username this code is for (Aaron, Oct 28: option 2): only a post by that account claims it.
-      const login = String(form.login || '').trim().replace(/^@/, '');
-      if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) return json(res, 200, { error: 'Type your GitHub username: letters, numbers and dashes.' });
+      const login = loginOf(form);
+      if (!login) return json(res, 200, { error: 'Type your GitHub username: letters, numbers and dashes.' });
+      // The key file's SHA-256, made in the browser (the file never leaves the device), kept if this code signs in.
+      const file = fileOf(form);
+      if (!file) return json(res, 200, { error: 'Choose your key file first.' });
       const code = newCode();
       const tag = c.token(32);
       await run(ANON, (t) => store.codeIssue(t, { codeHash: codeHash(code), browserHash: c.sha256hex(tag),
-        loginHash: c.hmacHex(codeKey.key, 'signin-login:' + login.toLowerCase()) }));
+        loginHash: loginHash(login), fileKey: fileKey(login, file) }));
       h.addCookie(res, h.cookie(CODE_BROWSER, tag, { maxAge: CODE_MINUTES * 60 }));
       return json(res, 200, { code, expires_in: CODE_MINUTES * 60 });
     },
@@ -355,6 +369,34 @@ function make(deps) {
         await countDecline(country);
         return json(res, 200, { declined: true });
       }
+      if (out.refused) return json(res, 200, { refused: out.refused });
+      h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+      if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return json(res, 200, { signed_in: true, go: '/feed' });
+    },
+
+    // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
+    // network and per username; each sign-in leaves the member an in-app notice. An administrator posts a code instead.
+    async keyFileSignIn(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
+      const form = (await h.form(req)) || {};
+      const login = loginOf(form), file = fileOf(form);
+      if (!login || !file) return json(res, 200, { error: 'Type your GitHub username and choose your key file.' });
+      const country = region.declined(req);
+      if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey)) || await limited('keyfile_login', loginHash(login))) {
+        return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      }
+      const token = c.token(32);
+      const out = await run(ANON, (t) => store.fileSignIn(t, { loginHash: loginHash(login), keyHash: fileKey(login, file),
+        displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
+      if (out.status === 'no_match') return json(res, 200, { error: 'That username and key file don\u2019t match. Check both, or get a new code.' });
+      if (out.status === 'post_needed') return json(res, 200, { post_needed: true, error: 'This account signs in by posting a code each time. Get a new code.' });
+      if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
       if (out.refused) return json(res, 200, { refused: out.refused });
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
       if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
