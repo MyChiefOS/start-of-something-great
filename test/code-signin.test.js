@@ -442,6 +442,92 @@ if (!SERVER) {
     await unAdmin(pm.member_id);
   });
 
+  test('the JEVs behaviour watch (Aaron, Oct 28; 026): it alerts Aaron and never refuses anyone', async () => {
+    const store = require('../db/signin');
+    const alerts = async (like, about = null) => (await owner(`select title from app.notices where member_id is null and kind = 'alert' and dedupe_key like '${like}'`
+      + (about ? ` and subject_id = '${about}'` : '') + ` order by created_at`)).map((r) => r.title);
+    const keyIn = async (login, file, { ip = '198.51.100.200', country } = {}) => {
+      const b = jar(); const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login, file }, ip, country }), r); b.take(r);
+      return { b, ...JSON.parse(r.body) };
+    };
+    // A member with a key file, signing in from the United States.
+    const first = jar();
+    const s = await start(first, { login: 'watched', file: FILE_A, ip: '203.0.113.90', country: 'US' });
+    await post(8040, 'watched', s.code);
+    assert.strictEqual((await finish(first, { ip: '203.0.113.90', country: 'US' })).signed_in, true);
+    const who = await me(first);
+    // 1. Many sessions at once: more than 5 live sessions alerts, and every sign-in still works.
+    for (let i = 0; i < 5; i++) assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.' + (110 + i), country: 'US' })).signed_in, true);
+    assert.deepStrictEqual(await alerts('watch:sessions:' + who.member_id + ':%'), ['Many sessions at once'], '6 sessions, one alert a day');
+    // 2. A new country alerts; the same country again doesn't.
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), []);
+    assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.120', country: 'CA' })).signed_in, true, 'still signed in');
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), ['A sign-in from a new country']);
+    await keyIn('watched', FILE_A, { ip: '198.51.100.121', country: 'CA' });
+    assert.strictEqual((await alerts('watch:country:%', who.member_id)).length, 1, 'a country seen before is quiet');
+    // A country unseen for 90 days is forgotten at the next sign-in (anyone's), and alerts again if it comes back.
+    await su.unsafe(`update app.watch_seen set last_seen = now() - interval '100 days', first_seen = now() - interval '100 days' where member_id = '${who.member_id}'`);
+    await su.unsafe(`insert into app.watch_seen (member_id, kind, key_hash) values ('${who.member_id}', 'country', '${'d'.repeat(64)}')`);
+    assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.122', country: 'CA' })).signed_in, true);
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), ['A sign-in from a new country', 'A sign-in from a new country'], 'CA, gone after 90 days, alerts again');
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_seen where last_seen < now() - interval '90 days'`))[0].n, 0, 'rows unseen for 90 days are deleted');
+    // Alert keys name a row, never a hash.
+    assert.ok((await owner(`select dedupe_key from app.notices where dedupe_key like 'watch:country:%'`)).every((r) => /^watch:country:[0-9a-f-]{36}$/.test(r.dedupe_key)));
+    // A failure in the watch never stops a sign-in.
+    await su.unsafe('revoke execute on function app.watch_signin(text, text) from dog_app');
+    try {
+      assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.123', country: 'US' })).signed_in, true, 'signed in with the watch failing');
+    } finally {
+      await su.unsafe('grant execute on function app.watch_signin(text, text) to dog_app');
+    }
+    // Only keyed hashes are kept, and no network for anyone but the administrator.
+    const seen = await owner(`select kind, key_hash from app.watch_seen where member_id = '${who.member_id}'`);
+    assert.deepStrictEqual([...new Set(seen.map((r) => r.kind))], ['country']);
+    assert.ok(!JSON.stringify(seen).includes('US') && !JSON.stringify(seen).includes('CA'), 'no country in readable form');
+    // 4. Failed tries: the 5th wrong file alerts; the 10th cancels it and alerts too.
+    const [{ id: keyId }] = await owner(`select id from app.file_keys where member_id = '${who.member_id}'`);
+    for (let i = 0; i < 5; i++) await keyIn('watched', sha('wrong ' + i), { ip: '198.51.100.' + (130 + i), country: 'US' });
+    assert.deepStrictEqual(await alerts('watch:failed:' + keyId), ['Wrong key files for one account']);
+    for (let i = 5; i < 10; i++) await keyIn('watched', sha('wrong ' + i), { ip: '198.51.100.' + (130 + i), country: 'US' });
+    assert.deepStrictEqual(await alerts('watch:cancelled:' + keyId), ['A member\'s key file was cancelled']);
+    // 3. The administrator: a new network alerts; a member's doesn't. And Aaron's own key file cancelled says so.
+    const a = jar();
+    const sa = await start(a, { login: 'chief', file: FILE_B, ip: '203.0.113.91', country: 'US' });
+    await post(8041, 'chief', sa.code);
+    assert.strictEqual((await finish(a, { ip: '203.0.113.91', country: 'US' })).signed_in, true);
+    const chief = await me(a);
+    await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = true where id = '${chief.member_id}'`); });
+    assert.strictEqual((await keyIn('chief', FILE_B, { ip: '203.0.113.92', country: 'US' })).signed_in, true, 'the same /24: no new network');
+    assert.deepStrictEqual(await alerts('watch:net:%', chief.member_id), []);
+    assert.strictEqual((await keyIn('chief', FILE_B, { ip: '192.0.2.77', country: 'US' })).signed_in, true, 'still signed in');
+    assert.deepStrictEqual(await alerts('watch:net:%', chief.member_id), ['Your account signed in from a new network']);
+    // The same country gives each member a different hash.
+    const [h1] = await owner(`select key_hash from app.watch_seen where member_id = '${who.member_id}' and kind = 'country' order by first_seen limit 1`);
+    assert.ok(!(await owner(`select 1 from app.watch_seen where member_id = '${chief.member_id}' and key_hash = '${h1.key_hash}'`)).length);
+    const [{ id: chiefKey }] = await owner(`select id from app.file_keys where member_id = '${chief.member_id}'`);
+    for (let i = 0; i < 10; i++) await keyIn('chief', sha('guess ' + i), { ip: '198.51.100.' + (150 + i), country: 'US' });
+    assert.deepStrictEqual(await alerts('watch:cancelled:' + chiefKey), ['Your own key file was cancelled']);
+    // 5. Reaching for administrator powers: a member alerts, once a day per page; the administrator never does.
+    const asMember = { actor: 'member', memberId: who.member_id, session: null };
+    const whoSession = (await owner(`select token_hash from app.sessions where member_id = '${who.member_id}' order by created_at desc limit 1`))[0].token_hash;
+    const asM = { ...asMember, session: whoSession };
+    assert.strictEqual(await db.tx(web, asM, (x) => store.watchReach(x, 'controls')), true);
+    assert.strictEqual(await db.tx(web, asM, (x) => store.watchReach(x, 'controls')), false, 'once a day');
+    assert.deepStrictEqual(await alerts('watch:reach:' + who.member_id + ':%'), ['Someone reached for administrator powers']);
+    const feedSrc = read('api/feed.js');
+    assert.strictEqual((feedSrc.match(/await reach\(run, who, '(review|controls)'\)/g) || []).length, 4, 'all four administrator refusals in the feed API alert');
+    // 6. A first-time sensitive action alerts once.
+    await su.begin(async (x) => { await x.unsafe(`insert into app.jevs_decisions (action, subject_kind, member_id, level, mode, effect, applied, error, total, scores)
+      values ('agent.key', 'member', '${who.member_id}', 'low', 'shadow', 'none', true, false, 0, '{}')`); });
+    const first1 = await db.tx(web, asM, async (x) => (await x`select app.watch_first('agent.key') as a`)[0].a);
+    assert.strictEqual(first1, true);
+    await su.begin(async (x) => { await x.unsafe(`insert into app.jevs_decisions (action, subject_kind, member_id, level, mode, effect, applied, error, total, scores)
+      values ('agent.key', 'member', '${who.member_id}', 'low', 'shadow', 'none', true, false, 0, '{}')`); });
+    assert.strictEqual(await db.tx(web, asM, async (x) => (await x`select app.watch_first('agent.key') as a`)[0].a), false, 'not the first any more');
+    assert.match(read('db/jevs.js'), /WATCH_FIRST = \['agent\.key', 'agent\.rules'\]/);
+    await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = false where id = '${chief.member_id}'`); });
+  });
+
   test('sessions last a flat 30 days (Aaron, Oct 28): no idle limit', async () => {
     assert.strictEqual(require('../signin/config').IDLE_DAYS, 30);
     assert.strictEqual(require('../signin/config').SESSION_DAYS, 30);

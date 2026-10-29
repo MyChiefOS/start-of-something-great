@@ -269,11 +269,17 @@ constraint app.subagent_settings subagent_settings_per_parent_per_hour_check CHE
 constraint app.subagent_settings subagent_settings_pkey PRIMARY KEY (id)
 constraint app.subagent_settings subagent_settings_singleton_check CHECK (singleton)
 constraint app.subagent_settings subagent_settings_singleton_key UNIQUE (singleton)
+constraint app.watch_seen watch_seen_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.watch_seen watch_seen_kind_check CHECK ((kind = ANY (ARRAY['country'::text, 'net'::text])))
+constraint app.watch_seen watch_seen_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.watch_seen watch_seen_member_id_kind_key_hash_key UNIQUE (member_id, kind, key_hash)
+constraint app.watch_seen watch_seen_pkey PRIMARY KEY (id)
 constraint app.watch_settings watch_settings_alert_floor_check CHECK (((alert_floor >= 1) AND (alert_floor <= 1000000)))
 constraint app.watch_settings watch_settings_alert_multiplier_check CHECK (((alert_multiplier >= 2) AND (alert_multiplier <= 1000)))
 constraint app.watch_settings watch_settings_containment_hours_check CHECK (((containment_hours >= 1) AND (containment_hours <= 168)))
 constraint app.watch_settings watch_settings_copy_limit_per_hour_check CHECK (((copy_limit_per_hour >= 5) AND (copy_limit_per_hour <= 10000000)))
 constraint app.watch_settings watch_settings_hard_limit_per_hour_check CHECK (((hard_limit_per_hour >= 10) AND (hard_limit_per_hour <= 10000000)))
+constraint app.watch_settings watch_settings_max_sessions_check CHECK (((max_sessions >= 1) AND (max_sessions <= 1000)))
 constraint app.watch_settings watch_settings_pkey PRIMARY KEY (id)
 constraint app.watch_settings watch_settings_repeat_alert_count_check CHECK (((repeat_alert_count >= 2) AND (repeat_alert_count <= 10000000)))
 constraint app.watch_settings watch_settings_signup_floor_check CHECK (((signup_floor >= 1) AND (signup_floor <= 1000000)))
@@ -390,12 +396,16 @@ default app.subagent_settings.per_owner_per_hour = 200
 default app.subagent_settings.per_parent_per_hour = 30
 default app.subagent_settings.singleton = true
 default app.subagent_settings.updated_at = now()
+default app.watch_seen.first_seen = now()
+default app.watch_seen.id = app.uuid_v7()
+default app.watch_seen.last_seen = now()
 default app.watch_settings.alert_floor = 30
 default app.watch_settings.alert_multiplier = 5
 default app.watch_settings.containment_hours = 24
 default app.watch_settings.copy_limit_per_hour = 50
 default app.watch_settings.hard_limit_per_hour = 500
 default app.watch_settings.id = app.uuid_v7()
+default app.watch_settings.max_sessions = 5
 default app.watch_settings.repeat_alert_count = 20
 default app.watch_settings.signup_floor = 20
 default app.watch_settings.signup_multiplier = 5
@@ -466,7 +476,7 @@ function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confir
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=535ea91b8aa8e22fe80658bba6d9f9e2
 function app.file_key_revoke() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=379443262a94f2ed1462918badda4803
-function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=59ee707fabaaaa1c56f875915311b75f
+function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=d57d86cac0f656a319a00b3293436059
 function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.gh_hidden(p_nodes text[]) owner=dog_jevs execute=dog_jevs,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF text body_md5=ad846da3a078644d20feb1901d0cb575
 function app.identities_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=7515e26c8188fcc76cc26f3ef97c412b
@@ -529,7 +539,10 @@ function app.subagent_create(p_name text, p_description text, p_key_hash text, p
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
+function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
+function app.watch_reach(p_what text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=e263f04ac3ba350451144bb146d06323
+function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b3f8d6b9d1684c6c77019b3f9edc3fb
 grant app.actor_keys dog_signin SELECT
 grant app.admin_notes dog_app SELECT
 grant app.admin_notes dog_erase DELETE
@@ -1018,7 +1031,14 @@ grant app.sessions.token_hash dog_signin INSERT
 grant app.subagent_settings dog_app SELECT
 grant app.subagent_settings dog_jevs SELECT
 grant app.subagent_settings dog_signin SELECT
+grant app.watch_seen dog_signin DELETE
+grant app.watch_seen dog_signin SELECT
+grant app.watch_seen.key_hash dog_signin INSERT
+grant app.watch_seen.kind dog_signin INSERT
+grant app.watch_seen.last_seen dog_signin UPDATE
+grant app.watch_seen.member_id dog_signin INSERT
 grant app.watch_settings dog_app SELECT
+grant app.watch_settings dog_signin SELECT
 policy app.actor_keys actor_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.actor_keys actor_keys_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.actor_keys actor_keys_owner_update cmd=w permissive=true to=dog_owner using=true check=true
@@ -1177,7 +1197,7 @@ policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using
 policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))
 policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text]))
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
-policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND (dedupe_key ~~ 'signin:capped:%'::text)))
+policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
 policy app.posts posts_delegate_insert cmd=a permissive=true to=dog_delegate using= check=((lane = 'agents'::text) AND (delegation = 'approved'::text) AND (draft_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = posts.agent_id) AND (a.owner_id = posts.author_id) AND (a.status = 'active'::text)))))
 policy app.posts posts_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
@@ -1222,8 +1242,13 @@ policy app.sessions sessions_signin_update cmd=w permissive=true to=dog_signin u
 policy app.subagent_settings subagent_settings_narrow_select cmd=r permissive=true to=dog_signin,dog_jevs using=true check=
 policy app.subagent_settings subagent_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.subagent_settings subagent_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) check=
+policy app.watch_seen watch_seen_signin_delete cmd=d permissive=true to=dog_signin using=true check=
+policy app.watch_seen watch_seen_signin_insert cmd=a permissive=true to=dog_signin using= check=true
+policy app.watch_seen watch_seen_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.watch_seen watch_seen_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.watch_settings watch_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) check=
+policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=dog_signin using=true check=
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_audit AFTER INSERT OR UPDATE ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_audit()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_fill BEFORE INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_fill()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_guard BEFORE UPDATE ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_guard()

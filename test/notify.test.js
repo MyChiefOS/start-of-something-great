@@ -726,7 +726,9 @@ test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the m
     await asOwner(`update app.jevs_settings set value = '60' where key = 'high_any'`);
     const d = await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'agent.key', subject: ag.id }));
     assert.deepStrictEqual([d.level, d.effect, d.applied], ['high', 'hold', true]);
-    const alerts = (await noticesOf(null)).slice(before);
+    // The behaviour watch (026) also tells Aaron this is the member's first agent key; that alert is checked in
+    // test/code-signin.test.js. Here, the hold's own alert.
+    const alerts = (await noticesOf(null)).slice(before).filter((a) => a.title !== 'A first-time sensitive action');
     assert.strictEqual(alerts.length, 1);
     assert.deepStrictEqual([alerts[0].kind, alerts[0].title, alerts[0].link, alerts[0].subject_kind, alerts[0].subject_id],
       ['alert', 'JEVs held a step for you', '/controls', 'member', o.id]);
@@ -734,7 +736,7 @@ test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the m
     // Low and medium risk, and anything shadow mode only records, alert nobody.
     await setMode('shadow');
     await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'agent.key', subject: ag.id }));
-    assert.strictEqual((await noticesOf(null)).length, before + 1);
+    assert.strictEqual((await noticesOf(null)).length, before + 2, 'still only the hold\'s alert and the first-time alert: the second key is no first');
     // Deleting the account takes the alert about them with it.
     await run({ ...o.ctx, fresh: true }, (t) => store.deleteAccount(t));
     assert.strictEqual((await q(`select count(*)::int as n from app.notices where subject_id = '${o.id}' or member_id = '${o.id}'`))[0].n, 0);

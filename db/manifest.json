@@ -99,6 +99,10 @@
     {
       "version": "025_signin_lockdown",
       "sha256": "2961d3a119d615ef4efd1347da7343995fe7775de9f427a69fc1e2c5dc9be042"
+    },
+    {
+      "version": "026_behaviour_watch",
+      "sha256": "bc553c4ffccd75f3e237b66771a1dbcf7d9a2eac7779bd5f522b934c4bec8024"
     }
   ],
   "reset": {

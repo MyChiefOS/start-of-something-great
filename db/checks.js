@@ -107,7 +107,11 @@ const DEFINERS = {
   // the site's role, refuses an administrator.
   'app.sign_in_core(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid, text)': { owner: 'dog_signin', callers: '' },
   // Getting a member ready to be administrator: one GitHub method, every session ended. Only the database owner calls it.
-  'app.admin_prepare(uuid)': { owner: 'dog_signin', callers: 'dog_owner' }
+  'app.admin_prepare(uuid)': { owner: 'dog_signin', callers: 'dog_owner' },
+  // 026 (Aaron, Oct 28): the JEVs behaviour watch. Alerts only.
+  'app.watch_signin(text, text)': 'dog_signin',
+  'app.watch_reach(text)': 'dog_signin',
+  'app.watch_first(text)': 'dog_jevs'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
