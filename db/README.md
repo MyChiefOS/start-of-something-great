@@ -113,7 +113,7 @@ People join with GitHub, X or an email link, and nobody has a password. The site
 - when it was checked
 - a keyed fingerprint of the account (HMAC-SHA256 under a key kept outside the database)
 
-Names and usernames from GitHub and X are not kept; everyone starts as "New member". Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, and a traveller's confirmation a third, in the same role (see "Sign-in fixes" below).
+Names and usernames from GitHub and X are not kept in readable form; everyone starts as "New member". Since 023, a member who signs in with a posted code also has a key file on record (`app.file_keys`): a keyed hash of their GitHub username and a keyed hash of their key file's fingerprint, kept until they delete their account. Sessions are random tokens in a `__Host-` cookie, and only their SHA-256 is stored. Joining, creating sessions and using email links all happen in six reviewed functions that run as their own role, `dog_signin`. The site's everyday role can call them, but it can't read sessions, fingerprints or email links itself. Since PR 15, linking and unlinking a sign-in method have two functions of their own, and a traveller's confirmation a third, in the same role (see "Sign-in fixes" below).
 
 ### Signing in with a code posted through giscus (023, Oct 28, 2026)
 

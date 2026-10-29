@@ -149,6 +149,7 @@ begin
   if p_browser_hash is null or p_browser_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'bad code request' using errcode = '22023';
   end if;
+  delete from app.code_signins x where x.expires_at < now() - interval '1 hour';
   select * into c from app.code_signins x
     where x.browser_hash = p_browser_hash and x.status = 'claimed' and x.expires_at > now()
     order by x.claimed_at desc limit 1 for update;
@@ -197,6 +198,7 @@ begin
   if p_login_hash is null or p_login_hash !~ '^[0-9a-f]{64}$' or p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'bad key file request' using errcode = '22023';
   end if;
+  delete from app.code_signins x where x.expires_at < now() - interval '1 hour';
   select * into k from app.file_keys f where f.login_hash = p_login_hash and f.key_hash = p_key_hash for update;
   if not found then
     return query select 'no_match'::text, null::uuid, null::boolean, null::smallint, null::boolean;

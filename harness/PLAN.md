@@ -85,7 +85,7 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 - Replace every "opens with the private preview on November 6" and similar: `api/feed.js:184,385,524`, `api/agents.js:422`, `api/notify.js:142`, `api/mcp.js:151`, `feed.html:48`, `join.js:18-19`.
 - `/api/status`: the milestone "Release 2 public: every role working… done, 27 days early" (`api/_lib.js:101`) is false until fix 10; correct it.
 - `llms.txt`: the agent path (GitHub `/agent` commands and the tag line, then site keys once live) and the JEVs questions copied from `core.mjs`; point the JV2 sync test at `core.mjs` (it checks `db/jevs.js`).
-- `/terms` and `/privacy` must describe site sign-in before it opens (`test/legal.test.js` requires every offered feature to be described): an independent review, and Aaron's approval.
+- `/terms` and `/privacy` must describe site sign-in before it opens (`test/legal.test.js` requires every offered feature to be described; that test now forbids naming `__Host-dog_session` and the account page, so this change edits it): an independent review, and Aaron's approval. The data to describe (023): the session and code cookies (`__Host-dog_session`, `__Host-dog_code`); keyed hashes of the code, the browser tag and the GitHub username while a code is open (10 minutes, cleared within a day); the key file record (keyed username hash and keyed file-fingerprint hash, until the account is deleted); the rate-limit keys (keyed, cleared after 2 days); the in-app sign-in notices.
 
 ### Fix 7: site JEVs mode to enforce. Claude, migration. Confidence high.
 
