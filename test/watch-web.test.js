@@ -10,10 +10,11 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const controls = require('../db/controls');
+const agents = require('../db/agents');
 const watch = require('../signin/watch');
 const session = require('../signin/session');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, shadowMode } = require('./helpers');
+const { trustSystem, shadowMode, promote } = require('./helpers');
 
 // The site's first fingerprint key, as the key broker hands it over (route B). A stand-in.
 const GATE_KEY = Buffer.from('w'.repeat(40), 'utf8');
@@ -42,6 +43,13 @@ test('browser kinds keep only the name and system, places only whole degrees, an
   assert.ok(d > 7300 && d < 7700, 'New York to Moscow is about 7,500 km: ' + d);
   assert.strictEqual(Math.round(watch.km({ la: 10, lo: 10 }, { la: 10, lo: 10 })), 0);
   assert.strictEqual(watch.key({}), null, 'no key, no watch');
+  // A sealed place is the same length wherever it is, and opens only with the key (the CSO's review, S2).
+  const k = Buffer.from('k'.repeat(40));
+  const places = [{ la: 41, lo: -74 }, { la: 1, lo: 1 }, { la: -23, lo: -120 }, { la: 51, lo: 0 }, { la: -90, lo: 180 }];
+  const sealed = places.map((p) => watch.sealPlace(k, p));
+  assert.strictEqual(new Set(sealed.map((x) => x.length)).size, 1, sealed.map((x) => x.length).join());
+  assert.deepStrictEqual(sealed.map((x) => watch.openPlace(k, x)), places);
+  assert.strictEqual(watch.openPlace(Buffer.from('x'.repeat(40)), sealed[0]), null, 'another key opens nothing');
 });
 
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -193,7 +201,7 @@ if (!SERVER) {
     assert.ok(!rows.some((r) => r.hour === (h + 12) % 24), 'an hour counted once went');
   });
 
-  test('requests past the floor and many times the usual hour alert once an hour', async () => {
+  test('requests past the floor and many times the usual hour of use alert once a day', async () => {
     await asOwner('update app.watch_settings set requests_floor = 10');
     const m = await member('Scraper');
     for (let i = 0; i < 9; i++) assert.ok(await ask(m, { where: null }));
@@ -201,11 +209,13 @@ if (!SERVER) {
     assert.ok(await ask(m, { where: null }), 'the 10th is served too');
     assert.deepStrictEqual(await alerts('watch:requests:%', m.id), ['Unusually many requests from one account']);
     for (let i = 0; i < 15; i++) await ask(m, { where: null });
-    assert.strictEqual((await alerts('watch:requests:%', m.id)).length, 1, 'once an hour');
+    assert.strictEqual((await alerts('watch:requests:%', m.id)).length, 1, 'once a day');
     // An account that is always this busy doesn't alert.
+    // An account as busy as this every day, though only for an hour a day, doesn't alert: its usual hour is the hours it
+    // was used in (the CSO's review, S3).
     const busy = await member('Busy');
-    await su.unsafe(`insert into app.watch_counts (member_id, kind, hour, n) select '${busy.id}', 'requests', date_trunc('hour', now()) - make_interval(hours => x), 100
-                     from generate_series(1, 167) x`);
+    await su.unsafe(`insert into app.watch_counts (member_id, kind, hour, n) select '${busy.id}', 'requests', date_trunc('hour', now()) - make_interval(days => x), 10
+                     from generate_series(1, 6) x`);
     for (let i = 0; i < 10; i++) await ask(busy, { where: null });
     assert.deepStrictEqual(await alerts('watch:requests:%', busy.id), []);
     // The threshold change itself alerted (6).
@@ -297,5 +307,101 @@ if (!SERVER) {
     const [t] = await run({ actor: 'anon' }, (x) => x`select app.timers_run(false) as out`);
     assert.deepStrictEqual({ ran: t.out.ran, failed: t.out.failed }, { ran: true, failed: false }, 'the timers, sweep included, ran and didn\'t fail');
     assert.match((await owner(`select prosrc from pg_proc where oid = 'app.run_timers()'::regprocedure`))[0].prosrc, /out := out \|\| app\.watch_sweep\(\);/);
+  });
+  test('a member revoking many agents in an hour alerts', async () => {
+    await asOwner('update app.watch_settings set removals_per_hour = 3');
+    try {
+      const m = await member('Revoker');
+      await promote(su, m.id); // making agents needs level 2
+      const ctx = { actor: 'member', memberId: m.id, session: m.hash };
+      const ids = [];
+      for (let i = 0; i < 3; i++) ids.push((await run(ctx, (t) => t`insert into app.agents (name) values (${'Agent ' + i}) returning id`))[0].id);
+      for (const id of ids.slice(0, 2)) assert.strictEqual(await run(ctx, (t) => agents.revoke(t, id)), true);
+      assert.deepStrictEqual(await alerts('watch:removals:%', m.id), []);
+      assert.strictEqual(await run(ctx, (t) => agents.revoke(t, ids[2])), true, 'the 3rd is revoked too: the watch never refuses');
+      assert.deepStrictEqual(await alerts('watch:removals:%', m.id), ['Many removals by one account']);
+      const [b] = await owner(`select body from app.notices where dedupe_key like 'watch:removals:%' and subject_id = '${m.id}'`);
+      assert.match(b.body, /^3 agents revoked by one account within the hour/);
+    } finally {
+      await asOwner('update app.watch_settings set removals_per_hour = 10');
+    }
+  });
+
+  test('a lock the watch can\'t get within 300 ms skips it for that request; the request is served', async () => {
+    const m = await member('Locked out of the watch, not the site');
+    assert.ok(await ask(m, { where: null }));
+    const count = async () => (await owner(`select coalesce(sum(n), 0)::int as n from app.watch_counts where member_id = '${m.id}' and kind = 'requests'`))[0].n;
+    const before = await count();
+    let served, took;
+    await su.begin(async (t) => {
+      await t.unsafe(`select 1 from app.watch_counts where member_id = '${m.id}' and kind = 'requests' for update`);
+      const t0 = Date.now();
+      served = await ask(m, { where: null });
+      took = Date.now() - t0;
+    });
+    assert.ok(served && served.memberId === m.id, 'signed in');
+    assert.ok(took < 2000, 'not held long: ' + took + ' ms');
+    assert.strictEqual(await count(), before, 'that request went uncounted');
+    assert.ok(await ask(m, { where: null }));
+    assert.strictEqual(await count(), before + 1, 'the next one counts');
+  });
+
+  test('deleting an account deletes everything the watch kept about it', async () => {
+    const m = await member('Leaving');
+    assert.ok(await ask(m, { where: NYC }));
+    await su.unsafe(`insert into app.watch_counts (member_id, kind, hour) values ('${m.id}', 'post.remove', date_trunc('hour', now()))`);
+    const rows = async () => (await owner(`select
+      (select count(*) from app.watch_sessions w join app.sessions s on s.id = w.session_id where s.member_id = '${m.id}')
+      + (select count(*) from app.watch_activity where member_id = '${m.id}')
+      + (select count(*) from app.watch_hours where member_id = '${m.id}')
+      + (select count(*) from app.watch_counts where member_id = '${m.id}') as n`))[0].n;
+    assert.ok(Number(await rows()) >= 5, 'a session row, the activity row, an hour and two counts');
+    const out = await run({ actor: 'member', memberId: m.id, session: m.hash, fresh: true }, (t) => store.deleteAccount(t));
+    assert.ok(!out.refused, JSON.stringify(out));
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_activity where member_id = '${m.id}'`))[0].n, 0);
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_hours where member_id = '${m.id}'`))[0].n, 0);
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_counts where member_id = '${m.id}'`))[0].n, 0);
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_sessions w where not exists (select 1 from app.sessions s where s.id = w.session_id)`))[0].n, 0);
+  });
+
+  test('the sweep deletes the row of a session that ran out', async () => {
+    const m = await member('Expired');
+    assert.ok(await ask(m, { where: null }));
+    await su.unsafe(`update app.sessions set expires_at = now() - interval '1 minute' where token_hash = '${m.hash}'`);
+    await su.begin(async (t) => { await t.unsafe('set local role dog_timers'); await t.unsafe('select app.watch_sweep()'); });
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_sessions w join app.sessions s on s.id = w.session_id where s.token_hash = '${m.hash}'`))[0].n, 0);
+  });
+  test('the site\'s roles can\'t record the actions that raise a new-administrator or JEVs-setting alert', async () => {
+    const m = await member('Forger');
+    const ctx = { actor: 'member', memberId: m.id, session: m.hash };
+    for (const action of ['admin.set', 'jevs.setting']) {
+      await assert.rejects(run(ctx, (t) => t`insert into app.audit_log (action, subject_kind, subject_id, detail)
+        values (${action}, 'member', ${m.id}, ${t.json({ key: 'mode', from: 'a', to: 'b' })})`), /row-level security/, action);
+    }
+    assert.deepStrictEqual(await alerts('watch:admin:%', m.id), []);
+  });
+
+  test('a removal is never held up by another one being counted at the same moment', async () => {
+    const aaron = await member('Aaron again');
+    await asOwner(`update app.members set is_admin = false where is_admin; update app.members set is_admin = true where id = '${aaron.id}'`);
+    const admin = { actor: 'admin', memberId: aaron.id, session: aaron.hash };
+    const target = await member('Held target');
+    try {
+      let took;
+      await su.begin(async (t) => {
+        // The counting lock for this account, action and hour, taken as another removal would hold it.
+        await t.unsafe(`select pg_advisory_xact_lock(hashtext('dayonegreat.watch_audit'),
+          hashtext('${aaron.id}' || 'member.ban' || to_char(now() at time zone 'UTC', 'YYYYMMDDHH24')))`);
+        const t0 = Date.now();
+        await run(admin, (x) => controls.setStatus(x, { member: target.id, status: 'banned' }));
+        took = Date.now() - t0;
+      });
+      assert.ok(took < 1000, 'the ban went through at once: ' + took + ' ms');
+      assert.strictEqual((await owner(`select status from app.members where id = '${target.id}'`))[0].status, 'banned');
+      assert.strictEqual((await owner(`select count(*)::int as n from app.watch_counts where member_id = '${aaron.id}' and kind = 'member.ban'`))[0].n, 0,
+        'that one went uncounted, as the lock was taken');
+    } finally {
+      await asOwner(`update app.members set is_admin = false where is_admin`);
+    }
   });
 }

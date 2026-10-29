@@ -5,8 +5,9 @@
 //   * Browser kind: its name and system only ("firefox/windows"), never the user-agent string or its version, keyed
 //     with the first fingerprint key and the member's ID, as 026 keys countries.
 //   * Place: the host's estimate of the network's location (x-vercel-ip-latitude and -longitude), rounded to whole
-//     degrees (about 100 km), sealed with AES-256-GCM under a key derived from the first fingerprint key, so the
-//     database holds only text it can't read. Kept by the database at most a day (030's sweep).
+//     degrees (about 100 km), sealed with AES-256-GCM under a key derived from the first fingerprint key, so it is
+//     never stored readable; that key is in the project's Vault, so whoever can read Vault could read it. Not used
+//     after a day, and cleared within the hour after (030).
 'use strict';
 
 const crypto = require('crypto');
@@ -53,6 +54,17 @@ function km(a, b) {
 }
 
 const isPlace = (p) => p && Number.isInteger(p.la) && Number.isInteger(p.lo) && Math.abs(p.la) <= 90 && Math.abs(p.lo) <= 180;
+// Sealed as fixed-width text ("+41-074"), so the sealed value's length says nothing about the place (the CSO's
+// review, S2).
+const pad = (n, w) => (n < 0 ? '-' : '+') + String(Math.abs(n)).padStart(w, '0');
+const sealPlace = (k, p) => c.seal(placeKey(k), { p: pad(p.la, 2) + pad(p.lo, 3) });
+function openPlace(k, sealed) {
+  const o = c.open(placeKey(k), sealed);
+  const t = o && typeof o.p === 'string' && o.p.length === 7 ? o.p : null;
+  if (!t || !'+-'.includes(t[0]) || !'+-'.includes(t[3])) return null;
+  const p = { la: Number(t.slice(0, 3)), lo: Number(t.slice(3)) };
+  return isPlace(p) ? p : null;
+}
 
 // The error's code only (a database error code, or 'error'): never its message, which could name a value.
 function logFailure(e) {
@@ -72,13 +84,13 @@ async function request(t, req, sessionHash, memberId, k = key()) {
     if (!out || !out.place) return;
     const here = place(req);
     const prev = typeof out.place.sealed === 'string' ? out.place.sealed : null;
-    const before = prev ? c.open(placeKey(k), prev) : null;
-    const dist = here && isPlace(before) ? Math.min(25000, Math.round(km(before, here))) : null;
-    await t.savepoint((x) => store.watchTravel(x, { sessionHash, place: here ? c.seal(placeKey(k), here) : null,
+    const before = prev ? openPlace(k, prev) : null;
+    const dist = here && before ? Math.min(25000, Math.round(km(before, here))) : null;
+    await t.savepoint((x) => store.watchTravel(x, { sessionHash, place: here ? sealPlace(k, here) : null,
       km: dist, prev: dist === null ? null : prev }));
   } catch (e) {
     logFailure(e);
   }
 }
 
-module.exports = { key, family, place, km, request };
+module.exports = { key, family, place, km, request, sealPlace, openPlace };

@@ -120,12 +120,12 @@ const DEFINERS = {
   'app.watch_reach(text)': 'dog_signin',
   'app.watch_first(text)': 'dog_jevs',
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
-  // and the settings' triggers (no role calls them directly) and the hourly sweep with the timers.
+  // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',
   'app.watch_travel(text, text, integer, text)': 'dog_signin',
   'app.watch_audit()': { owner: 'dog_signin', callers: '' },
   'app.watch_settings_changed()': { owner: 'dog_signin', callers: '' },
-  'app.watch_sweep()': { owner: 'dog_signin', callers: 'dog_timers' },
+  'app.watch_sweep()': { owner: 'dog_signin', callers: 'dog_app,dog_timers' },
   // 027 (the CSO's control 6): the timers, at most once every 50 seconds, with no timer secret on the site.
   'app.timers_run(boolean)': 'dog_timers',
   // 027 (the CSO's review, B1): the 90-day clock of an agent's tree, which an agent can't read for itself.
@@ -143,7 +143,11 @@ const AUDIT_POLICIES = {
   audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
-  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" }
+  audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  // 030 (the CSO's review, S1): restrictive, so it only narrows the ones above. The site's roles can't record the two
+  // actions the behaviour watch turns into alerts on its own (a new administrator, a JEVs setting changed).
+  audit_insert_not_watched: { cmd: 'a', using: '', check: "action<>ALLARRAY['admin.set'::text,'jevs.setting'::text]", permissive: false,
+    roles: 'dog_app,dog_delegate,dog_erase,dog_signin' }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 
@@ -202,7 +206,8 @@ async function problems(sql, { snapshot } = {}) {
   if (auditNames.join() !== Object.keys(AUDIT_POLICIES).sort().join()) add('the audit log has policies ' + (auditNames.join(', ') || 'none') + '; it must have exactly ' + Object.keys(AUDIT_POLICIES).sort().join(', ') + ' (S7)');
   for (const p of audit) {
     const want = AUDIT_POLICIES[p.name];
-    if (want && (p.cmd !== want.cmd || !p.permissive || squash(p.using) !== squash(want.using) || squash(p.check) !== squash(want.check))) {
+    if (want && (p.cmd !== want.cmd || p.permissive !== (want.permissive !== false) || squash(p.using) !== squash(want.using)
+        || squash(p.check) !== squash(want.check) || (want.roles && [...p.roles].sort().join() !== want.roles))) {
       add('the audit log policy ' + p.name + ' differs from the reviewed one (S7)');
     }
   }
