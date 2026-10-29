@@ -93,7 +93,16 @@ const DEFINERS = {
   'app.agents_cascade()': 'dog_signin',
   'app.agent_rules_cascade()': 'dog_signin',
   'app.subagents_expire()': 'dog_signin',
-  'app.agent_tree_cap()': 'dog_limits'
+  'app.agent_tree_cap()': 'dog_limits',
+  // 023 (Aaron, Oct 28, 2026): signing in by posting a one-time code through giscus. The site makes a code and signs in
+  // with a claimed one; only the JEVs gate's role may claim a code, for the GitHub account that posted it.
+  'app.code_issue(text, text, text, text)': 'dog_signin',
+  'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
+  'app.code_sign_in(text, text, text, integer, text)': 'dog_signin',
+  // The key file (Aaron, Oct 28): signing in again with the username and file, for every account.
+  'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',
+  // "Sign out everywhere" cancels the member's own key file.
+  'app.file_key_revoke()': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 

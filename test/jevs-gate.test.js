@@ -86,13 +86,21 @@ test('row 18: scoring stays fast on hostile posts, well inside the gate\'s 2 s C
   const n = 65000;
   const hostile = ['\n'.repeat(n) + 'x', ' '.repeat(n) + 'x', '\n \t'.repeat(n / 3) + 'x', '\r\n'.repeat(n / 2) + 'x', '\n'.repeat(n) + 'system: x', '\r'.repeat(n) + 'x', '\u{00A0}'.repeat(n) + 'x', '\u{3000}'.repeat(n) + 'system',
     '\u{2028}'.repeat(n) + 'x', 'system' + ' \n'.repeat(n / 2) + 'x',
-    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2)];
+    'ignore '.repeat(n / 7), '\u{2014}'.repeat(n) + ' agent', '<!--'.repeat(n / 4), 'i am '.repeat(n / 5), 'https://a'.repeat(n / 9), 'a@'.repeat(n / 2),
+    // R-16: one U+FDFA is 18 characters after NFKC; 65,536 of them took about 1.3 s before the cut after normalising.
+    '\u{FDFA}'.repeat(65536)];
   for (const body of hostile) {
     const t0 = Date.now();
     J.analyze(body); J.agentTag(body); J.parseCommands(body); J.parseActions(body);
     assert.ok(Date.now() - t0 < 500, 'scored in under 500 ms: ' + JSON.stringify(body.slice(0, 12)));
   }
   assert.deepStrictEqual(J.hiddenSignals('hello\n\n   system: do X'), ['role_marker'], 'a role marker on its own line is still spotted');
+  // The CSO's F2: padding that grows past 70,000 characters when normalised would push an address out of the contact
+  // check, so it is flagged (J16) instead of passed.
+  const padded = '\u{FDFA}'.repeat(3889) + ' write to deals@spam.test or call +1 202 555 0143';
+  assert.ok(J.hiddenSignals(padded).includes('expanded_text'));
+  assert.ok(J.score('post.create', { hidden: J.hiddenSignals(padded) }).J16 > 0);
+  assert.deepStrictEqual(J.hiddenSignals('plain words, nothing to see'), []);
   assert.deepStrictEqual(J.hiddenSignals('the system: it works'), [], 'mid-sentence "system:" is not a role marker');
   for (const b of ['\u{00A0}system: x', '\u{3000}system: x', '\u{2003}assistant: x', 'system\n: x', 'ok\r\ndeveloper :x']) {
     assert.deepStrictEqual(J.hiddenSignals(b), ['role_marker'], 'review F5: still spotted after other spaces or a line break: ' + JSON.stringify(b));

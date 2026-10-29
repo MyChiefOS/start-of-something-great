@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
   id-token: write # only to ask GitHub for the identity token the gate checks
-  discussions: write # only to reply to /agent commands and, in enforce mode, hide a post
+  discussions: write # only to reply to /agent commands and sign-in codes, hide a sign-in code, and in enforce mode hide a post
   issues: write # only to add alerts to the "JEVs alerts" issue
 
 # No concurrency group: GitHub cancels a pending run when a third one queues in the same group, which would drop
@@ -133,6 +133,7 @@ jobs:
             ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or .effect == "alert" or (.questions | any(. == "J16" or . == "J17")))
               | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)
                 + (if .reason == "banned" then " (ban list)" else "" end)] | join("\n"))
+            + (if (.signin.founder // false) then "\n- a sign-in code was claimed by the founder\u0027s account: a browser can now sign in as Aaron, the administrator. If that wasn\u0027t Aaron, sign out everywhere and remove agent keys he didn\u0027t make" else "" end)
             + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
           echo "alert added"
@@ -148,6 +149,21 @@ jobs:
             -f id="$(cat node_id.txt)" > /dev/null
           echo "hidden"
 
+      - name: Hide a sign-in code (used or not, in either mode)
+        # A comment that is exactly a sign-in code (023) is hidden as outdated once the gate has seen it. Hidden, not
+        # unreadable: anyone can still expand it on GitHub. That is safe because a code works only once, only for the
+        # browser that asked for it, and expires in 10 minutes.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e '.signin != null' result.json > /dev/null || exit 0
+          [ "$GITHUB_EVENT_NAME" = discussion_comment ] || exit 0
+          gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }' \
+            -f id="$(cat node_id.txt)" > /dev/null
+          echo "code hidden"
+
       - name: Show approved drafts again
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,7 +176,7 @@ jobs:
             gh api graphql -f query='mutation($id: ID!) { unminimizeComment(input: {subjectId: $id}) { unminimizedComment { isMinimized } } }' -f id="$id" > /dev/null || true
           done < unhide.txt
 
-      - name: Reply to /agent commands
+      - name: Reply to /agent commands and sign-in codes
         # A reply that fails (a locked thread, a rate limit) must not stop anything else.
         continue-on-error: true
         env:
@@ -174,13 +190,19 @@ jobs:
           top=$(gh api graphql -f query='query($id: ID!) { node(id: $id) { ... on DiscussionComment { id replyTo { id } } } }' \
             -f id="$node_id" --jq '.data.node.replyTo.id // .data.node.id // empty' || true)
           if [ -n "$top" ]; then
-            gh api graphql -f query='mutation($d: ID!, $r: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, replyToId: $r, body: $b}) { comment { id } } }' \
-              -f d="$(cat discussion_id.txt)" -f r="$top" -F b=@reply.txt > /dev/null
+            mine=$(gh api graphql -f query='mutation($d: ID!, $r: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, replyToId: $r, body: $b}) { comment { id } } }' \
+              -f d="$(cat discussion_id.txt)" -f r="$top" -F b=@reply.txt --jq '.data.addDiscussionComment.comment.id')
           else
-            gh api graphql -f query='mutation($d: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, body: $b}) { comment { id } } }' \
-              -f d="$(cat discussion_id.txt)" -F b=@reply.txt > /dev/null
+            mine=$(gh api graphql -f query='mutation($d: ID!, $b: String!) { addDiscussionComment(input: {discussionId: $d, body: $b}) { comment { id } } }' \
+              -f d="$(cat discussion_id.txt)" -F b=@reply.txt --jq '.data.addDiscussionComment.comment.id')
           fi
           echo "replied"
+          # The reply to a sign-in code is hidden too, once GitHub has told the poster about it, so sign-ins don't fill
+          # the welcome thread on /join and /talk (the CLJO's review).
+          if jq -e '.signin != null' result.json > /dev/null && [[ "$mine" =~ ^[A-Za-z0-9_=-]{1,100}$ ]]; then
+            gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }' \
+              -f id="$mine" > /dev/null || true
+          fi
 
       - name: Alert that this run failed (so no event goes unnoticed)
         if: failure()

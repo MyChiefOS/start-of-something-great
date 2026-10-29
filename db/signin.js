@@ -165,6 +165,8 @@ async function sessionEnd(t, sessionHash) {
 // "Log out everywhere": as the member, through their own row-level security policy.
 async function sessionsEndAll(t) {
   const rows = await t`delete from app.sessions where member_id = app.current_member() returning id`;
+  // The key file goes too (Aaron, Oct 28): the member starts again with a new code, back in the same account.
+  await t`select app.file_key_revoke()`;
   return rows.length;
 }
 
@@ -204,4 +206,54 @@ async function deleteAccount(t) {
   }
 }
 
-module.exports = { rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+// Signing in with a code posted through giscus (023; Aaron, Oct 28). A new code for one browser (only keyed hashes).
+async function codeIssue(t, { codeHash, browserHash, loginHash, fileKey }) {
+  await t`select app.code_issue(${hex('codeHash', codeHash)}, ${hex('browserHash', browserHash)}, ${hex('loginHash', loginHash)},
+    ${hex('fileKey', fileKey)})`;
+}
+
+// Signing in again with the key file (Aaron, Oct 28). { status: 'ok' | 'no_match' | 'start_again' } or { refused }.
+async function fileSignIn(t, { loginHash, keyHash, displayName, sessionHash, sessionDays, region = null }) {
+  const args = {
+    login: hex('loginHash', loginHash), key: hex('keyHash', keyHash),
+    name: v.text('displayName', displayName, { max: 80 }),
+    session: hex('sessionHash', sessionHash),
+    days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
+    region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
+  };
+  try {
+    const [r] = await t.savepoint((x) => x`select * from app.file_sign_in(${args.login}, ${args.key}, ${args.name}, ${args.session},
+      ${args.days}::integer, ${args.region})`);
+    if (r.status !== 'ok') return { status: r.status };
+    return { status: 'ok', memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
+  } catch (e) {
+    if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
+    throw e;
+  }
+}
+
+// The browser that asked for a code signs in once the JEVs gate has claimed it. The database takes the GitHub account
+// from the claimed code; nothing here names it. { status: 'waiting' | 'expired' } or the sign-in, or { refused }.
+async function codeSignIn(t, { browserHash, displayName, sessionHash, sessionDays, region = null }) {
+  const args = {
+    browser: hex('browserHash', browserHash),
+    name: v.text('displayName', displayName, { max: 80 }),
+    session: hex('sessionHash', sessionHash),
+    days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
+    region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
+  };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const [r] = await t.savepoint((s) => s`select * from app.code_sign_in(${args.browser}, ${args.name}, ${args.session},
+        ${args.days}::integer, ${args.region})`);
+      if (r.status !== 'ok') return { status: r.status };
+      return { status: 'ok', memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
+    } catch (e) {
+      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
+      if (e.code === '23505' && attempt === 0) continue;
+      throw e;
+    }
+  }
+}
+
+module.exports = { codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

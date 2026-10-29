@@ -214,6 +214,14 @@ const HIDDEN_BECAUSE = {
   high_risk: 'Hidden by JEVs: this post scored high risk on its automated checks. Reply `/appeal` under this post and a person will look.'
 };
 
+// What the reply to a sign-in code says. Logins are in code quotes, so nobody is @-mentioned.
+const SIGNED_IN = (login) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
+  + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account; this also cancels the key file), '
+  + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once and is hidden now.';
+const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it was made for a different GitHub username, has expired (codes '
+  + 'last 10 minutes), was already used, or wasn\'t one the site gave out. Get a new one at https://dayonegreat.com/join. '
+  + 'The code is hidden now.';
+
 // /approve and /appeal, replied under a post in the same thread.
 async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banned }) {
   const act = J.parseActions(body);
@@ -436,6 +444,27 @@ export async function handle(sql, raw, { key }) {
     }
 
     if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body, tagged: Boolean(tag), banned });
+
+    // Signing in to the site with a code (023; Aaron, Oct 28). A new comment that is exactly a sign-in code claims it
+    // for the GitHub account that posted it, by that account's fingerprint: the same keyed hash GitHub sign-in uses,
+    // made with the same key (dog_fingerprint_key_1). The post was scored above like any other. A banned account claims
+    // nothing. The workflow then hides the code comment, used or not, and replies, which GitHub tells the poster about:
+    // the alert if someone talked them into posting a code that wasn't theirs. A code claimed by the founder's account
+    // (Aaron's, which Claude also posts as) also alerts on the JEVs alerts issue, outside the site, where a session made
+    // from it can't hide the alert: that session would be the administrator's (the CSO's review, finding 1).
+    const code = ev.event === 'discussion_comment' && ev.action === 'created' ? J.signinCode(body) : null;
+    if (code) {
+      let claimed = false;
+      if (!banned) {
+        const [c] = await t`select app.code_claim(${await J.keyed(key, 'signin-code:' + code)}, ${await J.keyed(key, 'github:' + ev.author.id)},
+          ${await J.keyed(key, 'signin-login:' + ev.author.login.toLowerCase())}) as ok`;
+        claimed = Boolean(c && c.ok);
+      }
+      const founderClaim = claimed && ev.author.id === FOUNDER_ID;
+      out.signin = { claimed, founder: founderClaim };
+      if (founderClaim) out.alert = true;
+      out.replies.push(claimed ? SIGNED_IN(ev.author.login) : NOT_SIGNED_IN);
+    }
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;
     delete out.replies;

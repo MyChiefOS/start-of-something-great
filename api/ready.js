@@ -9,6 +9,9 @@
 //                   a PR that reads the right name (the CLJO's review: X's settings turned out misnamed)
 //   database        the pooler addresses tried, in order, until one logs dog_web in and runs "select 1" ("reached")
 //   stage           the go-live stage, and whether LAUNCH_STAGE is set in Vercel
+//   code_signin_keys  whether code sign-in (023) hashes with the JEVs gate's own key: "same_as_gate" when the keys came
+//                   from the broker (route B: the same Vault value), "vercel_settings" when Vercel settings won and may
+//                   differ, so every code claim would fail (the CSO's review, finding 3), "none" without keys
 // It reads no table and changes nothing. One check runs at a time per function instance, and its answer, good or bad,
 // is kept for a minute, so calling it often costs the database almost nothing (the CSO's review, M2). The pooler
 // address that answered is remembered for the instance, so later checks log in once.
@@ -47,6 +50,15 @@ async function probe(url, { connect }) {
 
 const KEY_NAMES = ['SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1'];
 
+// Whether the site's FINGERPRINT_KEY_1 is the broker's (the gate's own Vault value) or a Vercel setting that wins over
+// it (sitekeys: settings already present are never replaced). Values are compared here and never reported.
+function codeKeys(got, env) {
+  const fromBroker = got.body && got.body.keys && got.body.keys.FINGERPRINT_KEY_1;
+  if (got.source === 'vercel') return env.FINGERPRINT_KEY_1 ? 'vercel_settings' : 'none';
+  if (fromBroker) return !env.FINGERPRINT_KEY_1 || env.FINGERPRINT_KEY_1 === fromBroker ? 'same_as_gate' : 'vercel_settings';
+  return env.FINGERPRINT_KEY_1 ? 'vercel_settings' : 'none';
+}
+
 async function check(req, { env = process.env, connect, fetchImpl } = {}) {
   // Noted before ensure(), which removes the token from the request (M3).
   const identityToken = Boolean(req.headers && req.headers['x-vercel-oidc-token']);
@@ -72,6 +84,7 @@ async function check(req, { env = process.env, connect, fetchImpl } = {}) {
     github_signin: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
     github_setting_names: Object.keys(env).filter((k) => /git_?hub/i.test(k) && /^[A-Z0-9_]{1,64}$/.test(k)).sort(),
     database,
+    code_signin_keys: codeKeys(got, env),
     stage: launch.stage(env),
     launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim())
   };

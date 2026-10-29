@@ -87,6 +87,10 @@
     {
       "version": "022_site_login",
       "sha256": "eb0c8721214cb942044f0ba69e623721f124ee04a4e24e4059b785b2a8b7685e"
+    },
+    {
+      "version": "023_code_signin",
+      "sha256": "c623bee670470f640f2961ebfd4779d49b320dbfe71bcad8ed5ebc7c16b30afb"
     }
   ],
   "reset": {

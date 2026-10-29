@@ -17,8 +17,12 @@ const SERVER = process.env.TEST_DATABASE_URL;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 test('fix 3: the database\'s idle limit for sessions is the site\'s (signin/config.js IDLE_DAYS)', () => {
-  const sql = fs.readFileSync(path.join(root, 'db', 'migrations', '019_actor_stamp.sql'), 'utf8');
-  assert.match(sql, new RegExp('app\\.session_resolve\\(p_session, ' + require('../signin/config').IDLE_DAYS + '\\)'));
+  // The newest migration that defines app.act_as decides (019; 023 since Aaron's 30 days, Oct 28).
+  const dir = path.join(root, 'db', 'migrations');
+  const last = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).filter((s) => /function app\.act_as\(/.test(s)).pop();
+  const all = [...last.matchAll(/app\.session_resolve\(p_session, (\d+)\)/g)].map((m) => Number(m[1]));
+  assert.deepStrictEqual(all, [require('../signin/config').IDLE_DAYS]);
 });
 
 if (!SERVER) {

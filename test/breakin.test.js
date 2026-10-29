@@ -104,6 +104,13 @@ test.before(async () => {
   await run({ actor: 'anon' }, (t) => store.emailTokenIssue(t, { tokenHash: c.sha256hex('tok'), emailFingerprints: [c.sha256hex('a@example.com')],
     browserHash: c.sha256hex('browser'), keyVersion: 1 }));
   await run({ actor: 'anon' }, (t) => store.rateLimitHit(t, { bucket: 'breakin', keyHash: c.sha256hex('a'), windowSeconds: 60, max: 5 }));
+  // 023 (Oct 28, 2026): a waiting sign-in code, and one the JEVs gate claimed (only its role may), as they are written.
+  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code one'), browserHash: c.sha256hex('code browser'), loginHash: c.sha256hex('login one'), fileKey: c.sha256hex('file one') }));
+  await run({ actor: 'anon' }, (t) => store.codeIssue(t, { codeHash: c.sha256hex('code two'), browserHash: c.sha256hex('code browser 2'), loginHash: c.sha256hex('login two'), fileKey: c.sha256hex('file two') }));
+  await su.begin(async (t) => { await t.unsafe('set local role dog_jevs'); await t.unsafe(`select app.code_claim('${c.sha256hex('code two')}', '${'e'.repeat(64)}', '${c.sha256hex('login two')}')`); });
+  // A's key file (023, Oct 28), as a code sign-in keeps it (the sign-in role writes it).
+  await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.file_keys (member_id, fingerprint, login_hash, key_hash)
+    values ('${A.id}', '${'f'.repeat(64)}', '${c.sha256hex('login a')}', '${c.sha256hex('key a')}')`); });
   // PR 15's review (F6): a used traveller confirmation.
   await run({ actor: 'anon' }, (t) => store.regionConfirmUse(t, c.sha256hex('a traveller nonce')));
   // PR 13: A's notices (the brake and the draft above left some), a suppressed sign-in address and a containment.

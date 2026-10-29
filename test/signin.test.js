@@ -179,10 +179,10 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel']]);
+    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
-      'POST region/continue', 'POST region/cancel'],
+      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish', 'POST key'],
     'only these change anything, and all are POSTs');
 });
 
@@ -196,10 +196,13 @@ test('form bodies: read the same whether Vercel has already parsed them or not, 
   assert.strictEqual(await h.form({ headers: { 'content-type': 'application/json' }, body: { t: 'abc' } }), null);
 });
 
-test('SF4, S5: the join page signs people in with GitHub through giscus: no fields, no password, no form', () => {
+test('SF4, S5: the join page signs people in with GitHub through giscus: two fields at most, no password, no form', () => {
   const html = fs.readFileSync(path.join(root, 'join.html'), 'utf8');
-  const fields = html.match(/<(input|select|textarea|form)\b/g) || [];
-  assert.strictEqual(fields.length, 0, 'phase 1 (Aaron, Oct 23): GitHub users only, signed in by giscus');
+  const fields = html.match(/<(input|select|textarea|form)\b[^>]*>/g) || [];
+  // Phase 1 (Aaron, Oct 23): GitHub users only. Since Oct 28 sign-in asks for two things: the GitHub username and a key
+  // file, which never leaves the device (SF4 allows up to 5 fields and no new password).
+  assert.deepStrictEqual(fields, ['<input id="code-login" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40">',
+    '<input id="code-file" name="file" type="file">']);
   assert.ok(!/type="password"|autocomplete="(new|current)-password"/.test(html));
   assert.match(html, /<script src="https:\/\/giscus\.app\/client\.js"/);
   assert.match(html, /data-repo="MyChiefOS\/start-of-something-great"/);
@@ -478,12 +481,14 @@ test('F10: a banned member can\'t sign back in with the same account, and their 
   assert.ok(!back.browser.get(SESSION));
 });
 
-test('sessions end after a week idle or 30 days at most, and logging out is a same-site POST', async () => {
+test('sessions last a flat 30 days (Aaron, Oct 28: no 7-day idle limit), and logging out is a same-site POST', async () => {
   const env = setup({ accounts: { 'github:6001': { accountId: '6001', name: 'L', level: 1, recheckAfter: null } } });
   const a = await oauth(env, 'github', '6001');
   const hash = c.sha256hex(a.browser.get(SESSION));
-  await q(`update app.sessions set last_seen_at = now() - interval '8 days' where token_hash = '${hash}'`);
-  assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'idle');
+  await q(`update app.sessions set last_seen_at = now() - interval '29 days' where token_hash = '${hash}'`);
+  assert.strictEqual((await me(env, a.browser)).signed_in, true, 'unused for 29 days: still signed in');
+  await q(`update app.sessions set last_seen_at = now() - interval '31 days' where token_hash = '${hash}'`);
+  assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'unused past 30 days');
   await q(`update app.sessions set last_seen_at = now(), expires_at = now() - interval '1 second' where token_hash = '${hash}'`);
   assert.deepStrictEqual(await me(env, a.browser), { signed_in: false }, 'expired');
 

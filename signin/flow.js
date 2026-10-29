@@ -22,8 +22,17 @@
 //   never the last one, and only a method added after the one the session signed in with (seniority: whoever holds
 //   the older method wins). After the review: a link starts only from our own pages, a failed one returns to /account,
 //   and a traveller's sealed confirmation is used once.
+//   023 (Aaron, Oct 28, 2026): signing in with a code posted through giscus, which needs no GitHub sign-in app.
+//   /auth/code/start (POST) makes a code for this browser, kept 10 minutes as keyed hashes only. The person posts the
+//   code in the giscus box on /join; the JEVs gate claims it for the GitHub account that posted it. /auth/code/finish
+//   (POST, asked every 2 seconds by /join.js) signs in once the code is claimed: the database takes the account from
+//   the claimed code, so the site never names who signs in. From a declined region the page asks where the person
+//   lives before any code is made (the CLJO's review, B1), and a new person is declined at sign-in, which deletes the
+//   claimed code and the fingerprint it held. The JEVs gate still records every GitHub post, from anywhere, as it
+//   always has (it can't know where a poster is): the gap between the Oct 24 and Oct 16 decisions, put to Aaron.
 'use strict';
 
+const nodeCrypto = require('crypto');
 const launch = require('../launch');
 
 const c = require('./crypto');
@@ -45,11 +54,18 @@ const REGION_MINUTES = 10;
 const RESIDENT = jevs.RESIDENT;
 const NEW_NAME = 'New member'; // names from GitHub or X are not kept (S12); members choose their own later
 const stateCookie = (p) => '__Host-dog_oauth_' + p;
+// The browser's tag for a sign-in code: random, 10 minutes, only its SHA-256 is stored.
+const CODE_BROWSER = '__Host-dog_code';
+const CODE_MINUTES = 10;
+// Codes: DOG- and two groups of four from 32 characters with no 0, O, 1 or I (40 random bits), as the gate reads them
+// (supabase/functions/jevs/core.mjs, signinCode).
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ANON = { actor: 'anon' };
 
 // Rate limits (S6): sign-in attempts per IP range, email links per IP range and per address.
 const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
+  // The key file (Aaron, Oct 28): tries per username, so nobody can try file after file against one account.
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
@@ -77,6 +93,30 @@ function make(deps) {
       if (c.fingerprints(keys, 'email', entry.slice(6)).some((f) => mine.has(f))) return true;
     }
     return false;
+  };
+
+  // The gate holds the first fingerprint key only (dog_fingerprint_key_1), so a code is hashed with that one. Without
+  // it (a later rotation that dropped key 1) code sign-in is off and says so.
+  const codeKey = (keys || []).find((k) => k.version === 1) || null;
+  const codeHash = (code) => c.hmacHex(codeKey.key, 'signin-code:' + code);
+  const newCode = () => {
+    const pick = () => Array.from({ length: 4 }, () => CODE_ALPHABET[nodeCrypto.randomInt(CODE_ALPHABET.length)]).join('');
+    return 'DOG-' + pick() + '-' + pick();
+  };
+  // The username, and the key file's SHA-256 as the browser sends it, both keyed with the gate's key (the key file
+  // with the username too, so the same file is a different key for each account).
+  const loginOf = (form) => {
+    const l = String(form.login || '').trim().replace(/^@/, '');
+    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(l) ? l : null;
+  };
+  const fileOf = (form) => (typeof form.file === 'string' && /^[0-9a-f]{64}$/.test(form.file) ? form.file : null);
+  const loginHash = (login) => c.hmacHex(codeKey.key, 'signin-login:' + login.toLowerCase());
+  const fileKey = (login, file) => c.hmacHex(codeKey.key, 'signin-file:' + login.toLowerCase() + ':' + file);
+  const json = (res, status, body) => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify(body));
   };
 
   const limited = async (bucket, keyHash) => !(await run(ANON, (t) => store.rateLimitHit(t, { bucket, keyHash, ...LIMITS[bucket] })));
@@ -284,6 +324,86 @@ function make(deps) {
       const old = sessionHash(req);
       if (old) await run(ANON, (t) => store.sessionEnd(t, old));
       return h.redirect(res, saved.r || '/');
+    },
+
+    // 023: a sign-in code for this browser. Same-site POST only; within the usual sign-in rate limit. From a declined
+    // region, { region } first, and nothing is made until the person says they live elsewhere (confirm=1).
+    async codeStart(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      if (!codeKey) return json(res, 503, { error: 'Sign-in with a code isn\u2019t switched on here yet.' });
+      const form = (await h.form(req)) || {};
+      const country = region.declined(req);
+      if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      // The GitHub username this code is for (Aaron, Oct 28: option 2): only a post by that account claims it.
+      const login = loginOf(form);
+      if (!login) return json(res, 200, { error: 'Type your GitHub username: letters, numbers and dashes.' });
+      // The key file's SHA-256, made in the browser (the file never leaves the device), kept if this code signs in.
+      const file = fileOf(form);
+      if (!file) return json(res, 200, { error: 'Choose your key file first.' });
+      const code = newCode();
+      const tag = c.token(32);
+      await run(ANON, (t) => store.codeIssue(t, { codeHash: codeHash(code), browserHash: c.sha256hex(tag),
+        loginHash: loginHash(login), fileKey: fileKey(login, file) }));
+      h.addCookie(res, h.cookie(CODE_BROWSER, tag, { maxAge: CODE_MINUTES * 60 }));
+      return json(res, 200, { code, expires_in: CODE_MINUTES * 60 });
+    },
+
+    // 023: asked every 2 seconds by /join.js. { waiting } until the code is posted and claimed, then signs in.
+    // From a declined region, { region } first: the page asks where the person lives, and asks again with confirm=1.
+    async codeFinish(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      const tag = h.cookies(req)[CODE_BROWSER];
+      if (!isToken(tag)) return json(res, 200, { expired: true });
+      const body = (await h.form(req)) || {};
+      const country = region.declined(req);
+      if (country && body.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      const token = c.token(32);
+      const out = await run(ANON, (t) => store.codeSignIn(t, { browserHash: c.sha256hex(tag), displayName: NEW_NAME,
+        sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
+      if (out.status === 'waiting') return json(res, 200, { waiting: true });
+      h.addCookie(res, h.clear(CODE_BROWSER));
+      if (out.status === 'expired') return json(res, 200, { expired: true });
+      if (out.status === 'region' || out.refused === 'region') {
+        await countDecline(country);
+        return json(res, 200, { declined: true });
+      }
+      if (out.refused) return json(res, 200, { refused: out.refused });
+      h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+      if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return json(res, 200, { signed_in: true, go: '/feed' });
+    },
+
+    // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
+    // network; the 10th wrong file for a username cancels its key file (the database counts), and the person is asked
+    // to start again with a new code. Each sign-in leaves the member an in-app notice. The same for every account, the administrator's included.
+    async keyFileSignIn(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
+      const form = (await h.form(req)) || {};
+      const login = loginOf(form), file = fileOf(form);
+      if (!login || !file) return json(res, 200, { error: 'Type your GitHub username and choose your key file.' });
+      const country = region.declined(req);
+      if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
+        return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      }
+      const token = c.token(32);
+      const out = await run(ANON, (t) => store.fileSignIn(t, { loginHash: loginHash(login), keyHash: fileKey(login, file),
+        displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
+      if (out.status === 'start_again') return json(res, 200, { start_again: true, error: 'Too many wrong key files. Please start again: get a new code, post it, and choose a new key file. You\u2019ll be back in your same account.' });
+      if (out.status === 'no_match') return json(res, 200, { error: 'That username and key file don\u2019t match. Check both, or get a new code.' });
+      if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
+      if (out.refused) return json(res, 200, { refused: out.refused });
+      h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+      if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return json(res, 200, { signed_in: true, go: '/feed' });
     },
 
     async emailStart(req, res) {
