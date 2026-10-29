@@ -10,6 +10,8 @@
 //   database        the pooler addresses tried, in order, until one logs dog_web in and runs "select 1" ("reached")
 //   stage           the go-live stage, and whether LAUNCH_STAGE is set in Vercel
 //   stage_repo      the stage the repository says (launch.json, the go-live release); LAUNCH_STAGE can only close it
+//   vercel_env      Vercel's VERCEL_ENV as this function sees it (production, preview, or null when unset): anything
+//                   but production keeps the site closed (launch.js), so the check after the go-live merge reads it
 //   timers          the heartbeat (R-9): { last_run_s_ago } since the timers last finished, "never", "closed" while
 //                   the site is closed (the timers don't run then), or "unreadable". A time, nothing else. The uptime
 //                   monitor raises its issue when the site is open and this passes 15 minutes
@@ -108,6 +110,7 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
     code_signin_keys: codeKeys(got, env),
     stage: launch.stage(env),
     stage_repo: launch.repoStage(),
+    vercel_env: env.VERCEL_ENV ? String(env.VERCEL_ENV).trim().toLowerCase().slice(0, 20) : null,
     launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim()),
     timers: await heartbeat(env, timersAge)
   };
