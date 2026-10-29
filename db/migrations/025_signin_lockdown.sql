@@ -8,8 +8,14 @@
 --   stays for the site's role but refuses an administrator ('admin_code_only'): an administrator signs in only by a
 --   code the JEVs gate confirmed, or by the key file a code sign-in recorded (023). The code and key-file sign-ins call
 --   app.sign_in_core, so they are unchanged. Nothing is refused to members, so nobody is locked out.
---   The rest of RK82 stays recorded: the site's role can still sign in an existing non-administrator member by naming
---   their fingerprint, and the next step is retiring that path with the switched-off sign-ins (R-14).
+--   Making someone administrator (app.set_administrator, fix 9) now also ends every session the member had, so a
+--   session made before the promotion, by any path, can't become the administrator's (the CSO's review of this PR,
+--   B1); and it refuses unless the member has exactly one sign-in method, GitHub, the one the account began with, so
+--   an account someone else linked Aaron's GitHub to can't be made administrator (B2). Aaron then signs in once more by
+--   code or key file. Nobody is locked out.
+--   Still open (RISKS.md RK82): the site's role can sign in an existing member who isn't administrator by naming their
+--   fingerprint, and link a fingerprint nobody has used yet to its own fresh session; retiring those calls, with the
+--   switched-off GitHub, X and email sign-ins that use them, is a later PR.
 set local role dog_owner;
 grant create on schema app to dog_signin;
 set local role dog_signin;
@@ -124,5 +130,55 @@ begin
 end
 $$;
 
+-- Getting a member ready to be administrator (B1, B2): they must have exactly one sign-in method, GitHub, the one the
+-- account began with; every session they have ends. Only the database owner calls it, from app.set_administrator.
+create function app.admin_prepare(p_member uuid)
+returns integer
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  n integer;
+begin
+  if (select count(*) from app.identities i where i.member_id = p_member) <> 1
+     or not exists (select 1 from app.identities i where i.member_id = p_member and i.provider = 'github' and i.linked_by is null) then
+    raise exception 'the administrator must have exactly one sign-in method, GitHub, the one the account began with; nothing changed'
+      using errcode = '42501';
+  end if;
+  delete from app.sessions s where s.member_id = p_member;
+  get diagnostics n = row_count;
+  return n;
+end
+$$;
+revoke execute on function app.admin_prepare(uuid) from public;
+grant execute on function app.admin_prepare(uuid) to dog_owner;
+
 set local role dog_owner;
 revoke create on schema app from dog_signin;
+
+-- app.set_administrator is 019's, except that it first gets the member ready (above).
+create or replace function app.set_administrator(p_member uuid)
+returns text
+language plpgsql set search_path = pg_catalog
+as $$
+declare
+  other uuid;
+  n integer;
+begin
+  if p_member is null then raise exception 'member required' using errcode = '22023'; end if;
+  perform set_config('app.actor', 'system', true), set_config('app.member_id', '', true), set_config('app.agent_id', '', true),
+          set_config('app.fresh', '', true), set_config('app.session', '', true);
+  perform set_config('app.stamp', app.actor_stamp('system', '', '', '', ''), true);
+  if exists (select 1 from app.members where id = p_member and is_admin) then return 'already'; end if;
+  select id into other from app.members where is_admin limit 1;
+  if other is not null then
+    raise exception 'another member is already the administrator (%); nothing changed', other using errcode = '23505';
+  end if;
+  perform app.admin_prepare(p_member);
+  update app.members set is_admin = true where id = p_member and status = 'active';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'no active member with that ID; nothing changed' using errcode = '02000'; end if;
+  insert into app.audit_log (action, subject_kind, subject_id, detail)
+    values ('admin.set', 'member', p_member, jsonb_build_object('by', 'production setup run'));
+  return 'set';
+end
+$$;
