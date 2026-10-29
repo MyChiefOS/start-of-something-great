@@ -373,6 +373,18 @@ if (!SERVER) {
     assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' }, 'the administrator signs in with the key file, no post');
     const [adm] = await owner(`select s.member_id from app.sessions s where s.member_id = '${boss.member_id}' order by s.created_at desc limit 1`);
     assert.strictEqual(adm.member_id, boss.member_id, 'into the administrator\'s own account');
+    // 025 (the CSO's review, Oct 29): the site's own role can't sign in an administrator by naming the fingerprint, as
+    // the switched-off GitHub, X and email sign-ins do. The code and key-file sign-ins above still can.
+    const store = require('../db/signin');
+    const [idn] = await owner(`select i.fingerprint as fp from app.identities i where i.member_id = '${boss.member_id}' limit 1`);
+    const [{ n: before }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
+    const direct = await db.tx(web, { actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [idn.fp], keyVersion: 1, level: 1,
+      displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
+    assert.deepStrictEqual(direct, { refused: 'admin_code_only' }, 'refused for an administrator');
+    const [{ n: after }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
+    assert.strictEqual(after, before, 'and no session was made');
+    await assert.rejects(web.begin(async (t) => { await t`set local role dog_app`; await t`select * from app.sign_in_core('github', ${[idn.fp]}::text[], 1::smallint, 1::smallint, 'x', ${'e'.repeat(64)}, 30, null::timestamptz, null::uuid, null)`; }),
+      /permission denied/, 'the site\'s role can\'t call the sign-in role\'s own function');
     await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${boss.member_id}'`); });
     // Deleting the account takes its key file with it.
     await su.unsafe(`delete from app.file_keys where member_id = '${boss.member_id}'`);

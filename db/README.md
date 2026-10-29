@@ -129,6 +129,8 @@ Aaron chose this on Oct 28 ("Okay you can implement this feature"). It needs no 
 
 A code works once, for the browser that asked for it. A new person in a declined region is declined at sign-in and their code, with the fingerprint it held, is deleted at once; a member travelling signs in. Codes that expired more than an hour ago are cleared whenever a new one is made. `/api/ready` says whether the site hashes codes with the gate's own key (`code_signin_keys`). Sessions last a flat 30 days (Aaron, Oct 28): `IDLE_DAYS` is 30, and `app.act_as` uses the same. The gate holds only the first fingerprint key, so a key rotation must move the gate too. Anything that can post as a GitHub account can sign in as it, Aaron's account included (RISKS.md RK89). Tests: `test/code-signin.test.js`.
 
+**The site can't sign in an administrator directly (025, Oct 29).** `app.sign_in`, which the site's role may call (the switched-off GitHub, X and email sign-ins use it), refuses an administrator (`admin_code_only`) and makes no session. Its work is in `app.sign_in_core`, which only the sign-in role's own functions call: the code and key-file sign-ins, so an administrator signs in only through a code the JEVs gate confirmed or the key file a code sign-in recorded (RISKS.md RK82).
+
 ### Known limits of sign-in (accepted for the preview, on the list for the review before launch)
 
 - **Server code can still act as anyone.** As with everything in this database, if our server code ran SQL of its own, it could claim to be any member and create a working session for them. The checks inside the sign-in functions stop honest mistakes, not deliberate code. That's why the stronger lock (a signed claim from sign-in that the database verifies) is on the list before 1,000 members.

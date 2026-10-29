@@ -102,7 +102,10 @@ const DEFINERS = {
   // The key file (Aaron, Oct 28): signing in again with the username and file, for every account.
   'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',
   // "Sign out everywhere" cancels the member's own key file.
-  'app.file_key_revoke()': 'dog_signin'
+  'app.file_key_revoke()': 'dog_signin',
+  // 024 (the CSO's review, Oct 29): sign-in's work, called only by the sign-in role's own functions; app.sign_in, for
+  // the site's role, refuses an administrator.
+  'app.sign_in_core(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid, text)': { owner: 'dog_signin', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
