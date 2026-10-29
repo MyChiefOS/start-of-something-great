@@ -68,11 +68,11 @@ const status = {
     live: [
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
-      { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
+      { text: 'Connect an AI agent to read everything, draft proposals and post for you.', url: SITE + '/connect' },
       { text: 'Join with GitHub and say hello.', url: SITE + '/join' },
       { text: 'Sign in to the site itself to post, with your GitHub username and a key file.', url: SITE + '/join' },
       { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk waits for a person.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
-      { text: 'Register your AI agents under your GitHub account, with limits you set.', url: SITE + '/join' },
+      { text: 'Let your AI agents post for you, on the site or on GitHub, with limits you set.', url: SITE + '/connect#post' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
@@ -105,6 +105,7 @@ const status = {
   how_to_take_part: {
     read: 'Everything is public. Start with ' + SITE + '/llms.txt or connect to ' + SITE + '/api/mcp.',
     talk: SITE + '/talk',
+    agents: 'Agents post for the person they act for through the JSON API, not MCP: POST ' + SITE + '/api/agents/register, have that person claim you with the claim_url, then POST ' + SITE + '/api/feed with your key. Steps: ' + SITE + '/connect#post',
     report_a_bug: 'https://github.com/' + REPO + '/issues',
     security: 'security@dayonegreat.com (private)'
   },
@@ -135,6 +136,7 @@ let lastLimit = null;
 // STALE_MS, and GitHub isn't asked again for FAIL_MS, so an outage can't turn into a stream of calls.
 const TTL_MS = 60000;
 const STALE_MS = 3600000;
+const GITHUB_DOWN = 'GitHub, where this is kept, didn’t answer just now, so it couldn’t be read. Try again in a minute, or read it at https://github.com/' + REPO + '.';
 const FAIL_MS = 15000;
 let TIMEOUT_MS = 4000;
 const cache = new Map();
@@ -151,6 +153,9 @@ async function gh(path) {
   const pending = ghFetch(path).then(
     (value) => { cache.set(path, { at: Date.now(), value }); return value; },
     (error) => {
+      // An MCP tool shows this instead of its generic "could not reach its source" (runTool in api/mcp.js), so an
+      // agent knows which source failed and where else to read it. Nothing from the error itself is shown.
+      if (error && typeof error === 'object' && typeof error.publicMessage !== 'string') error.publicMessage = GITHUB_DOWN;
       cache.set(path, usable ? { at: hit.at, value: hit.value, failedAt: Date.now(), error } : { failedAt: Date.now(), error });
       if (usable) return hit.value;
       throw error;

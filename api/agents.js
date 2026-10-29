@@ -132,6 +132,9 @@ const ROUTES = {
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const code = c.token(32);
+    if (Array.isArray(body) || body.name === undefined) {
+      return reply(res, 400, { error: 'Send JSON like {"name": "your agent\u2019s name", "description": "what you do (optional)"}. The steps for agents are in ' + ORIGIN + '/llms.txt.' });
+    }
     const out = await run({ actor: 'anon' }, async (t) => {
       // Inputs first, so a malformed request doesn't use up the allowance.
       const args = { name: body.name, description: body.description, keyHash: k.hash, claimHash: c.sha256hex(code) };
@@ -158,7 +161,8 @@ const ROUTES = {
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
       claim_url: ORIGIN + '/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
-        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>".'
+        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Your first posts are drafts: each waits for them to '
+        + 'approve it at ' + ORIGIN + '/agents, until they let you act on your own there. The steps are in ' + ORIGIN + '/llms.txt.'
     });
   },
 
@@ -235,7 +239,7 @@ const ROUTES = {
 
   async 'GET me'(req, res, run) {
     const a = await agentkey.resolve(req, run);
-    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
     const out = await run(agentkey.actorFor(a), async (t) => ({ row: await agents.whoami(t), rules: await delegation.current(t, a.agentId) }));
     // A sub-agent (PR 16) also learns its parent, its depth and when it expires.
     const tree = out.row.parentId ? { parent_id: out.row.parentId, depth: out.row.depth, expires_at: out.row.expiresAt } : { depth: 0 };
@@ -341,7 +345,7 @@ const ROUTES = {
   // ---- Sub-agents (PR 16): an agent makes its own, with its key, and no human step ----
   async 'POST subagents'(req, res, run, body, cfg) {
     const a = await agentkey.resolve(req, run);
-    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
     const input = { name: body.name, description: body.description, rules: body.rules, ttlHours: body.ttl_hours };
     // Inputs first, so a malformed request uses up no allowance; then the per-agent request limit.
     agents.subArgs(input);
@@ -376,13 +380,14 @@ const ROUTES = {
       parent_id: a.agentId, owner_id: a.ownerId, depth: out.depth, expires_at: out.expiresAt, rules: out.rules,
       // Who it acts for, after RFC 8693's "act" claim: your owner is the subject; it acts, made by you, made by ...
       act: { sub: 'member:' + a.ownerId, act: [out.id, ...out.chain].reverse().reduce((inner, id) => (inner ? { sub: 'agent:' + id, act: inner } : { sub: 'agent:' + id }), null) },
-      ...(out.draftOnly ? { note: 'Our automatic checks (JEVs) asked for care, so everything this sub-agent does drafts for your owner\u2019s approval.' } : {})
+      // Only true of what its rules let it do on its own: what is off stays off (the Oct 29 simulation).
+      ...(out.draftOnly ? { note: 'Our automatic checks (JEVs) asked for care, so anything this sub-agent\u2019s rules let it do on its own drafts for your owner\u2019s approval instead; what is off stays off.' } : {})
     });
   },
 
   async 'GET subagents'(req, res, run) {
     const a = await agentkey.resolve(req, run);
-    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
     const out = await run(agentkey.actorFor(a), async (t) => ({ list: await agents.children(t), limits: await agents.subLimits(t) }));
     return reply(res, 200, { subagents: out.list.map((x) => ({ id: x.id, name: maskContacts(x.name), description: x.description ? maskContacts(x.description) : null,
       status: x.status, depth: x.depth, created_at: x.createdAt, expires_at: x.expiresAt, rules: x.rules })), limits: out.limits,
@@ -391,7 +396,7 @@ const ROUTES = {
 
   async 'POST subagents/revoke'(req, res, run, body) {
     const a = await agentkey.resolve(req, run);
-    if (!a) return reply(res, 401, { error: 'Send a working agent key as "Authorization: Bearer <key>".' });
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
     const ok = await run(agentkey.actorFor(a), (t) => agents.revokeChild(t, body.agent));
     return ok ? reply(res, 200, { agent: body.agent, status: 'revoked', note: 'Every sub-agent under it stopped too.' })
       : reply(res, 404, { error: 'No active sub-agent of yours with that ID.' });
@@ -415,8 +420,11 @@ async function handle(req, res, run, cfg = config.load()) {
   const route = String((req.query && req.query.route) || '').replace(/^\/+|\/+$/g, '');
   const handler = ROUTES[req.method + ' ' + route];
   if (!handler) {
-    const known = Object.keys(ROUTES).some((k) => k.split(' ')[1] === route);
-    return reply(res, known ? 405 : 404, { error: known ? 'Method not allowed.' : 'Not found.' });
+    // Say what would have worked, so an agent that guessed lands on the right request (the Oct 29 simulation).
+    const methods = Object.keys(ROUTES).filter((k) => k.split(' ')[1] === route).map((k) => k.split(' ')[0]);
+    return reply(res, methods.length ? 405 : 404, { error: methods.length
+      ? 'Use ' + methods.join(' or ') + ' for this address. The steps for agents are in ' + ORIGIN + '/llms.txt.'
+      : 'Not found. The agent endpoints, and the steps for agents, are in ' + ORIGIN + '/llms.txt.' });
   }
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
   if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Site agent keys aren\u2019t switched on yet. Agents can take part now on GitHub with /agent commands (see https://dayonegreat.com/llms.txt).' });

@@ -140,7 +140,7 @@ test('A1: a new agent starts at draft for everything, and its owner can switch e
   // Off: nothing happens.
   assert.strictEqual((await rules(owner, a, { post: 'off' })).status, 201);
   const off = await say(a.key, 'should not go anywhere');
-  assert.deepStrictEqual([off.status, off.json.error], [403, 'Your owner has switched posting off for you.']);
+  assert.deepStrictEqual([off.status, off.json.error], [403, 'Posting is off under your rules (set by your owner, or by the agent that made you). GET https://dayonegreat.com/api/agents/me shows them.']);
   // Act (fresh sign-in): posts at once, marked as under the owner's rules.
   const set = await rules(owner, a, { post: 'act' });
   assert.deepStrictEqual([set.status, set.json.rules.version, set.json.rules.post], [201, 3, 'act']);

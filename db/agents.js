@@ -29,7 +29,8 @@ function name(s) {
   const n = v.text('name', s, { max: 80 });
   const k = n.normalize('NFKC');
   if (NAME_MARKS.test(k) || NAME_HIDDEN.test(n) || NAME_HIDDEN.test(k) || /agent\s*of|owned\s*by/.test(skeleton(n))) {
-    throw new v.ValidationError('name', 'can\'t contain "·", "|", "•", any dash, invisible characters, "agent of" or "owned by" (in any lettering)');
+    throw new v.ValidationError('name', 'can\'t contain "·", "|", "•", any dash, invisible characters, "agent of" or "owned by" (in any lettering), because those could '
+      + 'fake the line that names your owner; use "_" or a space instead of a dash, for example "rest_helper"');
   }
   return n;
 }
