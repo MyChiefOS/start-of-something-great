@@ -604,6 +604,25 @@ if (!SERVER) {
     await asOwner(`update app.members set is_admin = false where is_admin`);
   });
 
+  test('after a code or key-file sign-in the person goes back to the page that sent them to /join, if it is on this site', async () => {
+    const go = async (returnTo, ip) => {
+      const b = jar();
+      const s = await start(b, { login: 'returner', ip });
+      await post(8701, 'returner', s.code);
+      return (await finish(b, { body: returnTo === undefined ? {} : { return_to: returnTo } })).go;
+    };
+    assert.strictEqual(await go('/review?tab=reports', '198.51.100.61'), '/review?tab=reports');
+    assert.strictEqual(await go(undefined, '198.51.100.62'), '/feed', 'nothing asked: the feed');
+    for (const [bad, ip] of [['https://evil.example/x', '198.51.100.63'], ['//evil.example', '198.51.100.64'], ['/\\evil.example', '198.51.100.65'], ['javascript:alert(1)', '198.51.100.66']]) {
+      assert.strictEqual(await go(bad, ip), '/feed', 'never another site: ' + bad);
+    }
+    const r = res();
+    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'returner', file: FILE_A, return_to: '/agents' }, ip: '198.51.100.67' }), r);
+    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/agents' });
+    assert.match(read('join.js'), /if \(back\) fb\.return_to = back;/);
+    assert.match(read('join.js'), /if \(back\) body\.return_to = back;/);
+  });
+
   test('sessions last a flat 30 days (Aaron, Oct 28): no idle limit', async () => {
     assert.strictEqual(require('../signin/config').IDLE_DAYS, 30);
     assert.strictEqual(require('../signin/config').SESSION_DAYS, 30);
