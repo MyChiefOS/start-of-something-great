@@ -26,11 +26,22 @@
   function remembered() {
     try {
       var x = JSON.parse(sessionStorage.getItem(KEY) || 'null');
-      return x && typeof x.at === 'number' && Date.now() - x.at < TTL_MS && Date.now() >= x.at ? x : null;
+      return x && x.signed_in === true && typeof x.at === 'number' && Date.now() - x.at < TTL_MS && Date.now() >= x.at ? x : null;
     } catch (e) { return null; }
   }
+  // Only a signed-in answer is reused: a visitor costs the watch nothing, and someone who has just signed in must see
+  // Account at once, not a minute-old "Join".
   function remember(state) {
-    try { sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), signed_in: state.signed_in === true, unread: Number.isInteger(state.unread) ? state.unread : null })); } catch (e) { /* no storage: ask each time */ }
+    try {
+      if (state.signed_in === true) sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), signed_in: true, unread: Number.isInteger(state.unread) ? state.unread : null }));
+      else sessionStorage.removeItem(KEY);
+    } catch (e) { /* no storage: ask each time */ }
+  }
+  // Signing out (the forms on /account) forgets it at once, so the next page doesn't show Account for a minute.
+  if (document.querySelectorAll) {
+    Array.prototype.forEach.call(document.querySelectorAll('form[action^="/auth/logout"]'), function (f) {
+      f.addEventListener('submit', function () { try { sessionStorage.removeItem(KEY); } catch (e) { /* nothing kept */ } });
+    });
   }
 
   // Asked afresh on /account (it reads your notices itself) and on /join (where you sign in), so a sign-in or a

@@ -127,16 +127,17 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
     setAttribute(k, v) { this.attrs[k] = String(v); }, removeAttribute(k) { delete this.attrs[k]; } };
   const store = new Map(stored ? [['dog-nav', JSON.stringify(stored)]] : []);
   const calls = [];
+  const forms = [{ handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); } }];
   const ctx = {
-    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : null) },
+    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : null), querySelectorAll: () => forms },
     location: { pathname: where },
-    sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) },
+    sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
     fetch: (u) => { calls.push(u); return Promise.resolve({ ok: true, json: () => Promise.resolve(me) }); },
     JSON, Number, Date: { now: () => now }
   };
   ctx.window = ctx;
   vm.runInNewContext(read('nav.js'), ctx);
-  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store }))));
+  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store, forms }))));
 }
 
 test('nav.js, run: a visitor keeps Join; a member sees Account with the unread count; one request, then reused for a minute', async () => {
@@ -158,6 +159,16 @@ test('nav.js, run: a visitor keeps Join; a member sees Account with the unread c
   for (const p of ['/join', '/account']) {
     assert.deepStrictEqual((await runNav({ path: p, me: { signed_in: false }, stored: { at: 1e12 - 1000, signed_in: true, unread: 1 } })).calls, ['/auth/me'], p + ' always asks afresh');
   }
+  // Only a signed-in answer is reused: a visitor who has just signed in sees Account at once (the browser check, Oct 29).
+  const visitorThenMember = await runNav({ me: { signed_in: true, unread: 0 }, stored: { at: 1e12 - 1000, signed_in: false, unread: null } });
+  assert.deepStrictEqual(visitorThenMember.calls, ['/auth/me']);
+  assert.strictEqual(visitorThenMember.link.textContent, 'Account');
+  assert.strictEqual((await runNav({ me: { signed_in: false } })).store.has('dog-nav'), false, 'a visitor\u2019s answer is not kept');
+  // Signing out on /account forgets the kept answer.
+  const out = await runNav({ path: '/account', me: { signed_in: true, unread: 0 } });
+  assert.ok(out.store.has('dog-nav'));
+  out.forms[0].handlers.find(([ev]) => ev === 'submit')[1]();
+  assert.strictEqual(out.store.has('dog-nav'), false);
   const here = await runNav({ path: '/account', me: { signed_in: true, unread: 0 } });
   assert.strictEqual(here.link.textContent, 'Account');
   assert.strictEqual(here.link.attrs['aria-current'], 'page');
