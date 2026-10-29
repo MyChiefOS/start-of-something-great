@@ -63,6 +63,8 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 | The Edge Functions' only npm import is `postgres@3.4.9`, which has no dependencies of its own; npm audit finds no advisories for it or for package-lock.json | checked | `npm install --package-lock-only` and `npm audit --json` in a throwaway folder | 2026-10-29 |
 | actionlint 1.7.7 (linux amd64 tarball SHA-256 `023070a2…0757`, from the release's checksums file) reports nothing on the workflows without shellcheck; with shellcheck, 11 SC2016 notes (GraphQL variables in single quotes, deliberate) and two brake.yml warnings (an unused loop counter; a deliberate unquoted expansion) | checked | local run, Oct 29 | 2026-10-29 |
 | The R-14 preview removals change no behaviour: every removed path ran only when `launch.stage()` returned "preview", which it can't since PR #50 | checked | launch.js (STAGES is closed and public only); full suite green | 2026-10-29 |
+| Supabase's Postgres 17 image has six event triggers of its own (issue_graphql_placeholder, pgrst_ddl_watch, pgrst_drop_watch, issue_pg_cron_access, issue_pg_net_access, issue_pg_graphql_access), so a check for Supabase's `ensure_rls` must name it exactly | checked | `select evtname from pg_event_trigger` on the local supa17 image | 2026-10-29 |
+| `public.rls_auto_enable()` (and so the `ensure_rls` trigger that depends on it) is gone from production | inferred | the Oct 29 database run (40803352383) reported no leftovers; the runner reports the function as a leftover while it exists, and the fresh build drops it without cascade, which fails while the trigger exists | 2026-10-29 |
 
 ## Launch path (what is left, in order)
 
