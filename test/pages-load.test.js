@@ -58,7 +58,7 @@ test('/join loads join.js, which is what shows the site sign-in, and the page ke
     assert.ok(html.includes('id="' + id + '"'), '/join has #' + id);
   }
   assert.match(html, /<section id="code-signin" hidden>/, 'shown only once /auth/me answers');
-  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; return; \}/, 'shown only to someone signed out');
+  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false;/, 'shown only to someone signed out');
   assert.match(read('join.js'), /Object\.prototype\.hasOwnProperty\.call\(text, key\)/, 'no built-in names as messages');
   // The /join security policy lets our own scripts run there.
   const csp = JSON.parse(read('vercel.json')).headers.find((h) => h.source === '/join').headers.find((x) => x.key === 'Content-Security-Policy').value;
@@ -97,24 +97,79 @@ test('every page with a menu loads nav.js, except the pages that run no script; 
   const js = read('nav.js');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'text only');
   assert.deepStrictEqual([...js.matchAll(/setAttribute\('href', '([^']+)'\)/g)].map((m) => m[1]), ['/account']);
-  assert.deepStrictEqual([...js.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1]), ['/auth/me', '/api/notify']);
-  assert.match(js, /if \(!d \|\| d\.signed_in !== true\) return;/, 'a visitor keeps "Join"');
+  assert.deepStrictEqual([...js.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1]), ['/auth/me'], 'one request: /auth/me carries the count');
+  assert.match(js, /if \(!state \|\| state\.signed_in !== true\) return;/, 'a visitor keeps "Join"');
   assert.match(read('styles.css'), /\.site-nav a\.nav-join \{[^}]*min-height: 24px/, 'the Join link is a 24 px target');
 });
 
-test('"The name" is still reachable: every page with footer links lists it', () => {
+test('"The name" and GitHub are still reachable: every page with a menu has footer links to both', () => {
   for (const f of navPages) {
     const foot = (read(f).match(/<div class="footer-links">[\s\S]*?<\/div>/) || [''])[0];
-    if (foot) assert.match(foot, /<a href="\/name">The name<\/a>/, f);
+    assert.match(foot, /<a href="\/name">The name<\/a>/, f + ' has footer links with The name');
+    assert.match(foot, /<a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">Code on GitHub<\/a>/, f + ' links the code');
   }
 });
 
 test('/join leads with the two ways to take part, numbered sign-in steps and the code warning, details folded below', () => {
   const html = read('join.html');
-  assert.match(html, /<ol class="choices">[\s\S]*href="#say-hello"[\s\S]*href="#code-signin"[\s\S]*<\/ol>/);
+  assert.match(html, /<ol class="choices">[\s\S]*href="#code-signin"[\s\S]*href="#say-hello"[\s\S]*<\/ol>/, 'in the order the page shows them');
   const section = html.match(/<section id="code-signin" hidden>[\s\S]*?<\/section>/)[0];
   assert.ok(section.indexOf('<ol class="steps">') < section.indexOf('id="code-login"'), 'steps come before the fields');
   assert.ok(section.indexOf('id="code-login"') < section.indexOf('<details>'), 'the details are folded below the fields');
   const steps = section.match(/<ol class="steps">[\s\S]*?<\/ol>/)[0];
   assert.match(steps, /Only post a code this page showed you/, 'the takeover warning is never folded away');
+});
+
+// nav.js run for real, in a stand-in page: what a visitor and a member see, and that it asks once a minute at most.
+const vm = require('vm');
+function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
+  const link = { text: 'Join', attrs: { href: '/join' }, set textContent(v) { this.text = v; }, get textContent() { return this.text; },
+    setAttribute(k, v) { this.attrs[k] = String(v); }, removeAttribute(k) { delete this.attrs[k]; } };
+  const store = new Map(stored ? [['dog-nav', JSON.stringify(stored)]] : []);
+  const calls = [];
+  const ctx = {
+    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : null) },
+    location: { pathname: where },
+    sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) },
+    fetch: (u) => { calls.push(u); return Promise.resolve({ ok: true, json: () => Promise.resolve(me) }); },
+    JSON, Number, Date: { now: () => now }
+  };
+  ctx.window = ctx;
+  vm.runInNewContext(read('nav.js'), ctx);
+  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store }))));
+}
+
+test('nav.js, run: a visitor keeps Join; a member sees Account with the unread count; one request, then reused for a minute', async () => {
+  const visitor = await runNav({ me: { signed_in: false } });
+  assert.strictEqual(visitor.link.textContent, 'Join');
+  assert.strictEqual(visitor.link.attrs.href, '/join');
+  assert.deepStrictEqual(visitor.calls, ['/auth/me'], 'one request a page, not two');
+  const member = await runNav({ me: { signed_in: true, member_id: 'x', display_name: 'Ada', unread: 3 } });
+  assert.strictEqual(member.link.textContent, 'Account (3)');
+  assert.strictEqual(member.link.attrs.href, '/account');
+  assert.strictEqual(member.link.attrs['aria-label'], 'Account, 3 unread notices');
+  const kept = JSON.parse(member.store.get('dog-nav'));
+  assert.deepStrictEqual(Object.keys(kept).sort(), ['at', 'signed_in', 'unread'], 'only the yes/no and the count are kept, never an ID or a name');
+  assert.strictEqual((await runNav({ me: { signed_in: true, unread: 250 } })).link.textContent, 'Account (99+)');
+  const reused = await runNav({ me: { signed_in: false }, stored: { at: 1e12 - 30000, signed_in: true, unread: 1 } });
+  assert.deepStrictEqual(reused.calls, [], 'a minute-old answer is reused');
+  assert.strictEqual(reused.link.textContent, 'Account (1)');
+  assert.deepStrictEqual((await runNav({ me: { signed_in: false }, stored: { at: 1e12 - 61000, signed_in: true, unread: 1 } })).calls, ['/auth/me'], 'older is asked again');
+  for (const p of ['/join', '/account']) {
+    assert.deepStrictEqual((await runNav({ path: p, me: { signed_in: false }, stored: { at: 1e12 - 1000, signed_in: true, unread: 1 } })).calls, ['/auth/me'], p + ' always asks afresh');
+  }
+  const here = await runNav({ path: '/account', me: { signed_in: true, unread: 0 } });
+  assert.strictEqual(here.link.textContent, 'Account');
+  assert.strictEqual(here.link.attrs['aria-current'], 'page');
+});
+
+test('/auth/me tells a member how many notices are unread, as a count only', () => {
+  const flow = read('signin/flow.js');
+  assert.match(flow, /try \{ unread = await run\(session\.actorFor\(who\), \(t\) => notices\.unread\(t\)\); \} catch \{ unread = null; \}/);
+  assert.match(flow, /trust_level: who\.trustLevel, unread \}/);
+});
+
+test('/join shows "Sign in to the site" as a choice only when the sign-in itself shows', () => {
+  assert.match(read('join.html'), /<li id="choice-signin" hidden>/);
+  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; if \(choice\) choice\.hidden = false; return; \}/);
 });

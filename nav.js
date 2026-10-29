@@ -1,28 +1,44 @@
 // The menu's last link: "Join" for visitors, "Account" (with unread notices) once signed in. The UI/UX review (Oct 29,
 // 2026): there was no Join in the menu and no way to reach your account or notices. Text only (textContent), our own
 // paths only; if /auth/me can't be reached the link simply stays "Join".
+//
+// One request (/auth/me carries the unread count), and its answer is reused for a minute in this tab, so moving
+// between pages doesn't count against the behaviour watch's "unusually many requests" (030; the people-wayfinding
+// review, finding 1). Only the yes/no and the count are kept, never an ID or a name.
 (function () {
   'use strict';
   var link = document.querySelector('.site-nav a[data-nav="account"]');
   if (!link || !window.fetch) return;
+  var KEY = 'dog-nav', TTL_MS = 60000;
+
+  function show(state) {
+    if (!state || state.signed_in !== true) return;
+    link.textContent = 'Account';
+    link.setAttribute('href', '/account');
+    if (location.pathname === '/account') link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+    var count = Number.isInteger(state.unread) && state.unread > 0 ? state.unread : 0;
+    if (count > 0) {
+      link.textContent = 'Account (' + (count > 99 ? '99+' : count) + ')';
+      link.setAttribute('aria-label', 'Account, ' + count + ' unread notice' + (count === 1 ? '' : 's'));
+    }
+  }
+  function remembered() {
+    try {
+      var x = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+      return x && typeof x.at === 'number' && Date.now() - x.at < TTL_MS && Date.now() >= x.at ? x : null;
+    } catch (e) { return null; }
+  }
+  function remember(state) {
+    try { sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), signed_in: state.signed_in === true, unread: Number.isInteger(state.unread) ? state.unread : null })); } catch (e) { /* no storage: ask each time */ }
+  }
+
+  // Asked afresh on /account (it reads your notices itself) and on /join (where you sign in), so a sign-in or a
+  // sign-out shows at once there; elsewhere the answer is at most a minute old.
+  var kept = location.pathname === '/account' || location.pathname === '/join' ? null : remembered();
+  if (kept) { show(kept); return; }
   fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })
     .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (d) {
-      if (!d || d.signed_in !== true) return;
-      link.textContent = 'Account';
-      link.setAttribute('href', '/account');
-      if (location.pathname === '/account') link.setAttribute('aria-current', 'page');
-      else link.removeAttribute('aria-current');
-      // How many notices are unread (GET /api/notify, your own inbox), shown as a number after "Account".
-      return fetch('/api/notify', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (n) {
-          var count = n && Number.isInteger(n.unread) ? n.unread : 0;
-          if (count > 0) {
-            link.textContent = 'Account (' + (count > 99 ? '99+' : count) + ')';
-            link.setAttribute('aria-label', 'Account, ' + count + ' unread notice' + (count === 1 ? '' : 's'));
-          }
-        });
-    })
+    .then(function (d) { if (!d) return; remember(d); show(d); })
     .catch(function () { /* the link stays as it is */ });
 })();

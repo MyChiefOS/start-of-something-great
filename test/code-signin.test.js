@@ -154,6 +154,10 @@ if (!SERVER) {
     assert.ok(b.get(SESSION), 'a session cookie');
     const who = await me(b);
     assert.strictEqual(who.signed_in, true);
+    // The menu's count (nav.js): a number of unread notices, read as the member, never anyone else's.
+    assert.ok(Number.isInteger(who.unread) && who.unread >= 0, 'unread is a count: ' + who.unread);
+    const [{ mine }] = await owner(`select count(*)::int as mine from app.notices where member_id = '${who.member_id}' and read_at is null`);
+    assert.ok(who.unread >= mine, 'it counts at least their own unread notices');
     const [row] = await owner(`select s.expires_at > now() + interval '29 days 23 hours' as thirty, i.provider, i.fingerprint = '${c.fingerprints(SITE_KEYS, 'github', '8001')[0]}' as same_fp
       from app.sessions s join app.identities i on i.id = s.identity_id where s.member_id = '${who.member_id}'`);
     assert.deepStrictEqual(row, { thirty: true, provider: 'github', same_fp: true },

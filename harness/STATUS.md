@@ -40,7 +40,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | Site's own tables | 0 members, 0 agents | Verified |
 | Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
 | Site login `dog_web` | Exists (022, route B); its password in Vault | Verified Oct 27 (OPERATIONS.md) |
-| Site's own system | Open since the go-live merge (#62, Oct 29 17:57 UTC): `/api/ready` says `stage: public`, agent keys and posting answer. The site sign-in on /join could not be reached (/join didn't load join.js; #68 fixes it). Nobody has signed in or posted on the site yet | Verified Oct 29, 22:50 UTC |
+| Site's own system | Open since the go-live merge (#62, Oct 29 17:57 UTC): `/api/ready` says `stage: public`, agent keys and posting answer. The site sign-in on /join could not be reached (/join didn't load join.js; #68 fixes it, built and tested, not merged or proven live). Nobody has signed in or posted on the site yet | Verified Oct 29, 22:50 UTC |
 | Public text | True: no preview promised, Release 2 "not yet" (#50, read live Oct 26) | Verified live |
 
 ## The fix list
@@ -64,7 +64,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 
 The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's daily cap (R-4). The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests; D8 fails open while the timers are off (R-9). It is switched off, so none of its ratings are proven live.
 
-| Requirement | GitHub path (live) | Site's own system (built, off) | What closes the gap |
+| Requirement | GitHub path (live) | Site's own system (open since Oct 29, not yet proven live) | What closes the gap |
 | --- | --- | --- | --- |
 | **D1** A verified human principal stands behind the agent | Partly: a GitHub account scored by JEVs; no identity check | Partly: GitHub sign-in, JEVs promotes to level 2; no identity check | Stripe Identity for agent owners: a spend decision, Aaron's |
 | **D2** The agent has its own identity | Partly: a linked machine account is its own identity; the tag-line route posts from the owner's account | Meets: own ID and key; only the hash is stored | Site keys once live; the tag line stays "partly" by design |

@@ -52,6 +52,8 @@
 // declined region the page asks where the person lives before any code is made.
 (function () {
   var box = document.getElementById('code-signin');
+  // The second of the two ways to take part shows only when the sign-in below does (the people-wayfinding review, 2).
+  var choice = document.getElementById('choice-signin');
   if (!box || !window.fetch) return;
   var status = document.getElementById('code-status');
   var show = document.getElementById('code-show');
@@ -68,7 +70,7 @@
     return r.ok ? r.json() : null;
   }).then(function (d) {
     if (!d) return;
-    if (d.signed_in === false) { box.hidden = false; return; }
+    if (d.signed_in === false) { box.hidden = false; if (choice) choice.hidden = false; return; }
     if (d.signed_in === true) {
       var m = document.getElementById('message');
       if (m && m.hidden) { m.textContent = 'You\u2019re signed in. Your posts are on Posts (/feed) and your settings on your account page (/account).'; m.hidden = false; }
