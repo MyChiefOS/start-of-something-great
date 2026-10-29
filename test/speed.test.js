@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { weigh, BUDGET } = require('../scripts/page-weight');
 const { simulate } = require('../scripts/review-time-sim');
 
@@ -37,7 +37,12 @@ test('O1: at 1,000 members, Aaron\'s review averages 6 hours a week or less, and
 
 const SERVER = process.env.TEST_DATABASE_URL;
 test('G6, SF3: a short load run (members, agents and the break-in checks together) has no errors and no violations', { skip: !SERVER && 'needs TEST_DATABASE_URL' }, () => {
-  const out = execFileSync(process.execPath, [path.join(root, 'test', 'perf', 'load-test.js'), '120', '60', '5', '10'], { env: process.env, encoding: 'utf8', timeout: 120000 });
+  // The run's own output goes into the failure message (Oct 29: it failed twice in CI with nothing to say why, and passed
+  // every time locally), so the next failure shows its cause in the CI log.
+  const r = spawnSync(process.execPath, [path.join(root, 'test', 'perf', 'load-test.js'), '120', '60', '5', '10'], { env: process.env, encoding: 'utf8', timeout: 120000 });
+  const out = r.stdout || '';
+  const tail = (s) => String(s || '').split('\n').slice(-60).join('\n');
+  assert.strictEqual(r.status, 0, 'the load run exited ' + r.status + (r.signal ? ' (' + r.signal + ')' : '') + '\n--- its output ---\n' + tail(out) + '\n--- its errors ---\n' + tail(r.stderr));
   assert.match(out, /errors: 0/);
   assert.match(out, /, 0 violations/);
   // SF3: uncached reads in under 1 second for 95% of requests (here against a local database).
