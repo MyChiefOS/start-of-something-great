@@ -414,9 +414,17 @@ export async function handle(sql, raw, { key }) {
           top as (select id, daily_cap from up order by lvl desc limit 1),
           down (id, lvl) as (select id, 0 from top
             union all select a.id, down.lvl + 1 from app.gh_agents a join down on a.parent_id = down.id where down.lvl < 10)
-        select (select daily_cap from top) as cap, (select count(*)::int from down) as agents,
-          (select count(*)::int from app.gh_posts where agent_id in (select id from down)
-             and created_at > now() - interval '24 hours' and node_id <> ${ev.post.node_id}) as posts_24h`;
+        select (select id from top) as top_id, (select daily_cap from top) as cap, (select count(*)::int from down) as agents`;
+      // Each agent post records its tree's top agent (024), so a sub-agent that is removed and made again, or that
+      // expired, still counts: the posts stay counted against the top agent, not against agents that still exist (the
+      // CSO's review of this PR, B1). One alert per tree a day, not one per post, so the alerts issue can't be flooded
+      // (S1).
+      const [n] = await t`select
+          (select count(*)::int from app.gh_posts where top_agent_id = ${tree.top_id}::uuid
+             and created_at > now() - interval '24 hours' and node_id <> ${ev.post.node_id}) as posts_24h,
+          exists (select 1 from app.gh_decisions d join app.gh_posts p on p.id = d.post_id
+             where d.reason = 'tree_cap' and p.top_agent_id = ${tree.top_id}::uuid and d.at > now() - interval '24 hours') as alerted`;
+      tree = { ...tree, ...n };
     }
     const ageHours = acct.github_created_at ? (Date.now() - new Date(acct.github_created_at).getTime()) / 3600000 : null;
     const signals = { ...sig, age_hours: ageHours, links: text.links, contacts: text.contacts, hidden: text.hidden, impersonation, claims: text.claims && !founder };
@@ -432,7 +440,7 @@ export async function handle(sql, raw, { key }) {
     else if (agent && agent.mode === 'draft' && !approved) reason = 'agent_draft';
     else if (agent && action === 'post.create' && sig.agent_posts_24h >= agent.daily_cap) reason = 'agent_cap';
     else if (r.level === 'high') reason = 'high_risk';
-    else if (tree && tree.agents > 1 && tree.posts_24h >= tree.cap) reason = 'tree_cap';
+    else if (tree && tree.posts_24h >= tree.cap) reason = 'tree_cap';
     else if (machineNoAgent) reason = 'machine_no_agent';
     // Never hidden: a machine account's untagged post (see above), and a tree over its top agent's limit (R-4, for now).
     const alertOnly = reason === 'machine_no_agent' || reason === 'tree_cap';
@@ -442,15 +450,16 @@ export async function handle(sql, raw, { key }) {
     // A discussion can't be hidden: a banned or high-risk one alerts Aaron, once, when it is started. An agent's own
     // limits (off, draft, cap) on a discussion are the owner's business and alert no one.
     const ownLimit = reason === 'agent_off' || reason === 'agent_draft' || reason === 'agent_cap';
-    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || ((reason && !hideable && !ownLimit || alertOnly) && ev.action === 'created') || swapped) out.alert = true;
+    const quietTree = reason === 'tree_cap' && tree.alerted; // already alerted for this tree in the last 24 hours
+    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || ((reason && !hideable && !ownLimit || alertOnly) && ev.action === 'created' && !quietTree) || swapped) out.alert = true;
     out.hide = effect === 'hide' && mode === 'enforce';
     if (out.hide) out.replies.push(HIDDEN_BECAUSE[reason]);
 
-    const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, created_at, body_key, simhash, risk, hidden)
+    const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, top_agent_id, created_at, body_key, simhash, risk, hidden)
       values (${ev.post.node_id}, ${ev.event === 'discussion' ? 'discussion' : 'comment'}, ${ev.discussion}, ${ev.post.thread_node_id || null}, ${acct.id},
-              ${agent ? agent.id : null}, ${created}, ${bodyKey}, ${text.simhash}::bigint, ${r.level}, ${out.hide})
+              ${agent ? agent.id : null}, ${tree ? tree.top_id : null}::uuid, ${created}, ${bodyKey}, ${text.simhash}::bigint, ${r.level}, ${out.hide})
       on conflict (node_id) do update set edited_at = case when app.gh_posts.body_key = excluded.body_key then app.gh_posts.edited_at else now() end, body_key = excluded.body_key, simhash = excluded.simhash, risk = excluded.risk,
-        agent_id = excluded.agent_id, hidden = app.gh_posts.hidden or excluded.hidden,
+        agent_id = excluded.agent_id, top_agent_id = coalesce(app.gh_posts.top_agent_id, excluded.top_agent_id), hidden = app.gh_posts.hidden or excluded.hidden,
         approved = app.gh_posts.approved and app.gh_posts.body_key = excluded.body_key
       returning id`;
     await t`delete from app.gh_post_domains where post_id = ${post.id}`;

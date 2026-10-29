@@ -253,6 +253,7 @@ async function getConversation(limit) {
       started_by: d.user ? d.user.login : null,
       started_at: d.created_at,
       body: pub(d.body, 4000),
+      agent_tag: agentTagOf(stripHidden(d.body).text),
       reply_count: d.comments
     },
     replies: shown.slice(0, n).map((c) => ({

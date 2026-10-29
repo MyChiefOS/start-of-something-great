@@ -634,6 +634,18 @@ if (!SERVER) {
       { reason: 'tree_cap', effect: 'alert', alert: true, hide: false }, 'the third alerts, for now, and isn\'t hidden');
     const own = await post('kid1', 4);
     assert.strictEqual(own.decisions[0].reason, 'tree_cap', 'each agent is still under its own limit of 2, but the tree is over');
+    assert.strictEqual(own.alert, false, 'one alert per tree a day, not one per post (the CSO\'s review, S1); still recorded');
+    // Removing a sub-agent and making it again doesn't start the count again (the CSO's review, B1).
+    await go({ id: 7403, login: 'churner', body: 'hello' });
+    await go({ id: 7403, login: 'churner', body: '/agent register base daily 2' });
+    const churned = [];
+    for (let i = 1; i <= 3; i++) {
+      await go({ id: 7403, login: 'churner', body: '/agent subagent temp of base daily 2' });
+      churned.push(await G.handle(sql, { ...ev({ id: 7403, login: 'churner', body: 'Churn post ' + i + '.\n\n— agent temp for @churner' }), mode: 'enforce' }, { key: KEY }));
+      await go({ id: 7403, login: 'churner', body: '/agent remove temp' });
+    }
+    assert.deepStrictEqual(churned.map((p) => p.decisions[0].reason), ['', '', 'tree_cap'], 'a removed sub-agent\'s posts still count against the top agent');
+    assert.strictEqual(churned[2].alert, true);
     await go({ id: 7402, login: 'loneowner', body: 'hello' });
     await go({ id: 7402, login: 'loneowner', body: '/agent register solo daily 1' });
     const s1 = await go({ id: 7402, login: 'loneowner', body: 'One.\n\n— agent solo for @loneowner' });
