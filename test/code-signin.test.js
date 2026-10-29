@@ -444,7 +444,8 @@ if (!SERVER) {
 
   test('the JEVs behaviour watch (Aaron, Oct 28; 026): it alerts Aaron and never refuses anyone', async () => {
     const store = require('../db/signin');
-    const alerts = async (like) => (await owner(`select title from app.notices where member_id is null and kind = 'alert' and dedupe_key like '${like}' order by created_at`)).map((r) => r.title);
+    const alerts = async (like, about = null) => (await owner(`select title from app.notices where member_id is null and kind = 'alert' and dedupe_key like '${like}'`
+      + (about ? ` and subject_id = '${about}'` : '') + ` order by created_at`)).map((r) => r.title);
     const keyIn = async (login, file, { ip = '198.51.100.200', country } = {}) => {
       const b = jar(); const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login, file }, ip, country }), r); b.take(r);
       return { b, ...JSON.parse(r.body) };
@@ -459,11 +460,26 @@ if (!SERVER) {
     for (let i = 0; i < 5; i++) assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.' + (110 + i), country: 'US' })).signed_in, true);
     assert.deepStrictEqual(await alerts('watch:sessions:' + who.member_id + ':%'), ['Many sessions at once'], '6 sessions, one alert a day');
     // 2. A new country alerts; the same country again doesn't.
-    assert.deepStrictEqual(await alerts('watch:country:' + who.member_id + ':%'), []);
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), []);
     assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.120', country: 'CA' })).signed_in, true, 'still signed in');
-    assert.deepStrictEqual(await alerts('watch:country:' + who.member_id + ':%'), ['A sign-in from a new country']);
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), ['A sign-in from a new country']);
     await keyIn('watched', FILE_A, { ip: '198.51.100.121', country: 'CA' });
-    assert.strictEqual((await alerts('watch:country:' + who.member_id + ':%')).length, 1, 'a country seen before is quiet');
+    assert.strictEqual((await alerts('watch:country:%', who.member_id)).length, 1, 'a country seen before is quiet');
+    // A country unseen for 90 days is forgotten at the next sign-in (anyone's), and alerts again if it comes back.
+    await su.unsafe(`update app.watch_seen set last_seen = now() - interval '100 days', first_seen = now() - interval '100 days' where member_id = '${who.member_id}'`);
+    await su.unsafe(`insert into app.watch_seen (member_id, kind, key_hash) values ('${who.member_id}', 'country', '${'d'.repeat(64)}')`);
+    assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.122', country: 'CA' })).signed_in, true);
+    assert.deepStrictEqual(await alerts('watch:country:%', who.member_id), ['A sign-in from a new country', 'A sign-in from a new country'], 'CA, gone after 90 days, alerts again');
+    assert.strictEqual((await owner(`select count(*)::int as n from app.watch_seen where last_seen < now() - interval '90 days'`))[0].n, 0, 'rows unseen for 90 days are deleted');
+    // Alert keys name a row, never a hash.
+    assert.ok((await owner(`select dedupe_key from app.notices where dedupe_key like 'watch:country:%'`)).every((r) => /^watch:country:[0-9a-f-]{36}$/.test(r.dedupe_key)));
+    // A failure in the watch never stops a sign-in.
+    await su.unsafe('revoke execute on function app.watch_signin(text, text) from dog_app');
+    try {
+      assert.strictEqual((await keyIn('watched', FILE_A, { ip: '198.51.100.123', country: 'US' })).signed_in, true, 'signed in with the watch failing');
+    } finally {
+      await su.unsafe('grant execute on function app.watch_signin(text, text) to dog_app');
+    }
     // Only keyed hashes are kept, and no network for anyone but the administrator.
     const seen = await owner(`select kind, key_hash from app.watch_seen where member_id = '${who.member_id}'`);
     assert.deepStrictEqual([...new Set(seen.map((r) => r.kind))], ['country']);
@@ -482,9 +498,12 @@ if (!SERVER) {
     const chief = await me(a);
     await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = true where id = '${chief.member_id}'`); });
     assert.strictEqual((await keyIn('chief', FILE_B, { ip: '203.0.113.92', country: 'US' })).signed_in, true, 'the same /24: no new network');
-    assert.deepStrictEqual(await alerts('watch:net:' + chief.member_id + ':%'), []);
+    assert.deepStrictEqual(await alerts('watch:net:%', chief.member_id), []);
     assert.strictEqual((await keyIn('chief', FILE_B, { ip: '192.0.2.77', country: 'US' })).signed_in, true, 'still signed in');
-    assert.deepStrictEqual(await alerts('watch:net:' + chief.member_id + ':%'), ['Your account signed in from a new network']);
+    assert.deepStrictEqual(await alerts('watch:net:%', chief.member_id), ['Your account signed in from a new network']);
+    // The same country gives each member a different hash.
+    const [h1] = await owner(`select key_hash from app.watch_seen where member_id = '${who.member_id}' and kind = 'country' order by first_seen limit 1`);
+    assert.ok(!(await owner(`select 1 from app.watch_seen where member_id = '${chief.member_id}' and key_hash = '${h1.key_hash}'`)).length);
     const [{ id: chiefKey }] = await owner(`select id from app.file_keys where member_id = '${chief.member_id}'`);
     for (let i = 0; i < 10; i++) await keyIn('chief', sha('guess ' + i), { ip: '198.51.100.' + (150 + i), country: 'US' });
     assert.deepStrictEqual(await alerts('watch:cancelled:' + chiefKey), ['Your own key file was cancelled']);
@@ -505,7 +524,7 @@ if (!SERVER) {
     await su.begin(async (x) => { await x.unsafe(`insert into app.jevs_decisions (action, subject_kind, member_id, level, mode, effect, applied, error, total, scores)
       values ('agent.key', 'member', '${who.member_id}', 'low', 'shadow', 'none', true, false, 0, '{}')`); });
     assert.strictEqual(await db.tx(web, asM, async (x) => (await x`select app.watch_first('agent.key') as a`)[0].a), false, 'not the first any more');
-    assert.match(read('db/jevs.js'), /WATCH_FIRST = \['agent\.key', 'agent\.rules', 'account\.delete'\]/);
+    assert.match(read('db/jevs.js'), /WATCH_FIRST = \['agent\.key', 'agent\.rules'\]/);
     await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = false where id = '${chief.member_id}'`); });
   });
 

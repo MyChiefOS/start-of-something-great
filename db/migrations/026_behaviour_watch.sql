@@ -8,12 +8,15 @@
 --        separate title when it is Aaron's own.
 --     5. Reaching for administrator powers: a signed-in member who isn't the administrator asking for the review
 --        queue or the owner controls.
---     6. First-time sensitive actions: a member's first agent key, first change to an agent's rules, or first account
---        deletion request, as recorded by the site's checks (app.jevs_decisions).
+--     6. First-time sensitive actions: a member's first agent key or first change to an agent's rules, as recorded by
+--        the site's checks (app.jevs_decisions). (Not a deletion request: a deletion that goes ahead takes its alert with
+--        the account, and one held for Aaron already alerts him.)
 --   What it keeps (app.watch_seen): for each member, keyed hashes of the countries their sign-ins came from (and, for the
---   administrator only, of the networks), with when each was first and last seen; deleted after 90 days unseen, and
---   with the account. Keyed by the site with the first fingerprint key, so the table alone names no country or network.
---   Never an address, never a country in readable form.
+--   administrator only, of the networks), with when each was first and last seen. Each hash includes the member's ID,
+--   so the same country gives a different hash for each member. Rows unseen for 90 days are deleted at every sign-in
+--   (anyone's), and with the account. Alerts name the row, never the hash. Keyed by the site with the first fingerprint
+--   key, so the table alone names no country or network; someone holding that key could test the 250 or so country
+--   codes against a member's hashes (RISKS.md RK90). Never an address, never a country in readable form.
 set local role dog_owner;
 
 alter table app.watch_settings add column max_sessions integer not null default 5 check (max_sessions between 1 and 1000);
@@ -62,17 +65,17 @@ declare
   lim integer;
   alerts integer := 0;
   r record;
+  rid uuid;
 begin
   if me is null then
     return jsonb_build_object('alerts', 0);
   end if;
+  -- Never wait long for a lock: the site runs this in its own transaction after the sign-in, which has already worked.
+  perform set_config('lock_timeout', '300ms', true);
   select m.is_admin into adm from app.members m where m.id = me;
-  delete from app.watch_seen w where w.member_id = me and w.last_seen < now() - interval '90 days';
-  -- Now and then, everyone's old rows too, so the table can't grow without end.
-  if random() < 0.01 then
-    delete from app.watch_seen w where w.last_seen < now() - interval '90 days';
-  end if;
-  select count(*) into n from app.sessions s where s.member_id = me and s.created_at > now() - interval '30 days';
+  -- Everyone's rows unseen for 90 days, at every sign-in (the index on last_seen keeps it cheap).
+  delete from app.watch_seen w where w.last_seen < now() - interval '90 days';
+  select count(*) into n from app.sessions s where s.member_id = me and s.expires_at > now();
   select s.max_sessions into lim from app.watch_settings s limit 1;
   if n > coalesce(lim, 5) then
     if app.notify(null, 'alert', 'Many sessions at once',
@@ -83,19 +86,25 @@ begin
   end if;
   for r in select * from (values ('country', p_country), ('net', case when adm then p_net end)) v(kind, key_hash)
            where v.key_hash is not null and v.key_hash ~ '^[0-9a-f]{64}$' loop
+    rid := null;
     if exists (select 1 from app.watch_seen w where w.member_id = me and w.kind = r.kind)
        and not exists (select 1 from app.watch_seen w where w.member_id = me and w.kind = r.kind and w.key_hash = r.key_hash) then
+      -- The new row first, so the alert names the row, never the hash; a country seen again after 90 days has a new row
+      -- and alerts again.
+      insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash) returning id into rid;
       if app.notify(null, 'alert',
            case when r.kind = 'country' then 'A sign-in from a new country' else 'Your account signed in from a new network' end,
            case when r.kind = 'country' then 'A member signed in from a country none of their sign-ins in the last 90 days came from.'
                 else 'The administrator''s account signed in from a network it hasn''t used in the last 90 days. If that wasn''t you, '
                   || 'sign out everywhere, which also cancels the key file.' end,
-           '/controls', 'member', me, 'watch:' || r.kind || ':' || me::text || ':' || r.key_hash) then
+           '/controls', 'member', me, 'watch:' || r.kind || ':' || rid::text) then
         alerts := alerts + 1;
       end if;
     end if;
-    insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash)
-      on conflict (member_id, kind, key_hash) do update set last_seen = now();
+    if rid is null then
+      insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash)
+        on conflict (member_id, kind, key_hash) do update set last_seen = now();
+    end if;
   end loop;
   return jsonb_build_object('alerts', alerts);
 end
@@ -141,7 +150,7 @@ declare
   me uuid := app.current_member();
   n integer;
 begin
-  if me is null or p_action is null or p_action not in ('agent.key', 'agent.rules', 'account.delete') then
+  if me is null or p_action is null or p_action not in ('agent.key', 'agent.rules') then
     return false;
   end if;
   select count(*) into n from app.jevs_decisions d where d.member_id = me and d.action = p_action;
@@ -150,7 +159,7 @@ begin
   end if;
   return app.notify(null, 'alert', 'A first-time sensitive action',
     'A member did this for the first time: ' || case p_action when 'agent.key' then 'made an agent key'
-      when 'agent.rules' then 'changed an agent''s rules' else 'asked to delete their account' end || '.',
+      else 'changed an agent''s rules' end || '.',
     '/controls', 'member', me, 'watch:first:' || me::text || ':' || p_action);
 end
 $$;
@@ -183,16 +192,24 @@ begin
     update app.file_keys f set failed = f.failed + 1 where f.login_hash = p_login_hash returning * into k;
     -- The behaviour watch (026): Aaron hears at the 5th wrong file for a username, and when a key file is cancelled.
     if found and k.failed = 5 then
-      perform app.notify(null, 'alert', 'Wrong key files for one account',
-        '5 wrong key files have been tried for one member''s GitHub username. At 10 their key file is cancelled and they '
-        || 'sign in again with a new code.', '/controls', 'member', k.member_id, 'watch:failed:' || k.id::text);
+      begin
+        perform app.notify(null, 'alert', 'Wrong key files for one account',
+          '5 wrong key files have been tried for one member''s GitHub username. At 10 their key file is cancelled and they '
+          || 'sign in again with a new code.', '/controls', 'member', k.member_id, 'watch:failed:' || k.id::text);
+      exception when others then
+        null; -- the watch only alerts: it never stops the count or the cancellation
+      end;
     end if;
     if found and k.failed >= 10 then
-      perform app.notify(null, 'alert',
-        case when exists (select 1 from app.members m where m.id = k.member_id and m.is_admin) then 'Your own key file was cancelled'
-             else 'A member''s key file was cancelled' end,
-        '10 wrong key files were tried for the GitHub username, so the key file no longer works. The account is safe; '
-        || 'the member signs in again with a new code.', '/controls', 'member', k.member_id, 'watch:cancelled:' || k.id::text);
+      begin
+        perform app.notify(null, 'alert',
+          case when exists (select 1 from app.members m where m.id = k.member_id and m.is_admin) then 'Your own key file was cancelled'
+               else 'A member''s key file was cancelled' end,
+          '10 wrong key files were tried for the GitHub username, so the key file no longer works. The account is safe; '
+          || 'the member signs in again with a new code.', '/controls', 'member', k.member_id, 'watch:cancelled:' || k.id::text);
+      exception when others then
+        null;
+      end;
       delete from app.file_keys f where f.id = k.id;
       perform app.notify(k.member_id, 'signin_keyfile', 'Your key file was cancelled',
         'Someone tried 10 wrong key files with your GitHub username, so your key file no longer works. Your account is '

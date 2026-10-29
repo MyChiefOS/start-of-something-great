@@ -193,8 +193,9 @@ function make(deps) {
       try {
         const country = f0(req);
         await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId, session: out.sessionHash || null }, (t) => store.watchSignin(t, {
-          country: country ? c.hmacHex(codeKey.key, 'watch-country:' + country) : null,
-          net: req ? c.hmacHex(codeKey.key, 'watch-net:' + h.netRange(req)) : null }));
+          // Each includes the member's ID, so the same country gives each member a different hash (the review, S1).
+          country: country ? c.hmacHex(codeKey.key, 'watch-country:' + out.memberId + ':' + country) : null,
+          net: req ? c.hmacHex(codeKey.key, 'watch-net:' + out.memberId + ':' + h.netRange(req)) : null }));
       } catch (e) {
         jevs.logFailure('behaviour watch', e);
       }

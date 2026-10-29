@@ -261,7 +261,7 @@ async function claimMarks(t, token) {
 // effect: none | challenge | hold | hide | promote | queue | draft (PR 16: a sub-agent made with everything drafting); applied: whether it was carried out (shadow mode carries
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
-const WATCH_FIRST = ['agent.key', 'agent.rules', 'account.delete'];
+const WATCH_FIRST = ['agent.key', 'agent.rules'];
 async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false }) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error('JEVs has no action ' + action);
