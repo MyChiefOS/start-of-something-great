@@ -57,7 +57,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | 6 | Sign-in link on /join; true public text; `/terms` and `/privacy` | Public text done (#50, live); the rest not started. The legal part needs an independent review and Aaron's approval | PLAN.md fix 6 |
 | 7 | Site JEVs mode to enforce | 028, built Oct 29 on branch `go-live` (the go-live PR), not merged or proven live | Verified (`shadow` today) |
 | 8 | The site's keys and timers, route B (Aaron, Oct 26) | **Keys built (connection PR):** the broker `dog-keys` and `db/sitekeys.js`; `/api/ready` will prove them after merge, with the site still closed. **Timers built** (control 6, the pre-opening safety PR, 027; not merged; proven live only after go-live) | PLAN.md fix 8; RISKS.md RK88 |
-| 9 | Aaron becomes administrator | 028, built Oct 29 on branch `go-live` (the go-live PR), not merged or proven live: at his first code sign-in after the gate's redeploy, if nobody is yet (recommended in the go-live PR, decided by its merge) | `app.founder_promote`, `app.code_sign_in` (028) |
+| 9 | Aaron becomes administrator | 028, built Oct 29 on branch `go-live` (the go-live PR), not merged or proven live: his account made at the merge by 029 (Aaron's request, Oct 29), with 028's promotion at his first code sign-in as the fallback | `app.founder_promote`, `app.code_sign_in` (028) |
 | 10 | Live proof of every flow | Not started | Needs fixes 5 to 9 |
 
 ## Delegated authority: D1–D8
@@ -101,7 +101,7 @@ After fix 10, each needs Aaron's yes or no: linking the agent registries, the le
 **Decisions** (each recorded in FACTS.md when answered):
 
 - [x] Route B for the site's login and keys (Oct 26), with the open, slot-limited timer address and the CSO's conditions.
-- [ ] How Aaron becomes administrator (fix 9): recommended in the go-live PR (at his first code sign-in after the gate's redeploy), decided by its merge.
+- [ ] How Aaron becomes administrator (fix 9): decided by Aaron, Oct 29: 029 makes his account at the merge.
 - [ ] JEVs thresholds (RK16): today the public seed values.
 - [ ] RK1 (giscus): /talk shows email addresses and phone numbers in GitHub comments unmasked.
 - [ ] How email erasure requests are carried out.

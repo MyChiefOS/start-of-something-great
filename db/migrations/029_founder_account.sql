@@ -5,7 +5,7 @@
 --   The account is a member tied to his GitHub account (ID 304218593, MyChiefOS) by the same keyed fingerprint every
 --   sign-in uses: HMAC-SHA256 of 'github:304218593' with the first fingerprint key (Vault, dog_fingerprint_key_1), the
 --   key the JEVs gate and the site already hold. The fingerprint is made here, inside the database; the key is read from
---   Vault into this block and never appears in any statement's text, as in 022. Nobody types or sees it.
+--   Vault inside one statement: it is never bound as a parameter, held in a variable or written in any statement's text (the CSO's review, S2). Nobody types or sees it. The function that makes the account is dropped once it has run.
 --   It has no sessions and no key file. Following his process (Oct 28): his first code sign-in on /join (post the code
 --   from MyChiefOS) signs into this same account and sets his key file; later the username and key file sign him in
 --   with no post; and "doing the process over" (a new code and a new key file) changes the file, the same for every
@@ -53,23 +53,23 @@ revoke create on schema app from dog_signin;
 reset role;
 do $founder$
 declare
-  k text;
   fp text;
   m uuid;
 begin
-  if to_regnamespace('vault') is null or to_regprocedure('extensions.hmac(bytea,bytea,text)') is null then
-    raise notice 'founder account not made: no Vault or pgcrypto here; 028''s promotion at the first code sign-in stands';
-    return;
-  end if;
-  execute 'select decrypted_secret from vault.decrypted_secrets where name = $1' into k using 'dog_fingerprint_key_1';
-  if k is null then
-    raise notice 'founder account not made: no dog_fingerprint_key_1 in Vault; 028''s promotion stands';
-    return;
-  end if;
-  execute 'select encode(extensions.hmac(convert_to($1, ''UTF8''), convert_to($2, ''UTF8''), ''sha256''), ''hex'')'
-    into fp using 'github:304218593', k;
-  k := null;
+  -- Everything inside one catch, so nothing here can fail the runner's run (and 028 with it): the CSO's review, S1.
   begin
+    if to_regnamespace('vault') is null or to_regprocedure('extensions.hmac(bytea,bytea,text)') is null then
+      raise notice 'founder account not made: no Vault or pgcrypto here; 028''s promotion at the first code sign-in stands';
+      return;
+    end if;
+    -- The fingerprint is made in one statement, so the key is never bound as a parameter or held in a variable (S2).
+    execute 'select encode(extensions.hmac(convert_to($1, ''UTF8''), convert_to(s.decrypted_secret, ''UTF8''), ''sha256''), ''hex'') '
+         || 'from vault.decrypted_secrets s where s.name = $2'
+      into fp using 'github:304218593', 'dog_fingerprint_key_1';
+    if fp is null then
+      raise notice 'founder account not made: no dog_fingerprint_key_1 in Vault; 028''s promotion stands';
+      return;
+    end if;
     execute 'set local role dog_owner';
     perform set_config('app.actor', 'system', true), set_config('app.member_id', '', true), set_config('app.agent_id', '', true),
             set_config('app.fresh', '', true), set_config('app.session', '', true);
@@ -88,3 +88,11 @@ begin
   execute 'reset role';
 end
 $founder$;
+
+-- Used once, above; nothing keeps a way to make this account (the CSO's review, optional).
+set local role dog_owner;
+grant create on schema app to dog_signin;
+set local role dog_signin;
+drop function app.founder_account(text);
+set local role dog_owner;
+revoke create on schema app from dog_signin;

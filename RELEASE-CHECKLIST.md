@@ -11,7 +11,7 @@ All by merge, in this order (each PR names its own decision first):
 - [ ] #56 to #59: the gate hardening, the sign-in lock-down, the behaviour watch, the runner alerts (#59 rewords GAP-44's charter row).
 - [ ] #60: the risk sign-off (RISKS.md): every open row, with RK62's 24-hour rule, the public JEVs thresholds and RK82's option not taken now.
 - [ ] #61: the pre-opening safety release (it rewords the Oct 26 timer condition: a failed run waits for the next slot).
-- [ ] The go-live PR: the site opens, its JEVs enforces, and Aaron becomes administrator at his first code sign-in after the gate's redeploy (fix 9, as recommended there).
+- [ ] The go-live PR: the site opens, its JEVs enforces, and Aaron's administrator account is made at the merge (029, his request Oct 29; fix 9).
 
 ## Accounts and settings
 

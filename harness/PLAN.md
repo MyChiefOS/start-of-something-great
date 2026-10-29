@@ -122,7 +122,7 @@ The table below lists what the site reads. Under route B they come from the brok
 
 **Aaron, Oct 29: "Can you create an admin account for me on the system that I can change later following the process provided".** Migration 029 (in the go-live PR) makes his administrator account from the key in Vault, tied to MyChiefOS, with no sessions and no key file; his first code sign-in lands in it and sets his key file. 028's promotion below stays as the fallback.
 
-**Built Oct 29 (028, the go-live PR; not merged or proven live):** at his first code sign-in after the gate's redeploy, if nobody is administrator yet: the JEVs gate marks a claim by the founder's account (ID 304218593), and `app.code_sign_in` calls `app.founder_promote` (025's checks: exactly one GitHub method, earlier sessions end, agent keys revoked), then signs the browser in again as administrator. A refused promotion signs him in as a member and is recorded; a unique index allows one administrator. Until his first sign-in the site has no administrator (RISKS.md RK92). The two options below needed a preview window or a hand step; this needs neither.
+**Fallback, built Oct 29 (028, the go-live PR; not merged or proven live):** if 029 made nothing, at his first code sign-in after the gate's redeploy, if nobody is administrator yet: the JEVs gate marks a claim by the founder's account (ID 304218593), and `app.code_sign_in` calls `app.founder_promote` (025's checks: exactly one GitHub method, earlier sessions end, agent keys revoked), then signs the browser in again as administrator. A refused promotion signs him in as a member and is recorded; a unique index allows one administrator. Until his first sign-in the site has no administrator (RISKS.md RK92). The two options below needed a preview window or a hand step; this needs neither.
 
 `app.set_administrator` exists (`013_setup_audit.sql:15-31`). Options: a short window where Aaron signs in first and Claude sets him by migration before `LAUNCH_STAGE` goes public, or set right after opening. No preview (Aaron, Oct 24).
 
@@ -140,7 +140,7 @@ Link the site's and GitHub's agent registries (today a ban in one doesn't reach 
 
 ## 4. Open decisions for Aaron
 
-1. How Aaron becomes administrator (fix 9): recommended in the go-live PR (at his first code sign-in after the gate's redeploy), decided by its merge.
+1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.
 2. How email erasure requests are carried out (privacy promises erasure; nothing is built).
 3. What the regional decline means for posts made directly on GitHub (the gate can't know a poster's country; they are stored today).
 4. ~~Whether untagged posts from a linked machine account are hidden~~ Decided Oct 25 under Aaron's instruction "implement whats honest and hold true to my intent… what would the CLJO do?": alert, never hide (checks alert, never lock out). See FACTS.md.

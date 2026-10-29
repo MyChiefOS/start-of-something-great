@@ -629,22 +629,14 @@ if (!SERVER) {
     const fp = c.fingerprints(SITE_KEYS, 'github', '304218593')[0];
     // Without Vault and pgcrypto (this plain Postgres), the migration made nothing and said so.
     assert.strictEqual(Number((await owner(`select count(*) as n from app.audit_log where detail->>'by' = 'migration 029 (Aaron, Oct 29)'`))[0].n), 0);
-    // app.founder_account makes a member with one GitHub method; again, it returns the same member. Only the owner may call it.
-    const other = 'd'.repeat(64);
-    const [a] = await asOwner(`select app.founder_account('${other}') as id`);
-    const [b] = await asOwner(`select app.founder_account('${other}') as id`);
-    assert.strictEqual(a.id, b.id);
-    const [row] = await owner(`select m.display_name, m.trust_level, m.is_admin, count(i.*)::int as methods, bool_and(i.provider = 'github' and i.linked_by is null) as github
-      from app.members m join app.identities i on i.member_id = m.id where m.id = '${a.id}' group by m.id`);
-    assert.deepStrictEqual(row, { display_name: 'Aaron Chandler', trust_level: 1, is_admin: false, methods: 1, github: true });
-    await assert.rejects(web.begin(async (t) => { await t.unsafe('set local role dog_app'); await t.unsafe(`select app.founder_account('${'e'.repeat(64)}')`); }), /permission denied/);
+    // The function that makes the account is used once inside 029 and dropped: nothing keeps a way to make it.
+    assert.strictEqual((await owner(`select to_regprocedure('app.founder_account(text)') is null as gone`))[0].gone, true);
     // With Vault holding the gate's key (a stand-in here, as on Supabase), the migration's own block makes the account
     // administrator with the same fingerprint the gate and the site give MyChiefOS.
     await su.unsafe(`create schema if not exists vault; create table if not exists vault.decrypted_secrets (name text, decrypted_secret text);
       insert into vault.decrypted_secrets values ('dog_fingerprint_key_1', '${GATE_KEY}'); create schema if not exists extensions;
       create extension if not exists pgcrypto with schema extensions`);
-    const block = read('db/migrations/029_founder_account.sql');
-    const doBlock = block.slice(block.indexOf('do $founder$'), block.indexOf('$founder$;') + '$founder$;'.length);
+    const doBlock = read('db/migrations/029_founder_account.sql'); // the whole migration again, as the runner would run it
     await su.begin((t) => t.unsafe(doBlock));
     const [made] = await owner(`select m.id, m.is_admin from app.members m join app.identities i on i.member_id = m.id where i.provider = 'github' and i.fingerprint = '${fp}'`);
     assert.strictEqual(made.is_admin, true, 'the account tied to MyChiefOS is the administrator');
