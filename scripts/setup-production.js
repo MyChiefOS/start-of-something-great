@@ -1,13 +1,11 @@
 #!/usr/bin/env node
-// Production setup, run only by the "Production setup" GitHub workflow (.github/workflows/setup.yml): on main, in the
-// protected "production" environment, after Aaron approves the run. Nothing here runs on anyone's own computer, and no
-// secret is ever printed, saved to a file or seen by a person: each one is made inside the run and goes straight to
-// Vercel (as a "sensitive" variable nobody can read back) or to the database (as a hash).
+// Production setup, run only by the "Production setup" GitHub workflow (.github/workflows/setup.yml), started by hand
+// on main. Its job names the "production" environment, but that environment has no approval or branch rule (found
+// Oct 25, probe PR #46, OPERATIONS.md), so a run does not wait for anyone's approval. Nothing here runs on anyone's own
+// computer, and no secret is ever printed, saved to a file or seen by a person: each one is made inside the run and
+// goes straight to Vercel (as a "sensitive" variable nobody can read back).
 //
 // Steps (SETUP_STEPS, comma separated, in this order whatever order they're given):
-//   database  remove Supabase's ensure_rls trigger if it's there; apply the migrations; create the site's login role
-//             dog_web if it's missing (or give it a new password when SETUP_ROTATE_DB_PASSWORD=yes) and put its
-//             transaction-pooler address in Vercel as DATABASE_URL, with DATABASE_CA; then the coverage check.
 //   keys      SESSION_SECRET, IP_HASH_KEY, FINGERPRINT_KEY_1 and CRON_SECRET, each made only if it isn't there yet.
 //             An existing key is never replaced: members are recognised by FINGERPRINT_KEY_1.
 //   stage     LAUNCH_STAGE (closed or public; "unchanged", the default, leaves it alone). "preview" is no longer a
@@ -17,54 +15,34 @@
 //   redeploy  redeploys the deployment production currently serves (so it works after a rollback too), waits for it
 //             to be ready, then checks the live site answers and, if the stage was set in this run, shows it.
 //
+// There is no "database" step any more (harness/REVIEW-2026-10-26.md, R-14): it applied migrations outside the runner
+// and made the site's login with a password it put in Vercel. The database changes only through the runner
+// (supabase/functions/dog-migrate, from a merged PR), and under route B migration 022 makes the site's login with its
+// password in Vault. Supabase's ensure_rls trigger, which the step also removed (GAP-44), went with the fresh build of
+// Oct 24 (db/reset/fresh-build.sql); the runner reports it if public.rls_auto_enable() ever comes back.
+//
 // The stage step also records the stage as the repository variable EXPECTED_STAGE (GITHUB_TOKEN, actions: write), so
-// the uptime monitor can tell when the live stage drifts from the last approved run (D1).
+// the uptime monitor can tell when the live stage drifts from the last setup run (D1).
 //
 // Settings it reads (placeholders until Aaron adds them; see SETUP.md):
-//   secrets  MIGRATION_DATABASE_URL, VERCEL_TOKEN (and MIGRATION_DATABASE_CA only to override the Supabase root
-//            certificate kept in db/certs/supabase-root-2021.crt: it is public, not a secret, so it lives in the repo)
-//   inputs   SETUP_STEPS, SETUP_STAGE, SETUP_ADMIN_MEMBER_ID, SETUP_ROTATE_DB_PASSWORD
+//   secrets  VERCEL_TOKEN; MIGRATION_DATABASE_URL for the admin step only (and MIGRATION_DATABASE_CA only to override
+//            the Supabase root certificate kept in db/certs/supabase-root-2021.crt: it is public, so it lives in the repo)
+//   inputs   SETUP_STEPS, SETUP_STAGE, SETUP_ADMIN_MEMBER_ID
 'use strict';
 
 const crypto = require('crypto');
 
 const VERCEL_PROJECT = 'prj_cXnWySYVpJE9TVZaNPSocXMMzkZI';
 const VERCEL_TEAM = 'team_Hv5YS8LhIiKe06SSiDrUucd4';
-const SUPABASE_REF = 'nksagchwpyljvjiwolmp';
-const ORDER = ['database', 'keys', 'stage', 'admin', 'redeploy'];
+const ORDER = ['keys', 'stage', 'admin', 'redeploy'];
 const KEYS = ['SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
 
-// ---- Hashing a password the way Postgres stores it (SCRAM-SHA-256), so the database never receives the password
-// itself and no log can show it. The same thing psql's \password does.
-function scramVerifier(password, { salt = crypto.randomBytes(16), iterations = 4096 } = {}) {
-  const salted = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), salt, iterations, 32, 'sha256');
-  const hmac = (key, msg) => crypto.createHmac('sha256', key).update(msg).digest();
-  const storedKey = crypto.createHash('sha256').update(hmac(salted, 'Client Key')).digest();
-  const serverKey = hmac(salted, 'Server Key');
-  return 'SCRAM-SHA-256$' + iterations + ':' + salt.toString('base64') + '$' + storedKey.toString('base64') + ':' + serverKey.toString('base64');
-}
-
-// A strong password with only URL-safe characters, so it needs no escaping in the connection address.
-const newPassword = () => crypto.randomBytes(32).toString('base64url');
 const newKey = () => crypto.randomBytes(32).toString('base64');
 
 // Inside GitHub Actions, tells the runner to blank a value wherever it might appear in the log (::add-mask::), before
 // the value is used anywhere. Outside Actions it does nothing, so the value is never printed by this.
 function maskInActions(value) {
   if (process.env.GITHUB_ACTIONS === 'true' && value) process.stdout.write('::add-mask::' + value + '\n');
-}
-
-// The site's address: Supabase's shared transaction pooler (port 6543) on the same host as the migration address
-// (the session pooler, port 5432), as user dog_web.<project ref>. The site refuses any other kind of address (G1).
-function siteDatabaseUrl(migrationUrl, password, ref = SUPABASE_REF) {
-  const m = new URL(migrationUrl);
-  if (!/\.pooler\.supabase\.com$/.test(m.hostname)) {
-    throw new Error('MIGRATION_DATABASE_URL must be the Supabase session pooler address (…pooler.supabase.com:5432), so the site\'s address can be made from it');
-  }
-  const u = new URL('postgresql://placeholder@' + m.hostname + ':6543/postgres');
-  u.username = 'dog_web.' + ref;
-  u.password = password;
-  return u.toString();
 }
 
 // ---- Vercel, through its REST API, with a token that only this run sees. Values are sent, never logged.
@@ -136,7 +114,7 @@ function vercel(token, { fetchImpl = fetch, project = VERCEL_PROJECT, team = VER
   };
 }
 
-// ---- GitHub, through its REST API with the run's own token: records the stage the last approved run set, as the
+// ---- GitHub, through its REST API with the run's own token: records the stage the last setup run set, as the
 // repository variable EXPECTED_STAGE, which the uptime monitor compares with the live site (D1).
 function github(token, repo, { fetchImpl = fetch } = {}) {
   const call = async (method, path, body) => {
@@ -164,48 +142,6 @@ async function verifyLive({ site, stage, fetchImpl = fetch, tag }) {
 }
 
 // ---- The steps.
-async function stepDatabase(sql, v, { migrationUrl, ca, rotate, log, migrate, check, role = 'dog_web', mask = maskInActions }) {
-  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error('bad role name');
-  // Supabase adds an event trigger at project creation that our coverage check refuses (it turns row-level security
-  // on behind the migrations' back). Aaron approved removing it (gap register GAP-44).
-  try {
-    await sql.unsafe('drop event trigger if exists ensure_rls');
-    await sql.unsafe('drop function if exists public.rls_auto_enable()');
-    log('ensure_rls: removed (or was not there)');
-  } catch (e) {
-    throw new Error('could not remove Supabase\'s ensure_rls trigger (' + e.message + '). Run SETUP.md\'s one-line fix in the Supabase SQL editor, then run this again');
-  }
-  const applied = await migrate(sql, { log });
-  log(applied.length ? 'migrations applied: ' + applied.join(', ') : 'migrations: already up to date');
-  const [{ exists }] = await sql`select exists (select 1 from pg_roles where rolname = ${role}) as exists`;
-  if (!exists) {
-    await sql.unsafe('create role ' + role + ' login noinherit');
-    await sql.unsafe('grant dog_app to ' + role);
-    log('login role ' + role + ': created');
-  }
-  if (!exists || rotate) {
-    const password = newPassword();
-    const address = siteDatabaseUrl(migrationUrl, password);
-    mask(password); mask(address);
-    // Order (S4): the certificate first, because it's harmless on its own; then the address; then the database
-    // password to match. If Vercel refuses, the database password is unchanged and the site keeps working. If the
-    // database refuses after the address went in, the message below says exactly how to put it right.
-    if (ca) await v.set('DATABASE_CA', ca);
-    await v.set('DATABASE_URL', address);
-    try {
-      await sql.unsafe('alter role ' + role + " password '" + scramVerifier(password) + "'");
-    } catch (e) {
-      throw new Error('DATABASE_URL in Vercel now carries a password the database did not accept (' + e.message + '). Do not redeploy. Run Production setup again with "database" and rotate_db_password ticked: it makes a new password and sets both sides to match');
-    }
-    log('DATABASE_URL and DATABASE_CA: set in Vercel for Production; dog_web\'s password set (as a hash) to match');
-  } else {
-    log('login role ' + role + ': exists; password unchanged (set SETUP_ROTATE_DB_PASSWORD=yes to replace it)');
-  }
-  const p = await check(sql);
-  if (p.length) throw new Error('database coverage check failed:\n- ' + p.join('\n- '));
-  log('database coverage check: passed');
-}
-
 // Each key is created, never replaced (S1): Vercel refuses a create when the key exists, and that refusal is the
 // signal, not a list fetched beforehand that could be incomplete. FINGERPRINT_KEY_1 above all: members are
 // recognised by it, and replacing it would lose every account.
@@ -258,8 +194,9 @@ function steps(list) {
   return ORDER.filter((s) => want.includes(s));
 }
 
-// What a run would do, from its inputs alone (S6a): shown to Aaron before he approves the run, with no secret in reach.
-// Bad input stops here, before the approval, not after it.
+// What a run would do, from its inputs alone (S6a), written to the run's summary by a job with no secret in reach.
+// Bad input stops here, before any secret is read. (The plan does not wait for an approval: the "production"
+// environment has no approval rule, OPERATIONS.md, Oct 25.)
 function plan(env = process.env) {
   const todo = steps(env.SETUP_STEPS);
   if (!todo.length) throw new Error('nothing to do: set SETUP_STEPS');
@@ -267,7 +204,6 @@ function plan(env = process.env) {
   const { STAGES } = require('../launch');
   const lines = [];
   for (const s of todo) {
-    if (s === 'database') lines.push('database: remove ensure_rls if present; apply any new migrations; create dog_web if missing' + (env.SETUP_ROTATE_DB_PASSWORD === 'yes' ? ', and give it a NEW password (DATABASE_URL in Vercel is replaced to match)' : ' (an existing password is kept)') + '; run the coverage check');
     if (s === 'keys') lines.push('keys: create any of ' + KEYS.join(', ') + ' that is missing; an existing key is never replaced');
     if (s === 'stage') {
       if (stage === 'unchanged') lines.push('stage: unchanged');
@@ -301,7 +237,7 @@ async function main(env = process.env, deps = {}) {
   const site = env.SITE_URL || 'https://dayonegreat.com';
   const stageSet = todo.includes('stage') ? String(env.SETUP_STAGE || 'unchanged').trim().toLowerCase() : 'unchanged';
   let sql = deps.sql || null;
-  const needsDb = todo.includes('database') || todo.includes('admin');
+  const needsDb = todo.includes('admin');
   if (needsDb && !sql) {
     if (!env.MIGRATION_DATABASE_URL) throw new Error('MIGRATION_DATABASE_URL is not set (SETUP.md, step 2)');
     const db = require('../db');
@@ -310,15 +246,6 @@ async function main(env = process.env, deps = {}) {
   try {
     for (const s of todo) {
       log('== ' + s);
-      if (s === 'database') {
-        const { migrate } = require('./migrate');
-        const check = deps.check || (async (x) => {
-          const fs = require('fs'); const path = require('path'); const { problems } = require('../db/checks');
-          const snapshot = fs.readFileSync(path.join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
-          return problems(x, { snapshot });
-        });
-        await stepDatabase(sql, v, { migrationUrl: env.MIGRATION_DATABASE_URL, ca: databaseCa(env), rotate: env.SETUP_ROTATE_DB_PASSWORD === 'yes', log, migrate: deps.migrate || migrate, check });
-      }
       if (s === 'keys') await stepKeys(v, { log });
       if (s === 'stage') await stepStage(v, { stage: stageSet, log, gh });
       if (s === 'admin') await stepAdmin(sql, { memberId: String(env.SETUP_ADMIN_MEMBER_ID || '').trim(), log });
@@ -344,4 +271,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { databaseCa, SUPABASE_CA_FILE, main, plan, steps, scramVerifier, siteDatabaseUrl, vercel, github, verifyLive, stepDatabase, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };
+module.exports = { databaseCa, SUPABASE_CA_FILE, main, plan, steps, vercel, github, verifyLive, stepKeys, stepStage, stepAdmin, maskInActions, KEYS };

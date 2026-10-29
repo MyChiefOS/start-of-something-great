@@ -1,0 +1,33 @@
+rules:
+# Our own rule for the GitHub workflows (R-7, harness/REVIEW-2026-10-26.md: the scanners skipped the workflows).
+# Written for this repository; MIT like the code. Checked on a fixture with three injections and two safe forms
+# (an env: value, and ${{ github.repository }}): it flags the three and neither safe form.
+- id: dayonegreat.workflows.no-event-text-in-run
+  message: >-
+    Text from the triggering event (a post, a title, a branch name) or a workflow input, written into a run: script
+    with ${{ }}, becomes part of the shell command before the shell sees it, so whoever wrote that text could run
+    commands in the job. Pass it through env: and read the variable, or read it from $GITHUB_EVENT_PATH with jq
+    (jevs.yml does).
+  languages: [yaml]
+  severity: ERROR
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern: 'run: $SHELL'
+  - metavariable-regex:
+      metavariable: $SHELL
+      regex: '[\s\S]*\$\{\{\s*(github\.event\.|github\.event\[|github\.head_ref|inputs\.)'
+# The same for actions/github-script, whose script: is JavaScript run in the job (the CSO's review, Oct 29). No
+# workflow here uses it today; this keeps it that way unless the event text goes through env: first.
+- id: dayonegreat.workflows.no-event-text-in-script
+  message: >-
+    Text from the triggering event or a workflow input, written into an actions/github-script script: with ${{ }},
+    becomes part of the JavaScript before it runs, so whoever wrote that text could run code in the job. Pass it
+    through env: and read process.env.
+  languages: [yaml]
+  severity: ERROR
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern: 'script: $JS'
+  - metavariable-regex:
+      metavariable: $JS
+      regex: '[\s\S]*\$\{\{\s*(github\.event\.|github\.event\[|github\.head_ref|inputs\.)'

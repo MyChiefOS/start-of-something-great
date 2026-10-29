@@ -91,10 +91,27 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Code scan (Semgrep 1.95.0, rules saved in .semgrep/)
+      - name: Code scan (Semgrep 1.95.0, rules saved in .semgrep/; the Edge Functions and the workflows too, R-7)
         run: |
           python -m pip install --quiet "semgrep==1.95.0" "setuptools==75.6.0"
-          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ signin/ notify/ proposals.js shipped.js join.js signin.js feed.js review.js agents.js controls.js account.js receipt.js launch.js
+          semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ signin/ notify/ supabase/ .github/workflows/ proposals.js shipped.js join.js signin.js feed.js review.js agents.js controls.js account.js receipt.js launch.js
+
+      - name: Workflow lint (actionlint 1.7.7, checksum verified; report only, never fails the job, R-7)
+        # Report only (Aaron: checks alert, never lock out): findings show as warnings on the run, and neither a finding
+        # nor a failed download can fail the job. SC2016 is left out: the GraphQL queries in jevs.yml and brake.yml put
+        # $id and other GraphQL variables in single quotes on purpose, so the shell never expands them.
+        continue-on-error: true
+        run: |
+          curl -sSL -o al.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  al.tgz" | sha256sum -c -
+          tar xzf al.tgz actionlint
+          ./actionlint -oneline -ignore 'SC2016:' > actionlint.txt 2>&1 || true
+          if [ -s actionlint.txt ]; then
+            while IFS= read -r line; do echo "::warning title=actionlint (report only)::$line"; done < actionlint.txt
+          else
+            echo "actionlint: no findings"
+          fi
+          rm -f al.tgz actionlint actionlint.txt
 
       - name: Secret scan (gitleaks 8.21.2, checksum verified)
         run: |

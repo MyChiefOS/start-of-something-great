@@ -68,7 +68,7 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 - `db/index.js` calls the act-as functions instead of `set_config`; `system` and `anon` need their own stamped paths.
 - **Prototype:** `test/prototypes/actor-stamp.js` (run: `node test/prototypes/actor-stamp.js $(pwd)` with a local Postgres). On Oct 25 it passed all 10 checks on a throwaway copy of our schema with a real member and session made by `app.sign_in`: forged admin rejected, made-up stamp rejected, key unreadable to the site, real session works, edited actor rejected, replay rejected, forged "fresh sign-in" rejected. Cost: 41 µs per check, worst case, forced once per row. Not yet proven on Supabase's Postgres 17; measure large scans and, if needed, make policies evaluate the check once per query.
 
-### Fix 4: the runner allows exactly one site login. Claude. Confidence high.
+### Fix 4: the runner checks for exactly one narrow site login (it applies, then checks and reports; R-2). Claude. Confidence high.
 
 **Status, Oct 26:** built on the same branch: `dog_web` may sign in only if it is noinherit, not a superuser, can't bypass row-level security, make roles or databases or replicate, and belongs to `dog_app` alone; it is no longer reported as a leftover. After merge, redeploy `dog-migrate` from the merge and compare its files byte for byte, before any run that makes the login. **PR #49:** the check also refuses admin or inherit options on the membership, objects the login owns, and dog_app itself belonging to a role (`test/runner.test.js`).
 

@@ -1,6 +1,6 @@
-// The production setup run (scripts/setup-production.js): keys are made once and never replaced, the database
-// password reaches Postgres only as a hash yet really works, nothing secret is ever logged, and every step refuses
-// bad input. Vercel is faked here; Postgres is real.
+// The production setup run (scripts/setup-production.js): keys are made once and never replaced, nothing secret is
+// ever logged, and every step refuses bad input. It has no database step (R-14): the database changes only through
+// the runner. Vercel is faked here; Postgres is real (for the admin step).
 'use strict';
 
 const test = require('node:test');
@@ -32,19 +32,11 @@ const logger = () => { const lines = []; const log = (m) => lines.push(String(m)
 const leaked = (lines, values) => values.filter((v) => v && lines.some((l) => l.includes(v)));
 
 test('steps run in a fixed order, and unknown steps are refused', () => {
-  assert.deepStrictEqual(s.steps('redeploy, keys database'), ['database', 'keys', 'redeploy']);
+  assert.deepStrictEqual(s.steps('redeploy, keys stage'), ['keys', 'stage', 'redeploy']);
+  // R-14: the database step, which migrated outside the runner, is gone.
+  assert.throws(() => s.steps('database,keys'), /unknown step\(s\): database/);
   assert.deepStrictEqual(s.steps(''), []);
   assert.throws(() => s.steps('keys,drop-everything'), /unknown step/);
-});
-
-test('the site’s database address is the transaction pooler on the same host, as dog_web.<project>', () => {
-  const u = new URL(s.siteDatabaseUrl('postgresql://postgres.nksagchwpyljvjiwolmp:x@aws-0-us-east-1.pooler.supabase.com:5432/postgres', 'pw-Abc_123'));
-  assert.strictEqual(u.hostname, 'aws-0-us-east-1.pooler.supabase.com');
-  assert.strictEqual(u.port, '6543');
-  assert.strictEqual(u.username, 'dog_web.nksagchwpyljvjiwolmp');
-  assert.strictEqual(u.password, 'pw-Abc_123');
-  assert.strictEqual(u.pathname, '/postgres');
-  assert.throws(() => s.siteDatabaseUrl('postgresql://postgres:x@db.example.com:5432/postgres', 'p'), /session pooler/);
 });
 
 test('keys: each is made only when missing; an existing key, FINGERPRINT_KEY_1 above all, is never replaced or logged', async () => {
@@ -120,15 +112,14 @@ test('the Vercel client sends to the right project and team, for Production only
 });
 
 test('plan: says what a run will do from its inputs alone, and refuses bad input before anyone approves', () => {
-  const base = { SETUP_STEPS: 'database,keys,stage,redeploy', SETUP_STAGE: 'unchanged', SETUP_ROTATE_DB_PASSWORD: 'no' };
+  const base = { SETUP_STEPS: 'keys,stage,redeploy', SETUP_STAGE: 'unchanged' };
   const lines = s.plan(base);
-  assert.strictEqual(lines.length, 4);
-  assert.match(lines[0], /^database: .*existing password is kept/);
-  assert.match(lines[1], /never replaced/);
-  assert.strictEqual(lines[2], 'stage: unchanged');
-  assert.match(s.plan({ ...base, SETUP_ROTATE_DB_PASSWORD: 'yes' })[0], /NEW password/);
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[2], /go-live decision/);
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'closed' })[2], /CLOSED/);
+  assert.strictEqual(lines.length, 3);
+  assert.match(lines[0], /never replaced/);
+  assert.strictEqual(lines[1], 'stage: unchanged');
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[1], /go-live decision/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'closed' })[1], /CLOSED/);
+  assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'database' }), /unknown step/);
   assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /unchanged, closed or public/);
   assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'open' }), /unchanged, closed or public/);
   assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'admin' }), /member_id/);
@@ -218,98 +209,21 @@ if (!SERVER) {
 }
 
 const NAME = 'dog_setup_test_' + crypto.randomBytes(4).toString('hex');
-const ROLE = NAME + '_web';
-const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
+const at = (base, d) => { const u = new URL(base); u.pathname = '/' + d; return u.toString(); };
 let server, su;
-const POOLER = 'postgresql://postgres.nksagchwpyljvjiwolmp:x@aws-0-us-east-1.pooler.supabase.com:5432/postgres';
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: () => {} });
+  await migrate(su, { log: () => {} });
 });
 test.after(async () => {
   if (su) await su.end({ timeout: 5 });
   if (server) {
     await server.unsafe(`drop database if exists ${NAME} with (force)`);
-    await server.unsafe(`drop role if exists ${ROLE}`);
     await server.end({ timeout: 5 });
   }
-});
-
-// Does this password match the role's stored SCRAM hash? Checked from the hash itself, so it holds on any server,
-// including one that trusts every local connection (as the CI database does).
-async function hashMatches(password) {
-  const [row] = await server`select rolpassword from pg_authid where rolname = ${ROLE}`;
-  const m = String(row && row.rolpassword).match(/^SCRAM-SHA-256\$(\d+):([^$]+)\$([^:]+):(.+)$/);
-  if (!m) return false;
-  return s.scramVerifier(password, { salt: Buffer.from(m[2], 'base64'), iterations: Number(m[1]) }) === row.rolpassword;
-}
-// Does the server check passwords at all here? (A trusting server lets any password in.)
-async function serverChecksPasswords() { return !(await signsIn('definitely-not-the-password-' + crypto.randomBytes(6).toString('hex'))); }
-// Can the role really sign in with the password inside the address that went to Vercel?
-async function signsIn(password) {
-  const c = postgres(at(SERVER, NAME, ROLE, password), { max: 1, ssl: false, onnotice: () => {}, connect_timeout: 5 });
-  try { const [r] = await c`select current_user as u`; return r.u === ROLE; } catch { return false; } finally { await c.end({ timeout: 5 }); }
-}
-
-test('database: migrations, the login role with a hashed password that really works, the address in Vercel, and a passing check', async () => {
-  const v = fakeVercel();
-  const log = logger(); const mask = masker();
-  const order = [];
-  const spy = { ...v, async set(k, val, o) { order.push(k); return v.set(k, val, o); } };
-  let checked = 0;
-  const check = async (x) => { checked++; return require('../db/checks').problems(x, { snapshot: require('fs').readFileSync(require('path').join(__dirname, '..', 'db', 'snapshot.txt'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#')) }); };
-  await s.stepDatabase(su, spy, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE, mask });
-  assert.strictEqual(checked, 1);
-  assert.deepStrictEqual(order, ['DATABASE_CA', 'DATABASE_URL'], 'the certificate goes in before the address (S4)');
-  const addr = new URL(v.env.get('DATABASE_URL').value);
-  assert.deepStrictEqual(mask.seen, [decodeURIComponent(addr.password), v.env.get('DATABASE_URL').value], 'the password and the address were masked before use');
-  assert.strictEqual(addr.port, '6543');
-  assert.strictEqual(v.env.get('DATABASE_URL').type, 'sensitive');
-  assert.strictEqual(v.env.get('DATABASE_CA').value, 'CA-PEM');
-  const password = decodeURIComponent(addr.password);
-  assert.ok(password.length >= 40);
-  assert.strictEqual(await hashMatches(password), true, 'the stored hash is of exactly the password that went to Vercel');
-  assert.strictEqual(await signsIn(password), true, 'and the role signs in with it');
-  const checks = await serverChecksPasswords();
-  const [{ granted }] = await su`select pg_has_role(${ROLE}, 'dog_app', 'member') as granted`;
-  assert.strictEqual(granted, true, 'it acts as dog_app');
-  assert.deepStrictEqual(leaked(log.lines, [password, v.env.get('DATABASE_URL').value]), [], 'neither the password nor the address was logged');
-
-  // Run again: nothing changes, and the site's password keeps working.
-  const v2 = fakeVercel();
-  await s.stepDatabase(su, v2, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: false, log, migrate, check, role: ROLE });
-  assert.strictEqual(v2.env.size, 0, 'Vercel untouched on a re-run');
-  assert.strictEqual(await hashMatches(password), true, 'the password is unchanged');
-
-  // Rotation: a new password works, the old one stops.
-  const v3 = fakeVercel();
-  await s.stepDatabase(su, v3, { migrationUrl: POOLER, ca: 'CA-PEM', rotate: true, log, migrate, check, role: ROLE });
-  const fresh = decodeURIComponent(new URL(v3.env.get('DATABASE_URL').value).password);
-  assert.notStrictEqual(fresh, password);
-  assert.strictEqual(await hashMatches(fresh), true, 'the new password is the one stored');
-  assert.strictEqual(await hashMatches(password), false, 'the old password no longer matches');
-  if (checks) assert.strictEqual(await signsIn(password), false, 'and, where the server checks passwords, it no longer signs in');
-});
-
-test('database: if the database refuses the new password after the address went to Vercel, the message says how to put it right', async () => {
-  const log = logger();
-  const v = fakeVercel();
-  // The same connection, except that changing the role's password fails.
-  const refusing = Object.assign((...a) => su(...a), { unsafe: async (q) => { if (/^alter role/.test(q)) throw new Error('permission denied'); return su.unsafe(q); } });
-  await assert.rejects(s.stepDatabase(refusing, v, { migrationUrl: POOLER, rotate: true, log, migrate: async () => [], check: async () => [], role: ROLE, mask: () => {} }),
-    /did not accept.*Do not redeploy.*rotate_db_password ticked/s);
-  assert.ok(v.env.get('DATABASE_URL'), 'the address had already gone in, which is what the message is about');
-});
-
-test('database: if Vercel refuses, the database password is left alone', async () => {
-  const log = logger();
-  const broken = { ...fakeVercel(), async set() { throw new Error('Vercel POST failed (403)'); } };
-  const [{ before }] = await server`select rolpassword as before from pg_authid where rolname = ${ROLE}`.catch(() => [{ before: 'n/a' }]);
-  await assert.rejects(s.stepDatabase(su, broken, { migrationUrl: POOLER, rotate: true, log, migrate, check: async () => [], role: ROLE }), /403/);
-  const [{ after }] = await server`select rolpassword as after from pg_authid where rolname = ${ROLE}`.catch(() => [{ after: 'n/a' }]);
-  assert.strictEqual(after, before);
 });
 
 test('admin: sets exactly one active member as administrator, and refuses anything else', async () => {
@@ -339,11 +253,11 @@ test('admin: sets exactly one active member as administrator, and refuses anythi
   assert.strictEqual((await su`select is_admin from app.members where id = ${other}`)[0].is_admin, false);
 });
 
-test('the setup workflow starts by hand only, on main only, in the protected environment, with pinned actions and read-only rights', () => {
+test('the setup workflow starts by hand only, on main only, names the production environment, with pinned actions and read-only rights', () => {
   const y = require('fs').readFileSync(require('path').join(__dirname, '..', '.github', 'workflows', 'setup.yml'), 'utf8');
   assert.match(y, /^on:\n  workflow_dispatch:/m, 'started by hand');
-  // S6a: a plan job with no secrets and no environment runs first and writes the plan to the run's summary; the real
-  // job needs it, so Aaron reads the plan before approving. S6b: the stage input defaults to "unchanged".
+  // S6a: a plan job with no secrets and no environment runs first, writes the plan to the run's summary and refuses bad
+  // input before any secret is read; the real job needs it. S6b: the stage input defaults to "unchanged".
   const [planJob, setupJob] = y.split(/^  setup:$/m);
   assert.ok(planJob && setupJob, 'two jobs, plan then setup');
   assert.match(planJob, /^  plan:$/m);
@@ -354,7 +268,8 @@ test('the setup workflow starts by hand only, on main only, in the protected env
   assert.match(setupJob, /^    needs: plan$/m);
   assert.match(y, /options: \[unchanged, closed, public\]\n        default: unchanged/);
   assert.ok(!/^\s*(push|pull_request|pull_request_target|schedule|workflow_run):/m.test(y), 'no other trigger');
-  assert.match(y, /^\s+environment: production$/m, 'the protected environment, so Aaron approves each run');
+  assert.match(y, /^\s+environment: production$/m, 'the production environment (it has no approval rule yet: RISKS.md RK71)');
+  assert.doesNotMatch(y, /after Aaron approves|Approve the "setup" job|rotate_db_password|database,keys/, 'R-14: no claimed approval gate and no database step');
   assert.match(y, /^\s+if: github\.ref == 'refs\/heads\/main'$/m, 'main only');
   assert.match(y, /^permissions:\n  contents: read$/m);
   for (const m of y.matchAll(/uses: ([^\s]+)/g)) assert.match(m[1], /@[0-9a-f]{40}$/, 'pinned to a commit: ' + m[1]);
@@ -372,18 +287,10 @@ test('the keys the setup run makes are exactly what sign-in needs to switch on',
   assert.strictEqual(cfg.fingerprintKeys[0].version, 1);
 });
 
-test('the setup run’s raw SQL is exactly these statements, built only from fixed text, a checked role name and a hash', () => {
+test('R-14: the setup run runs no raw SQL and never migrates (the database changes only through the runner)', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'scripts', 'setup-production.js'), 'utf8');
-  const calls = [...src.matchAll(/\.unsafe\(([^;]*)\);/g)].map((m) => m[1].trim());
-  assert.deepStrictEqual(calls, [
-    "'drop event trigger if exists ensure_rls'",
-    "'drop function if exists public.rls_auto_enable()'",
-    "'create role ' + role + ' login noinherit'",
-    "'grant dog_app to ' + role",
-    `'alter role ' + role + " password '" + scramVerifier(password) + "'"`
-  ]);
-  assert.match(src, /if \(!\/\^\[a-z_\]\[a-z0-9_\]\{0,62\}\$\/\.test\(role\)\) throw/, 'the role name is checked before use');
-  assert.match(s.scramVerifier('x'), /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'the hash has no quote to break out of');
+  assert.deepStrictEqual([...src.matchAll(/\.unsafe\(/g)], [], 'no raw SQL');
+  assert.ok(!/require\('\.\/migrate'\)|DATABASE_URL'|create role|alter role/.test(src), 'no migration, no login role, no database address');
 });
 
 test('the Supabase root certificate is in the repository, so no one copies it into a secret; a secret still overrides it', () => {

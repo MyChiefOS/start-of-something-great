@@ -3,11 +3,13 @@ rules:
 # Written for this repository; MIT like the code. test/db.test.js checks the same things without Semgrep.
 - id: dayonegreat.db.no-raw-sql
   message: Raw SQL (unsafe) can put values into a query as text instead of parameters. Use a tagged template
-    (t`... ${value}`) through db/index.js. Only scripts/migrate.js (from migration files) and scripts/setup-production.js (fixed role and trigger statements, pinned by test/setup.test.js) may run raw SQL.
+    (t`... ${value}`) through db/index.js. Only the two migration runners may run raw SQL, and only from migration files
+    whose fingerprints they check first, scripts/migrate.js (local and CI) and supabase/functions/dog-migrate/core.mjs
+    (production). The setup run no longer runs any (R-14, test/setup.test.js).
   languages: [javascript]
   severity: ERROR
   paths:
-    exclude: [scripts/migrate.js, scripts/setup-production.js, test/]
+    exclude: [scripts/migrate.js, supabase/functions/dog-migrate/core.mjs, test/]
   pattern-either:
   - pattern: $X.unsafe(...)
   - pattern: $X['unsafe'](...)

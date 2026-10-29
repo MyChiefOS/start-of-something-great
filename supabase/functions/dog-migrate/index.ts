@@ -7,14 +7,20 @@
 // runs. This code does the checking. The work is in core.mjs.
 //
 //   POST {"mode": "apply"}   apply the merged commit (reset first, if its manifest says so)
-//   POST {"mode": "status"}  the live ledger, for the daily drift check (the only thing a scheduled run may ask)
+//   POST {"mode": "status"}  the live ledger and the catalog checks, for the daily drift check (the only thing a
+//                            scheduled run may ask; it only reads)
+// Every answer carries x-source-digest: the SHA-256 digest of this function's source files on the commit it was
+// deployed from (./source-digest.mjs, written by scripts/function-digests.js), so the daily watch can tell whether the
+// deployed code is main's (R-3). It proves which source version was deployed, not that nobody changed the code
+// while keeping the digest file.
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
-import { load, run, status, tokenUsed } from "./core.mjs";
+import { catalogChecks, leftovers, load, run, status, tokenUsed } from "./core.mjs";
+import { SOURCE_DIGEST } from "./source-digest.mjs";
 
 const AUDIENCE = "https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate";
 const RAW = "https://raw.githubusercontent.com/MyChiefOS/start-of-something-great/";
-const reply = (status: number, body: unknown) => Response.json(body, { status });
+const reply = (status: number, body: unknown) => Response.json(body, { status, headers: { "x-source-digest": SOURCE_DIGEST } });
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return reply(405, { ok: false, error: "POST only" });
@@ -47,7 +53,9 @@ Deno.serve(async (req) => {
       if (e instanceof Refused) return reply(401, { ok: false, error: "refused: " + e.message });
       throw e;
     }
-    if (mode === "status") return reply(200, { ok: true, ledger: await status(sql) });
+    if (mode === "status") {
+      return reply(200, { ok: true, ledger: await status(sql), failed: await catalogChecks(sql), warnings: await leftovers(sql) });
+    }
     // The daily drift check runs on a schedule and may only read; changes come only from a merge (or a run started on main).
     if (claims.event_name === "schedule") return reply(401, { ok: false, error: "refused: a scheduled run may only read the status" });
 

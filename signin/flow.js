@@ -33,7 +33,6 @@
 'use strict';
 
 const nodeCrypto = require('crypto');
-const launch = require('../launch');
 
 const c = require('./crypto');
 const h = require('./http');
@@ -85,15 +84,6 @@ function make(deps) {
   const formKey = config.sessionKey ? c.subkey(config.sessionKey, 'form time') : null;
   const regionKey = config.sessionKey ? c.subkey(config.sessionKey, 'region confirmation') : null;
   const keys = config.fingerprintKeys;
-  // Whether an email link's address (known here only by its fingerprints) is on the preview's allow-list now.
-  const previewEmailAllowed = (fps) => {
-    const mine = new Set(fps);
-    for (const entry of launch.allowList()) {
-      if (!entry.startsWith('email:')) continue;
-      if (c.fingerprints(keys, 'email', entry.slice(6)).some((f) => mine.has(f))) return true;
-    }
-    return false;
-  };
 
   // The gate holds the first fingerprint key only (dog_fingerprint_key_1), so a code is hashed with that one. Without
   // it (a later rotation that dropped key 1) code sign-in is off and says so.
@@ -327,11 +317,6 @@ function make(deps) {
         return completeLink(req, res, me, args, saved.r);
       }
       if (country) return regional(res, country, args, { r: saved.r || null });
-      // The go-live gate (launch.js): during the preview a new account is made only for an allow-listed account ID.
-      // Existing members sign in as usual. Nothing is stored for someone turned away.
-      if (!launch.mayJoin(provider, who.accountId) && !(await run(ANON, (t) => store.known(t, { provider, fingerprints: args.fingerprints })))) {
-        return h.redirect(res, '/join?error=preview');
-      }
       const out = await finish(res, ANON, args);
       if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
       await afterSignIn(req, out);
@@ -441,16 +426,8 @@ function make(deps) {
       // same either way, so it tells nobody whether one exists. Nothing is stored for a new address but the count.
       const country = region.declined(req);
       if (country) return regionalEmail(req, res, country, email, emailFps);
-      // The go-live gate (launch.js): during the preview a link goes only to an allow-listed address or an existing
-      // member, and every request gets the same answer, even when it is slowed down, so the form can't be used to
-      // learn who is in the preview or who has an account (the gate's review, finding 1).
-      const previewing = launch.stage() === 'preview';
-      const SENT = previewing ? '/join?sent=preview' : '/join?sent=1';
-      if (previewing && !launch.mayJoin('email', email) && !(await run(ANON, (t) => store.known(t, { provider: 'email', fingerprints: emailFps })))) {
-        return h.redirect(res, SENT);
-      }
       if (await limited('email_ip', h.ipKey(req, config.ipKey)) || await limited('email_addr', emailFps[0]) || await limited('email_all', ALL)) {
-        return h.redirect(res, previewing ? SENT : '/join?error=slow');
+        return h.redirect(res, '/join?error=slow');
       }
       // Remembers this browser, so the link can tell whether it is opened where it was asked for.
       let nonce = h.cookies(req)[EMAIL_BROWSER];
@@ -467,7 +444,7 @@ function make(deps) {
       const link = ORIGIN + '/auth/email/continue#t=' + token;
       try { await sendEmail(email, link); } catch { /* the reply is the same either way */ }
       // The same answer whether or not the address has an account (no enumeration).
-      return h.redirect(res, SENT);
+      return h.redirect(res, '/join?sent=1');
     },
 
     // Shows a button; changes nothing. The token stays in the address after "#", which browsers never send, and a
@@ -507,12 +484,6 @@ function make(deps) {
       h.addCookie(res, h.clear(EMAIL_BROWSER));
       const country = region.declined(req);
       if (country) return regional(res, country, args, { et: c.sha256hex(t) });
-      // The go-live gate, checked again when the link is used (the gate's review, finding 2): a link sent while the
-      // site was public, or while the address was on the list, makes no new account once that has changed.
-      if (launch.stage() === 'preview' && !previewEmailAllowed(used.emailFingerprints)
-          && !(await run(ANON, (x) => store.known(x, { provider: 'email', fingerprints: used.emailFingerprints })))) {
-        return h.redirect(res, '/join?error=preview');
-      }
       const out = await finish(res, ANON, args);
       if (out.refused) return h.redirect(res, REFUSED[out.refused] || '/join?error=unavailable');
       await afterSignIn(req, out, c.sha256hex(t));

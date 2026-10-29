@@ -6,9 +6,12 @@
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/vercel-oidc.mjs";
 import { handle, read } from "./core.mjs";
+import { SOURCE_DIGEST } from "./source-digest.mjs";
 
+// x-source-digest on every answer (R-3): the SHA-256 digest of this function's source files on the commit it was
+// deployed from (./source-digest.mjs), read by the daily watch (.github/workflows/watch.yml).
 const reply = (status: number, body: unknown) =>
-  Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  Response.json(body, { status, headers: { "Cache-Control": "no-store", "x-source-digest": SOURCE_DIGEST } });
 
 Deno.serve(async (req) => {
   if (Number(req.headers.get("content-length") || "0") > 1024) return reply(413, { ok: false, error: "request too large" });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Backup restore test (O2, RISKS.md RK12): proves the live data can be rebuilt, not just that a backup exists.
-// Run only by the "Restore test" workflow (.github/workflows/restore-test.yml), on main, in the protected
-// "production" environment after Aaron approves the run.
+// Run only by the "Restore test" workflow (.github/workflows/restore-test.yml), on main. Its job names the
+// "production" environment, which has no approval rule (OPERATIONS.md, Oct 25), so a run doesn't wait for approval.
 //
 // 1. Builds an empty database from the migrations, inside the run's own throwaway Postgres.
 // 2. Copies every row of the live app schema into it (pg_dump, data only; the live address's user bypasses

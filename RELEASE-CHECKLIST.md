@@ -2,7 +2,7 @@
 
 Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until the go-live stage (launch.js) moves from `closed` (the default) to `public`, which is Aaron's go-live decision. There is no preview stage (Aaron, Oct 24: "NO preview systems"); `preview` counts as closed. Under route B (Oct 26) the remaining steps are Claude's PRs; Aaron approves them.
 
-Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the setup run does it), notices in-app only, and the regional gate in code.
+Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the fresh build of Oct 24 removed it; since the runner-alerts PR, the runner's checks alert if it comes back), notices in-app only, and the regional gate in code.
 
 ## Decisions
 
