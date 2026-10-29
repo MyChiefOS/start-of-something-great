@@ -646,6 +646,15 @@ if (!SERVER) {
     }
     assert.deepStrictEqual(churned.map((p) => p.decisions[0].reason), ['', '', 'tree_cap'], 'a removed sub-agent\'s posts still count against the top agent');
     assert.strictEqual(churned[2].alert, true);
+    // Nor does removing the top agent and registering it again under its name (the CSO's re-check).
+    await go({ id: 7404, login: 'reowner', body: 'hello' });
+    const again = [];
+    for (let i = 1; i <= 3; i++) {
+      await go({ id: 7404, login: 'reowner', body: '/agent register head daily 2' });
+      again.push(await G.handle(sql, { ...ev({ id: 7404, login: 'reowner', body: 'Round ' + i + '.\n\n— agent head for @reowner' }), mode: 'enforce' }, { key: KEY }));
+      await go({ id: 7404, login: 'reowner', body: '/agent remove head' });
+    }
+    assert.deepStrictEqual(again.map((p) => p.decisions[0].reason), ['', '', 'tree_cap'], 'the tree is the owner and the top agent\'s name');
     await go({ id: 7402, login: 'loneowner', body: 'hello' });
     await go({ id: 7402, login: 'loneowner', body: '/agent register solo daily 1' });
     const s1 = await go({ id: 7402, login: 'loneowner', body: 'One.\n\n— agent solo for @loneowner' });

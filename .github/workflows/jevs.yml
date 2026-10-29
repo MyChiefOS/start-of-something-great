@@ -115,6 +115,7 @@ jobs:
       - name: Alert (the "JEVs alerts" issue)
         # Hiding a post never waits on the alert: if GitHub refuses the comment (for example its rate limit), the run
         # goes on to hide (the CSO's review of the gate-hardening PR, S1). The failed step still shows on the run.
+        id: alert
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -208,7 +209,8 @@ jobs:
           fi
 
       - name: Alert that this run failed (so no event goes unnoticed)
-        if: failure()
+        # Also when only the alert itself failed: it doesn't stop the run, so failure() alone wouldn't see it.
+        if: failure() || steps.alert.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
