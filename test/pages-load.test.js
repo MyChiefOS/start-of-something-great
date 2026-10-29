@@ -58,7 +58,8 @@ test('/join loads join.js, which is what shows the site sign-in, and the page ke
     assert.ok(html.includes('id="' + id + '"'), '/join has #' + id);
   }
   assert.match(html, /<section id="code-signin" hidden>/, 'shown only once /auth/me answers');
-  assert.match(read('join.js'), /fetch\('\/auth\/me'[^)]*\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) box\.hidden = false;/);
+  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; return; \}/, 'shown only to someone signed out');
+  assert.match(read('join.js'), /Object\.prototype\.hasOwnProperty\.call\(text, key\)/, 'no built-in names as messages');
   // The /join security policy lets our own scripts run there.
   const csp = JSON.parse(read('vercel.json')).headers.find((h) => h.source === '/join').headers.find((x) => x.key === 'Content-Security-Policy').value;
   assert.match(csp, /script-src 'self'/);
