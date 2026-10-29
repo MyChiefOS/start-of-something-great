@@ -34,5 +34,5 @@ Nothing to set up by hand under route B. The site's database login and keys are 
 
 - [ ] Aaron merges the go-live PR: that is the go-live decision. Nothing goes public before it.
 - [ ] Claude carries out its on-merge steps (OPERATIONS.md): the runner applies 028, `jevs` is redeployed and compared with the merge, and the live answers are checked read-only.
-- [ ] Aaron's first code sign-in on /join after the gate's redeploy (Claude says when) makes him administrator (RISKS.md RK92); Claude records it.
+- [ ] Aaron's administrator account exists after the merge (029, Aaron's request Oct 29); his first code sign-in on /join lands in it and sets his key file (RISKS.md RK92); Claude records it.
 - [ ] Fix 10: Claude proves every flow live and records it in OPERATIONS.md (harness/PLAN.md).

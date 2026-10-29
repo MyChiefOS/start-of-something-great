@@ -18,7 +18,7 @@ Every change is a pull request Claude builds and Aaron merges. Claude never sees
 
 ## How Aaron becomes administrator
 
-At his first code sign-in on /join after Claude has redeployed the JEVs gate from the go-live merge (028; fix 9). He types his GitHub username, chooses a key file, and posts the code from MyChiefOS. That sign-in makes him administrator (a code sign-in before Claude reports the gate's redeploy, minutes after the merge, signs him in as a member; his next one promotes him), and later the same username and key file sign him in with no post (db/README.md, "Making Aaron the administrator"). Until then the site has no administrator (RISKS.md RK92).
+His administrator account is made by migration 029 with the go-live merge (Aaron, Oct 29), tied to MyChiefOS, with no sessions and no key file. His first code sign-in on /join after the merge lands in it (if 029 couldn't make it, 028 promotes him at his first code sign-in after Claude has redeployed the JEVs gate). He types his GitHub username, chooses a key file, and posts the code from MyChiefOS. That sign-in sets his key file, and later the same username and key file sign him in with no post (db/README.md, "Making Aaron the administrator"). Until then the site has no administrator (RISKS.md RK92).
 
 ## Backups and the restore test (O2)
 

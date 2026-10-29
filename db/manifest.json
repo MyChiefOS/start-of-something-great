@@ -111,6 +111,10 @@
     {
       "version": "028_go_live",
       "sha256": "a26905c029b8aa7e6258c23fc62725d7a61360f438ded6a03fb8015b4b290d29"
+    },
+    {
+      "version": "029_founder_account",
+      "sha256": "5a357bab69314159e6fd0fe60eb984b0ed98103678f0c5b3f62b5e61de912093"
     }
   ]
 }
