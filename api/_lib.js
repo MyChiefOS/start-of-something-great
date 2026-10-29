@@ -137,6 +137,7 @@ let lastLimit = null;
 const TTL_MS = 60000;
 const STALE_MS = 3600000;
 const GITHUB_DOWN = 'GitHub, where this is kept, didn’t answer just now, so it couldn’t be read. Try again in a minute, or read it at https://github.com/' + REPO + '.';
+const GITHUB_LIMIT = 'GitHub, where this is kept, is limiting how often we can ask right now, so it couldn\u2019t be read. Try again later, or read it at https://github.com/' + REPO + '.';
 const FAIL_MS = 15000;
 let TIMEOUT_MS = 4000;
 const cache = new Map();
@@ -155,7 +156,11 @@ async function gh(path) {
     (error) => {
       // An MCP tool shows this instead of its generic "could not reach its source" (runTool in api/mcp.js), so an
       // agent knows which source failed and where else to read it. Nothing from the error itself is shown.
-      if (error && typeof error === 'object' && typeof error.publicMessage !== 'string') error.publicMessage = GITHUB_DOWN;
+      if (error && typeof error === 'object' && typeof error.publicMessage !== 'string') {
+        const st = error.githubStatus;
+        if (st === undefined || st >= 500) error.publicMessage = GITHUB_DOWN;
+        else if (st === 403 || st === 429) error.publicMessage = GITHUB_LIMIT;
+      }
       cache.set(path, usable ? { at: hit.at, value: hit.value, failedAt: Date.now(), error } : { failedAt: Date.now(), error });
       if (usable) return hit.value;
       throw error;
@@ -178,7 +183,7 @@ async function ghFetch(path) {
     r = await get(base);
   }
   lastLimit = r.headers.get('x-ratelimit-limit');
-  if (!r.ok) throw new Error('GitHub returned ' + r.status);
+  if (!r.ok) throw Object.assign(new Error('GitHub returned ' + r.status), { githubStatus: r.status });
   return r.json();
 }
 function githubLimit() { return lastLimit; }

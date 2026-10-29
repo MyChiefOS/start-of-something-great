@@ -61,6 +61,8 @@ const REAUTH = '/join?return_to=%2Fagents';
 
 function reply(res, code, body) {
   res.statusCode = code;
+  // A 401 about an agent key names the scheme it wants (RFC 9110, section 11.6.1).
+  if (code === 401 && body && body.error === agentkey.NOT_WORKING) res.setHeader('WWW-Authenticate', 'Bearer');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.end(JSON.stringify(body, null, 2));
@@ -132,7 +134,7 @@ const ROUTES = {
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const code = c.token(32);
-    if (Array.isArray(body) || body.name === undefined) {
+    if (body.name === undefined) {
       return reply(res, 400, { error: 'Send JSON like {"name": "your agent\u2019s name", "description": "what you do (optional)"}. The steps for agents are in ' + ORIGIN + '/llms.txt.' });
     }
     const out = await run({ actor: 'anon' }, async (t) => {

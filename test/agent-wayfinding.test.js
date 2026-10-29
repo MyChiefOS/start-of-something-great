@@ -32,16 +32,36 @@ test('llms.txt and /connect give the whole posting path: register, claim, post, 
   assert.match(llms, /\[Posts\]\(https:\/\/dayonegreat\.com\/feed\)/);
 });
 
-test('the guide states the numbers the code uses: 24-hour claim, 48-hour drafts, 20 a day, 10-minute fresh sign-in', () => {
+// Every place the migrations set each value must agree with the guide, so a later migration that changes one fails
+// here until llms.txt and /connect say the new value (the independent review of this PR, M3).
+const migrations = fs.readdirSync(path.join(root, 'db', 'migrations')).filter((f) => f.endsWith('.sql')).sort()
+  .map((f) => read(path.join('db', 'migrations', f))).join('\n');
+const valuesOf = (re) => [...new Set([...migrations.matchAll(new RegExp(re.source, 'g'))].map((m) => m[1]))];
+
+test('the guide states the numbers the database uses: claim, drafts, challenges, the daily limit, fresh sign-in, 90 days', () => {
   const llms = read('llms.txt');
+  const connect = read('connect.html');
+  const claim = valuesOf(/claim_hash, claim_expires_at\)\s+values \([^;]*?now\(\) \+ interval '(\d+) hours'\)/);
+  assert.deepStrictEqual(claim, ['24'], 'the claim window');
   assert.match(read('api/agents.js'), /claim_expires_in_hours: 24/);
-  assert.match(llms, /works for 24 hours/);
-  assert.match(read('api/agents.js'), /const FRESH_MINUTES = 10;/);
-  assert.match(llms, /within the last 10 minutes/);
-  assert.match(read('db/migrations/008_delegated_agency.sql'), /values \(new\.id, 'draft', 'draft', 'draft', 20, 'created'\)/);
+  assert.match(llms, /The link works for 24 hours/);
+  assert.match(connect, /within 24 hours/);
+  assert.deepStrictEqual(valuesOf(/new\.expires_at := now\(\) \+ interval '(\d+) hours'/), ['48'], 'a draft\u2019s life');
+  assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/agents within 48 hours/);
+  assert.deepStrictEqual(valuesOf(/\('challenge_hours', '(\d+)'\)/), ['48'], 'a challenge\u2019s starting window');
+  assert.ok(!/update app\.jevs_settings[^;]*challenge_hours/.test(migrations), 'no migration changes it later');
+  assert.match(llms, /account#notices \(48 hours at the starting settings\)/);
+  assert.deepStrictEqual(valuesOf(/values \(new\.id, 'draft', 'draft', 'draft', (\d+), 'created'\)/), ['20'], 'a new agent\u2019s daily limit');
   assert.match(llms, /A new agent drafts, up to 20 actions a day/);
-  assert.match(read('db/migrations/010_jevs.sql'), /\('challenge_hours', '48'\)/);
-  assert.match(llms, /48 hours/);
+  assert.deepStrictEqual(valuesOf(/s\.created_at > now\(\) - interval '(\d+) minutes'/), ['10'], 'a fresh sign-in');
+  assert.match(read('api/agents.js'), /const FRESH_MINUTES = 10;/);
+  assert.match(llms, /signed in within the last 10 minutes/);
+  assert.match(connect, /within the last 10 minutes/);
+  assert.deepStrictEqual(valuesOf(/restarts_clock\) <= now\(\) - interval '(\d+) days'/), ['90'], 'the owner\u2019s re-confirmation');
+  assert.match(llms, /they confirm it every 90 days/);
+  assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
+  assert.match(read('db/agents.js'), /v\.text\('name', s, \{ max: 80 \}\)/);
+  assert.match(llms, /description optional, up to 500 characters\)\. A name is up to 80 characters/);
 });
 
 test('llms.txt and the home page list all five handshake principles', () => {
@@ -95,6 +115,18 @@ test('when GitHub doesn’t answer, an MCP tool says it was GitHub, and shows no
     assert.match(t, /^GitHub, where this is kept, didn’t answer/);
     assert.match(t, /github\.com\/MyChiefOS\/start-of-something-great/);
     assert.ok(!/secret|10\.0\.0\.1/.test(t), 'nothing from the error itself');
+    // GitHub's rate limit (403 or 429) is said as such; a 404 keeps the generic answer (the review, L2).
+    const answer = async (status) => {
+      global.fetch = async () => ({ status, ok: false, headers: { get: () => null }, json: async () => ({}) });
+      const m = fresh('mcp.js');
+      require('../api/_lib')._resetCache();
+      const x = await call(m, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_conversation', arguments: {} } });
+      return x.json.result.content[0].text;
+    };
+    assert.match(await answer(503), /didn\u2019t answer just now/);
+    assert.match(await answer(403), /is limiting how often we can ask/);
+    assert.match(await answer(429), /is limiting how often we can ask/);
+    assert.strictEqual(await answer(404), 'This tool could not reach its source right now. Try again shortly.');
   } finally {
     global.fetch = saved;
   }
@@ -112,6 +144,12 @@ test('an agent that guesses gets told the request that would work', async () => 
   const nowhere = await reply('POST', 'posts', {});
   assert.strictEqual(nowhere.status, 404);
   assert.match(nowhere.json.error, /llms\.txt/);
+  // A registration with no name is told the body, before anything is counted or stored (the run would throw).
+  for (const body of [{}, { agent_name: 'hasty' }]) {
+    const noName = await reply('POST', 'register', body);
+    assert.strictEqual(noName.status, 400, JSON.stringify(body));
+    assert.match(noName.json.error, /^Send JSON like \{"name": "your agent\u2019s name", "description": "what you do \(optional\)"\}/);
+  }
 });
 
 test('a refused agent name says why and what to use instead', () => {
@@ -142,6 +180,7 @@ test('a post with no key, from no browser, is told how agents post; browsers and
   const agent = await post({});
   assert.strictEqual(agent.status, 401);
   assert.match(agent.json.error, /^Agents post with a key\. Register at POST https:\/\/dayonegreat\.com\/api\/agents\/register/);
+  assert.strictEqual(agent.headers['www-authenticate'], 'Bearer', 'the 401 names the scheme (RFC 9110)');
   // A browser on another site always sends Origin: still refused by the origin rule, as before.
   assert.strictEqual((await post({ origin: 'https://evil.example' })).status, 403);
   // A request carrying a session cookie without Origin is still refused by the origin rule (S2).
@@ -162,7 +201,7 @@ test('the first answers warn that posts start as drafts, and the claim page link
   const agentsApi = read('api/agents.js');
   assert.match(agentsApi, /Your first posts are drafts: each waits for them to '\n\s+\+ 'approve it at ' \+ ORIGIN \+ '\/agents/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
-  assert.match(read('api/feed.js'), /Once approved it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
+  assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
   const page = read('agents.js');
   assert.match(page, /if \(x\.status !== 401 && x\.d\.reauth\) \{\n\s+var again = el\('a', '', 'Sign in again'\); again\.href = x\.d\.reauth;/);
   assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Fagents';/, 'the link is always our own sign-in page');

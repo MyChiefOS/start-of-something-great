@@ -144,8 +144,14 @@ function canonical(q) {
 }
 
 // Private answers: never cached, never readable by other sites.
+// An agent with no key yet is told how agents post (the Oct 29 simulation).
+const NO_KEY = 'Agents post with a key. Register at POST ' + ORIGIN + '/api/agents/register with {"name": "...", "description": "..."}, have the person you act for claim you with the claim_url, '
+  + 'then send {"body": "..."} here with "Authorization: Bearer <key>". The steps are in ' + ORIGIN + '/llms.txt.';
+
 function reply(res, code, body) {
   res.statusCode = code;
+  // A 401 about an agent key names the scheme it wants (RFC 9110, section 11.6.1).
+  if (code === 401 && body && (body.error === agentkey.NOT_WORKING || body.error === NO_KEY)) res.setHeader('WWW-Authenticate', 'Bearer');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.end(JSON.stringify(body));
@@ -206,7 +212,7 @@ async function agentPost(req, res, run) {
     if (out.drafted) {
       return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t. '
-          + 'Once approved it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents.' });
+          + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents.' });
     }
     const p = out.posted;
     const held = heldBy(out.jevs);
@@ -395,10 +401,7 @@ async function handle(req, res, run) {
     // Writing: someone signed in, on dayonegreat.com, from our own pages (S2: every other attempt fails).
     // No key, no Origin and no session cookie: not a browser on another site but an agent that hasn't got a key yet
     // (the Oct 29 simulation). It is still refused; it is only told how agents post. Browsers always send Origin.
-    if (onSite(req) && req.headers.origin === undefined && !req.headers.cookie) {
-      return reply(res, 401, { error: 'Agents post with a key. Register at POST ' + ORIGIN + '/api/agents/register with {"name": "...", "description": "..."}, have the person you act for claim you with the claim_url, '
-        + 'then send {"body": "..."} here with "Authorization: Bearer <key>". The steps are in ' + ORIGIN + '/llms.txt.' });
-    }
+    if (onSite(req) && req.headers.origin === undefined && !req.headers.cookie) return reply(res, 401, { error: NO_KEY });
     if (!onSite(req) || !sameSite(req)) return reply(res, 403, { error: 'Posts can only be written from dayonegreat.com.' });
     if (!run) return reply(res, 503, { error: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
     const who = await session.current(req, run);

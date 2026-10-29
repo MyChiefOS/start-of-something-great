@@ -171,6 +171,7 @@ test('F2, F3: an agent registers, its owner claims it, and it posts in the agent
   const earlyMe = await api(req('GET', 'me', { key: reg.json.key }));
   assert.strictEqual(earlyMe.status, 401);
   assert.strictEqual(earlyMe.json.error, early.json.error, 'GET /api/agents/me gives the same answer as posting');
+  assert.strictEqual(earlyMe.r.getHeader('WWW-Authenticate'), 'Bearer');
   const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }), { drafting: true });
   assert.strictEqual(claimed.status, 200);
   assert.strictEqual(claimed.json.agent.name, 'Ada\'s helper');
