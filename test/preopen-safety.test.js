@@ -25,7 +25,7 @@ const agentsDb = require('../db/agents');
 const launch = require('../launch');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { promote } = require('./helpers');
+const { promote, shadowMode } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -38,22 +38,22 @@ function res() {
 }
 
 // ---- The close switch, in code (no database) ----
-test('R-10: launch-cap.json caps the stage, the stricter of it and LAUNCH_STAGE winning; this PR leaves it with no effect', () => {
-  const pub = { LAUNCH_STAGE: 'public' };
-  assert.strictEqual(launch.stage(pub, { max_stage: 'public' }), 'public', 'public cap: no effect');
-  assert.strictEqual(launch.stage(pub, { max_stage: 'closed' }), 'closed', 'a closed cap closes an open site');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'closed' }, { max_stage: 'public' }), 'closed', 'the cap never opens a closed site');
-  assert.strictEqual(launch.stage({}, { max_stage: 'public' }), 'closed');
-  assert.strictEqual(launch.stage(pub, null), 'public', 'no file: no effect');
-  for (const bad of [{ max_stage: 'preview' }, { max_stage: 'open' }, { max_stage: '' }, {}]) {
-    assert.strictEqual(launch.stage(pub, bad), 'closed', 'a value that is not a stage counts as closed: ' + JSON.stringify(bad));
+test('R-10 and go-live: the repository\'s launch.json decides the stage, LAUNCH_STAGE can only close it; this release opens it', () => {
+  const open = { stage: 'public' }, shut = { stage: 'closed' };
+  assert.strictEqual(launch.stage({}, open), 'public', 'the repository opens the site; nothing is needed in Vercel');
+  assert.strictEqual(launch.stage({}, shut), 'closed', 'a pull request setting closed closes it');
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'closed' }, open), 'closed', 'Vercel\'s setting can close it');
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'public' }, shut), 'closed', 'and never open it');
+  assert.strictEqual(launch.stage({}, null), 'closed', 'no file: closed');
+  for (const bad of [{ stage: 'preview' }, { stage: 'open' }, { stage: '' }, {}, { max_stage: 'public' }]) {
+    assert.strictEqual(launch.stage({}, bad), 'closed', 'a value that is not a stage counts as closed: ' + JSON.stringify(bad));
   }
-  const file = JSON.parse(fs.readFileSync(path.join(root, 'launch-cap.json'), 'utf8'));
-  assert.ok(launch.STAGES.includes(file.max_stage), 'the committed cap is a real stage');
-  assert.strictEqual(file.max_stage, 'public', 'this PR closes and opens nothing: the cap has no effect');
-  assert.strictEqual(launch.cap(), 'public');
+  const file = JSON.parse(fs.readFileSync(path.join(root, 'launch.json'), 'utf8'));
+  assert.strictEqual(file.stage, 'public', 'the go-live release opens the site: Aaron\'s merge is the go-live decision');
+  assert.strictEqual(launch.repoStage(), 'public');
+  assert.ok(!fs.existsSync(path.join(root, 'launch-cap.json')), 'one file, not two');
   // launch.js reads the file with a plain require, so Vercel bundles it with every function that reads the stage.
-  assert.match(fs.readFileSync(path.join(root, 'launch.js'), 'utf8'), /require\('\.\/launch-cap\.json'\)/);
+  assert.match(fs.readFileSync(path.join(root, 'launch.js'), 'utf8'), /require\('\.\/launch\.json'\)/);
 });
 
 test('R-10: nothing in db/migrations closes or opens the site login; the emergency files live outside it', () => {
@@ -65,7 +65,7 @@ test('R-10: nothing in db/migrations closes or opens the site login; the emergen
   assert.match(fs.readFileSync(path.join(root, 'db', 'emergency', 'reopen-site-login.sql'), 'utf8'), /alter role dog_web login/);
   const ops = fs.readFileSync(path.join(root, 'OPERATIONS.md'), 'utf8');
   assert.match(ops, /db\/emergency\/close-site-login\.sql/, 'the steps to use it are in OPERATIONS.md');
-  assert.match(ops, /launch-cap\.json/);
+  assert.match(ops, /launch\.json/);
 });
 
 // ---- The timer route (no database) ----
@@ -246,8 +246,8 @@ test('R-9: the uptime monitor checks the heartbeat and the broker only while the
   assert.deepStrictEqual(out.filter((x) => ['Timers heartbeat', 'Key broker'].includes(x.name)).map((x) => [x.ok, x.status]), [[true, 'not asked'], [true, 'not asked']]);
   const ready = require('../api/ready.js');
   ready._reset();
-  const body = await ready.check({ headers: {} }, { env: {}, timersAge: async () => { throw new Error('must not be asked while closed'); } });
-  assert.deepStrictEqual([body.timers, body.stage, body.stage_cap], ['closed', 'closed', 'public']);
+  const body = await ready.check({ headers: {} }, { env: { LAUNCH_STAGE: 'closed' }, timersAge: async () => { throw new Error('must not be asked while closed'); } });
+  assert.deepStrictEqual([body.timers, body.stage, body.stage_repo], ['closed', 'closed', 'public']);
   const open = { LAUNCH_STAGE: 'public', DATABASE_URL: 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres' };
   const connect = () => { const f = async () => [{ one: 1 }]; f.end = async () => {}; return f; };
   for (const [age, want] of [[42, { last_run_s_ago: 42 }], [null, 'never']]) {
@@ -285,6 +285,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await asOwner(QUIET_WATCH);

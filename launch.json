@@ -1,0 +1,4 @@
+{
+  "stage": "public",
+  "note": "The site's go-live stage (launch.js). public: open. closed: every Release 2 route off, from the next deploy. Changed only by a pull request Aaron merges: his merge of the go-live PR opened the site, and a PR setting closed closes it (OPERATIONS.md, Runbook: close the site now). LAUNCH_STAGE in Vercel can also close the site, never open it."
+}

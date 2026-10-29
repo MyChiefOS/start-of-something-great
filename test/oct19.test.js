@@ -192,7 +192,7 @@ test('C4: the uptime monitor confirms a failure before alerting, and reports eve
     : {
       status: 200,
       headers: hdr({ 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'content-security-policy': "default-src 'self'" }),
-      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"closed"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : '<title>Day One Great</title>')
+      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"' + uptime.EXPECTED + '"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : url.endsWith('/api/ready') ? '{"timers":{"last_run_s_ago":30},"broker":"ok"}' : '<title>Day One Great</title>')
     });
   let waits = 0;
   const all = await uptime.checkAll(okFetch, async () => { waits++; });
@@ -227,30 +227,19 @@ test('launch checks: the go-live gate, sign-in and security headers are watched,
   const ctx = {};
   assert.strictEqual(stage.test(r(200), '{"name":"Day One Great","stage":"public"}', ctx), uptime.EXPECTED === 'public');
   assert.strictEqual(ctx.stage, 'public');
-  // F1 (CSO review of PR #50): empty, a stale "preview" or nonsense in EXPECTED_STAGE all mean closed, so a hand
-  // switch to public is reported. It only alerts.
-  const saved = process.env.EXPECTED_STAGE;
-  try {
-    for (const [value, want] of [['', 'closed'], ['preview', 'closed'], ['open', 'closed'], [' Public ', 'public'], ['closed', 'closed']]) {
-      process.env.EXPECTED_STAGE = value;
-      delete require.cache[require.resolve('../scripts/uptime')];
-      const u = require('../scripts/uptime');
-      assert.strictEqual(u.EXPECTED, want, JSON.stringify(value));
-      const st = u.CHECKS.find((c) => c.name === 'Go-live stage');
-      assert.strictEqual(st.test(r(200), '{"stage":"public"}', {}), want === 'public', 'live public with EXPECTED_STAGE ' + JSON.stringify(value));
-      assert.strictEqual(st.test(r(200), '{"stage":"closed"}', {}), want === 'closed', 'live closed with EXPECTED_STAGE ' + JSON.stringify(value));
-    }
-  } finally {
-    if (saved === undefined) delete process.env.EXPECTED_STAGE; else process.env.EXPECTED_STAGE = saved;
-    delete require.cache[require.resolve('../scripts/uptime')];
-  }
+  // Since the go-live release the expected stage is the repository's own (launch.json), so a live stage that differs
+  // (LAUNCH_STAGE closing it in Vercel, a rollback, a deploy that didn't happen) is reported. It only alerts.
+  assert.strictEqual(uptime.EXPECTED, require('../launch').repoStage());
+  assert.strictEqual(stage.test(r(200), '{"stage":"' + uptime.EXPECTED + '"}', {}), true);
+  assert.strictEqual(stage.test(r(200), '{"stage":"' + (uptime.EXPECTED === 'public' ? 'closed' : 'public') + '"}', {}), false, 'a stage the repository doesn\'t say is a fault');
   assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"preview"}', {}), 'preview is no longer a stage: a fault');
   assert.ok(!stage.test(r(200), '{"name":"Day One Great","stage":"open"}', {}), 'an unknown stage is a fault');
   assert.ok(!stage.test(r(200), '{"name":"Day One Great"}', {}), 'no stage at all is a fault');
   assert.ok(!stage.test(r(500), '{}', {}));
   const src = read('scripts/uptime.js');
-  assert.match(src, /live === EXPECTED/, 'compares with EXPECTED_STAGE');
-  assert.match(read('.github/workflows/uptime.yml'), /EXPECTED_STAGE: \$\{\{ vars\.EXPECTED_STAGE \}\}/, 'the workflow passes the recorded stage in');
+  assert.match(src, /live === EXPECTED/, 'compares with the repository\'s stage');
+  assert.match(src, /const EXPECTED = require\('\.\.\/launch'\)\.repoStage\(\);/);
+  assert.doesNotMatch(read('.github/workflows/uptime.yml'), /EXPECTED_STAGE/, 'the repository variable is no longer read');
   const signin = uptime.CHECKS.find((c) => c.name === 'Sign-in start');
   assert.strictEqual(signin.init.redirect, 'manual');
   assert.ok(signin.test(r(302, { location: 'https://github.com/login/oauth/authorize?client_id=x' })));

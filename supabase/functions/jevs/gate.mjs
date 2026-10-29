@@ -497,8 +497,9 @@ export async function handle(sql, raw, { key }) {
     if (code) {
       let claimed = false;
       if (!banned) {
+        // The founder's claim says so (028, fix 9): his first code sign-in makes him administrator if nobody is yet.
         const [c] = await t`select app.code_claim(${await J.keyed(key, 'signin-code:' + code)}, ${await J.keyed(key, 'github:' + ev.author.id)},
-          ${await J.keyed(key, 'signin-login:' + ev.author.login.toLowerCase())}) as ok`;
+          ${await J.keyed(key, 'signin-login:' + ev.author.login.toLowerCase())}, ${ev.author.id === FOUNDER_ID}) as ok`;
         claimed = Boolean(c && c.ok);
       }
       const founderClaim = claimed && ev.author.id === FOUNDER_ID;

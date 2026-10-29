@@ -6,12 +6,11 @@ const github = require('./_github');
 const SITE = process.env.SITE_URL || 'https://dayonegreat.com';
 const LABEL = 'uptime';
 const STAGES = ['closed', 'public']; // "preview" is no longer a stage (launch.js)
-// The stage the last approved Production setup run set (repository variable EXPECTED_STAGE, written by that run).
-// Read as launch.js reads LAUNCH_STAGE: empty, or anything that isn't a stage (a stale "preview" above all), means
-// closed. So a hand switch to public while nothing approved it is always reported (CSO review of PR #50, F1). It only
-// alerts; RK69 accepts the false alarm when an approved run didn't record the stage.
-const RAW_EXPECTED = String(process.env.EXPECTED_STAGE || '').trim().toLowerCase();
-const EXPECTED = STAGES.includes(RAW_EXPECTED) ? RAW_EXPECTED : 'closed';
+// The stage the repository says, in the commit this check runs from (launch.json, read exactly as launch.js reads it:
+// a missing file or anything that isn't a stage means closed). Since the go-live release the repository decides the
+// stage, so a live stage that differs (LAUNCH_STAGE closing it in Vercel, a rollback to an older build, a deploy that
+// didn't happen) is reported. It only alerts. The repository variable EXPECTED_STAGE is no longer read.
+const EXPECTED = require('../launch').repoStage();
 
 const CHECKS = [
   { name: 'Home page', path: '/', test: (r, t) => r.status === 200 && t.includes('Day One Great') },

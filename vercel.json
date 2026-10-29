@@ -7,6 +7,17 @@
       "has": [
         {
           "type": "host",
+          "value": "start-of-something-great-[a-z0-9]+-chief-os\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://dayonegreat.com/:path",
+      "permanent": false
+    },
+    {
+      "source": "/:path((?!api/cron$).*)",
+      "has": [
+        {
+          "type": "host",
           "value": "start-of-something-great-chief-os.vercel.app"
         }
       ],

@@ -218,6 +218,11 @@ if (!SERVER) {
     assert.deepStrictEqual(f.signin, { claimed: true, founder: true }, 'Aaron can always sign in, whatever the ban list says');
     assert.strictEqual(f.alert, true, 'a code claimed by the founder\'s account (Aaron\'s, which Claude also posts as) alerts on the JEVs alerts issue (the CSO\'s finding 1)');
     assert.strictEqual((await finish(b2)).signed_in, true);
+    // 028 (fix 9): with no administrator yet, that sign-in made him administrator; undone here so the tests below
+    // start with none (the founder's promotion has its own test, "028: ...").
+    const aaron = (await me(b2)).member_id;
+    assert.strictEqual((await owner(`select is_admin from app.members where id = '${aaron}'`))[0].is_admin, true);
+    await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${aaron}'`); });
   });
 
   test('only from our own pages: a cross-site start or finish is refused', async () => {
@@ -526,6 +531,134 @@ if (!SERVER) {
     assert.strictEqual(await db.tx(web, asM, async (x) => (await x`select app.watch_first('agent.key') as a`)[0].a), false, 'not the first any more');
     assert.match(read('db/jevs.js'), /WATCH_FIRST = \['agent\.key', 'agent\.rules'\]/);
     await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = false where id = '${chief.member_id}'`); });
+  });
+
+  test('028 (go-live): the site\'s JEVs enforces, there is at most one administrator, and the founder\'s first code sign-in makes him administrator', async () => {
+    const asOwner = (q) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); return [...await t.unsafe(q)]; });
+    const adminOf = async (id) => (await owner(`select is_admin from app.members where id = '${id}'`))[0].is_admin;
+    const sessionsOf = async (id) => Number((await owner(`select count(*) as n from app.sessions where member_id = '${id}'`))[0].n);
+    await asOwner(`update app.members set is_admin = false where is_admin`);
+    // Fix 7: the migrations leave the site's JEVs in enforce mode (this file's database is never put back in shadow).
+    assert.strictEqual((await owner(`select value from app.jevs_settings where key = 'mode'`))[0].value, 'enforce');
+
+    // A founder's earlier session, from before he was administrator.
+    const old = jar();
+    await post(304218593, 'MyChiefOS', (await start(old, { login: 'MyChiefOS' , ip: '198.51.100.21' })).code);
+    assert.strictEqual((await finish(old)).signed_in, true);
+    const aaron = (await me(old)).member_id;
+    await asOwner(`update app.members set is_admin = false where id = '${aaron}'`);
+    assert.strictEqual((await me(old)).signed_in, true, 'a member\'s session, before the promotion');
+
+    // A member who isn't the founder: never promoted, even with no administrator.
+    const m = jar();
+    await post(8601, 'just-a-member', (await start(m, { login: 'just-a-member' , ip: '198.51.100.22' })).code);
+    assert.strictEqual((await finish(m)).signed_in, true);
+    assert.strictEqual(await adminOf((await me(m)).member_id), false);
+
+    // The founder's code sign-in with no administrator: promoted, every earlier session ended, this browser signed in
+    // as administrator with exactly one session.
+    const b = jar();
+    const g = await post(304218593, 'MyChiefOS', (await start(b, { login: 'MyChiefOS' , ip: '198.51.100.23' })).code);
+    assert.deepStrictEqual(g.signin, { claimed: true, founder: true });
+    assert.strictEqual(g.alert, true, 'still alerts on GitHub');
+    assert.strictEqual((await finish(b)).signed_in, true);
+    assert.strictEqual(await adminOf(aaron), true);
+    assert.strictEqual((await me(b)).member_id, aaron);
+    assert.strictEqual((await me(old)).signed_in, false, 'the session from before the promotion is gone');
+    assert.strictEqual(await sessionsOf(aaron), 1, 'only the browser that just signed in');
+    const [audit] = await owner(`select detail->>'by' as by from app.audit_log where action = 'admin.set' and subject_id = '${aaron}' order by at desc limit 1`);
+    assert.strictEqual(audit.by, 'founder code sign-in');
+    // His key file was kept as well: the administrator signs in with it later, no post.
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.file_keys where member_id = '${aaron}'`))[0].n), 1);
+
+    // Once an administrator exists, a founder claim is an ordinary sign-in: nothing ends, nobody else promoted.
+    const b2 = jar();
+    await post(304218593, 'MyChiefOS', (await start(b2, { login: 'MyChiefOS' , ip: '198.51.100.24' })).code);
+    assert.strictEqual((await finish(b2)).signed_in, true);
+    assert.strictEqual((await me(b)).signed_in, true, 'the administrator\'s other session stays');
+    assert.strictEqual(await sessionsOf(aaron), 2);
+
+    // At most one administrator, in the database.
+    await assert.rejects(asOwner(`update app.members set is_admin = true where id = '${(await me(m)).member_id}'`), /members_one_admin/);
+
+    // A refused promotion never locks him out: with a second sign-in method on his account, the founder's sign-in
+    // stands as a member's, and the refusal is recorded by its error code only.
+    await asOwner(`update app.members set is_admin = false where id = '${aaron}'`);
+    await owner(`insert into app.identities (member_id, provider, fingerprint, key_version, level) values ('${aaron}', 'x', '${'e'.repeat(64)}', 1, 1)`);
+    const b3 = jar();
+    await post(304218593, 'MyChiefOS', (await start(b3, { login: 'MyChiefOS' , ip: '198.51.100.25' })).code);
+    assert.strictEqual((await finish(b3)).signed_in, true, 'signed in');
+    assert.strictEqual(await adminOf(aaron), false, 'not promoted');
+    assert.strictEqual((await me(b2)).signed_in, true, 'and nothing of his was ended');
+    const [refused] = await owner(`select detail from app.audit_log where action = 'admin.founder_refused' and subject_id = '${aaron}'`);
+    assert.deepStrictEqual(refused.detail, { code: '42501' });
+    await owner(`delete from app.identities where member_id = '${aaron}' and provider = 'x'`);
+
+    // Only the gate can mark a claim as the founder's, and only the sign-in role can promote: not the site's role.
+    for (const q of [`select app.founder_promote('${aaron}')`, `select app.code_claim('${'a'.repeat(64)}', '${'b'.repeat(64)}', '${'c'.repeat(64)}', true)`]) {
+      await assert.rejects(web.begin(async (t) => { await t.unsafe('set local role dog_app'); await t.unsafe(q); }), /permission denied/, q);
+    }
+    // 023's three-argument claim (kept until the gate is redeployed) never marks the founder.
+    const fn = (await owner(`select pg_get_functiondef('app.code_claim(text, text, text)'::regprocedure) as d`))[0].d;
+    assert.match(fn, /app\.code_claim\(p_code_hash, p_fingerprint, p_login_hash, false\)/);
+    await asOwner(`update app.members set is_admin = false where is_admin`);
+  });
+
+  test('after a code or key-file sign-in the person goes back to the page that sent them to /join, if it is on this site', async () => {
+    const go = async (returnTo, ip) => {
+      const b = jar();
+      const s = await start(b, { login: 'returner', ip });
+      await post(8701, 'returner', s.code);
+      return (await finish(b, { body: returnTo === undefined ? {} : { return_to: returnTo } })).go;
+    };
+    assert.strictEqual(await go('/review?tab=reports', '198.51.100.61'), '/review?tab=reports');
+    assert.strictEqual(await go(undefined, '198.51.100.62'), '/feed', 'nothing asked: the feed');
+    for (const [bad, ip] of [['https://evil.example/x', '198.51.100.63'], ['//evil.example', '198.51.100.64'], ['/\\evil.example', '198.51.100.65'], ['javascript:alert(1)', '198.51.100.66']]) {
+      assert.strictEqual(await go(bad, ip), '/feed', 'never another site: ' + bad);
+    }
+    const r = res();
+    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'returner', file: FILE_A, return_to: '/agents' }, ip: '198.51.100.67' }), r);
+    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/agents' });
+    assert.match(read('join.js'), /if \(back\) fb\.return_to = back;/);
+    assert.match(read('join.js'), /if \(back\) body\.return_to = back;/);
+  });
+
+  test('029: Aaron\'s administrator account is made inside the database, tied to MyChiefOS; his code sign-in lands in it and sets his key file (Aaron, Oct 29)', async () => {
+    const asOwner = (q) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); return [...await t.unsafe(q)]; });
+    await asOwner(`update app.members set is_admin = false where is_admin`);
+    const fp = c.fingerprints(SITE_KEYS, 'github', '304218593')[0];
+    // Without Vault and pgcrypto (this plain Postgres), the migration made nothing and said so.
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.audit_log where detail->>'by' = 'migration 029 (Aaron, Oct 29)'`))[0].n), 0);
+    // The function that makes the account is used once inside 029 and dropped: nothing keeps a way to make it.
+    assert.strictEqual((await owner(`select to_regprocedure('app.founder_account(text)') is null as gone`))[0].gone, true);
+    // With Vault holding the gate's key (a stand-in here, as on Supabase), the migration's own block makes the account
+    // administrator with the same fingerprint the gate and the site give MyChiefOS.
+    await su.unsafe(`create schema if not exists vault; create table if not exists vault.decrypted_secrets (name text, decrypted_secret text);
+      insert into vault.decrypted_secrets values ('dog_fingerprint_key_1', '${GATE_KEY}'); create schema if not exists extensions;
+      create extension if not exists pgcrypto with schema extensions`);
+    const doBlock = read('db/migrations/029_founder_account.sql'); // the whole migration again, as the runner would run it
+    await su.begin((t) => t.unsafe(doBlock));
+    const [made] = await owner(`select m.id, m.is_admin from app.members m join app.identities i on i.member_id = m.id where i.provider = 'github' and i.fingerprint = '${fp}'`);
+    assert.strictEqual(made.is_admin, true, 'the account tied to MyChiefOS is the administrator');
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.sessions where member_id = '${made.id}'`))[0].n), 0, 'no sessions');
+    // (Earlier tests in this file signed MyChiefOS in, so this member already exists here and 029 found it; on
+    // production it is new, with no key file until his first code sign-in, which the check below shows sets one.)
+    await su.begin((t) => t.unsafe(doBlock));
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.audit_log where action = 'admin.set' and detail->>'by' = 'migration 029 (Aaron, Oct 29)'`))[0].n), 1, 'run again, it changes nothing');
+    // His process: a code posted from MyChiefOS signs into that same account, as administrator, and sets his key file.
+    const before = Number((await owner(`select count(*) as n from app.audit_log where action = 'admin.set' and detail->>'by' = 'founder code sign-in'`))[0].n);
+    const br = jar();
+    await post(304218593, 'MyChiefOS', (await start(br, { login: 'MyChiefOS', ip: '198.51.100.71' })).code);
+    assert.strictEqual((await finish(br)).signed_in, true);
+    assert.strictEqual((await me(br)).member_id, made.id, 'into the account 029 made');
+    assert.strictEqual((await owner(`select is_admin from app.members where id = '${made.id}'`))[0].is_admin, true);
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.file_keys where member_id = '${made.id}'`))[0].n), 1, 'his key file is set');
+    assert.strictEqual(Number((await owner(`select count(*) as n from app.audit_log where action = 'admin.set' and detail->>'by' = 'founder code sign-in'`))[0].n), before, 'no promotion was needed');
+    // Later, the username and key file sign him in with no post.
+    const r = res();
+    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'MyChiefOS', file: FILE_A }, ip: '198.51.100.72' }), r);
+    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' });
+    await asOwner(`update app.members set is_admin = false where is_admin`);
   });
 
   test('sessions last a flat 30 days (Aaron, Oct 28): no idle limit', async () => {

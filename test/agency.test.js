@@ -1,7 +1,7 @@
 // Release 2, PR 7: agents acting for their owners (criteria A1–A6, approved Oct 16, 2026, R10, R17, R36), against a real Postgres.
 'use strict';
 
-const { promote } = require('./helpers');
+const { promote, shadowMode } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -69,6 +69,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   aaron = await member(2, 'Aaron');

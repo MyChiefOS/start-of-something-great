@@ -87,4 +87,15 @@ async function promote(su, memberId) {
   });
 }
 
-module.exports = { fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, TEST_SYSTEM_SECRET };
+// The site's JEVs enforces from migration 028 (go-live), and in enforce mode the database refuses a post that has no
+// JEVs decision. Tests of the features underneath JEVs (posting, review, brakes, deletion, the break-in suite) write
+// posts directly, so they run their database in shadow mode, as these tests did before 028; JEVs's enforce paths are
+// tested in jevs.test.js and code-signin.test.js, and test/go-live.test.js checks the migrations leave enforce on.
+async function shadowMode(su) {
+  await su.begin(async (t) => {
+    await t`set local role dog_owner`;
+    await t`update app.jevs_settings set value = 'shadow' where key = 'mode'`;
+  });
+}
+
+module.exports = { fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, TEST_SYSTEM_SECRET };

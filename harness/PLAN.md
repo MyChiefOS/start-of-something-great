@@ -89,6 +89,8 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 
 ### Fix 7: site JEVs mode to enforce. Claude, migration. Confidence high.
 
+**Built Oct 29 (028, the go-live PR, branch `go-live`; not merged or proven live):** one `app.jevs_settings` update to `enforce`. Tests of the features under JEVs run their database in shadow mode (test/helpers.js `shadowMode`); test/code-signin.test.js checks the migrations leave enforce on.
+
 **Oct 26:** moved into the go-live release with fix 9 and `LAUNCH_STAGE`, as this section already says: making enforce the default changes behaviour many tests rely on, and it matters only once the site opens.
 
 One `app.jevs_settings` row (`mode`), changed by migration through the runner. Do it in the same release as go-live, so first posts are never left waiting for Aaron.
@@ -116,7 +118,11 @@ The table below lists what the site reads. Under route B they come from the brok
 | `X_CLIENT_ID`/`X_CLIENT_SECRET`, `EMAIL_TRANSPORT`, `SES_*` | Leave unset | Phase 1 is GitHub only |
 | `LAUNCH_STAGE` | `public` | Aaron's go-live decision, last |
 
-### Fix 9: Aaron becomes administrator before sign-up opens. Aaron's decision, then Claude.
+### Fix 9: Aaron becomes administrator. Recommended by Claude in the go-live PR, decided by Aaron's merge.
+
+**Aaron, Oct 29: "Can you create an admin account for me on the system that I can change later following the process provided".** Migration 029 (in the go-live PR) makes his administrator account from the key in Vault, tied to MyChiefOS, with no sessions and no key file; his first code sign-in lands in it and sets his key file. 028's promotion below stays as the fallback.
+
+**Fallback, built Oct 29 (028, the go-live PR; not merged or proven live):** if 029 made nothing, at his first code sign-in after the gate's redeploy, if nobody is administrator yet: the JEVs gate marks a claim by the founder's account (ID 304218593), and `app.code_sign_in` calls `app.founder_promote` (025's checks: exactly one GitHub method, earlier sessions end, agent keys revoked), then signs the browser in again as administrator. A refused promotion signs him in as a member and is recorded; a unique index allows one administrator. Until his first sign-in the site has no administrator (RISKS.md RK92). The two options below needed a preview window or a hand step; this needs neither.
 
 `app.set_administrator` exists (`013_setup_audit.sql:15-31`). Options: a short window where Aaron signs in first and Claude sets him by migration before `LAUNCH_STAGE` goes public, or set right after opening. No preview (Aaron, Oct 24).
 
@@ -126,7 +132,7 @@ Run once on production and record in OPERATIONS.md: sign-in and JEVs' first chec
 
 ### Claude's commitments from the risk sign-off PR (RISKS.md)
 
-Before opening: confirm read-only that Supabase backups are on (RK12); check read-only, by requesting a generated deployment address, that Deployment Protection covers it, and log it (RK68); a test bounding /api/status's cache (RK70). Before go-live: two-role rotation, refetch on a refused password (RK88). First week live: report the deletion-review queue's size from read-only checks (RK25). After the first weeks: propose tuned watch and sub-agent limits by migration PR (RK37, RK39). Later PRs: a phase-1 provider allowlist (RK82), the jevs.yml `updated_at` fix (RK72).
+Before opening: confirm read-only that Supabase backups are on (RK12; **done Oct 29**: Pro plan, daily, 7 days, OPERATIONS.md); check read-only, by requesting a generated deployment address, that Deployment Protection covers it, and log it (RK68; **done Oct 29**: previews protected, production deployments' own addresses public, OPERATIONS.md); a test bounding /api/status's cache (RK70). Before go-live: two-role rotation, refetch on a refused password (RK88). First week live: report the deletion-review queue's size from read-only checks (RK25). After the first weeks: propose tuned watch and sub-agent limits by migration PR (RK37, RK39). Later PRs: a phase-1 provider allowlist (RK82), the jevs.yml `updated_at` fix (RK72).
 
 ### After fix 10 (owner named, not yet scheduled)
 
@@ -134,7 +140,7 @@ Link the site's and GitHub's agent registries (today a ban in one doesn't reach 
 
 ## 4. Open decisions for Aaron
 
-1. How Aaron becomes administrator before sign-up opens (fix 9).
+1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.
 2. How email erasure requests are carried out (privacy promises erasure; nothing is built).
 3. What the regional decline means for posts made directly on GitHub (the gate can't know a poster's country; they are stored today).
 4. ~~Whether untagged posts from a linked machine account are hidden~~ Decided Oct 25 under Aaron's instruction "implement whats honest and hold true to my intent… what would the CLJO do?": alert, never hide (checks alert, never lock out). See FACTS.md.

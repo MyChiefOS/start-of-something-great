@@ -17,7 +17,7 @@ const posts = require('../db/posts');
 const controls = require('../db/controls');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { keyFor, promote } = require('./helpers');
+const { keyFor, promote, shadowMode } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -85,6 +85,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 6 });
   aaron = await member(1, 'Aaron');
@@ -416,6 +417,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
   let w2;
   try {
     await migrate(s2);
+    await shadowMode(s2);
     await s2.unsafe(`create role ${W2} login noinherit password '${PW}'; grant dog_app to ${W2}`);
     w2 = db.connect(at(SERVER, D, W2, PW), { ssl: false, max: 2 });
     const r2 = (ctx, fn) => db.tx(w2, ctx, fn);

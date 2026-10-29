@@ -38,9 +38,10 @@ test('R-5: the status page doesn\'t call Release 2 done until it is', () => {
 test('R-5: "preview" is not a stage: setting it closes the site, never opens it', () => {
   const launch = require('../launch');
   assert.deepStrictEqual(launch.STAGES, ['closed', 'public']);
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'preview' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'public' }), 'public');
-  assert.strictEqual(launch.stage({}), 'closed');
+  const open = { stage: 'public' };
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'preview' }, open), 'closed');
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'public' }, open), 'public');
+  assert.strictEqual(launch.stage({}, { stage: 'preview' }), 'closed', 'nor in the repository\'s file');
 });
 
 test('R-5: llms.txt says how agents take part on GitHub today, and that the thresholds are public', () => {

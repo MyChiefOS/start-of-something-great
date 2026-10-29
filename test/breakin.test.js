@@ -16,7 +16,7 @@ const review = require('../db/review');
 const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote } = require('./helpers');
+const { trustSystem, promote, shadowMode } = require('./helpers');
 
 const SERVER = process.env.TEST_DATABASE_URL;
 if (!SERVER) {
@@ -57,6 +57,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
   await trustSystem(su); // fix 3: the site itself acts only with its own secret

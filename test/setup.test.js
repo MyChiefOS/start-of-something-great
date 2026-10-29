@@ -117,7 +117,7 @@ test('plan: says what a run will do from its inputs alone, and refuses bad input
   assert.strictEqual(lines.length, 3);
   assert.match(lines[0], /never replaced/);
   assert.strictEqual(lines[1], 'stage: unchanged');
-  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[1], /go-live decision/);
+  assert.match(s.plan({ ...base, SETUP_STAGE: 'public' })[1], /Lifts a close set in Vercel; the repository's launch\.json decides/);
   assert.match(s.plan({ ...base, SETUP_STAGE: 'closed' })[1], /CLOSED/);
   assert.throws(() => s.plan({ ...base, SETUP_STEPS: 'database' }), /unknown step/);
   assert.throws(() => s.plan({ ...base, SETUP_STAGE: 'preview' }), /unchanged, closed or public/);

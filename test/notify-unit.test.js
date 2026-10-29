@@ -188,5 +188,12 @@ test('vercel.json: the timers run every minute, /api/notify is routed, and the c
     else assert.ok(['/join', '/talk'].includes(r.source), r.source);
   }
   assert.ok(!rule.test('/api/cron') && rule.test('/') && rule.test('/api/cronx') && rule.test('/agents') && rule.test('/api/notify'));
+  // The go-live release: every deployment's own generated address (start-of-something-great-<id>-chief-os.vercel.app)
+  // sends people to dayonegreat.com, so an older production build can't keep serving Release 2 after a close.
+  const gen = v.redirects.find((r) => r.has && r.has[0].type === 'host' && r.has[0].value.includes('[a-z0-9]+'));
+  assert.ok(gen && gen.destination === 'https://dayonegreat.com/:path' && gen.permanent === false);
+  const host = new RegExp('^' + gen.has[0].value + '$');
+  assert.ok(host.test('start-of-something-great-dkxwtf6q1-chief-os.vercel.app') && host.test('start-of-something-great-b8he49bcn-chief-os.vercel.app'));
+  assert.ok(!host.test('dayonegreat.com') && !host.test('start-of-something-great-dkxwtf6q1-chief-os.vercel.app.evil.example'));
 });
 

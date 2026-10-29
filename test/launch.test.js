@@ -24,21 +24,29 @@ async function withEnv(vars, fn) {
   }
 }
 
-test('the stage is closed unless set to public, whatever else is written; preview now counts as closed', () => {
-  assert.strictEqual(launch.stage({}), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: '' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'open' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'live' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: ' Preview ' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'preview' }), 'closed');
-  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'PUBLIC' }), 'public');
+test('the repository decides the stage (launch.json), LAUNCH_STAGE can only close it, and preview counts as closed', () => {
+  const open = { stage: 'public' }, shut = { stage: 'closed' };
+  // The repository's stage: only an exact public opens; a missing file or anything else is closed.
+  assert.strictEqual(launch.stage({}, open), 'public');
+  assert.strictEqual(launch.stage({}, shut), 'closed');
+  assert.strictEqual(launch.stage({}, null), 'closed', 'no file: closed');
+  for (const bad of [{}, { stage: '' }, { stage: 'preview' }, { stage: 'open' }, { stage: 7 }]) assert.strictEqual(launch.stage({}, bad), 'closed', JSON.stringify(bad));
+  assert.strictEqual(launch.stage({}, { stage: ' PUBLIC ' }), 'public');
+  // LAUNCH_STAGE: unset, empty or public changes nothing; anything else closes, and it never opens a closed repository.
+  for (const v of [undefined, '', 'public', 'PUBLIC']) assert.strictEqual(launch.stage({ LAUNCH_STAGE: v }, open), 'public', String(v));
+  for (const v of ['closed', 'open', 'live', ' Preview ', 'preview']) assert.strictEqual(launch.stage({ LAUNCH_STAGE: v }, open), 'closed', v);
+  assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'public' }, shut), 'closed', 'the Vercel setting never opens the site');
+  // A preview (Vercel's VERCEL_ENV anything but production) is always closed; production and outside Vercel follow the file.
+  for (const v of ['preview', 'development', 'Preview']) assert.strictEqual(launch.stage({ VERCEL_ENV: v }, open), 'closed', v);
+  assert.strictEqual(launch.stage({ VERCEL_ENV: 'production' }, open), 'public');
+  assert.strictEqual(launch.stage({ VERCEL_ENV: 'production', LAUNCH_STAGE: 'closed' }, open), 'closed');
 });
 
 test('R-14: the preview paths PR #50 made unreachable are gone (no allow-list, no preview-only reading, no preview check)', () => {
   const fs = require('fs');
   const path = require('path');
   const root = path.join(__dirname, '..');
-  assert.deepStrictEqual(Object.keys(launch).sort(), ['STAGES', 'cap', 'stage'], 'launch.js exports only the stage and the close switch\'s cap');
+  assert.deepStrictEqual(Object.keys(launch).sort(), ['STAGES', 'envCap', 'repoStage', 'stage'], 'launch.js exports only the stage and its two parts');
   const files = ['launch.js', 'join.js', 'signin/flow.js', 'api/feed.js', 'api/agents.js', 'api/mcp.js', 'scripts/setup-production.js'];
   for (const f of files) {
     const src = fs.readFileSync(path.join(root, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
@@ -57,7 +65,7 @@ test('only an exact public stage opens Release 2: a stage added later stays clos
 
 test('a database address alone never opens Release 2: db.configured() needs the gate opened too', async () => {
   const url = 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
-  await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: undefined }, () => assert.strictEqual(db.configured(), false));
+  await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: undefined }, () => assert.strictEqual(db.configured(), launch.repoStage() === 'public'));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'closed' }, () => assert.strictEqual(db.configured(), false));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'nonsense' }, () => assert.strictEqual(db.configured(), false));
   await withEnv({ DATABASE_URL: url, LAUNCH_STAGE: 'preview' }, () => assert.strictEqual(db.configured(), false));
@@ -66,7 +74,7 @@ test('a database address alone never opens Release 2: db.configured() needs the 
 });
 
 test('while closed, every Release 2 route answers as if there were no database, even with an address set', async () => {
-  await withEnv({ DATABASE_URL: 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres', LAUNCH_STAGE: undefined }, async () => {
+  await withEnv({ DATABASE_URL: 'postgres://u:p@aws-0-us-east-1.pooler.supabase.com:6543/postgres', LAUNCH_STAGE: 'closed' }, async () => {
     const r = res();
     await require('../api/feed.js')(req('GET'), r);
     assert.strictEqual(r.statusCode, 200);

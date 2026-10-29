@@ -1,94 +1,39 @@
-# Production setup: Aaron's steps
+# Production setup
 
-> **Superseded, Oct 26, 2026.** Aaron chose route B (CHARTER.md §2): the site's login and keys are made inside the database and reached by Claude's PRs, and Claude's plan replaces every step here with a PR (harness/STATUS.md). It describes route A. Until those PRs merge, §5 (administrator) and §6 (go live) are the only built path; the setup's database step, and with it `rotate_db_password`, was removed in the clean-up (harness/REVIEW-2026-10-26.md, R-14; the runner-alerts PR), so the steps below that mention them no longer exist; the database changes only through the runner. The `production` environment has no approval rule (found Oct 25, OPERATIONS.md), so a run doesn't wait for your approval. Section 4, the private preview, is gone: "preview" is no longer a stage, and the workflow refuses it.
+Rewritten Oct 29, 2026 for the go-live release. **There is nothing to set up by hand.** Aaron chose route B on Oct 26 (CHARTER.md §2). Under it:
+- the site's database login and its keys are made inside the database and handed to the site by the key broker (`dog-keys`; db/README.md);
+- the timers need no secret (027);
+- the go-live stage is the repository's own `launch.json`.
 
-Release 2 is set up from GitHub by one workflow, **Production setup** (`.github/workflows/setup.yml`, code in `scripts/setup-production.js`). Nothing runs on your computer. Every key and password is made inside the run and goes straight to Vercel or to the database as a hash, so nobody sees them, Claude included.
+Every change is a pull request Claude builds and Aaron merges. Claude never sees a secret.
 
-Setting things up never opens the site. Release 2 stays off until **you** set the go-live stage (`LAUNCH_STAGE`, below). Setting it to `public` is the go-live decision.
+## How the site opens and closes
 
-Everything in **[PLACEHOLDER: …]** is a value only you can supply.
+- **Opening** is Aaron's merge of the go-live PR, which sets `launch.json` to `public`. Vercel's production deploy of that merge opens Release 2.
+- **Closing** (OPERATIONS.md, "Runbook: close the site now"):
+  - a PR setting `launch.json` to `closed`, which Aaron merges;
+  - or, for the immediate close by hand, `LAUNCH_STAGE` set to `closed` in Vercel, then a redeploy. `LAUNCH_STAGE` can only close the site, never open it;
+  - and, if the database itself must be cut off, the emergency migration in `db/emergency/`.
+- **Rolling back** to an older deployment never closes the site safely: it keeps the stage its own commit said (RISKS.md RK68).
 
-## How every run works
+## How Aaron becomes administrator
 
-1. You start it from the Actions tab and fill in the inputs.
-2. A first job, **plan**, reads the inputs alone (no secrets) and writes what the run will do into the run's summary. Bad input (a stage that doesn't exist, including `preview`) stops it here.
-3. GitHub asks you to approve the **setup** job. Read the plan first; approve, or cancel the run.
-4. The setup job does exactly what the plan said, stops at the first problem, and never shows a secret: every value it makes is masked in the log before it's used.
+His administrator account is made by migration 029 with the go-live merge (Aaron, Oct 29), tied to MyChiefOS, with no sessions and no key file. His first code sign-in on /join after the merge lands in it (if 029 couldn't make it, 028 promotes him at his first code sign-in after Claude has redeployed the JEVs gate). He types his GitHub username, chooses a key file, and posts the code from MyChiefOS. That sign-in sets his key file, and later the same username and key file sign him in with no post (db/README.md, "Making Aaron the administrator"). Until then the site has no administrator (RISKS.md RK92).
 
-## 1. The protected environment (once, about 2 minutes)
+## Backups and the restore test (O2)
 
-GitHub → the repository → Settings → Environments → `production` (create it if it isn't there):
+Supabase backups are on: the Pro plan, daily, with 7 days restorable (confirmed read-only Oct 29, OPERATIONS.md); after a restore, the site's login needs a new password: a migration that runs 022's block again (as in runbook step 3b, but keeping the broker). The **Restore test** workflow needs `MIGRATION_DATABASE_URL`, which doesn't exist, so it can't run. A restore drill that needs no pasted secret is Claude's, after fix 10 (harness/PLAN.md).
 
-1. **Required reviewers:** add yourself. Every run waits for your approval.
-2. **"Allow administrators to bypass configured protection rules":** turn it **off**, so an administrator token can't skip your approval. (Leave "Prevent self-review" off: you start the runs and you approve them.)
-3. **Deployment branches and tags:** "Selected branches and tags", allow only `main`.
+## The Production setup workflow
 
-## 2. Two secrets (once)
+`.github/workflows/setup.yml` (`scripts/setup-production.js`) is route A's fallback (CHARTER.md §2) and isn't needed. What it can still do:
+- **keys:** writes the site's keys into Vercel if they are missing. These would override the broker's, so don't run it under route B.
+- **stage:** sets `LAUNCH_STAGE` in Vercel. Since the go-live release, that setting can only close the site.
+- **admin:** needs `MIGRATION_DATABASE_URL`, which doesn't exist.
+- **redeploy.**
 
-Add each one under the `production` environment's "Environment secrets" (best: only approved runs can read them), or, if you skipped step 1, as repository secrets (Settings → Secrets and variables → Actions). Supabase's certificate is public, so it is already in the repository (db/certs/supabase-root-2021.crt); there is no third secret.
-
-| Name | Where to get it |
-|---|---|
-| `MIGRATION_DATABASE_URL` | **[PLACEHOLDER: Supabase → Connect → "Session pooler" connection string, port 5432, with your database password filled in]**. It looks like `postgresql://postgres.nksagchwpyljvjiwolmp:…@aws-0-us-east-1.pooler.supabase.com:5432/postgres`. |
-| `VERCEL_TOKEN` | **[PLACEHOLDER: Vercel → Account Settings → Tokens → Create. Scope: the chief-os team. Expiration: 1 day]**. Vercel has no project-only tokens, so the team is the narrowest scope; delete the token after the run rather than waiting for it to expire. Make a new one when you next need a run. |
-
-## 3. First run: set everything up, still closed
-
-Actions → **Production setup** → Run workflow, on `main`:
-
-- steps: `database,keys,stage,redeploy` (the default)
-- stage: `closed`
-
-Read the plan, then approve the setup job. It:
-
-1. removes Supabase's `ensure_rls` trigger (your decision of Oct 16, GAP-44, recorded in CHARTER.md; it's owned by the same user as the migration address, so the run can remove it);
-2. applies the migrations, 001 onwards;
-3. creates the site's login role `dog_web` with a password made in the run, sent to the database only as a hash;
-4. puts `DATABASE_CA` and then `DATABASE_URL` (the transaction pooler, port 6543) in Vercel;
-5. runs the database coverage check;
-6. makes `SESSION_SECRET`, `IP_HASH_KEY`, `FINGERPRINT_KEY_1` and `CRON_SECRET`, but only those that aren't already there. A key is created, never replaced: Vercel itself refuses to create one that exists, and the run takes that as "leave it";
-7. sets `LAUNCH_STAGE=closed`;
-8. redeploys, so Vercel uses the new settings.
-
-The site looks exactly as before. That's the point of `closed`.
-
-## 4. (Removed: the private preview)
-
-"Preview" is no longer a stage (Aaron, Oct 24: "NO preview systems"). `LAUNCH_STAGE=preview` counts as closed.
-
-## 5. Make yourself the administrator
-
-1. While signed in, open https://dayonegreat.com/auth/me and copy `member_id`.
-2. Run **Production setup** with steps `admin` and admin_member_id: **[PLACEHOLDER: your member_id]**.
-
-## 6. Go live
-
-When you've decided, run **Production setup** with steps `stage,redeploy` and stage `public`. To close it again at any time, run the same steps with stage `closed`.
-
-Always step back with a run, never with Vercel's Instant Rollback (RISKS.md RK68): an older deployment keeps the stage it was built with, so rolling back to one built while the site was public would open it again. If you ever step back from `public`, tick rotate_db_password in the same run: a new database password stops every older deployment reaching the database.
-
-## 7. Test that the backup really restores (O2)
-
-Run **Restore test** (Actions tab, on `main`) and approve it. It rebuilds the live data in a throwaway database inside the run, checks that every table's row count matches the live one, and runs the coverage check on the copy. The copy never leaves the run and is deleted when it ends. Separately, confirm in Supabase that daily backups are on. Record both in OPERATIONS.md.
-
-## Later, as needed
-
-- **X sign-in:** `X_CLIENT_ID` and `X_CLIENT_SECRET` (SIGNIN-SETUP.md) **[PLACEHOLDER: from console.x.com, after you register the app and set its spending limit]**.
-- **Email sign-in links:** EMAIL-SETUP.md (Amazon SES) **[PLACEHOLDER: your AWS account, SES production access, and the DNS records]**.
-- **A new database password:** run `database,redeploy` with "rotate_db_password" ticked.
-- **Any re-run of the default steps** leaves the stage as it is (the stage input defaults to `unchanged`), so a maintenance run can never open or close the site by accident.
-
-## If a run stops
-
-It stops at the first problem and says what it was, without showing any secret. Nothing after that point has run. Fix the cause and run it again. Running again is safe: migrations already applied are skipped, keys that exist are never replaced, and `unchanged` leaves the stage alone.
-
-One case has its own instruction, and the run prints it if it happens: if the database refused the new password after `DATABASE_URL` had already gone to Vercel, don't redeploy; run `database` again with rotate_db_password ticked, which makes a new password and sets both sides to match.
+Its `production` environment has no approval rule (found Oct 25, OPERATIONS.md), so a run wouldn't wait for anyone.
 
 ## Your way back in
 
-Every control below is one you hold. Be clear about what that does and doesn't mean today: Claude's session acts on GitHub as your own account (`MyChiefOS`, an administrator), and it holds write tools for Vercel and Supabase through its connections. The rules in CHARTER.md (you merge, Claude never writes to Supabase, nothing goes live without your decision) are followed by Claude's conduct and recorded in OPERATIONS.md; they become real permissions only when you set the three things in RISKS.md RK71. What no setting can take from you:
-
-- **GitHub.** You own the repository and the `production` environment. Once the environment has you as required reviewer and the administrator bypass is off, only your approval lets a setup run go ahead; until then an administrator token could run it. The branch rules on `main` are yours to change (today main requires 0 approvals). If a Claude session misbehaves, revoke the connection it uses (Claude's GitHub connector in your Claude settings, or the token under your GitHub account's Applications) and the workflows still work for you.
-- **Vercel.** You own the chief-os team. Every variable the run sets is visible by name under the project's Settings → Environment Variables, and you can change or delete any of them there; `LAUNCH_STAGE` is plain text, so you can read it and set it to `closed` by hand at any time, then redeploy. Delete `VERCEL_TOKEN`s you no longer need under Account Settings → Tokens. Claude's Vercel connection can also change variables; it is used read-only by rule, and you can revoke it in your Claude settings.
-- **Supabase.** You own the project. The migration address is your `postgres` user; `dog_web` is a lesser role the migrations created, and you can reset either password from the dashboard (Project Settings → Database). Resetting the `postgres` password invalidates `MIGRATION_DATABASE_URL`, which you then replace in the GitHub environment. Claude's Supabase connection can run SQL and migrations; it is used read-only by rule, and you can revoke it in your Claude settings.
-- **The site.** With `LAUNCH_STAGE` at `closed`, or `DATABASE_URL` removed, Release 2 is off and the site serves exactly what it did before, from the code alone.
+If Aaron can't sign in, he gets a new code on /join and posts it from MyChiefOS with a new key file. That gives him back his same account, as administrator, for every account the same (Aaron, Oct 28). Ten wrong key files, or "Sign out everywhere", cancel the key file; a new code always works.

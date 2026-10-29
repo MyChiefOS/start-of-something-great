@@ -95,6 +95,9 @@ function make(deps) {
   };
   // The username, and the key file's SHA-256 as the browser sends it, both keyed with the gate's key (the key file
   // with the username too, so the same file is a different key for each account).
+  // Where a code or key-file sign-in goes next: back to the page that sent the person to /join (its return_to), checked
+  // by returnPath so only a path on this site is ever followed; the feed otherwise.
+  const goAfter = (form) => { const p = h.returnPath(form && form.return_to); return p === '/' ? '/feed' : p; };
   const loginOf = (form) => {
     const l = String(form.login || '').trim().replace(/^@/, '');
     return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(l) ? l : null;
@@ -374,7 +377,7 @@ function make(deps) {
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
-      return json(res, 200, { signed_in: true, go: '/feed' });
+      return json(res, 200, { signed_in: true, go: goAfter(body) });
     },
 
     // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
@@ -403,7 +406,7 @@ function make(deps) {
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
-      return json(res, 200, { signed_in: true, go: '/feed' });
+      return json(res, 200, { signed_in: true, go: goAfter(form) });
     },
 
     async emailStart(req, res) {

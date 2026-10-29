@@ -158,18 +158,18 @@ All of these are Vercel environment variables for **Production only**, so previe
 
 ### Making Aaron the administrator
 
-1. Sign in once.
-2. Open `https://dayonegreat.com/auth/me` and copy your `member_id`.
-3. Run this in the SQL editor, with your ID in place of `PASTE-YOUR-MEMBER-ID`. Only the owner role can change administrator rights, and the site can't.
+**Made with the go-live release (029; Aaron, Oct 29: "Can you create an admin account for me on the system that I can change later following the process provided"; built and tested, not proven live).** Migration 029 makes his member account, "Aaron Chandler", as administrator: tied to his GitHub account (ID 304218593, MyChiefOS) by the fingerprint every sign-in uses, made inside the database from the key in Vault (`dog_fingerprint_key_1`), which nobody types or sees. It has no sessions and no key file. His first code sign-in on /join (the code posted from MyChiefOS) lands in it and sets his key file; later the username and key file sign him in; doing the process over (a new code and a new key file) changes the file, as for everyone. If Vault or pgcrypto isn't there, or anything fails, 029 makes nothing and the way below (028) is the way in.
+
+**The fallback, if 029 made nothing: his first code sign-in after the gate's redeploy (028; built and tested, not proven live).** Nothing to run by hand. The gate that marks the founder's claims is the one Claude redeploys from the go-live merge (OPERATIONS.md); until then the gate in service calls 023's three-argument claim, which never marks the founder, so a code sign-in before the redeploy signs him in as a member, and his next one promotes him. Key-file sign-ins never promote. The JEVs gate marks a sign-in code claimed by the founder's GitHub account (ID 304218593, MyChiefOS) as the founder's. When that code signs its browser in and no administrator exists yet, `app.code_sign_in` calls `app.founder_promote`, which does what `app.set_administrator` does: exactly one sign-in method, GitHub, the one the account began with; every earlier session ends; every agent key of his is revoked (025's `app.admin_prepare`). The browser is then signed in again, as administrator, and the key file chosen with the code is kept, so later he signs in with the username and key file, with no post. Once an administrator exists, a founder claim is an ordinary sign-in. A unique index (`members_one_admin`) allows one administrator at most. If the promotion is refused, he is signed in as a member and the refusal is recorded (`admin.founder_refused`, with its error code only); nobody is locked out. Only the gate (`dog_jevs`) may mark a claim as the founder's; the site's role can't (test/code-signin.test.js, "028").
+
+The SQL-editor route below still works, as the owner role, but needs Aaron's hands; it is kept only as a fallback, and it fails if another member is administrator (as since 019; 028's unique index now holds it in the table too):
 
 ```sql
 begin;
 set local role dog_owner;
-update app.members set is_admin = true where id = 'PASTE-YOUR-MEMBER-ID';
+select app.set_administrator('PASTE-YOUR-MEMBER-ID');
 commit;
 ```
-
-The editor should report `UPDATE 1`. Anything else means the ID didn't match, and nothing changed.
 
 ## Review queue and reports (Release 2, PR 4)
 
@@ -370,7 +370,7 @@ Aaron is never held or challenged, as the brake never limits him. Challenges las
 
 **In enforce mode no post goes live unscored.** Enforce mode ends first-post review, so a commit-time check on `app.posts` (`app.posts_scored`) refuses any new post without a JEVs decision in the same transaction: a path that forgot `jevs.check` can't publish around it.
 
-**Shadow mode and the single switch.** `mode` starts as `shadow`: JEVs scores and records every decision, including what it would have done, and stops nothing. First-post review (F6) keeps running. Switching `mode` to `enforce` is one change: JEVs starts carrying out its effects, and level 0 and 1 members' first posts stop waiting for review, in the same moment. Two things happen in both modes, because they stop nobody: automatic level 2, and Aaron's list of high-risk account checks.
+**Shadow mode and the single switch.** Since 028 (the go-live release, fix 7) the site's `mode` is `enforce`; 010 seeded it as `shadow`. In `shadow`: JEVs scores and records every decision, including what it would have done, and stops nothing. First-post review (F6) keeps running. Switching `mode` to `enforce` is one change: JEVs starts carrying out its effects, and level 0 and 1 members' first posts stop waiting for review, in the same moment. Two things happen in both modes, because they stop nobody: automatic level 2, and Aaron's list of high-risk account checks.
 
 **The fail-safe.** If scoring throws (the facts can't be read, a question fails), the action is recorded as an error. In enforce mode a sensitive action (new agent, claim, key, letting an agent act, deleting an account, an agent registering) is held; anything else (posts, drafts, reports, account checks) goes ahead. If even the record can't be written, a sensitive action fails and anything else goes ahead with a line in Vercel's logs. Shadow mode never stops anything, even then: it is how scoring errors are found before enforcing.
 
