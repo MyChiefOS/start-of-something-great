@@ -70,7 +70,8 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.match(p, /halved as it grows and deleted after 90 days without activity/);
   assert.match(p, /brakes it switched off, kept 8 days/);
   assert.match(p, /never the full browser details\) and of the country it was first used from, deleted when the session ends or runs out/);
-  assert.match(p, /Only our sign-in system reads these records\. The administrator sees alerts naming your account/);
+  assert.match(p, /In normal running only our sign-in system reads these records; the project's owner has database access\. The administrator sees alerts naming your account/);
+  assert.doesNotMatch(p, /never a place, a hash or these counts/);
   const w = read('db/migrations/030_behaviour_watch_web.sql');
   assert.match(w, /delete from app\.watch_counts x where x\.hour < now\(\) - interval '8 days'/);
   assert.match(w, /update app\.watch_activity x set place = null, place_at = null where x\.place_at < now\(\) - interval '1 day'/);

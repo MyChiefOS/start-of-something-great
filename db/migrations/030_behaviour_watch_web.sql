@@ -21,7 +21,7 @@
 --   type, so it needs a public list fetched every day: a new moving part, queued for the next watch PR); switching
 --   networks within one country (phones change address all the time, so it would alert on most members; far moves show
 --   as a country change or travel, and 026 watches new networks for the administrator); requests made with agent keys
---   (030 watches signed-in sessions; agents' actions are watched hourly since 011); what happens on a person's own
+--   (not counted: 030 watches signed-in sessions; agents' actions are, by 011's hourly check, not their reads); what happens on a person's own
 --   computer (USB, cloud storage, archiving, other software), which a website can't see; and patterns before someone
 --   leaves, beyond what the request and removal alerts show (deleting an account removes the alerts about it).
 --   What it keeps, all deleted with the account: per session, keyed hashes of its browser kind and first country
@@ -85,6 +85,11 @@ create table app.watch_counts (
   unique (member_id, kind, hour)
 );
 create index watch_counts_hour on app.watch_counts (hour);
+
+-- The audit trigger (6) checks that a brake for everyone really is off before it alerts: the sign-in role may read
+-- which brake is which and whether it is off, nothing else.
+create policy brakes_signin_select on app.brakes for select to dog_signin using (true);
+grant select (id, member_id, lifted_at) on app.brakes to dog_signin;
 
 -- Only the sign-in role touches them, inside the watch's functions. One policy per action, as in 026.
 alter table app.watch_sessions enable row level security;
@@ -321,9 +326,11 @@ begin
         || case when new.detail ->> 'from' ~ word then new.detail ->> 'from' else '?' end || '" to "'
         || case when new.detail ->> 'to' ~ word then new.detail ->> 'to' else '?' end || '". Only a reviewed migration changes it.',
         '/controls', null, null, 'watch:setting:' || new.id::text);
-    elsif new.action = 'brake.off' and new.detail ->> 'scope' = 'everyone' then
+    -- Only for a brake for everyone that really is off: the site's role writes brake records too (the CSO's re-check).
+    elsif new.action = 'brake.off' and new.detail ->> 'scope' = 'everyone'
+          and exists (select 1 from app.brakes b where b.id = new.subject_id and b.member_id is null and b.lifted_at is not null) then
       perform app.notify(null, 'alert', 'The brake for everyone was switched off',
-        'The emergency brake on the whole site was switched off. If you didn''t do this, switch it on again and sign out everywhere.',
+        'The emergency brake on the whole site was switched off. If you didn''t do this, switch it on again from the owner controls.',
         '/controls', 'brake', new.subject_id, 'watch:brake:' || new.id::text);
     end if;
     -- A sub-agent stopped with the agent above it is part of one revocation, not another one.

@@ -607,7 +607,7 @@ function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app lang
 function app.timers_run(p_from_cron boolean) owner=dog_timers execute=dog_timers,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=1473d52d6f5a59053efeea81941dfefc
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
-function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a99f9b7d13714d43c40d204fd5c5e53c
+function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
 function app.watch_reach(p_what text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=e263f04ac3ba350451144bb146d06323
@@ -779,11 +779,14 @@ grant app.brakes dog_erase DELETE
 grant app.brakes dog_limits SELECT
 grant app.brakes.agent_posts_per_hour dog_app INSERT
 grant app.brakes.id dog_erase SELECT
+grant app.brakes.id dog_signin SELECT
 grant app.brakes.lifted_at dog_app UPDATE
 grant app.brakes.lifted_at dog_jevs SELECT
+grant app.brakes.lifted_at dog_signin SELECT
 grant app.brakes.member_id dog_app INSERT
 grant app.brakes.member_id dog_erase SELECT
 grant app.brakes.member_id dog_jevs SELECT
+grant app.brakes.member_id dog_signin SELECT
 grant app.brakes.new_agents_per_day dog_app INSERT
 grant app.brakes.note dog_app INSERT
 grant app.brakes.people_per_hour dog_app INSERT
@@ -1210,6 +1213,7 @@ policy app.brakes brakes_insert cmd=a permissive=true to=dog_app using= check=((
 policy app.brakes brakes_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.brakes brakes_limits_select cmd=r permissive=true to=dog_limits using=true check=
 policy app.brakes brakes_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
+policy app.brakes brakes_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.brakes brakes_update cmd=w permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)
 policy app.broker_uses broker_uses_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.broker_uses broker_uses_system cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'system'::text) check=

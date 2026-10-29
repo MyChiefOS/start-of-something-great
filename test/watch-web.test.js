@@ -379,6 +379,11 @@ if (!SERVER) {
         values (${action}, 'member', ${m.id}, ${t.json({ key: 'mode', from: 'a', to: 'b' })})`), /row-level security/, action);
     }
     assert.deepStrictEqual(await alerts('watch:admin:%', m.id), []);
+    // The site's role writes brake records itself, so a brake-for-everyone alert needs that brake really off.
+    const brakes = (await alerts('watch:brake:%')).length;
+    await run(ctx, (t) => t`insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('brake.off', 'brake', ${crypto.randomUUID()}, ${t.json({ scope: 'everyone' })})`);
+    assert.strictEqual((await alerts('watch:brake:%')).length, brakes, 'a made-up brake raises nothing');
   });
 
   test('a removal is never held up by another one being counted at the same moment', async () => {
