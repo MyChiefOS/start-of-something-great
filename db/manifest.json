@@ -91,6 +91,10 @@
     {
       "version": "023_code_signin",
       "sha256": "c623bee670470f640f2961ebfd4779d49b320dbfe71bcad8ed5ebc7c16b30afb"
+    },
+    {
+      "version": "024_gh_agent_trees",
+      "sha256": "342c7f22350b04270f191fddc0a36d98e2ee0087ca88026f0c061ed3114feb02"
     }
   ],
   "reset": {

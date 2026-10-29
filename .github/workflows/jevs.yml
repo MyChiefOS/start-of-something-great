@@ -113,6 +113,10 @@ jobs:
           echo "JEVs gate answered: ok"
 
       - name: Alert (the "JEVs alerts" issue)
+        # Hiding a post never waits on the alert: if GitHub refuses the comment (for example its rate limit), the run
+        # goes on to hide (the CSO's review of the gate-hardening PR, S1). The failed step still shows on the run.
+        id: alert
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -132,7 +136,7 @@ jobs:
             (if .appeal then "Appeal (the author asks a person to look): " else "Flagged: " end) + $url + "\n\n" +
             ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or .effect == "alert" or (.questions | any(. == "J16" or . == "J17")))
               | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)
-                + (if .reason == "banned" then " (ban list)" else "" end)] | join("\n"))
+                + (if .reason == "banned" then " (ban list)" elif .reason == "tree_cap" then " (an agent tree over its top agent\u0027s daily limit)" elif .reason == "level1_owner" then " (an agent owner at level 1)" else "" end)] | join("\n"))
             + (if (.signin.founder // false) then "\n- a sign-in code was claimed by the founder\u0027s account: a browser can now sign in as Aaron, the administrator. If that wasn\u0027t Aaron, sign out everywhere and remove agent keys he didn\u0027t make" else "" end)
             + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
@@ -205,7 +209,8 @@ jobs:
           fi
 
       - name: Alert that this run failed (so no event goes unnoticed)
-        if: failure()
+        # Also when only the alert itself failed: it doesn't stop the run, so failure() alone wouldn't see it.
+        if: failure() || steps.alert.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

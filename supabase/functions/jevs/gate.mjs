@@ -62,13 +62,21 @@ async function record(t, out, { action, account, post = null, agent = null, scor
 // The account whose agents and limits apply: a linked machine account acts for its owner.
 const principalOf = (acct) => acct.owner_id || acct.id;
 
-async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, th }) {
+async function runCommand(t, out, cmd, { acct, principal, principalLogin, principalLevel, mode, th }) {
   const say = (s) => out.replies.push(s);
-  const decide = async (action, sig, agent = null) => {
+  // ownerId and ownerLevel: the account that will own the agent, and its level. An owner at level 1 (not through
+  // JEVs's standard questions) alerts Aaron; nothing is refused (R-15: alert first; a later PR may decide more). An
+  // account this very post created has no level yet (it is decided after the commands run), so its check waits for
+  // that decision (account.first, below).
+  const decide = async (action, sig, agent = null, ownerId = null, ownerLevel = null) => {
     const scores = J.score(action, sig);
     const r = J.risk(scores, th);
-    if (r.level === 'high') out.alert = true;
-    await record(t, out, { action, account: principal, agent, scores, level: r.level, effect: r.level === 'high' ? 'alert' : 'none', mode });
+    const undecided = ownerId !== null && out.first && ownerId === acct.id;
+    if (undecided) out.ownsAgents = true;
+    const lowOwner = ownerId !== null && !undecided && Number(ownerLevel) < 2;
+    if (r.level === 'high' || lowOwner) out.alert = true;
+    await record(t, out, { action, account: principal, agent, scores, level: r.level,
+      effect: r.level === 'high' || lowOwner ? 'alert' : 'none', reason: lowOwner ? 'level1_owner' : '', mode });
   };
   const counts = async () => (await t`select
       (select count(*)::int from app.gh_agents where owner_id = ${principal} and created_at > now() - interval '24 hours') as owner_agents_24h,
@@ -88,7 +96,7 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
     const [ag] = await t`insert into app.gh_agents (owner_id, name, mode, daily_cap) values (${principal}, ${cmd.name}, ${cmd.mode || 'act'},
       ${Math.min(10000, cmd.daily ?? 20)}) on conflict (owner_id, name) do update set mode = excluded.mode, daily_cap = excluded.daily_cap,
       expires_at = null, parent_id = null returning *`;
-    await decide('agent.register', { ...c, owner_agents_24h: c.owner_agents_24h, sensitive: true }, ag.id);
+    await decide('agent.register', { ...c, owner_agents_24h: c.owner_agents_24h, sensitive: true }, ag.id, principal, principalLevel);
     return say('Registered agent `' + ag.name + '` for ' + at(principalLogin) + ': ' + ag.mode + ', up to ' + ag.daily_cap + ' posts a day. Its posts end with the line `— agent ' + ag.name + ' for @' + principalLogin + '`.');
   }
   if (cmd.op === 'subagent') {
@@ -112,7 +120,7 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
               least(now() + make_interval(hours => ${hours}), coalesce(${parent.expires_at}::timestamptz, 'infinity'::timestamptz)))
       on conflict (owner_id, name) do update set parent_id = excluded.parent_id, mode = excluded.mode, daily_cap = excluded.daily_cap,
         expires_at = excluded.expires_at returning *`;
-    await decide('agent.subagent', { ...c, sensitive: true }, ag.id);
+    await decide('agent.subagent', { ...c, sensitive: true }, ag.id, principal, principalLevel);
     return say('Made sub-agent `' + ag.name + '` of `' + parent.name + '`: ' + ag.mode + ', up to ' + ag.daily_cap + ' posts a day, for ' + hours + ' hours. Removing `' + parent.name + '` removes it too.');
   }
   if (cmd.op === 'limit') {
@@ -173,7 +181,7 @@ async function runCommand(t, out, cmd, { acct, principal, principalLogin, mode, 
     if (ok.yes) {
       await t`update app.gh_accounts set owner_id = ${person.id}, link_wanted = null, link_wanted_at = null where id = ${machine.id}`;
       await t`update app.gh_accounts set link_wanted = null, link_wanted_at = null where id = ${person.id}`;
-      await decide('agent.link', { sensitive: true }, null);
+      await decide('agent.link', { sensitive: true }, null, person.id, person.level);
       return say('Linked: ' + at(machine.login) + ' now posts for ' + at(person.login) + ', within its agent limits. Undo with `/agent unlink @' + machine.login + '`.');
     }
     return say(cmd.op === 'add'
@@ -307,11 +315,12 @@ export async function handle(sql, raw, { key }) {
     const refresh = acct.login !== ev.author.login || (!acct.github_created_at && ev.author.created_at);
     if (refresh) acct = { ...acct, login: ev.author.login, github_created_at: acct.github_created_at || ev.author.created_at };
     const principal = principalOf(acct);
-    const principalLogin = principal === acct.id ? acct.login : (await t`select login from app.gh_accounts where id = ${principal}`)[0].login;
+    const principalAcct = principal === acct.id ? acct : (await t`select login, github_id, level from app.gh_accounts where id = ${principal}`)[0];
+    const principalLogin = principalAcct.login;
     const founder = ev.author.id === FOUNDER_ID;
     // The ban list (moderation/bans.json) covers an account and every machine account linked to it.
     const bans = new Set(ev.bans || []);
-    const principalGithub = principal === acct.id ? Number(acct.github_id) : Number((await t`select github_id from app.gh_accounts where id = ${principal}`)[0].github_id);
+    const principalGithub = Number(principalAcct.github_id);
     const banned = !founder && (bans.has(ev.author.id) || bans.has(principalGithub));
 
     // Commands run once, when the post is made (not again on edits).
@@ -326,7 +335,7 @@ export async function handle(sql, raw, { key }) {
       if (named.length) {
         await t`select id from app.gh_accounts where id = ${acct.id} or lower(login) = any(${named}::text[]) order by id for no key update`;
       }
-      for (const cmd of cmds) await runCommand(t, out, cmd, { acct, principal, principalLogin, mode, th });
+      for (const cmd of cmds) await runCommand(t, out, cmd, { acct, principal, principalLogin, principalLevel: principalAcct.level, mode, th });
     }
     if (refresh) {
       await t`update app.gh_accounts set login = ${ev.author.login}, github_created_at = coalesce(github_created_at, ${ev.author.created_at || null})
@@ -393,6 +402,32 @@ export async function handle(sql, raw, { key }) {
            and coalesce(thread_node_id, node_id) = ${thread} and node_id <> ${ev.post.node_id} and created_at > now() - interval '1 hour') as reply_depth,
         (select count(*)::int from app.gh_posts where ${agent ? agent.id : null}::uuid is not null and agent_id = ${agent ? agent.id : null}::uuid
            and created_at > now() - interval '24 hours' and node_id <> ${ev.post.node_id}) as agent_posts_24h`;
+    // R-4: a sub-agent may have its parent's daily limit, so without this a tree of agents could post the top agent's
+    // limit many times over. The posts of the whole tree (the agent its owner made and every sub-agent below it) in the
+    // last 24 hours are counted against that top agent's limit. Over it alerts Aaron, for now; a later PR switches it to
+    // hide, as an agent's own limit does (harness/REVIEW-2026-10-26.md, decision 6).
+    let tree = null;
+    if (agent && ev.action === 'created') {
+      [tree] = await t`with recursive up (id, parent_id, name, daily_cap, lvl) as (
+            select a.id, a.parent_id, a.name, a.daily_cap, 0 from app.gh_agents a where a.id = ${agent.id}
+            union all select a.id, a.parent_id, a.name, a.daily_cap, up.lvl + 1 from app.gh_agents a join up on a.id = up.parent_id where up.lvl < 10),
+          top as (select id, name, daily_cap from up order by lvl desc limit 1),
+          down (id, lvl) as (select id, 0 from top
+            union all select a.id, down.lvl + 1 from app.gh_agents a join down on a.parent_id = down.id where down.lvl < 10)
+        select (select id from top) as top_id, ${principal}::text || ':' || (select name from top) as tree_key, (select daily_cap from top) as cap,
+          (select count(*)::int from down) as agents`;
+      // Each agent post records its tree (024): the owner and the top agent's name. So a sub-agent that is removed and
+      // made again, or that expired, still counts, and so does a top agent removed and registered again under its name
+      // (the CSO's review of this PR, B1 and its re-check). One alert per tree a day, not one per post, so the alerts issue can't be flooded
+      // (S1).
+      const [n] = await t`select
+          (select count(*)::int from app.gh_posts where tree_key = ${tree.tree_key}
+             and created_at > now() - interval '24 hours' and node_id <> ${ev.post.node_id}) as posts_24h,
+          exists (select 1 from app.gh_decisions d join app.gh_posts p on p.id = d.post_id
+             where d.reason = 'tree_cap' and p.tree_key = ${tree.tree_key} and p.created_at > now() - interval '24 hours'
+               and d.at > now() - interval '24 hours') as alerted`;
+      tree = { ...tree, ...n };
+    }
     const ageHours = acct.github_created_at ? (Date.now() - new Date(acct.github_created_at).getTime()) / 3600000 : null;
     const signals = { ...sig, age_hours: ageHours, links: text.links, contacts: text.contacts, hidden: text.hidden, impersonation, claims: text.claims && !founder };
 
@@ -407,23 +442,26 @@ export async function handle(sql, raw, { key }) {
     else if (agent && agent.mode === 'draft' && !approved) reason = 'agent_draft';
     else if (agent && action === 'post.create' && sig.agent_posts_24h >= agent.daily_cap) reason = 'agent_cap';
     else if (r.level === 'high') reason = 'high_risk';
+    else if (tree && tree.posts_24h >= tree.cap) reason = 'tree_cap';
     else if (machineNoAgent) reason = 'machine_no_agent';
-    const alertOnly = reason === 'machine_no_agent'; // never hidden (see above)
+    // Never hidden: a machine account's untagged post (see above), and a tree over its top agent's limit (R-4, for now).
+    const alertOnly = reason === 'machine_no_agent' || reason === 'tree_cap';
     // GitHub can hide a comment but not a discussion, so a discussion that would be hidden is alerted instead.
     const hideable = ev.event === 'discussion_comment';
     const effect = reason && hideable && !alertOnly ? 'hide' : (reason && !(reason.startsWith('agent_'))) || scores.J16 > 0 || scores.J17 > 0 ? 'alert' : 'none';
     // A discussion can't be hidden: a banned or high-risk one alerts Aaron, once, when it is started. An agent's own
     // limits (off, draft, cap) on a discussion are the owner's business and alert no one.
     const ownLimit = reason === 'agent_off' || reason === 'agent_draft' || reason === 'agent_cap';
-    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || ((reason && !hideable && !ownLimit || alertOnly) && ev.action === 'created') || swapped) out.alert = true;
+    const quietTree = reason === 'tree_cap' && tree.alerted; // already alerted for this tree in the last 24 hours
+    if (r.level === 'high' || scores.J16 > 0 || scores.J17 > 0 || ((reason && !hideable && !ownLimit || alertOnly) && ev.action === 'created' && !quietTree) || swapped) out.alert = true;
     out.hide = effect === 'hide' && mode === 'enforce';
     if (out.hide) out.replies.push(HIDDEN_BECAUSE[reason]);
 
-    const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, created_at, body_key, simhash, risk, hidden)
+    const [post] = await t`insert into app.gh_posts (node_id, kind, discussion_number, thread_node_id, author_id, agent_id, tree_key, created_at, body_key, simhash, risk, hidden)
       values (${ev.post.node_id}, ${ev.event === 'discussion' ? 'discussion' : 'comment'}, ${ev.discussion}, ${ev.post.thread_node_id || null}, ${acct.id},
-              ${agent ? agent.id : null}, ${created}, ${bodyKey}, ${text.simhash}::bigint, ${r.level}, ${out.hide})
+              ${agent ? agent.id : null}, ${tree ? tree.tree_key : null}, ${created}, ${bodyKey}, ${text.simhash}::bigint, ${r.level}, ${out.hide})
       on conflict (node_id) do update set edited_at = case when app.gh_posts.body_key = excluded.body_key then app.gh_posts.edited_at else now() end, body_key = excluded.body_key, simhash = excluded.simhash, risk = excluded.risk,
-        agent_id = excluded.agent_id, hidden = app.gh_posts.hidden or excluded.hidden,
+        agent_id = excluded.agent_id, tree_key = coalesce(app.gh_posts.tree_key, excluded.tree_key), hidden = app.gh_posts.hidden or excluded.hidden,
         approved = app.gh_posts.approved and app.gh_posts.body_key = excluded.body_key
       returning id`;
     await t`delete from app.gh_post_domains where post_id = ${post.id}`;
@@ -436,8 +474,11 @@ export async function handle(sql, raw, { key }) {
       const ar = J.risk(std, th);
       const promote = J.passes(std, th) && ar.level !== 'high';
       if (promote) await t`update app.gh_accounts set level = 2 where id = ${acct.id}`;
-      if (ar.level === 'high') out.alert = true;
-      await record(t, out, { action: 'account.first', account: acct.id, scores: std, level: ar.level, effect: promote ? 'promote' : ar.level === 'high' ? 'alert' : 'none', mode });
+      // R-15: this post made the account and gave it agents (or a machine account), and it stays at level 1.
+      const lowOwner = !promote && Boolean(out.ownsAgents);
+      if (ar.level === 'high' || lowOwner) out.alert = true;
+      await record(t, out, { action: 'account.first', account: acct.id, scores: std, level: ar.level,
+        effect: promote ? 'promote' : ar.level === 'high' || lowOwner ? 'alert' : 'none', reason: lowOwner ? 'level1_owner' : '', mode });
       out.level = promote ? 2 : 1;
     } else {
       out.level = acct.level;
@@ -468,6 +509,7 @@ export async function handle(sql, raw, { key }) {
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;
     delete out.replies;
+    delete out.ownsAgents;
     return { ...out, reply };
   });
 }
