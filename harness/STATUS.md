@@ -24,23 +24,23 @@ On delegated authority (D1–D8), the live GitHub path meets 1 of 8 (D3) in its 
 
 ## What is live today
 
-Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless marked.
+Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless marked; rows marked Oct 29 re-read then.
 
 | Part | State | Basis |
 | --- | --- | --- |
-| `main` | `2de478a` (#51 merged Oct 27 00:22 UTC) | Verified, GitHub REST |
+| `main` | `ce55487` (#55 merged Oct 29 03:31 UTC) | Verified Oct 29, GitHub REST |
 | `main`'s rules | Ruleset 25064724, active, no bypass: no deletion, no force-push, PR required, `checks` must pass, 0 approvals | Verified Oct 26 |
 | Site pages, read API, MCP, proposals, daily queue | Live | Verified Oct 24–25 (PLAN.md §2) |
 | GitHub path: giscus on /join and /talk; JEVs workflow | Live, enforce mode since #42 (Oct 24 23:10 UTC) | Verified |
-| JEVs gate `jevs` | Version 4, from `f450b9d`; refusals 401, 401, 405 (re-checked Oct 26). Bundles an older, behaviour-identical copy of `dog-migrate/core.mjs` | Verified |
-| Runner `dog-migrate` | Version 5, from `e11e796` (fix 4) | Verified version; file match inferred |
+| JEVs gate `jevs` | Version 5, from `e05ea6e` (#53); all five files match the merge by SHA-256; refusals 405, 401, 401 | Verified Oct 29 |
+| Runner `dog-migrate` | Version 6 (after #52) | Verified version Oct 29; file match compared by reading, not by script (OPERATIONS.md) |
 | `dog-probe` | Version 2; answers 410 "switched off" | Verified; not in the repo |
-| Database ledger | 001 to 021 (21 rows; `021_signup_level_cap` last) | Verified Oct 27 |
+| Database ledger | 001 to 023 (`023_code_signin` last, applied on #53's merge) | Verified Oct 29 from the runner's answer in the workflow log |
 | Fix 3 in the database | `actor_keys` 1 row, `system_hash` null; functions owned and granted as designed | Verified (OPERATIONS.md, Oct 26) |
 | Site's own tables | 0 members, 0 agents | Verified |
 | Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
-| Site login `dog_web` | Doesn't exist | Verified |
-| Site's own system | Built and tested; switched off (`LAUNCH_STAGE` closed, no database login, no `CRON_SECRET`, no sign-in link on any page) | Verified Oct 25 |
+| Site login `dog_web` | Exists (022, route B); its password in Vault | Verified Oct 27 (OPERATIONS.md) |
+| Site's own system | Built and tested; switched off: `/api/ready` says `stage: closed`, and sign-in answers 503 | Verified Oct 29 |
 | Public text | True: no preview promised, Release 2 "not yet" (#50, read live Oct 26) | Verified live |
 
 ## The fix list
@@ -83,9 +83,10 @@ PRs queue up, each built on the one before and targeting `main` (harness rule 1,
 2. **The route B probe: done Oct 26, on branch `oidc-probe` (no PR).** Vercel's identity token is issued to the project's builds, in team issuer mode, with the claims route B checks (OPERATIONS.md). Production at run time is inferred until fix 5 runs there.
 3. **RK82 (migration 021, PR #51). Done in code, checked live Oct 27 00:22 UTC (OPERATIONS.md); the cap is exercised live only once the site's login exists:** every sign-in level is capped at 1 in the database, with an alert to Aaron; level 2 only through JEVs. This reduces RK82 but doesn't close it (a forged caller can still pass JEVs, about 50 an hour). GitHub-only isn't enforced in code today (it rests on X and email settings being absent); Claude adds a provider allowlist in a later PR. Changed from the plan: neither GitHub-only nor the regional decline can be enforced in the database (RISKS.md RK82).
 4. **5a, the route B connection (moved ahead of the gate hardening, Oct 27):** migration 022 (the site's login), the broker `dog-keys`, `db/sitekeys.js`, `/api/ready`. It delivers the CSO's controls 1, 4, 5 and 8 and R-8's stripping; the site stays closed. Why first: it keeps the site closed and proves the database connection, the biggest unknown; the hardening protects the GitHub path and still merges before 5b. **Done:** #52 merged Oct 27 00:45 UTC; proven live the same day (OPERATIONS.md).
-5. **Sign-in (Aaron, Oct 28), merged in #53 on Oct 29:** 023 applied and `jevs` v5 deployed and verified (OPERATIONS.md); off until go-live, not yet proven live (fix 10). the GitHub username and a key file (hashed in the browser; the file never leaves the device), a one-time code posted through giscus on /join that the JEVs gate confirms, then a 30-day session; later, the same username and file sign in again with no post. Ten wrong files, or "Sign out everywhere", cancel the key file; starting again with a new code returns the person to the same account. Sessions a flat 30 days (023), R-16's speed fix with over-long posts flagged. Then redeploy `jevs`. Stays off until the go-live merge opens the site.
+5. **Sign-in (Aaron, Oct 28), merged in #53 on Oct 29:** 023 applied and `jevs` v5 deployed and verified (OPERATIONS.md); off until go-live, not yet proven live (fix 10). the GitHub username and a key file (hashed in the browser; the file never leaves the device), a one-time code posted through giscus on /join that the JEVs gate confirms, then a 30-day session; later, the same username and file sign in again with no post. Ten wrong files, or "Sign out everywhere", cancel the key file; starting again with a new code returns the person to the same account. Sessions a flat 30 days (023), R-16's speed fix with over-long posts flagged. Stays off until the go-live merge opens the site.
 5b. **JEVs behaviour watch (Aaron, Oct 28), the next PR:** the anomaly checks from Aaron's list that fit a website (concurrent sessions, new networks and countries, failed tries, reaching for admin powers, first-time sensitive actions), alerting only. The privacy page must describe the new sign-in data before go-live (fix 6).
 6. **Gate hardening, the open PR (Claude had parked it; Aaron, Oct 29: "Lets finish so we can open the site"):** R-4 (a tree of sub-agents counts against its top agent's daily limit; over it alerts), R-15 (a level-1 owner of agents alerts), R-6 (agent tag lines named and marked not verified in the read API), R-13 (hidden markup removed from proposals). R-11 dropped by Aaron; R-16 shipped in #53. Then redeploy `jevs`.
+6a. **Sign-in lock-down (the CSO's blocking finding, Oct 29), queued after the gate hardening:** 025 (built and tested, not proven live): `app.sign_in` refuses an administrator, and making someone administrator waits for sign-ins in progress, ends their sessions, revokes their agents' keys and needs exactly one GitHub method, so the site's login can't make or keep Aaron's administrator session; the code and key-file sign-ins are unchanged. The rest of RK82 (non-administrator members) stays open. Also the stale records here, in PLAN.md and FACTS.md. R-8: header stripping (#52) and the last good keys kept when the broker fails (db/sitekeys.js) are done; `system_hash` set in the same transaction goes with the timers in the go-live release.
 7. **5b, the go-live release:** the timers (control 6), the close switch (control 7, R-10), broker alerts (control 3), two-role rotation (control 2), the R-9 heartbeat and R-12 step-up prompt, the pooler address `/api/ready` shows answers, JEVs enforce on the site (fix 7), Aaron as administrator (fix 9), the sign-in link, RELEASE-CHECKLIST.md and SETUP.md rewritten, then the go-live stage. Aaron's merge is the go-live decision. The legal pages (fix 6) go with it or just before.
 8. **Runner and workflow alerts:** R-2, R-3 (source digest), R-7, R-14 (also removes the dead preview code and the setup's database step); the `dog-probe`, `setup-probe` and `oidc-probe` deletions.
 9. **Fix 10:** live proof of every flow, recorded in OPERATIONS.md.

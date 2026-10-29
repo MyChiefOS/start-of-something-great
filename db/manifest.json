@@ -95,6 +95,10 @@
     {
       "version": "024_gh_agent_trees",
       "sha256": "342c7f22350b04270f191fddc0a36d98e2ee0087ca88026f0c061ed3114feb02"
+    },
+    {
+      "version": "025_signin_lockdown",
+      "sha256": "2961d3a119d615ef4efd1347da7343995fe7775de9f427a69fc1e2c5dc9be042"
     }
   ],
   "reset": {

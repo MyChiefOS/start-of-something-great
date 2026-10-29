@@ -77,7 +77,7 @@ The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/
 | Merge the handoff-plan PR: harness/PLAN.md and the reference documents brought in line | Aaron merges | done: PR #44, merged Oct 25 15:52 UTC |
 | Fix 1: the GitHub holes (machine accounts, untagged posts, J10, blank-line slowdown, moderator deletions); redeploy the gate | Claude builds; Aaron merges | done: PR #45 merged Oct 25 18:53 UTC; gate version 4 deployed from `f450b9d`, files identical, refusals 401/401/405 |
 | Fixes 2 to 4: hidden posts kept from agents; the database decides who is acting; the runner allows one site login | Claude builds; Aaron merges | done in code: #47 (fix 2, live, switched off) and #49 (fixes 3 and 4, merged and applied Oct 26; not proven live in use) |
-| PR #50: true public text (R-5); preview retired as a stage; records after #49 | Claude builds; Aaron merges | open |
+| PR #50: true public text (R-5); preview retired as a stage; records after #49 | Claude builds; Aaron merges | done: merged Oct 26 |
 | Then, one PR at a time: the route B probe (closed unmerged); RK82 (new members capped at level 1); gate hardening (R-4, R-11, R-15, R-16, R-6, R-13); fixes 5 and 8 under route B; runner alerts (R-2, R-3, R-7, R-14); R-9, R-10, R-12; fix 6 (legal pages and sign-in link) | Claude builds; Aaron merges | open (harness/STATUS.md, "What is left") |
 | Fix 8: the site's keys and timers, route B (Aaron, Oct 26): made inside the database, nothing pasted | Claude builds; Aaron merges | open (replaces "Vercel settings, Aaron", route A) |
 | Go-live release: fix 7 (site JEVs to enforce), fix 9 (Aaron becomes administrator), then LAUNCH_STAGE public | Claude builds; Aaron's merge is the go-live decision | open |

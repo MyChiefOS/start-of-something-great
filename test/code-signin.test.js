@@ -373,6 +373,18 @@ if (!SERVER) {
     assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' }, 'the administrator signs in with the key file, no post');
     const [adm] = await owner(`select s.member_id from app.sessions s where s.member_id = '${boss.member_id}' order by s.created_at desc limit 1`);
     assert.strictEqual(adm.member_id, boss.member_id, 'into the administrator\'s own account');
+    // 025 (the CSO's review, Oct 29): the site's own role can't sign in an administrator by naming the fingerprint, as
+    // the switched-off GitHub, X and email sign-ins do. The code and key-file sign-ins above still can.
+    const store = require('../db/signin');
+    const [idn] = await owner(`select i.fingerprint as fp from app.identities i where i.member_id = '${boss.member_id}' limit 1`);
+    const [{ n: before }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
+    const direct = await db.tx(web, { actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [idn.fp], keyVersion: 1, level: 1,
+      displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
+    assert.deepStrictEqual(direct, { refused: 'admin_code_only' }, 'refused for an administrator');
+    const [{ n: after }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
+    assert.strictEqual(after, before, 'and no session was made');
+    await assert.rejects(web.begin(async (t) => { await t`set local role dog_app`; await t`select * from app.sign_in_core('github', ${[idn.fp]}::text[], 1::smallint, 1::smallint, 'x', ${'e'.repeat(64)}, 30, null::timestamptz, null::uuid, null)`; }),
+      /permission denied/, 'the site\'s role can\'t call the sign-in role\'s own function');
     await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = false where id = '${boss.member_id}'`); });
     // Deleting the account takes its key file with it.
     await su.unsafe(`delete from app.file_keys where member_id = '${boss.member_id}'`);
@@ -389,6 +401,45 @@ if (!SERVER) {
     await start(jar());
     const [{ old }] = await owner(`select count(*)::int as old from app.code_signins where expires_at < now() - interval '1 hour'`);
     assert.strictEqual(old, 0);
+  });
+
+  test('025: making someone administrator ends their sessions and needs exactly one GitHub method, so no earlier session or linked account becomes the administrator\'s (the CSO\'s review, B1 and B2)', async () => {
+    const store = require('../db/signin');
+    const setAdmin = (id) => su.begin(async (x) => { await x.unsafe('set local role dog_owner'); return (await x`select app.set_administrator(${id}::uuid) as r`)[0].r; });
+    const unAdmin = (id) => su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = false where id = '${id}'`); });
+    const sessions = async (id) => (await owner(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n;
+    const direct = (fp, hash) => db.tx(web, { actor: 'anon' }, (x) => store.signIn(x, { provider: 'github', fingerprints: [fp], keyVersion: 1, level: 1,
+      displayName: 'x', sessionHash: hash, sessionDays: 30 }));
+    // B1: a session the site's role made before the promotion is gone after it.
+    const h1 = c.sha256hex(c.token(32));
+    const x = await direct(sha('github:9101'), h1);
+    assert.ok(x.memberId);
+    assert.strictEqual(await sessions(x.memberId), 1);
+    assert.strictEqual(await setAdmin(x.memberId), 'set');
+    assert.strictEqual(await sessions(x.memberId), 0, 'every session ended at the promotion');
+    assert.deepStrictEqual(await direct(sha('github:9101'), c.sha256hex(c.token(32))), { refused: 'admin_code_only' }, 'and the site\'s role can\'t make a new one');
+    await unAdmin(x.memberId);
+    // B2: an account someone linked another GitHub fingerprint to can't be made administrator.
+    const h2 = c.sha256hex(c.token(32));
+    const y = await direct(sha('github:9102'), h2);
+    const linked = await db.tx(web, { actor: 'member', memberId: y.memberId, session: h2, fresh: true }, (t2) => store.link(t2, { provider: 'github',
+      fingerprints: [sha('github:9103')], keyVersion: 1, level: 1, sessionHash: h2 }));
+    assert.strictEqual(linked.linked, true, 'the link itself still works for the switched-off path');
+    await assert.rejects(setAdmin(y.memberId), /exactly one sign-in method, GitHub/);
+    assert.strictEqual((await owner(`select is_admin from app.members where id = '${y.memberId}'`))[0].is_admin, false, 'nothing changed');
+    // A member who signed in by code: promoted, signed out, then back in with the key file as the administrator.
+    const b = jar();
+    const sp = await start(b, { login: 'promoted', file: FILE_A, ip: '203.0.113.95' });
+    await post(8045, 'promoted', sp.code);
+    assert.strictEqual((await finish(b, { ip: '203.0.113.95' })).signed_in, true);
+    const pm = await me(b);
+    assert.strictEqual(await setAdmin(pm.member_id), 'set');
+    assert.strictEqual((await me(b)).signed_in, false, 'signed out by the promotion');
+    const back = jar(); const r = res();
+    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'promoted', file: FILE_A }, ip: '203.0.113.96' }), r); back.take(r);
+    assert.strictEqual(JSON.parse(r.body).signed_in, true, 'Aaron signs straight back in with his key file');
+    assert.strictEqual((await owner(`select is_admin from app.members where id = '${pm.member_id}'`))[0].is_admin, true);
+    await unAdmin(pm.member_id);
   });
 
   test('sessions last a flat 30 days (Aaron, Oct 28): no idle limit', async () => {

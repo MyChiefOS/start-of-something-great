@@ -316,6 +316,9 @@ test('admin: sets exactly one active member as administrator, and refuses anythi
   const log = logger();
   const id = crypto.randomUUID();
   await su`insert into app.members (id, display_name, trust_level) values (${id}, 'Aaron', 1)`;
+  // 025: the administrator needs exactly one sign-in method, GitHub, the one the account began with.
+  await assert.rejects(s.stepAdmin(su, { memberId: id, log }), /exactly one sign-in method, GitHub/, 'no sign-in method yet');
+  await su`insert into app.identities (member_id, provider, fingerprint, key_version, level) values (${id}, 'github', ${'a'.repeat(64)}, 1, 1)`;
   await assert.rejects(s.stepAdmin(su, { memberId: 'not-an-id', log }), /member_id/);
   await assert.rejects(s.stepAdmin(su, { memberId: crypto.randomUUID(), log }), /no active member/);
   await s.stepAdmin(su, { memberId: id, log });
@@ -331,6 +334,7 @@ test('admin: sets exactly one active member as administrator, and refuses anythi
   assert.strictEqual((await su`select count(*)::int as n from app.audit_log where action = 'admin.set'`)[0].n, 1, 'no second row for a no-op');
   const other = crypto.randomUUID();
   await su`insert into app.members (id, display_name, trust_level) values (${other}, 'Grace', 1)`;
+  await su`insert into app.identities (member_id, provider, fingerprint, key_version, level) values (${other}, 'github', ${'b'.repeat(64)}, 1, 1)`;
   await assert.rejects(s.stepAdmin(su, { memberId: other, log }), /another member is already the administrator/);
   assert.strictEqual((await su`select is_admin from app.members where id = ${other}`)[0].is_admin, false);
 });

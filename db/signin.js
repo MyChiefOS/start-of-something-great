@@ -59,7 +59,7 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
         ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, null::uuid, ${args.region})`);
       return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
     } catch (e) {
-      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
+      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region', 'admin_code_only'].includes(e.message)) return { refused: e.message };
       if (e.code === '23505' && attempt === 0) continue;
       throw e;
     }
