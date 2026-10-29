@@ -139,22 +139,15 @@ test('SNS: a message is trusted only with a good version 2 signature from our to
   assert.deepStrictEqual(sns.suppressions({ Message: fx.complaint('c@example.com') }), [{ address: 'c@example.com', reason: 'complaint' }]);
 });
 
-test('cron: only the exact CRON_SECRET bearer header passes, compared in constant time; no secret means off', async () => {
-  const cfg = ncfg.load({ CRON_SECRET: 'a'.repeat(40) });
-  assert.ok(ncfg.cronOk(cfg, 'Bearer ' + 'a'.repeat(40)));
-  for (const h of ['Bearer ' + 'a'.repeat(39), 'bearer ' + 'a'.repeat(40), 'a'.repeat(40), '', undefined]) assert.ok(!ncfg.cronOk(cfg, h), String(h));
-  assert.strictEqual(ncfg.load({ CRON_SECRET: 'short' }).cronSecret, null, 'a secret under 16 characters is refused');
+test('cron: no timer secret is read or needed (the timer slot, 027); the route says only ok, and never logs a header', async () => {
+  assert.ok(!('cronSecret' in ncfg.load({ CRON_SECRET: 'a'.repeat(40) })), 'CRON_SECRET is no longer read for the timers');
   const cron = require('../api/cron.js');
-  const call = async (cfgX, headers, run = async () => ({})) => {
-    const r = { statusCode: 0, headers: {}, setHeader(k, v) { this.headers[k] = v; }, end(b) { this.body = b; } };
-    await cron.handle({ method: 'GET', headers }, r, run, cfgX);
-    return r;
-  };
-  assert.strictEqual((await call(ncfg.load({}), { authorization: 'Bearer x' })).statusCode, 503);
-  assert.strictEqual((await call(cfg, { authorization: 'Bearer nope' })).statusCode, 401);
+  cron._reset();
+  const r = { statusCode: 0, headers: {}, setHeader(k, v) { this.headers[k] = v; }, end(b) { this.body = b; } };
+  await cron.handle({ method: 'GET', headers: {} }, r, null);
+  assert.deepStrictEqual([r.statusCode, r.body], [503, '{"ok":false}'], 'closed: no database');
   const src = fs.readFileSync(path.join(root, 'api', 'cron.js'), 'utf8') + fs.readFileSync(path.join(root, 'notify', 'config.js'), 'utf8');
-  assert.ok(!/console\.(log|warn|error)\([^)]*(cronSecret|CRON_SECRET|authorization)/i.test(src), 'the secret is never logged');
-  assert.match(src, /timingSafeEqual/);
+  assert.ok(!/console\.(log|warn|error)/.test(src), 'nothing is logged');
 });
 
 test('the log transport sends nothing and logs no address or words; sign-in email waits for real email', async () => {

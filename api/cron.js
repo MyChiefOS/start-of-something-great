@@ -1,15 +1,32 @@
 // Vercel Cron (vercel.json "crons", every minute): /api/cron. Runs the timers (draft expiry, the 90-day check on agents
-// acting alone, the watch and containment, R33 and N8, and JEVs's 24-hour deletion-review timer and mark sweep, PR 12).
-// Notices are in-app only, so nothing is emailed here. Vercel sends "Authorization: Bearer <CRON_SECRET>"; it is
-// compared in constant time and never logged. Delivery is best effort (a run can be missed or arrive twice), and Vercel
-// calls only the production deployment, so every step is safe to repeat and catches up on everything due: the timers
-// take a database lock and skip if another run holds it, and every notice has its own dedupe key. A containment whose
-// time is up also ends when its owner's rules are read or written, so a missed run never makes a pause longer.
+// acting alone, the watch and containment, R33 and N8, JEVs's 24-hour deletion-review timer and mark sweep, PR 12,
+// and the key broker check, 027). Notices are in-app only, so nothing is emailed here.
+// The timer slot (the CSO's control 6, route B; the conditions Aaron accepted on Oct 26, harness/FACTS.md): the address
+// is open to anyone and needs no secret. The database runs the timers as the site itself at most once every 50
+// seconds (app.timers_run, 027). The slot and the timers are one transaction: a failed run's work is undone and recorded, and
+// the slot stays taken for its 50 seconds (the CSO's review of 027, S1), so Vercel Cron's next call retries it.
+// This route:
+//   * replies only {ok:true} (or {ok:false} with 500 when the run failed, and 503 while the site is closed): never
+//     counts or anything else from the run;
+//   * skips the database when this function instance asked under 25 seconds ago;
+//   * passes whether the caller's user-agent is Vercel Cron's ("vercel-cron/1.0") as evidence only: it decides
+//     nothing, and the database alerts Aaron when other callers start the timers often.
+// CRON_SECRET is no longer read here. It is still read by db/index.js for the site itself ("system") as route B's
+// fallback to Vercel settings (route A, CHARTER.md §2), which api/notify.js's bounce handling uses; under route B it is
+// never set and app.actor_keys.system_hash stays empty (RISKS.md RK85).
+// Delivery is best effort (a run can be missed or arrive twice), and every step is safe to repeat and catches up on
+// everything due: the timers take a database lock and skip if another run holds it, and every notice has its own
+// dedupe key. A containment whose time is up also ends when its owner's rules are read or written, so a missed run
+// never makes a pause longer. Past its tree's 90 days, an agent's posts become drafts and the sub-agents it makes
+// draft, even if no timer ran (027); until the timers run, its rules still read "act" on the owner's page and the
+// owner hasn't been told. The timer slot: every run that takes the slot holds it for 50 seconds, a failed one too.
 'use strict';
 
 const db = require('../db');
-const ncfg = require('../notify/config');
 const store = require('../db/notify');
+
+const SKIP_MS = 25_000;
+let lastAsked = 0;
 
 function reply(res, code, body) {
   res.statusCode = code;
@@ -18,20 +35,20 @@ function reply(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
-async function handle(req, res, run, cfg = ncfg.load()) {
+const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.headers['user-agent']) || ''));
+
+async function handle(req, res, run, { now = Date.now } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
-  if (!cfg.cronSecret) return reply(res, 503, { error: 'Timers are not switched on here.' });
-  const h = req.headers && (req.headers.authorization || req.headers.Authorization);
-  if (!ncfg.cronOk(cfg, h)) return reply(res, 401, { error: 'Unauthorized.' });
-  if (!run) return reply(res, 503, { error: 'No database here.' });
-  let timers;
+  if (!run) return reply(res, 503, { ok: false });
+  if (now() - lastAsked < SKIP_MS) return reply(res, 200, { ok: true });
+  lastAsked = now();
+  let out;
   try {
-    timers = await run({ actor: 'system' }, (t) => store.runTimers(t));
+    out = await run({ actor: 'anon' }, (t) => store.timerSlot(t, fromCron(req)));
   } catch {
-    return reply(res, 500, { timers: { error: true } });
+    return reply(res, 500, { ok: false });
   }
-  // Counts only, for the cron log: no words, no secrets.
-  return reply(res, 200, { timers });
+  return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 
 module.exports = async (req, res) => {
@@ -39,7 +56,8 @@ module.exports = async (req, res) => {
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null);
   } catch {
-    if (!res.headersSent) reply(res, 500, { error: 'Something went wrong.' });
+    if (!res.headersSent) reply(res, 500, { ok: false });
   }
 };
 module.exports.handle = handle;
+module.exports._reset = () => { lastAsked = 0; };

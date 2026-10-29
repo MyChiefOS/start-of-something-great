@@ -9,10 +9,16 @@
 //                   a PR that reads the right name (the CLJO's review: X's settings turned out misnamed)
 //   database        the pooler addresses tried, in order, until one logs dog_web in and runs "select 1" ("reached")
 //   stage           the go-live stage, and whether LAUNCH_STAGE is set in Vercel
+//   stage_cap       the highest stage launch-cap.json allows (the close switch, 027's PR): "public" means no effect
+//   timers          the heartbeat (R-9): { last_run_s_ago } since the timers last finished, "never", "closed" while
+//                   the site is closed (the timers don't run then), or "unreadable". A time, nothing else. The uptime
+//                   monitor raises its issue when the site is open and this passes 15 minutes
+//   broker          also "stale" when the broker failed and the site is running on its last good answer (control 4),
+//                   which the uptime monitor reports while the site is open (control 3)
 //   code_signin_keys  whether code sign-in (023) hashes with the JEVs gate's own key: "same_as_gate" when the keys came
 //                   from the broker (route B: the same Vault value), "vercel_settings" when Vercel settings won and may
 //                   differ, so every code claim would fail (the CSO's review, finding 3), "none" without keys
-// It reads no table and changes nothing. One check runs at a time per function instance, and its answer, good or bad,
+// It changes nothing, and reads one time from one table (the heartbeat), only while the site is open. One check runs at a time per function instance, and its answer, good or bad,
 // is kept for a minute, so calling it often costs the database almost nothing (the CSO's review, M2). The pooler
 // address that answered is remembered for the instance, so later checks log in once.
 'use strict';
@@ -59,7 +65,22 @@ function codeKeys(got, env) {
   return env.FINGERPRINT_KEY_1 ? 'vercel_settings' : 'none';
 }
 
-async function check(req, { env = process.env, connect, fetchImpl } = {}) {
+async function heartbeat(env, timersAge) {
+  if (launch.stage(env) !== 'public') return 'closed';
+  try {
+    const age = await timersAge();
+    return age == null ? 'never' : { last_run_s_ago: age };
+  } catch {
+    return 'unreadable';
+  }
+}
+const readAge = () => {
+  const db = require('../db');
+  if (!db.configured()) throw new Error('no database');
+  return db.run({ actor: 'anon' }, (t) => require('../db/notify').timersAge(t));
+};
+
+async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge } = {}) {
   // Noted before ensure(), which removes the token from the request (M3).
   const identityToken = Boolean(req.headers && req.headers['x-vercel-oidc-token']);
   const got = await sitekeys.ensure(req, { force: true, env, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -79,14 +100,16 @@ async function check(req, { env = process.env, connect, fetchImpl } = {}) {
   const keys = got.body ? KEY_NAMES.every((k) => Boolean(env[k] || (got.body.keys && got.body.keys[k]))) : KEY_NAMES.every((k) => Boolean(env[k]));
   return {
     identity_token: identityToken,
-    broker: got.source === 'broker' || got.source === 'cached' ? 'ok' : got.source === 'vercel' ? 'not_used' : (got.error || 'none'),
+    broker: got.source === 'broker' ? 'ok' : got.source === 'cached' ? 'stale' : got.source === 'vercel' ? 'not_used' : (got.error || 'none'),
     keys,
     github_signin: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
     github_setting_names: Object.keys(env).filter((k) => /git_?hub/i.test(k) && /^[A-Z0-9_]{1,64}$/.test(k)).sort(),
     database,
     code_signin_keys: codeKeys(got, env),
     stage: launch.stage(env),
-    launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim())
+    stage_cap: launch.cap(),
+    launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim()),
+    timers: await heartbeat(env, timersAge)
   };
 }
 

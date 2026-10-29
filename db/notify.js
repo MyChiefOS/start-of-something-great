@@ -133,6 +133,20 @@ async function runTimers(t) {
   return r.out;
 }
 
+// The timer slot (027, the CSO's control 6): the timers as the site itself, called by anyone (the site acts as an
+// anonymous visitor here), at most once every 50 seconds; no secret. fromCron is evidence only (Vercel Cron's
+// user-agent): it never decides anything, and runs without it are counted and alert. { ran, why?, failed }.
+async function timerSlot(t, fromCron) {
+  const [r] = await t`select app.timers_run(${fromCron === true}) as out`;
+  return r.out;
+}
+
+// The heartbeat (027, R-9): seconds since the timers last finished, or null if they never have. A time, nothing else.
+async function timersAge(t) {
+  const [r] = await t`select floor(extract(epoch from now() - last_ok_at))::int as age from app.timer_slot limit 1`; // one row; the site may read only last_ok_at
+  return r && r.age != null ? r.age : null;
+}
+
 // ---- Addresses that bounced for good or complained (the site itself), as keyed fingerprints only ----
 // Recorded from a verified SNS message; true if it is new.
 async function suppress(t, { fp, reason }) {
@@ -153,4 +167,4 @@ async function suppressed(t, fps) {
 }
 
 module.exports = { inbox, unread, markRead, reconfirm, actClock, liftDue, myContainment, appeal, appeals, decideAppeal, runTimers,
-  suppress, suppressed };
+  timerSlot, timersAge, suppress, suppressed };

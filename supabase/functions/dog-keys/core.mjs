@@ -48,8 +48,17 @@ export function shape(v) {
   };
 }
 
+// The CSO's control 3 (027): each hand-out, and each failure once the database is reached, adds one to this hour's
+// count (app.broker_note; counts only, never a value). The timers alert Aaron on an unusual hour and on any failure.
+// Counting is best effort: if it fails, the answer is the same. Refused tokens aren't counted here (counting them
+// would let anyone make the broker open database connections); they stay in the function's log.
+async function count(note, outcome) {
+  if (!note) return;
+  try { await note(outcome); } catch { /* the answer never depends on the count */ }
+}
+
 // One request: { method, token } -> { status, body }. verify throws Refused for a token that isn't ours.
-export async function handle({ method, token }, { verify, Refused, values }) {
+export async function handle({ method, token }, { verify, Refused, values, note }) {
   if (method !== 'POST') return { status: 405, body: { ok: false, error: 'POST only' } };
   try {
     await verify(token);
@@ -57,7 +66,18 @@ export async function handle({ method, token }, { verify, Refused, values }) {
     if (Refused && e instanceof Refused) return { status: 401, body: { ok: false, error: 'refused: ' + e.message } };
     throw e;
   }
-  const out = shape(await values());
-  if (out.missing) return { status: 503, body: { ok: false, error: 'not set up', missing: out.missing } };
+  let v;
+  try {
+    v = await values();
+  } catch (e) {
+    await count(note, 'failed');
+    throw e;
+  }
+  const out = shape(v);
+  if (out.missing) {
+    await count(note, 'failed');
+    return { status: 503, body: { ok: false, error: 'not set up', missing: out.missing } };
+  }
+  await count(note, 'handed');
   return { status: 200, body: { ok: true, ...out } };
 }

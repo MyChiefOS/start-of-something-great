@@ -1,0 +1,4 @@
+{
+  "max_stage": "public",
+  "note": "The close switch (launch.js). public: no effect. closed: the site closes at the next deploy, whatever LAUNCH_STAGE says. Change it only by a pull request Aaron merges (OPERATIONS.md, Runbook: close the site now)."
+}

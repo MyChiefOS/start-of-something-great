@@ -75,7 +75,25 @@ function fromEnv() {
 const configured = () => Boolean(process.env.DATABASE_URL) && require('../launch').stage() === 'public';
 
 // What the site's functions call: db.run({ actor: 'member', memberId }, (t) => members.get(t, id)).
-const run = async (ctx, fn) => tx(fromEnv(), ctx, fn);
+// A refused password (the CSO's controls 2 and 4, 027's PR) never cuts the site off: the key broker is asked again and
+// the request is retried once, on the new address (db/sitekeys.js refetch).
+const run = async (ctx, fn) => retryRefused(() => tx(fromEnv(), ctx, fn));
+
+// Postgres's "invalid_password" (28P01), or the pooler's wording of it. Refused at sign-in, before any statement runs,
+// so trying the whole request again is safe.
+const passwordRefused = (e) => Boolean(e) && (e.code === '28P01' || /password authentication failed/i.test(String(e.message || '')));
+async function retryRefused(attempt, { env = process.env, refetch = () => require('./sitekeys').refetch() } = {}) {
+  const used = env.DATABASE_URL;
+  try {
+    return await attempt();
+  } catch (e) {
+    if (!passwordRefused(e)) throw e;
+    // Another request may already have the new password in place; otherwise ask the broker.
+    if (env.DATABASE_URL === used && !(await refetch())) throw e;
+    if (env.DATABASE_URL === used) throw e; // the broker gave the same password: retrying can't help
+    return attempt();
+  }
+}
 
 const ACTORS = ['anon', 'member', 'agent', 'admin', 'system'];
 
@@ -153,4 +171,4 @@ async function ping(url, { connectImpl = connect } = {}) {
   try { const [r] = await sql`select 1 as one`; return Boolean(r && r.one === 1); } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping };
+module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping, retryRefused, passwordRefused };

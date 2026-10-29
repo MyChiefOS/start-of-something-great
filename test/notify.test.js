@@ -633,15 +633,21 @@ test('notices the rest of the system already causes: an upheld report and a brak
   assert.strictEqual((await inbox(reporter)).notices.filter((x) => x.kind === 'brake_on').length, 0, 'a brake for everyone tells nobody one by one');
 });
 
-test('N11: the cron route runs the timers, JEVs\'s deletion-review timer and mark sweep included, only with the right secret', async () => {
+test('N11: the cron route runs the timers, JEVs\'s deletion-review timer and mark sweep included, through the timer slot with no secret (027)', async () => {
   const cron = require('../api/cron.js');
-  const call = async (h) => { const r = res(); await cron.handle({ method: 'GET', headers: { authorization: h } }, r, run, cfg); return { status: r.statusCode, json: JSON.parse(r.body) }; };
-  assert.strictEqual((await call('Bearer wrong')).status, 401);
-  const ok = await call('Bearer ' + SECRET);
-  assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
-  for (const k of ['lifted', 'contained', 'deletion_reviews_disabled', 'marks_swept']) assert.ok(k in ok.json.timers, k);
-  assert.ok(!('email' in ok.json), 'nothing is emailed');
-  assert.ok(!JSON.stringify(ok.json).includes('@'), 'no addresses in what it reports');
+  cron._reset();
+  const call = async () => { const r = res(); await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, r, run); return { status: r.statusCode, body: r.body }; };
+  await asOwner("update app.timer_slot set last_at = null");
+  const ok = await call();
+  assert.deepStrictEqual(ok, { status: 200, body: '{"ok":true}' }, 'only {ok:true}: no counts, nothing emailed, no addresses');
+  // Every timer ran: the slot's run is the same app.run_timers() (027 keeps every part and adds the broker check).
+  const [s] = await q('select last_ok_at is not null as ran, failures from app.timer_slot');
+  assert.deepStrictEqual({ ...s }, { ran: true, failures: 0 });
+  const def = (await q("select prosrc from pg_proc where oid = 'app.run_timers()'::regprocedure"))[0].prosrc;
+  for (const k of ['containment_lift_job', 'drafts_expire_job', 'act_reconfirm_job', 'watch_job', 'deletion_reviews_expire', 'jevs_sweep', 'subagents_expire', 'broker_watch_job']) {
+    assert.ok(def.includes('app.' + k + '()'), k);
+  }
+  cron._reset();
 });
 
 test('F8: deleting an account deletes its notices, its alerts to Aaron and its pauses', async () => {

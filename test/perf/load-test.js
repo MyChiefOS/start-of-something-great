@@ -171,7 +171,7 @@ async function main() {
     // The sub-agent limits (PR 16) are readable by anyone signed in; they are public in the migration.
     const allowed = { members: 1, identities: 1, sessions: 1, subagent_settings: 1 };
     // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not.
-    const PUBLIC_ROWS = { jevs_settings: 1 };
+    const PUBLIC_ROWS = { jevs_settings: 1, timer_slot: 1 }; // timer_slot (027): the heartbeat row, readable by anyone
     let breakinRuns = 0;
     const violations = [];
     const stopAt = Date.now() + SECONDS * 1000;

@@ -102,6 +102,8 @@ One `app.jevs_settings` row (`mode`), changed by migration through the runner. D
 
 **Built Oct 26 (the connection PR; the site stays closed):** migration 022 makes `dog_web` and its password inside the database, in Vault; the broker `dog-keys` (Vercel token checked by `_shared/vercel-oidc.mjs`, production only); the site's `db/sitekeys.js` (asks the broker only while open, keeps the answer, falls back to Vercel settings); `/api/ready`, built to prove each piece live after merge with the site still closed (not yet run). The keys the broker hands out are the three already in Vault, sent as base64 of their exact bytes. Not yet: the timers' slot-gated wrapper, controls 2 and 3 (RK88).
 
+**Built Oct 29 (the pre-opening safety PR, branch `preopen-safety`; not merged, deployed or proven live; the site stays closed):** migration 027's timer slot (`app.timers_run`, owned by the new role `dog_timers`: the timers with no secret, at most once every 50 seconds, the slot and the timers in one transaction); `system_hash` is not needed under route B and stays empty (RK85); broker counts and alerts (control 3); refetch on a refused password (controls 2 and 4; two-role rotation not built, RK88); the close switch (control 7: `launch-cap.json` and db/emergency/close-site-login.sql); the heartbeat and the 90-day check on each agent post (R-9). Proof: test/preopen-safety.test.js. Live proof of the timers waits for go-live (fix 10).
+
 The table below lists what the site reads. Under route B they come from the broker, and Vercel settings are only the fallback. The earlier route A plan (a setup run writing Vercel, with Aaron protecting `production` and adding a token) is not being built.
 
 | Name | What | Notes |

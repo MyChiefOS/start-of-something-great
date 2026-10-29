@@ -9,13 +9,12 @@
 //   SES_SECRET_ACCESS_KEY  its secret
 //   SES_CONFIGURATION_SET  optional: the configuration set that publishes bounces and complaints to SNS
 //   SNS_TOPIC_ARN          the one SNS topic whose bounce and complaint messages we accept
-//   CRON_SECRET            Vercel sends it to /api/cron as "Authorization: Bearer <value>"
+// (CRON_SECRET is no longer read here: the timers run through the database's timer slot with no secret, 027.)
 // (Vercel keeps AWS_* names for its own use, so these use their own names.)
 // Addresses that bounced or complained are kept only as a keyed fingerprint, under the sign-in fingerprint keys Aaron
 // already sets (signin/config.js), with a label of their own, so no new secret is needed.
 'use strict';
 
-const crypto = require('crypto');
 const c = require('../signin/crypto');
 const { logTransport, sesTransport } = require('./transport');
 
@@ -41,20 +40,11 @@ function load(env = process.env) {
     error,
     from: env.SES_FROM || FROM_DEFAULT,
     replyTo: REPLY_TO,
-    topicArn: env.SNS_TOPIC_ARN || null,
-    cronSecret: env.CRON_SECRET && env.CRON_SECRET.length >= 16 ? env.CRON_SECRET : null
+    topicArn: env.SNS_TOPIC_ARN || null
   };
 }
 
 // An address's fingerprint for suppressions, under each sign-in fingerprint key still in use (current key first).
 const suppressionPrints = (keys, address) => c.fingerprints(keys, 'suppress', String(address).trim().toLowerCase());
 
-// Constant-time check of Vercel Cron's header against CRON_SECRET (compared as hashes, so lengths don't leak).
-function cronOk(cfg, header) {
-  if (!cfg.cronSecret || typeof header !== 'string') return false;
-  const want = crypto.createHash('sha256').update('Bearer ' + cfg.cronSecret).digest();
-  const got = crypto.createHash('sha256').update(header).digest();
-  return crypto.timingSafeEqual(want, got);
-}
-
-module.exports = { load, suppressionPrints, cronOk, FROM_DEFAULT };
+module.exports = { load, suppressionPrints, FROM_DEFAULT };

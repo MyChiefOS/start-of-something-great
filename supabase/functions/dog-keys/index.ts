@@ -25,6 +25,10 @@ Deno.serve(async (req) => {
         sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 1, prepare: false, idle_timeout: 5, onnotice: () => {} });
         return read(sql);
       },
+      // The hour's count of hand-outs or failures (027; migration 027 makes app.broker_note). Counts only.
+      note: async (outcome: string) => {
+        if (sql) await (sql as ReturnType<typeof postgres>)`select app.broker_note(${outcome})`;
+      },
     });
     // Who was answered, for the function's log: the outcome only, never a value.
     console.log(JSON.stringify({ broker: out.status, error: (out.body as { error?: string }).error || null }));
