@@ -182,6 +182,10 @@ export async function catalogChecks(sql, { siteLogin = SITE_LOGIN } = {}) {
       (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'app' and (p.proname ilike '%passkey%' or p.proname ilike '%step_up%'))::int as passkey_functions,
       (select count(*) from pg_roles where rolcanlogin and rolname = any (${ROLES}))::int as login_roles,
+      -- Supabase's ensure_rls event trigger and its function, removed for good (Aaron, Oct 16, GAP-44). Named exactly:
+      -- Supabase keeps event triggers of its own (pgrst_ddl_watch and others), which are not ours to judge.
+      ((select count(*) from pg_event_trigger where evtname = 'ensure_rls')
+        + (to_regprocedure('public.rls_auto_enable()') is not null)::int)::int as ensure_rls,
       (select count(*) from pg_roles w where w.rolname = ${siteLogin} and (w.rolsuper or w.rolinherit or w.rolbypassrls or w.rolcreaterole
         or w.rolcreatedb or w.rolreplication
         or exists (select 1 from pg_auth_members a join pg_roles g on g.oid = a.roleid where a.member = w.oid and g.rolname <> 'dog_app')
@@ -198,6 +202,7 @@ export async function catalogChecks(sql, { siteLogin = SITE_LOGIN } = {}) {
   if (r.open_tables) failed.push('row-level security forced on every app table');
   if (r.passkey_objects || r.step_up_triggers || r.passkey_functions) failed.push('no passkey tables, functions or step-up triggers');
   if (r.login_roles) failed.push('no database role of ours can sign in');
+  if (r.ensure_rls) failed.push("Supabase's ensure_rls trigger and public.rls_auto_enable() are gone (GAP-44)");
   if (r.wide_site_login) failed.push('the site login (dog_web) is no wider than dog_app');
   return failed;
 }

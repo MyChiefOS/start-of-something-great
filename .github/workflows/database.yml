@@ -21,7 +21,7 @@ permissions:
   contents: read
   id-token: write # only to ask GitHub for the identity token the runner checks
   pull-requests: write # only to comment the result on the merged pull request
-  issues: write # only for the drift check to add an alert
+  issues: write # for the drift check and the migration run to add an alert (R-2)
 
 # The concurrency group is on the migrate job, not the workflow: GitHub cancels a pending run when another queues in
 # the same group, and a scheduled drift check must never replace a pending migration.

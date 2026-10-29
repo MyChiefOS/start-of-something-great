@@ -7,7 +7,7 @@
 #      its source files on the commit it was deployed from (source-digest.mjs, written by scripts/function-digests.js).
 #      A plain GET (each function's existing 405 refusal; no token, no secret) reads it, and it must equal main's.
 #      It proves which source version is deployed, not that nobody changed the deployed code while keeping the
-#      digest file (RISKS.md RK71). dog-probe, deployed from outside the repository, is reported while it answers.
+#      digest file (RISKS.md RK91). dog-probe, deployed from outside the repository, is reported while it answers.
 #   2. Dependency audit (R-7). npm audit on package-lock.json, and on the npm packages the Edge Functions import
 #      (npm:name@version in their code), against the public advisory database. It alerts; it never opens a PR.
 #

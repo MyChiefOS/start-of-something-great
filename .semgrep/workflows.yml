@@ -16,3 +16,18 @@ rules:
   - metavariable-regex:
       metavariable: $SHELL
       regex: '[\s\S]*\$\{\{\s*(github\.event\.|github\.event\[|github\.head_ref|inputs\.)'
+# The same for actions/github-script, whose script: is JavaScript run in the job (the CSO's review, Oct 29). No
+# workflow here uses it today; this keeps it that way unless the event text goes through env: first.
+- id: dayonegreat.workflows.no-event-text-in-script
+  message: >-
+    Text from the triggering event or a workflow input, written into an actions/github-script script: with ${{ }},
+    becomes part of the JavaScript before it runs, so whoever wrote that text could run code in the job. Pass it
+    through env: and read process.env.
+  languages: [yaml]
+  severity: ERROR
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern: 'script: $JS'
+  - metavariable-regex:
+      metavariable: $JS
+      regex: '[\s\S]*\$\{\{\s*(github\.event\.|github\.event\[|github\.head_ref|inputs\.)'

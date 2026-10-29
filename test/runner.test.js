@@ -261,6 +261,15 @@ if (!SERVER) {
       }).catch((e) => { if (e.message !== 'roll back') throw e; });
       assert.deepStrictEqual(flagged, ['row-level security forced on every app table']);
       assert.deepStrictEqual(await core.catalogChecks(sql), [], 'nothing was changed');
+      // GAP-44: Supabase's ensure_rls event trigger, put back by hand, is a failed check (so it alerts); rolled back.
+      await sql.begin(async (t) => {
+        await t.unsafe(`create function public.rls_auto_enable() returns event_trigger language plpgsql as $$ begin end $$;
+          create event trigger ensure_rls on ddl_command_end execute function public.rls_auto_enable()`);
+        flagged = await core.catalogChecks(t);
+        throw new Error('roll back');
+      }).catch((e) => { if (e.message !== 'roll back') throw e; });
+      assert.deepStrictEqual(flagged, ["Supabase's ensure_rls trigger and public.rls_auto_enable() are gone (GAP-44)"]);
+      assert.deepStrictEqual(await core.catalogChecks(sql), [], 'nothing was changed');
     });
   });
 
