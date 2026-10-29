@@ -22,7 +22,7 @@ At his first code sign-in on /join after opening (028; fix 9). He types his GitH
 
 ## Backups and the restore test (O2)
 
-Before opening, Claude confirms read-only that Supabase backups are on and records it in OPERATIONS.md. The **Restore test** workflow needs `MIGRATION_DATABASE_URL`, which doesn't exist, so it can't run. A restore drill that needs no pasted secret is Claude's, after fix 10 (harness/PLAN.md).
+Supabase backups are on: the Pro plan, daily, with 7 days restorable (confirmed read-only Oct 29, OPERATIONS.md); after a restore, the site's login needs a new password (runbook step 3b). The **Restore test** workflow needs `MIGRATION_DATABASE_URL`, which doesn't exist, so it can't run. A restore drill that needs no pasted secret is Claude's, after fix 10 (harness/PLAN.md).
 
 ## The Production setup workflow
 

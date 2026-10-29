@@ -130,7 +130,7 @@ Run once on production and record in OPERATIONS.md: sign-in and JEVs' first chec
 
 ### Claude's commitments from the risk sign-off PR (RISKS.md)
 
-Before opening: confirm read-only that Supabase backups are on (RK12); check read-only, by requesting a generated deployment address, that Deployment Protection covers it, and log it (RK68); a test bounding /api/status's cache (RK70). Before go-live: two-role rotation, refetch on a refused password (RK88). First week live: report the deletion-review queue's size from read-only checks (RK25). After the first weeks: propose tuned watch and sub-agent limits by migration PR (RK37, RK39). Later PRs: a phase-1 provider allowlist (RK82), the jevs.yml `updated_at` fix (RK72).
+Before opening: confirm read-only that Supabase backups are on (RK12; **done Oct 29**: Pro plan, daily, 7 days, OPERATIONS.md); check read-only, by requesting a generated deployment address, that Deployment Protection covers it, and log it (RK68; **done Oct 29**: previews protected, production deployments' own addresses public, OPERATIONS.md); a test bounding /api/status's cache (RK70). Before go-live: two-role rotation, refetch on a refused password (RK88). First week live: report the deletion-review queue's size from read-only checks (RK25). After the first weeks: propose tuned watch and sub-agent limits by migration PR (RK37, RK39). Later PRs: a phase-1 provider allowlist (RK82), the jevs.yml `updated_at` fix (RK72).
 
 ### After fix 10 (owner named, not yet scheduled)
 

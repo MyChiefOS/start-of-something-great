@@ -19,8 +19,8 @@ Nothing to set up by hand under route B. The site's database login and keys are 
 
 - [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): not needed in phase 1. People sign in with a code posted through giscus and a key file (023; Aaron, Oct 28).
 - [x] **The `production` environment and the first setup run**: no longer needed (route B; the setup run's database step was removed in R-14).
-- [ ] **Backups** (O2; RISKS.md RK12): before opening, Claude confirms read-only that Supabase backups are on and records it in OPERATIONS.md. A restore drill that needs no pasted secret is Claude's, after fix 10.
-- [ ] **Deployment Protection** (RK68): before opening, Claude checks read-only that it covers generated deployment addresses. Only if it is off: turning it on is a Vercel setting Claude can't reach, for Aaron.
+- [x] **Backups** (O2; RISKS.md RK12): confirmed read-only Oct 29: the Pro plan, backed up daily with 7 days restorable (OPERATIONS.md). A restore drill that needs no pasted secret is Claude's, after fix 10.
+- [x] **Deployment Protection** (RK68): checked read-only Oct 29: previews are protected; production deployments' own generated addresses are public. That matters only after stepping back from public, and the runbook's close covers it (a new password for the site's login). Covering production addresses too is a Vercel setting Claude can't reach: optional, Aaron's.
 - [ ] **`LAUNCH_STAGE` in Vercel**: inferred unset (the setup run that would have set it never ran). If the site still says `closed` after the go-live merge, that setting is the cause and is removed in Vercel (for Aaron, as Claude's connector can't see the project).
 - Not in phase 1: the X sign-in app (SIGNIN-SETUP.md) and email sign-in links (EMAIL-SETUP.md).
 
