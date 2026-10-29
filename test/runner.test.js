@@ -316,7 +316,13 @@ if (!SERVER) {
   test('row 15: the way back works: the Oct 23 build can be rebuilt exactly over the fresh build', async () => {
     await withDatabase(async (sql) => {
       await buildLive(sql);
-      await core.run(sql, await freshBuild(), claims());
+      // Built through 027, the last migration before go-live: 028 changes a JEVs setting, which the audit log records,
+      // and the fresh-build reset rightly refuses a database with any row in it. The way back is for before go-live
+      // only (after it, real rows are there anyway), and production's manifest no longer has a reset entry (R-14).
+      const upTo = (v) => core.load((p) => (p === 'db/manifest.json'
+        ? JSON.stringify({ ...JSON.parse(local(p)), migrations: JSON.parse(local(p)).migrations.filter((m) => m.version <= v), reset: oct24Reset() })
+        : local(p)));
+      await core.run(sql, await upTo('027_preopen_safety'), claims());
       const back = newList().find((x) => x[0] === '015_change_log');
       const rollback = await core.load((p) => (p === 'db/manifest.json'
         ? liveManifest({ reset: { ...oct24Reset(), when: { version: back[0], sha256: back[1] } } })

@@ -7,6 +7,10 @@
 // LOAD_TEST_ANY_HOST=1 is set (and then it requires an encrypted connection). Never point it at the preview or production.
 'use strict';
 
+// A post JEVs challenged or held for its owner (enforce mode, 028): accepted and waiting, saying so. That is the
+// system working, not an error; the load run still counts every other answer.
+const challenged = (r) => r.statusCode === 202 && (/"challenge":"/.test(r.body) || /our automatic checks \(JEVs\)/.test(r.body));
+
 const { promote } = require('../helpers');
 const crypto = require('crypto');
 const postgres = require('postgres');
@@ -126,12 +130,14 @@ async function main() {
         const m = pick(members.filter((x) => x.level === 2));
         const r = res(); await feed.handle(request('POST', '/api/feed', { cookie: m.cookie, json: { body: 'load ' + crypto.randomUUID() } }), r, run);
         if (r.statusCode === 201) live.push(JSON.parse(r.body).id);
-        return [r.statusCode === 201, r.statusCode + ' ' + r.body.slice(0, 80)];
+        // In enforce mode (028) JEVs may challenge a post from a burst of new accounts: a 202 naming the challenge is
+        // the system working, not an error.
+        return [r.statusCode === 201 || challenged(r), r.statusCode + ' ' + r.body.slice(0, 80)];
       }],
       [15, 'agent posts or drafts', async () => {
         const a = pick(agents);
         const r = res(); await feed.handle(request('POST', '/api/feed', { key: a.key, json: { body: 'agent load ' + crypto.randomUUID() } }), r, run);
-        return [r.statusCode === (a.acts ? 201 : 202), r.statusCode + ' ' + r.body.slice(0, 80)];
+        return [r.statusCode === (a.acts ? 201 : 202) || challenged(r), r.statusCode + ' ' + r.body.slice(0, 80)];
       }],
       [6, 'owner checks the inbox and approves', async () => {
         const a = pick(agents.filter((x) => !x.acts));

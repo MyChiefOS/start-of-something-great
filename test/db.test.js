@@ -225,7 +225,12 @@ async function newMember(name) {
 // An administrator: a member the database owner made one (as the setup run does), acting with their own session.
 async function newAdmin(name) {
   const m = await newMember(name);
-  await su.begin(async (t) => { await t`set local role dog_owner`; await t`update app.members set is_admin = true where id = ${m.id}`; });
+  // At most one administrator (028): the one made before is no longer one.
+  await su.begin(async (t) => {
+    await t`set local role dog_owner`;
+    await t`update app.members set is_admin = false where is_admin`;
+    await t`update app.members set is_admin = true where id = ${m.id}`;
+  });
   return m;
 }
 // A member who joined through the sign-in function itself, at a verified level (an agent's owner needs level 2).

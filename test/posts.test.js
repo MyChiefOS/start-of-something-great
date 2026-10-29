@@ -116,7 +116,7 @@ async function member(level = 1, name = 'New member') {
 let reviewer;
 const makeReviewer = async () => {
   const r = await member(2, 'Reviewer');
-  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${r.id}'`); });
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe('update app.members set is_admin = false where is_admin'); await t.unsafe(`update app.members set is_admin = true where id = '${r.id}'`); });
   return r;
 };
 const asReviewer = async (sqlText) => { reviewer = reviewer || await makeReviewer(); return su.begin(async (t) => {
@@ -138,8 +138,10 @@ test('F6: level 0 and 1 posts wait until the author has 3 live posts; level 2 an
   const two = await member(2);
   assert.strictEqual((await run(two.ctx, (t) => posts.create(t, { body: 'verified' }))).status, 'live');
   const aaron = await member(1);
-  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe('update app.members set is_admin = false where is_admin'); await t.unsafe(`update app.members set is_admin = true where id = '${aaron.id}'`); });
   assert.strictEqual((await run({ ...aaron.ctx, actor: 'admin' }, (t) => posts.create(t, { body: 'from Aaron' }))).status, 'live');
+  // At most one administrator (028): the reviewer the other tests act as is the administrator again.
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe('update app.members set is_admin = false where is_admin'); await t.unsafe(`update app.members set is_admin = true where id = '${reviewer.id}'`); });
 });
 
 test('S2, S3: nobody sets a post\'s status, author or lane, posts for someone else, or posts without being signed in', async () => {

@@ -417,6 +417,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
   let w2;
   try {
     await migrate(s2);
+    await shadowMode(s2);
     await s2.unsafe(`create role ${W2} login noinherit password '${PW}'; grant dog_app to ${W2}`);
     w2 = db.connect(at(SERVER, D, W2, PW), { ssl: false, max: 2 });
     const r2 = (ctx, fn) => db.tx(w2, ctx, fn);
