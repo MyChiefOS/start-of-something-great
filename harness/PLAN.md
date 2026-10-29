@@ -89,6 +89,8 @@ Today `db/index.js:107-124` sets `app.actor`, `app.member_id`, `app.agent_id` an
 
 ### Fix 7: site JEVs mode to enforce. Claude, migration. Confidence high.
 
+**Built Oct 29 (028, the go-live PR, branch `go-live`; not merged or proven live):** one `app.jevs_settings` update to `enforce`. Tests of the features under JEVs run their database in shadow mode (test/helpers.js `shadowMode`); test/code-signin.test.js checks the migrations leave enforce on.
+
 **Oct 26:** moved into the go-live release with fix 9 and `LAUNCH_STAGE`, as this section already says: making enforce the default changes behaviour many tests rely on, and it matters only once the site opens.
 
 One `app.jevs_settings` row (`mode`), changed by migration through the runner. Do it in the same release as go-live, so first posts are never left waiting for Aaron.
@@ -116,7 +118,9 @@ The table below lists what the site reads. Under route B they come from the brok
 | `X_CLIENT_ID`/`X_CLIENT_SECRET`, `EMAIL_TRANSPORT`, `SES_*` | Leave unset | Phase 1 is GitHub only |
 | `LAUNCH_STAGE` | `public` | Aaron's go-live decision, last |
 
-### Fix 9: Aaron becomes administrator before sign-up opens. Aaron's decision, then Claude.
+### Fix 9: Aaron becomes administrator. Recommended by Claude in the go-live PR, decided by Aaron's merge.
+
+**Built Oct 29 (028, the go-live PR; not merged or proven live):** at his first code sign-in after opening, if nobody is administrator yet: the JEVs gate marks a claim by the founder's account (ID 304218593), and `app.code_sign_in` calls `app.founder_promote` (025's checks: exactly one GitHub method, earlier sessions end, agent keys revoked), then signs the browser in again as administrator. A refused promotion signs him in as a member and is recorded; a unique index allows one administrator. Until his first sign-in the site has no administrator (RISKS.md RK92). The two options below needed a preview window or a hand step; this needs neither.
 
 `app.set_administrator` exists (`013_setup_audit.sql:15-31`). Options: a short window where Aaron signs in first and Claude sets him by migration before `LAUNCH_STAGE` goes public, or set right after opening. No preview (Aaron, Oct 24).
 
@@ -134,7 +138,7 @@ Link the site's and GitHub's agent registries (today a ban in one doesn't reach 
 
 ## 4. Open decisions for Aaron
 
-1. How Aaron becomes administrator before sign-up opens (fix 9).
+1. How Aaron becomes administrator (fix 9): recommended in the go-live PR (at his first code sign-in after opening), decided by its merge.
 2. How email erasure requests are carried out (privacy promises erasure; nothing is built).
 3. What the regional decline means for posts made directly on GitHub (the gate can't know a poster's country; they are stored today).
 4. ~~Whether untagged posts from a linked machine account are hidden~~ Decided Oct 25 under Aaron's instruction "implement whats honest and hold true to my intent… what would the CLJO do?": alert, never hide (checks alert, never lock out). See FACTS.md.

@@ -1,37 +1,38 @@
 # Release checklist (SF6)
 
-Everything that needs Aaron for Release 2, in one place. Claude never sees, handles or types any secret. Release 2 stays off until the go-live stage (launch.js) moves from `closed` (the default) to `public`, which is Aaron's go-live decision. There is no preview stage (Aaron, Oct 24: "NO preview systems"); `preview` counts as closed. Under route B (Oct 26) the remaining steps are Claude's PRs; Aaron approves them.
+Rewritten Oct 29, 2026 for the go-live release. Everything Release 2 needs, in one place. Under route B (Oct 26) every step is a pull request Claude builds and Aaron merges; Aaron's merge of the go-live PR is the go-live decision. Claude never sees, handles or types a secret. There is no preview stage (Aaron, Oct 24: "NO preview systems").
 
-Decided on Oct 16 and recorded in CHARTER.md section 2, so no longer on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the fresh build of Oct 24 removed it; since the runner-alerts PR, the runner's checks alert if it comes back), notices in-app only, and the regional gate in code.
+Decided on Oct 16 and recorded in CHARTER.md section 2, so not on this list: criteria A1 to A6, the F4 wording, agent-to-agent replies with a depth limit, removing Supabase's `ensure_rls` trigger (the fresh build of Oct 24 removed it; since the runner-alerts PR, the runner's checks alert if it comes back), notices in-app only, and the regional gate in code.
 
 ## Decisions
 
-- [ ] Sign off each row of the risk register (RISKS.md), or ask for a fix, including RK62 (who may delete an account).
-- [ ] Approve criteria N1 to N11, R16 and R33 (ACCEPTANCE.md), and the watch's starting limits (RISKS.md RK37).
-- [ ] Linking a new sign-in method signs out the session that linked it (PR 15): keep it, or say so.
+All by merge, in this order (each PR names its own decision first):
+
+- [ ] #56 to #59: the gate hardening, the sign-in lock-down, the behaviour watch, the runner alerts (#59 rewords GAP-44's charter row).
+- [ ] #60: the risk sign-off (RISKS.md): every open row, with RK62's 24-hour rule, the public JEVs thresholds and RK82's option not taken now.
+- [ ] #61: the pre-opening safety release (it rewords the Oct 26 timer condition: a failed run waits for the next slot).
+- [ ] The go-live PR: the site opens, its JEVs enforces, and Aaron becomes administrator at his first code sign-in (fix 9, as recommended there).
 
 ## Accounts and settings
 
-All from GitHub, nothing on your computer: **SETUP.md** has every step and marks each value only you can supply.
+Nothing to set up by hand under route B. The site's database login and keys are made inside the database and reached through the key broker (db/README.md); the timers need no secret (027); the stage comes from the repository's `launch.json`.
 
-1. [ ] **The `production` environment** with you as required reviewer, administrator bypass off, `main` only, and its three secrets (SETUP.md, steps 1 and 2).
-2. [ ] **First setup run, still closed** (SETUP.md, step 3): migrations, the site's login role, `DATABASE_URL`, the sign-in keys and `CRON_SECRET`, the coverage check. You read the run's plan before approving it. The site doesn't change.
-3. [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): done Oct 16.
-4. [ ] **The X sign-in app** and its spending limit (SIGNIN-SETUP.md).
-5. [x] ~~Open the preview for yourself~~: removed Oct 26, 2026. There is no preview stage (Aaron, Oct 24). Making Aaron administrator is fix 9 (harness/PLAN.md), whose method is his open decision.
-6. [ ] **Email sign-in links** (EMAIL-SETUP.md, Amazon SES): your AWS account with SES production access, and the SPF, DKIM and DMARC records.
-7. [ ] **Backups** (O2): confirm backups are on in Supabase, and run the **Restore test** workflow (SETUP.md, step 7); record both in OPERATIONS.md.
-8. [x] ~~Before go-live: enrol two passkeys~~: removed Oct 24, 2026: Aaron's instruction, passkeys dropped.
-9. [ ] **GitHub housekeeping:** turn on "Automatically delete head branches" and delete the branches that are fully merged (OPERATIONS.md lists them). Never delete a branch whose work isn't in main.
+- [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): not needed in phase 1. People sign in with a code posted through giscus and a key file (023; Aaron, Oct 28).
+- [x] **The `production` environment and the first setup run**: no longer needed (route B; the setup run's database step was removed in R-14).
+- [ ] **Backups** (O2; RISKS.md RK12): before opening, Claude confirms read-only that Supabase backups are on and records it in OPERATIONS.md. A restore drill that needs no pasted secret is Claude's, after fix 10.
+- [ ] **Deployment Protection** (RK68): before opening, Claude checks read-only that it covers generated deployment addresses. Only if it is off: turning it on is a Vercel setting Claude can't reach, for Aaron.
+- [ ] **`LAUNCH_STAGE` in Vercel**: inferred unset (the setup run that would have set it never ran). If the site still says `closed` after the go-live merge, that setting is the cause and is removed in Vercel (for Aaron, as Claude's connector can't see the project).
+- Not in phase 1: the X sign-in app (SIGNIN-SETUP.md) and email sign-in links (EMAIL-SETUP.md).
 
-## Legal (Aaron approves, with legal review)
+## Legal
 
-- [ ] L1: terms of service, content policy and privacy policy published on the site.
-- [ ] L2: the privacy policy covers which verified accounts we check, what we keep and how to delete it: JEVs's checks, the deletion review and legal hold, the traveller notice, in-app notices, and, once built, Stripe Identity's reference and result (never the images). db/README.md ("Your account and deleting it") lists what it must say, including RISKS.md RK8 to RK10.
-- [ ] The terms say owners answer for their agents and define "approved" (Delegated Agency plan).
-- [ ] L3: confirm CONTENT-LICENSE.md is current.
+- [x] L1: terms of service, content policy and privacy policy published on the site (#55; the CLJO's accuracy review, not a lawyer's).
+- [x] L2: the privacy policy covers sign-in, the key file, sessions, the behaviour watch's keyed hashes and the rate limits (#55, #58, #60); db/README.md ("Your account and deleting it") lists what it must say, including RISKS.md RK8 to RK10.
+- [ ] L3: confirm CONTENT-LICENSE.md is current (Claude, in fix 10's records).
 
 ## Go live
 
-- [x] ~~Test the preview yourself~~: removed Oct 26, 2026 (no preview stage). Every automated gate stays green; fix 10's live proof is Claude's (harness/PLAN.md).
-- [ ] Give the go-live decision: run Production setup with the stage `public`. Nothing goes public before it.
+- [ ] Aaron merges the go-live PR: that is the go-live decision. Nothing goes public before it.
+- [ ] Claude carries out its on-merge steps (OPERATIONS.md): the runner applies 028, `jevs` is redeployed and compared with the merge, and the live answers are checked read-only.
+- [ ] Aaron's first code sign-in on /join makes him administrator (RISKS.md RK92); Claude records it.
+- [ ] Fix 10: Claude proves every flow live and records it in OPERATIONS.md (harness/PLAN.md).
