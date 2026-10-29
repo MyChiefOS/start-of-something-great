@@ -10,6 +10,11 @@
 //   * The token is removed from the request as soon as it is read, so no later code can echo or forward it (M3).
 //   * The site's settings are written only while the site is open (launch.js stage "public"). The readiness check
 //     (/api/ready) can ask the broker while closed, but its answer stays inside the check (L2).
+//   * The CSO's controls 2 and 4, a refused password never cuts the site off (027's PR): if the database refuses the
+//     site's password (a rotation reached the database before this instance's next refresh), db/index.js calls
+//     refetch(), which asks the broker again at once, and retries the request once on the new address. For that, the
+//     latest identity token is kept in this file's memory for at most 50 minutes (Vercel's are valid for two hours and
+//     meant to be reused); it is sent only to the broker's fixed address, never logged, replied or forwarded.
 // The values are kept only in this function instance's memory (process.env, where the rest of the site already reads
 // them; the address through db/index.js, G1), never written to a log, a file or a reply.
 'use strict';
@@ -17,10 +22,13 @@
 const BROKER = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-keys';
 const REFRESH_MS = 10 * 60_000;
 const TIMEOUT_MS = 3000;
+const TOKEN_KEEP_MS = 50 * 60_000;
 
 let last = null; // { at, body }
 let applied = null; // { url, keys: {name: value} } what this instance put in place from the broker
 const inflight = new Map(); // token -> promise, so one bad token can't fail another request (L1)
+let kept = null; // { token, at }: the latest identity token, only while open, for refetch()
+let refetching = null;
 
 function urlFor(d, host) {
   const u = new URL('postgres://' + host + ':' + d.port + '/' + d.database);
@@ -81,6 +89,7 @@ function askOnce(token, fetchImpl) {
 async function ensure(req, { fetchImpl = fetch, force = false, env = process.env, stage = () => require('../launch').stage(env) } = {}) {
   const token = takeToken(req);
   const open = stage() === 'public';
+  if (open && token) kept = { token, at: Date.now() };
   if (require('./index').hasAddress(env) && !applied && !last) return { source: 'vercel' };
   if (!open && !force) return { source: 'closed' };
   const use = (body, source, extra = {}) => { if (open) apply(body, env); return { source, body, ...extra }; };
@@ -95,11 +104,33 @@ async function ensure(req, { fetchImpl = fetch, force = false, env = process.env
   }
 }
 
+// After the database refused the site's password: asks the broker again at once (ignoring the 10-minute cache) and
+// puts its answer in place. True when it got an answer, so the caller retries on whatever address is now set; false
+// when there is nothing to ask with (closed, Vercel's settings in use, no recent token) or the broker failed. One ask
+// at a time per instance: concurrent refusals share it.
+async function refetch({ fetchImpl = fetch, env = process.env, stage = () => require('../launch').stage(env) } = {}) {
+  if (stage() !== 'public' || !applied || !kept || Date.now() - kept.at > TOKEN_KEEP_MS) return false;
+  if (!refetching) {
+    const token = kept.token;
+    refetching = (async () => {
+      try {
+        const body = await askOnce(token, fetchImpl);
+        last = { at: Date.now(), body };
+        apply(body, env);
+        return true;
+      } catch {
+        return false;
+      }
+    })().finally(() => { refetching = null; });
+  }
+  return refetching;
+}
+
 // For /api/ready: every pooler address the broker named, each with the login it gave.
 function candidates(body = last && last.body) {
   return body ? body.database.hosts.map((h) => ({ host: h, url: urlFor(body.database, h) })) : [];
 }
 
-const _reset = () => { last = null; applied = null; inflight.clear(); };
+const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; };
 
-module.exports = { ensure, candidates, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, BROKER, _reset };

@@ -50,8 +50,25 @@ const CHECKS = [
     name: 'Sign-in start', path: '/auth/github/start', init: { redirect: 'manual' },
     test: (r, t) => ([302, 303].includes(r.status) && [GITHUB_AUTHORIZE, '/join?', '/join#'].some((p) => header(r, 'location').startsWith(p) || header(r, 'location') === '/join'))
       || (r.status === 503 && t === 'Sign-in is not switched on here yet.')
+  },
+  {
+    // R-9, the heartbeat (027's PR): once the site is open, the timers must have finished within 15 minutes
+    // (/api/ready's "timers"). While it is closed the timers don't run, so this isn't asked (and /api/ready, which asks
+    // the key broker, isn't called). It only opens the uptime issue; nothing is stopped.
+    name: 'Timers heartbeat', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
+    test: (r, t) => {
+      const timers = r.status === 200 ? JSON.parse(t).timers : null;
+      return Boolean(timers) && typeof timers.last_run_s_ago === 'number' && timers.last_run_s_ago <= HEARTBEAT_S;
+    }
+  },
+  {
+    // The CSO's control 3 (027's PR): once the site is open, the key broker answers ("ok"), or isn't used because
+    // Vercel's settings are (route A). "stale" means the site is running on the last good keys after a broker failure.
+    name: 'Key broker', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
+    test: (r, t) => r.status === 200 && ['ok', 'not_used'].includes(JSON.parse(t).broker)
   }
 ];
+const HEARTBEAT_S = 15 * 60;
 
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize?';
 
@@ -60,6 +77,7 @@ function header(r, name) {
 }
 
 async function runOnce(check, fetchImpl, ctx = {}) {
+  if (check.when && !check.when(ctx)) return { ok: true, status: 'not asked', ms: 0 }; // e.g. the site's own system while closed
   const started = Date.now();
   try {
     const r = await fetchImpl(SITE + check.path, { ...(check.init || {}), signal: AbortSignal.timeout(10000) });
@@ -129,4 +147,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error(e.message); process.exit(1); });
 
-module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED };
+module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED, HEARTBEAT_S };

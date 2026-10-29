@@ -70,8 +70,9 @@ async function ledger(t) {
 }
 
 const LOCK = 'dayonegreat.migrate';
-// The roles the migrations use. None may sign in.
-const ROLES = ['dog_owner', 'dog_app', 'dog_public', 'dog_signin', 'dog_jevs', 'dog_limits', 'dog_delegate', 'dog_erase'];
+// The roles the migrations use. None may sign in. (dog_timers, 027, may make the site's own stamp inside its one
+// function, so a login on it would be the site itself with no secret: it is checked here every day.)
+const ROLES = ['dog_owner', 'dog_app', 'dog_public', 'dog_signin', 'dog_jevs', 'dog_limits', 'dog_delegate', 'dog_erase', 'dog_timers'];
 // The site's own database login (harness/PLAN.md fix 5). It is the one role of ours that may sign in, and only this
 // narrow (fix 4): no rights of its own (noinherit), not a superuser, can't skip row-level security, make roles or
 // databases or replicate, and belonging to dog_app alone, which it switches to for every request (db/index.js).

@@ -15,7 +15,11 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers'];
+// 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
+// no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
+// function, app.timers_run, the slot-gated wrapper.
+const TIMERS = 'dog_timers';
 // Narrow roles that only act inside their own reviewed functions (below). dog_limits (PR 6) only counts, inside the
 // two emergency-brake checks; dog_erase (PR 8) only deletes, inside the one account-deletion function.
 // dog_delegate (PR 7) only turns an approved draft into a post, inside app.approve_draft. dog_jevs (PR 12) only gathers
@@ -62,7 +66,8 @@ const DEFINERS = {
   'app.gh_hidden(text[])': 'dog_jevs',
   // Fix 3 (019, Oct 26, 2026): the database decides who is acting. The stamp is made only by the sign-in role and the
   // owner; any role that runs checks of who is acting may test one; only the site's role may ask to act as someone.
-  'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner' },
+  // 027: and dog_timers, whose one function (app.timers_run) stamps the site itself around the timers.
+  'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner,dog_timers' },
   'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_public' },
   'app.act_as(text, uuid, uuid, boolean, text, text, text)': 'dog_signin',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
@@ -111,7 +116,9 @@ const DEFINERS = {
   // 026 (Aaron, Oct 28): the JEVs behaviour watch. Alerts only.
   'app.watch_signin(text, text)': 'dog_signin',
   'app.watch_reach(text)': 'dog_signin',
-  'app.watch_first(text)': 'dog_jevs'
+  'app.watch_first(text)': 'dog_jevs',
+  // 027 (the CSO's control 6): the timers, at most once every 50 seconds, with no timer secret on the site.
+  'app.timers_run(boolean)': 'dog_timers'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -197,7 +204,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -286,6 +293,18 @@ async function problems(sql, { snapshot } = {}) {
   for (const role of ACTING) {
     const owned = await sql`select count(*)::int as n from pg_class where relowner = (select oid from pg_roles where rolname = ${role})`;
     if (owned[0].n) add(role + ' owns ' + owned[0].n + ' tables or other objects; an owner can switch off policies and triggers (S7)');
+  }
+  // 027: the timers' role may make the site's own stamp, so it must stay exactly as narrow as it was made.
+  const timers = roles.find((r) => r.name === TIMERS);
+  if (!timers) add('the ' + TIMERS + ' role must exist (027)');
+  else {
+    for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (timers[k]) add(TIMERS + ' can ' + label + '; it must not (027)');
+    if (timers.member_of.join() !== 'dog_app') add(TIMERS + ' belongs to ' + (timers.member_of.join(', ') || 'no role') + '; it must belong to dog_app only (027)');
+    const holders = roles.filter((x) => x.member_of.includes(TIMERS)).map((x) => x.name);
+    if (holders.length) add(holders.join(', ') + ' can act as ' + TIMERS + '; no role may (027)');
+    const [own] = await sql`select coalesce(array_agg(p.oid::regprocedure::text order by 1), '{}') as fns from pg_proc p
+                            where p.proowner = (select oid from pg_roles where rolname = ${TIMERS})`;
+    if (own.fns.join() !== 'app.timers_run(boolean)') add(TIMERS + ' owns ' + (own.fns.join(', ') || 'nothing') + '; it must own app.timers_run(boolean) only (027)');
   }
 
   // ---- Functions (S1) ----

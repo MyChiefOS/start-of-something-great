@@ -103,6 +103,10 @@
     {
       "version": "026_behaviour_watch",
       "sha256": "bc553c4ffccd75f3e237b66771a1dbcf7d9a2eac7779bd5f522b934c4bec8024"
+    },
+    {
+      "version": "027_preopen_safety",
+      "sha256": "71715a3b156eda9bf1b251b4b9a1a0c03d97d3ba45742477de0ef18f4983c86d"
     }
   ]
 }

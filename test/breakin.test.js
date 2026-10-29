@@ -37,10 +37,11 @@ let A, B, BAgent, tables;
 // What each outsider may see: their own rows, nothing else. Any table not listed here may show them nothing.
 // jevs_settings: everyone sees the one public row, JEVs's mode (shadow or enforce); never a threshold (PR 12).
 // subagent_settings: anyone signed in sees the one row of limits sub-agents are made within (PR 16; public in 013).
+// timer_slot (027): its one row, the heartbeat, which anyone may read (only when the timers last finished).
 const MAY_SEE = {
-  anon: { jevs_settings: 1 },
-  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1 },
-  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1 }
+  anon: { jevs_settings: 1, timer_slot: 1 },
+  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1 },
+  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1 }
 };
 
 async function signIn(level, name, fp = c.sha256hex(crypto.randomUUID())) {
@@ -125,6 +126,8 @@ test.before(async () => {
   // PR 2 (Oct 24, 2026): one change-log row and one used runner token, as the migration runner writes them (dog_owner).
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_owner');
+    // 027: the key broker's counts (written with the owner's rights, as the broker's login does).
+    await t.unsafe(`insert into app.broker_uses (hour, handed, failed) values (date_trunc('hour', now()), 3, 1)`);
     await t.unsafe(`insert into app.change_log (commit_sha, run_id, actor, event, result) values ('${'a'.repeat(40)}', '1', 'breakin', 'push', 'ok')`);
     await t.unsafe(`insert into app.runner_tokens (jti) values ('breakin-token')`);
   });

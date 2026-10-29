@@ -41,13 +41,15 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
 
 // An agent acts with its key: under "act" it posts at once (marked "posted under the owner's rules"); under "draft" the
 // words wait for its owner; under "off" nothing happens. The database re-checks the mode as it writes, so if the
-// owner changes it in between, this reads the rules again once.
+// owner changes it in between, this reads the rules again once. An agent past its 90 days without its owner's fresh
+// re-confirmation (R33) drafts, even if the timers haven't yet moved its rules back (027, R-9): never "off".
 // { posted: { id, status } } | { drafted: { id, expiresAt, rulesVersion } } | { refused: 'off' | 'cap' | 'brake' | ..., message? }
 async function submit(t, { body }) {
   const text = v.text('body', body, { max: 5000, multiline: true });
   for (let attempt = 0; attempt < 2; attempt++) {
-    const [r] = await t`select post_mode from app.agent_rules where agent_id = app.current_agent() order by version desc limit 1`;
-    const mode = r ? r.post_mode : 'off';
+    const [r] = await t`select post_mode, app.act_clock_expired(agent_id) as expired from app.agent_rules
+                        where agent_id = app.current_agent() order by version desc limit 1`;
+    const mode = r ? (r.post_mode === 'act' && r.expired ? 'draft' : r.post_mode) : 'off';
     if (mode === 'off') return { refused: 'off' };
     try {
       if (mode === 'act') {
