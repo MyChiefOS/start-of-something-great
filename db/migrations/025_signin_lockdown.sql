@@ -173,6 +173,9 @@ begin
   if other is not null then
     raise exception 'another member is already the administrator (%); nothing changed', other using errcode = '23505';
   end if;
+  if not exists (select 1 from app.members where id = p_member and status = 'active') then
+    raise exception 'no active member with that ID; nothing changed' using errcode = '02000';
+  end if;
   perform app.admin_prepare(p_member);
   update app.members set is_admin = true where id = p_member and status = 'active';
   get diagnostics n = row_count;
