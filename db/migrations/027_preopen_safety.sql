@@ -243,13 +243,20 @@ $$;
 -- the agent at the top of the tree (the CSO's review, B1: a sub-agent's own first rules are set by its parent and
 -- never restart the clock, so a sub-agent is judged by its tree's). An agent with no such version (one that never
 -- acted on its own) has no clock, as in app.act_reconfirm_job. It runs with the sign-in role's rights, since an agent
--- can't read the rules of the agents above it.
+-- can't read the rules of the agents above it. So it answers only for the acting agent itself, or for the site's own
+-- timers and Aaron: anyone else asking about an agent learns nothing, not even whether it exists (the CSO's re-check,
+-- S5). It raises rather than answering false, so a caller that isn't the agent can never be told "act".
 create function app.act_clock_expired(p_agent uuid) returns boolean
-language sql stable security definer set search_path = pg_catalog
+language plpgsql stable security definer set search_path = pg_catalog
 as $$
-  select coalesce((select max(x.created_at) from app.agent_rules x
+begin
+  if p_agent is null or (p_agent is distinct from app.current_agent() and app.actor_kind() not in ('system', 'admin')) then
+    raise exception 'not_acting' using errcode = '42501';
+  end if;
+  return coalesce((select max(x.created_at) from app.agent_rules x
                    where x.agent_id = (select coalesce(a.root_id, a.id) from app.agents a where a.id = p_agent)
-                     and x.set_by = 'owner' and x.restarts_clock) <= now() - interval '90 days', false)
+                     and x.set_by = 'owner' and x.restarts_clock) <= now() - interval '90 days', false);
+end
 $$;
 
 -- 008's version, with the part marked 027: an agent whose clock has run out drafts.

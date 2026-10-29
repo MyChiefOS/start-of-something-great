@@ -543,6 +543,11 @@ test('R-9 (the CSO\'s review, B1): a sub-agent is judged by its tree\'s 90-day c
   // The agent can't read its root's rules itself: the clock runs as the sign-in role.
   const visible = await run(early.ctx, (t) => t`select count(*)::int as n from app.agent_rules where agent_id = ${a.id}`);
   assert.strictEqual(visible[0].n, 0);
+  // And the clock answers only for the acting agent itself (the CSO's re-check, S5): another agent, or a visitor,
+  // asking about an agent learns nothing, not even whether it exists.
+  await assert.rejects(run(early.ctx, (t) => t`select app.act_clock_expired(${a.id}::uuid)`), /not_acting/);
+  await assert.rejects(run({ actor: 'anon' }, (t) => t`select app.act_clock_expired(${early.out.id}::uuid)`), /not_acting/);
+  await assert.rejects(run({ actor: 'anon' }, (t) => t`select app.act_clock_expired(${crypto.randomUUID()}::uuid)`), /not_acting/);
   // The timers then lower the root, and its sub-agents with it.
   await backdateSlot();
   await slot();
