@@ -111,6 +111,9 @@ test.before(async () => {
   // A's key file (023, Oct 28), as a code sign-in keeps it (the sign-in role writes it).
   await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.file_keys (member_id, fingerprint, login_hash, key_hash)
     values ('${A.id}', '${'f'.repeat(64)}', '${c.sha256hex('login a')}', '${c.sha256hex('key a')}')`); });
+  // 026: a country the behaviour watch saw A sign in from (a keyed hash).
+  await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.watch_seen (member_id, kind, key_hash)
+    values ('${A.id}', 'country', '${c.sha256hex('country a')}')`); });
   // PR 15's review (F6): a used traveller confirmation.
   await run({ actor: 'anon' }, (t) => store.regionConfirmUse(t, c.sha256hex('a traveller nonce')));
   // PR 13: A's notices (the brake and the draft above left some), a suppressed sign-in address and a containment.
