@@ -108,6 +108,7 @@ constraint app.file_keys file_keys_fingerprint_check CHECK (((char_length(finger
 constraint app.file_keys file_keys_fingerprint_key UNIQUE (fingerprint)
 constraint app.file_keys file_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.file_keys file_keys_login_hash_check CHECK (((char_length(login_hash) = 64) AND (login_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.file_keys file_keys_login_hash_key UNIQUE (login_hash)
 constraint app.file_keys file_keys_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.file_keys file_keys_member_id_key UNIQUE (member_id)
 constraint app.file_keys file_keys_pkey PRIMARY KEY (id)
@@ -441,7 +442,7 @@ function app.brakes_notify() owner=dog_owner execute=dog_owner language=plpgsql 
 function app.change_log_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=beae6be75fab0d889053d9044f4b1aa5
 function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=2179a5e58dc7677d0f719025513eeabc
 function app.code_issue(p_code_hash text, p_browser_hash text, p_login_hash text, p_file_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=dfdb967262c0b3a7b88baeffe8010a86
-function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=e4becb31950f2ed22830b997e877284e
+function app.code_sign_in(p_browser_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=82715c79bcc384e05dc39b9f61f499ba
 function app.containment_lift_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=integer body_md5=ee6ec02d2a3446ccc4ca320dbfdc9096
 function app.containments_after() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=00cce9d586929f29763ca18d90877142
 function app.containments_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=eacbdc1f35b247f621b91972af93cec8
@@ -745,15 +746,11 @@ grant app.email_tokens.token_hash dog_signin INSERT
 grant app.email_tokens.used_at dog_signin UPDATE
 grant app.file_keys dog_signin DELETE
 grant app.file_keys dog_signin SELECT
-grant app.file_keys.created_at dog_signin UPDATE
 grant app.file_keys.failed dog_signin UPDATE
 grant app.file_keys.fingerprint dog_signin INSERT
 grant app.file_keys.key_hash dog_signin INSERT
-grant app.file_keys.key_hash dog_signin UPDATE
 grant app.file_keys.login_hash dog_signin INSERT
-grant app.file_keys.login_hash dog_signin UPDATE
 grant app.file_keys.member_id dog_signin INSERT
-grant app.file_keys.member_id dog_signin UPDATE
 grant app.file_keys.used_at dog_signin UPDATE
 grant app.gh_accounts dog_jevs DELETE
 grant app.gh_accounts dog_jevs INSERT

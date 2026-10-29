@@ -341,6 +341,28 @@ if (!SERVER) {
     assert.strictEqual((await finish(tries)).signed_in, true);
     assert.strictEqual((await me(tries)).member_id, memberId, 'starting again brings back the same account');
     assert.strictEqual((await key({ login: 'tries', file: FILE_B }, '198.51.100.43')).signed_in, true, 'with the new file');
+    // A new code sign-in starts the count again: 9 wrong, a new code and file, then 1 wrong doesn't cancel the new file.
+    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('late ' + i) }, '198.51.100.' + (i + 50));
+    const fresh = jar();
+    const s5 = await start(fresh, { login: 'tries', file: FILE_A, ip: '203.0.113.74' });
+    await post(8021, 'tries', s5.code);
+    assert.strictEqual((await finish(fresh)).signed_in, true);
+    assert.match((await key({ login: 'tries', file: sha('late 9') }, '198.51.100.60')).error, /don’t match/, 'the count started again at the code sign-in');
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.61')).signed_in, true);
+    // A username another GitHub account used before a rename: the newer account's code sign-in takes it, the older key
+    // file for that name goes, and wrong tries still count.
+    const old = jar();
+    const s6 = await start(old, { login: 'renamed', file: FILE_A, ip: '203.0.113.75' });
+    await post(8030, 'renamed', s6.code);
+    assert.strictEqual((await finish(old)).signed_in, true);
+    const taker = jar();
+    const s7 = await start(taker, { login: 'renamed', file: FILE_B, ip: '203.0.113.76' });
+    await post(8031, 'renamed', s7.code);
+    assert.strictEqual((await finish(taker)).signed_in, true);
+    assert.notStrictEqual((await me(taker)).member_id, (await me(old)).member_id, 'two GitHub accounts, two members');
+    assert.match((await key({ login: 'renamed', file: FILE_A }, '198.51.100.62')).error, /don’t match/, 'the older account\'s file for that name is gone');
+    assert.match((await key({ login: 'renamed', file: sha('wrong') }, '198.51.100.63')).error, /don’t match/, 'a wrong file is counted, not an error');
+    assert.strictEqual((await key({ login: 'renamed', file: FILE_B }, '198.51.100.64')).signed_in, true);
     // An administrator: the file signs nobody in as administrator.
     const a = jar();
     const sa = await start(a, { login: 'boss', file: FILE_A });

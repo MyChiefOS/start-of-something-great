@@ -62,14 +62,13 @@ create table app.file_keys (
   id uuid primary key default app.uuid_v7(),
   member_id uuid not null unique references app.members (id) on delete cascade,
   fingerprint text not null unique check (char_length(fingerprint) = 64 and fingerprint ~ '^[0-9a-f]+$'),
-  login_hash text not null check (char_length(login_hash) = 64 and login_hash ~ '^[0-9a-f]+$'),
+  login_hash text not null unique check (char_length(login_hash) = 64 and login_hash ~ '^[0-9a-f]+$'),
   key_hash text not null check (char_length(key_hash) = 64 and key_hash ~ '^[0-9a-f]+$'),
   -- Wrong files tried for this username since the last good one; at 10 the key file is cancelled.
   failed smallint not null default 0 check (failed between 0 and 10),
   created_at timestamptz not null default now(),
   used_at timestamptz
 );
-create index file_keys_login on app.file_keys (login_hash);
 alter table app.file_keys enable row level security;
 alter table app.file_keys force row level security;
 create policy file_keys_signin_select on app.file_keys for select to dog_signin using (true);
@@ -78,7 +77,7 @@ create policy file_keys_signin_update on app.file_keys for update to dog_signin 
 create policy file_keys_signin_delete on app.file_keys for delete to dog_signin using (true);
 grant select, delete on app.file_keys to dog_signin;
 grant insert (member_id, fingerprint, login_hash, key_hash) on app.file_keys to dog_signin;
-grant update (member_id, login_hash, key_hash, failed, created_at, used_at) on app.file_keys to dog_signin;
+grant update (failed, used_at) on app.file_keys to dog_signin;
 
 -- The notice a member gets each time their key file signs them in, from inside the sign-in functions.
 alter table app.notices drop constraint notices_kind_check;
@@ -179,9 +178,10 @@ begin
     return;
   end;
   -- The key file chosen with this code becomes the member's, replacing any earlier one.
-  insert into app.file_keys (member_id, fingerprint, login_hash, key_hash) values (s.member_id, c.fingerprint, c.login_hash, c.file_key)
-    on conflict (fingerprint) do update set member_id = excluded.member_id, login_hash = excluded.login_hash,
-      key_hash = excluded.key_hash, created_at = now(), used_at = null;
+  -- A fresh row, so the wrong-file count starts at 0: any earlier key file for this member, this GitHub account or this
+  -- username goes (a username another account used before a rename keeps no key file).
+  delete from app.file_keys f where f.member_id = s.member_id or f.fingerprint = c.fingerprint or f.login_hash = c.login_hash;
+  insert into app.file_keys (member_id, fingerprint, login_hash, key_hash) values (s.member_id, c.fingerprint, c.login_hash, c.file_key);
   return query select 'ok'::text, s.member_id, s.is_new, s.trust_level, s.is_admin;
 end
 $$;
