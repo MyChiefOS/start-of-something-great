@@ -119,6 +119,13 @@ const DEFINERS = {
   'app.watch_signin(text, text)': 'dog_signin',
   'app.watch_reach(text)': 'dog_signin',
   'app.watch_first(text)': 'dog_jevs',
+  // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
+  // and the settings' triggers (no role calls them directly) and the hourly sweep with the timers.
+  'app.watch_session(text, text, text)': 'dog_signin',
+  'app.watch_travel(text, text, integer, text)': 'dog_signin',
+  'app.watch_audit()': { owner: 'dog_signin', callers: '' },
+  'app.watch_settings_changed()': { owner: 'dog_signin', callers: '' },
+  'app.watch_sweep()': { owner: 'dog_signin', callers: 'dog_timers' },
   // 027 (the CSO's control 6): the timers, at most once every 50 seconds, with no timer secret on the site.
   'app.timers_run(boolean)': 'dog_timers',
   // 027 (the CSO's review, B1): the 90-day clock of an agent's tree, which an agent can't read for itself.

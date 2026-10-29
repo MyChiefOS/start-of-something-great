@@ -64,6 +64,17 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.match(p, /<strong>Behaviour watch<\/strong>: to spot an account being taken over/);
   assert.match(p, /once it has gone 90 days unseen, and all of them with your account/);
   assert.match(p, /nothing is refused or blocked/);
+  // 030: what the web indicators keep, and for how long, as the migration keeps it.
+  assert.match(p, /rounded to about 100 km and encrypted with a key only our site holds, so our database can't read it, kept at most a day/);
+  assert.match(p, /halved as it grows and deleted after 90 days without activity/);
+  assert.match(p, /brakes it switched off, kept 8 days/);
+  assert.match(p, /never the full browser details\) and of the country it was first used from, deleted with the session/);
+  const w = read('db/migrations/030_behaviour_watch_web.sql');
+  assert.match(w, /delete from app\.watch_counts x where x\.hour < now\(\) - interval '8 days'/);
+  assert.match(w, /update app\.watch_activity x set place = null, place_at = null where x\.place_at < now\(\) - interval '1 day'/);
+  assert.match(w, /delete from app\.watch_activity x where x\.last_seen < now\(\) - interval '90 days'/);
+  assert.match(w, /session_id uuid not null unique references app\.sessions \(id\) on delete cascade/);
+  assert.match(read('signin/watch.js'), /return \{ la: Math\.round\(la\), lo: Math\.round\(lo\) \};/);
   assert.match(read('db/migrations/026_behaviour_watch.sql'), /-- Everyone's rows unseen for 90 days, at every sign-in[\s\S]*?delete from app\.watch_seen w where w\.id in \(select x\.id from app\.watch_seen x where x\.last_seen < now\(\) - interval '90 days'/);
   assert.match(read('db/jevs.js'), /const RESIDENT = '__Host-dog_resident';/);
   assert.match(read('db/migrations/021_signup_level_cap.sql'), /'member\.region_confirmed'/);

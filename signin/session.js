@@ -5,6 +5,7 @@ const c = require('./crypto');
 const h = require('./http');
 const { IDLE_DAYS } = require('./config');
 const store = require('../db/signin');
+const watch = require('./watch');
 
 const SESSION = '__Host-dog_session';
 // Every token we hand out is 32 random bytes in base64url: exactly 43 of these characters.
@@ -16,9 +17,15 @@ function sessionHash(req) {
 }
 
 // { memberId, trustLevel, isAdmin, displayName, fresh, sessionHash } or null.
+// The behaviour watch (030) looks at the request in the same transaction, after the session is found; it only alerts,
+// and a failure in it changes nothing here (signin/watch.js).
 async function current(req, run) {
   const hash = sessionHash(req);
-  const who = hash ? await run({ actor: 'anon' }, (t) => store.sessionResolve(t, hash, IDLE_DAYS)) : null;
+  const who = hash ? await run({ actor: 'anon' }, async (t) => {
+    const w = await store.sessionResolve(t, hash, IDLE_DAYS);
+    if (w) await watch.request(t, req, hash, w.memberId);
+    return w;
+  }) : null;
   return who ? { ...who, sessionHash: hash } : null;
 }
 

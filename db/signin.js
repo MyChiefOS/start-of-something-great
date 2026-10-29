@@ -269,4 +269,19 @@ async function watchReach(t, what) {
   return r.alerted === true;
 }
 
-module.exports = { watchSignin, watchReach, codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+// The behaviour watch's web indicators (030), at a signed-in request (signin/watch.js). ua and country: the site's keyed
+// hashes, or null. Returns { alerts, place? }: place.sealed is the account's latest sealed place when a comparison is due.
+async function watchSession(t, { sessionHash, ua = null, country = null }) {
+  const opt = (field, x) => (x === null ? null : hex(field, x));
+  const [r] = await t`select app.watch_session(${hex('sessionHash', sessionHash)}, ${opt('ua', ua)}, ${opt('country', country)}) as out`;
+  return r.out;
+}
+const SEALED = /^[A-Za-z0-9_-]{40,200}$/;
+async function watchTravel(t, { sessionHash, place = null, km = null, prev = null }) {
+  const sealed = (field, x) => (x === null ? null : v.text(field, x, { min: 40, max: 200, pattern: SEALED }));
+  const [r] = await t`select app.watch_travel(${hex('sessionHash', sessionHash)}, ${sealed('place', place)},
+    ${km === null ? null : v.int('km', km, { min: 0, max: 25000 })}::integer, ${sealed('prev', prev)}) as alerted`;
+  return r.alerted === true;
+}
+
+module.exports = { watchSignin, watchReach, watchSession, watchTravel, codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
