@@ -131,7 +131,10 @@ end
 $$;
 
 -- Getting a member ready to be administrator (B1, B2): they must have exactly one sign-in method, GitHub, the one the
--- account began with; every session they have ends. Only the database owner calls it, from app.set_administrator.
+-- account began with; every session they have ends, and every key of their agents is revoked, so nothing made before
+-- the promotion acts with the administrator's standing (the re-check, N2). Only the database owner calls it, from
+-- app.set_administrator. It first locks the member's sign-in methods and then the member, in the order sign-in itself
+-- takes them, so a sign-in still running finishes first and its session is ended too (the re-check, N1).
 create function app.admin_prepare(p_member uuid)
 returns integer
 language plpgsql security definer set search_path = pg_catalog
@@ -139,6 +142,8 @@ as $$
 declare
   n integer;
 begin
+  perform 1 from app.identities i where i.member_id = p_member order by i.id for update;
+  perform 1 from app.members m where m.id = p_member for update;
   if (select count(*) from app.identities i where i.member_id = p_member) <> 1
      or not exists (select 1 from app.identities i where i.member_id = p_member and i.provider = 'github' and i.linked_by is null) then
     raise exception 'the administrator must have exactly one sign-in method, GitHub, the one the account began with; nothing changed'
@@ -146,6 +151,8 @@ begin
   end if;
   delete from app.sessions s where s.member_id = p_member;
   get diagnostics n = row_count;
+  update app.agent_keys k set revoked_at = now() where k.revoked_at is null
+    and k.agent_id in (select a.id from app.agents a where a.owner_id = p_member);
   return n;
 end
 $$;
