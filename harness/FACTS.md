@@ -143,7 +143,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 
 | Question | Asked | Answer |
 |---|---|---|
-| Keep the 24-hour deletion rule (RK62), or switch to the oldest-method rule | 2026-10-22 | |
+| Keep the 24-hour deletion rule (RK62), or switch to the oldest-method rule | 2026-10-22 | Recommended in the risk sign-off PR (RISKS.md), decided by its merge: keep the 24-hour rule and "a link ends its own session"; the oldest-method rule isn't built for phase 1 (GitHub is the only method) |
 | Charter section 3 says each PR "is built on the one before it". Change it to "every PR targets main" (harness rule 1) | 2026-10-23 | Settled by Aaron's Oct 17 rule, which stands (Oct 28, his intent: "not having to be the bottleneck"): PRs queue up, each built on the one before; harness rule 1 follows the charter |
 | Is PK13 (two passkeys, one a hardware key) required for today's launch, or is one synced passkey enough until a hardware key arrives | 2026-10-23 | No longer applies: passkeys removed by Aaron's Oct 23 instruction (noted by Claude, Oct 25) |
 | How does Aaron become administrator before sign-up opens (harness/PLAN.md fix 9) | 2026-10-25 | |
@@ -151,9 +151,9 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | What does the regional decline mean for posts made directly on GitHub (the gate can't know a poster's country) | 2026-10-25 || Not asked in #53 (Aaron, Oct 28: "Take the regional question out"). The gap is recorded in RISKS.md RK89 (g) |
 | Are untagged posts from a linked machine account hidden (harness/PLAN.md fix 1.2, proposed). Built for now: they alert Aaron once and get a reply asking for the tag, never hidden | 2026-10-25 | Decided by Claude under Aaron's Oct 25 instruction ("implement whats honest and hold true to my intent… what would the CLJO do?"): alert, never hide, per "checks alert, never lock out" (Oct 23) and "members are trusted by default" (Oct 16). Aaron may reopen |
 | When a moderator (not the author) deletes a post on GitHub, does JEVs keep an IDs-only record, or erase it as today (the privacy page promises erasure) (harness/PLAN.md fix 1.5) | 2026-10-25 | Decided by Claude under the same instruction: erase, as privacy.html promises ("When a post is deleted, our checks erase what they kept about it"); a lawful exception is the legal hold (RK22). Keeping records would need the privacy page changed first. Aaron may reopen |
-| JEVs thresholds: set your own, or accept the public seeded values the GitHub path has enforced with since Oct 24 (RISKS.md RK16; verified Oct 26: live values equal the seed) | 2026-10-26 | |
-| Release rule for rows marked "Not in phase 1" (email sign-in, built and switched off): they wait until the feature is switched on (RISKS.md header; decided by merging the risks PR) | 2026-10-26 | |
-| RK82's real close: sign-in moves into an Edge Function that checks the person's GitHub token itself and is the only caller of `app.sign_in` (changes the Oct 24 direct-connection decision; the CSO's review of the RK82 PR) | 2026-10-26 | |
+| JEVs thresholds: set your own, or accept the public seeded values the GitHub path has enforced with since Oct 24 (RISKS.md RK16; verified Oct 26: live values equal the seed) | 2026-10-26 | Recommended in the risk sign-off PR (RISKS.md), decided by its merge: the public values stay; tuning by migration PR, public (db/README.md) |
+| Release rule for rows marked "Not in phase 1" (email sign-in, built and switched off): they wait until the feature is switched on (RISKS.md header; decided by merging the risks PR) | 2026-10-26 | Applied by the risk sign-off PR: RK30, RK31 and RK36 stay unsigned under it; decided by its merge |
+| RK82's real close: sign-in moves into an Edge Function that checks the person's GitHub token itself and is the only caller of `app.sign_in` (changes the Oct 24 direct-connection decision; the CSO's review of the RK82 PR) | 2026-10-26 | Recommended in the risk sign-off PR (RISKS.md), decided by its merge: not now; 025 (#57) closes the administrator path, and a phase-1 provider allowlist is Claude's in a later PR |
 
 ## Parking list (no named owner yet; not built until one is named)
 
