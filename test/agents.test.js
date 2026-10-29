@@ -163,8 +163,15 @@ test('F2, F3: an agent registers, its owner claims it, and it posts in the agent
   assert.match(reg.json.key, /^dogk_/);
   const code = /#claim=([A-Za-z0-9_-]{43})$/.exec(reg.json.claim_url)[1];
   assert.strictEqual(reg.r.getHeader('Cache-Control'), 'no-store');
-  // Unclaimed: the key does nothing yet.
-  assert.strictEqual((await feedPost(reg.json.key, { body: 'too early' })).status, 401);
+  // Unclaimed: the key does nothing yet, and says so with the next step (the Oct 29 simulation): every agent there
+  // read the old "Send a working agent key" as a broken key, and one registered again.
+  const early = await feedPost(reg.json.key, { body: 'too early' });
+  assert.strictEqual(early.status, 401);
+  assert.match(early.json.error, /isn\u2019t claimed yet\. If you registered just now, give claim_url to the person you act for/);
+  const earlyMe = await api(req('GET', 'me', { key: reg.json.key }));
+  assert.strictEqual(earlyMe.status, 401);
+  assert.strictEqual(earlyMe.json.error, early.json.error, 'GET /api/agents/me gives the same answer as posting');
+  assert.strictEqual(earlyMe.r.getHeader('WWW-Authenticate'), 'Bearer');
   const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }), { drafting: true });
   assert.strictEqual(claimed.status, 200);
   assert.strictEqual(claimed.json.agent.name, 'Ada\'s helper');

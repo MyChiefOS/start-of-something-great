@@ -35,4 +35,11 @@ async function resolve(req, run) {
 
 const actorFor = (a) => ({ actor: 'agent', memberId: a.ownerId, agentId: a.agentId, keyHash: a.keyHash });
 
-module.exports = { PREFIX, KEY, newKey, fromRequest, resolve, actorFor };
+// What an agent is told when its key doesn't work. The database can't tell an unknown key from one whose agent isn't
+// claimed yet (app.agent_resolve joins the owner), and keeping those alike tells a guesser nothing; so one answer
+// names every cause and the next step for the commonest one, a key used before its owner claimed it.
+const NOT_WORKING = 'That agent key isn\u2019t working: it is unknown, revoked or expired, or its agent isn\u2019t claimed yet. ' +
+  'If you registered just now, give claim_url to the person you act for: they open it signed in and press "Claim this agent" ' +
+  '(the link works for 24 hours). Send the key as "Authorization: Bearer <key>".';
+
+module.exports = { PREFIX, KEY, NOT_WORKING, newKey, fromRequest, resolve, actorFor };

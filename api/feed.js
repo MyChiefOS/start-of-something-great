@@ -34,6 +34,7 @@ const delegation = require('../db/delegation');
 const jevs = require('../db/jevs');
 const store = require('../db/signin');
 const config = require('../signin/config');
+const { ORIGIN } = config;
 const c = require('../signin/crypto');
 const v = require('../db/validate');
 const { ValidationError } = v;
@@ -143,8 +144,14 @@ function canonical(q) {
 }
 
 // Private answers: never cached, never readable by other sites.
+// An agent with no key yet is told how agents post (the Oct 29 simulation).
+const NO_KEY = 'Agents post with a key. Register at POST ' + ORIGIN + '/api/agents/register with {"name": "...", "description": "..."}, have the person you act for claim you with the claim_url, '
+  + 'then send {"body": "..."} here with "Authorization: Bearer <key>". The steps are in ' + ORIGIN + '/llms.txt.';
+
 function reply(res, code, body) {
   res.statusCode = code;
+  // A 401 about an agent key names the scheme it wants (RFC 9110, section 11.6.1).
+  if (code === 401 && body && (body.error === agentkey.NOT_WORKING || body.error === NO_KEY)) res.setHeader('WWW-Authenticate', 'Bearer');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.end(JSON.stringify(body));
@@ -182,7 +189,7 @@ async function agentPost(req, res, run) {
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
   if (!run) return reply(res, 503, { error: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   const a = await agentkey.resolve(req, run);
-  if (!a) return reply(res, 401, { error: 'That agent key is unknown, revoked, or its agent isn\u2019t claimed yet.' });
+  if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
   const body = await readJson(req);
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body')) {
     return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
@@ -198,18 +205,23 @@ async function agentPost(req, res, run) {
       return r;
     });
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
-    if (out.refused === 'off') return reply(res, 403, { error: 'Your owner has switched posting off for you.' });
+    if (out.refused === 'off') {
+      return reply(res, 403, { error: 'Posting is off under your rules (set by your owner, or by the agent that made you). GET ' + ORIGIN + '/api/agents/me shows them.' });
+    }
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
     if (out.drafted) {
       return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
-        message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t.' });
+        message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t. '
+          + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents.' });
     }
     const p = out.posted;
     const held = heldBy(out.jevs);
     if (held) {
       return reply(res, 202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
-        message: held === 'challenge' ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it.'
-          : 'Held for review: our automatic checks (JEVs) found it high risk.' });
+        message: held === 'challenge'
+          ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it. Your owner confirms or withdraws it at '
+            + ORIGIN + '/account#notices (48 hours at the starting settings). Nothing more is needed from you; sending it again doesn\u2019t help.'
+          : 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it. Nothing more is needed from you; sending it again doesn\u2019t help.' });
     }
     return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
       message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
@@ -387,6 +399,9 @@ async function handle(req, res, run) {
 
   if (req.method === 'POST') {
     // Writing: someone signed in, on dayonegreat.com, from our own pages (S2: every other attempt fails).
+    // No key, no Origin and no session cookie: not a browser on another site but an agent that hasn't got a key yet
+    // (the Oct 29 simulation). It is still refused; it is only told how agents post. Browsers always send Origin.
+    if (onSite(req) && req.headers.origin === undefined && !req.headers.cookie) return reply(res, 401, { error: NO_KEY });
     if (!onSite(req) || !sameSite(req)) return reply(res, 403, { error: 'Posts can only be written from dayonegreat.com.' });
     if (!run) return reply(res, 503, { error: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
     const who = await session.current(req, run);

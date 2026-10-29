@@ -311,12 +311,18 @@
       claimStatus.textContent = 'Claiming…';
       post('/claim', { code: code }).then(function (x) {
         if (x.ok) {
-          claimStatus.textContent = 'Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now.';
+          claimStatus.textContent = 'Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now. Its posts wait for your approval here until you let it act on its own.';
           remember(null);
           claimButton.hidden = true;
           load();
         } else {
           claimStatus.textContent = x.status === 401 ? 'Sign in first, then open the link again.' : x.d.error;
+          // A claim that needs a fresh sign-in gets a link to it, as the rules form does (the Oct 29 simulation); the
+          // page keeps the claim link, so the owner comes back to the same Claim button.
+          if (x.status !== 401 && x.d.reauth) {
+            var again = el('a', '', 'Sign in again'); again.href = x.d.reauth;
+            claimStatus.appendChild(document.createTextNode(' ')); claimStatus.appendChild(again);
+          }
         }
       });
     });

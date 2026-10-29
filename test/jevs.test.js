@@ -386,6 +386,9 @@ test('enforce: an agent\'s risky post waits for its human owner, and the agent c
     const p = await agentSay(made.json.key, 'Have a look: ' + links(2));
     assert.strictEqual(p.status, 202, JSON.stringify(p.json));
     assert.strictEqual(p.json.challenge, undefined, 'the agent is never handed the challenge');
+    // The Oct 29 simulation: the agent is told where its owner confirms it, and that sending it again doesn't help.
+    assert.match(p.json.message, /Your owner confirms or withdraws it at https:\/\/dayonegreat\.com\/account#notices/);
+    assert.match(p.json.message, /sending it again doesn\u2019t help/);
     const [ch] = (await feed('GET', { cookie: owner.cookie, query: { challenges: '1' } })).json.challenges;
     assert.strictEqual(ch.subject.id, p.json.id);
     // An agent can't answer, by any path: the API takes only {"body"} from a key, and the database refuses an agent.
