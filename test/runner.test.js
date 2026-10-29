@@ -43,10 +43,19 @@ const LIVE = [
   ['017_gateway', '923890f214d3b2e5097e780596c48f42fc0ad84c1aa7c152249ae41f9a3176aa']
 ];
 
-test('row 15: db/manifest.json lists every migration and the reset with their current fingerprints', () => {
+test('row 15: db/manifest.json lists every migration with its current fingerprint, and names no reset (R-14)', () => {
   assert.strictEqual(fs.readFileSync(FILE, 'utf8'), build(), 'run node scripts/manifest.js');
   const m = JSON.parse(build());
-  assert.deepStrictEqual(m.reset.when, { version: '014_passkeys', sha256: LIVE[13][1] }, 'the reset runs only against the Oct 23 build');
+  assert.deepStrictEqual(Object.keys(m), ['migrations'], 'the inert Oct 24 reset entry is gone');
+  assert.ok(!m.migrations.some((x) => x.version === '014_passkeys'), 'and the build it was for is not on main');
+});
+
+// The Oct 24 fresh build, named as PR 2's manifest named it. Main's manifest no longer does (R-14: it was inert once
+// 014_passkeys left the live ledger), so the rehearsal names it here; the runner's code is unchanged.
+const oct24Reset = () => ({
+  file: 'db/reset/fresh-build.sql',
+  sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'db/reset/fresh-build.sql'), 'utf8')).digest('hex'),
+  when: { version: '014_passkeys', sha256: LIVE[13][1] }
 });
 
 test('row 15: the passkey migrations are gone and sub-agents is unchanged byte for byte', () => {
@@ -72,7 +81,9 @@ if (!SERVER) {
     const r = await core.run(sql, v1, claims());
     assert.deepStrictEqual(r.applied, LIVE.map((x) => x[0]));
   }
-  const freshBuild = () => core.load(local);
+  // Main's migrations with the Oct 24 reset named; mainOnly() is main's manifest exactly as the runner gets it.
+  const freshBuild = () => core.load((p) => (p === 'db/manifest.json' ? JSON.stringify({ ...JSON.parse(local(p)), reset: oct24Reset() }) : local(p)));
+  const mainOnly = () => core.load(local);
   const ledgerIs = async (sql, list) => assert.deepStrictEqual((await core.status(sql)).map((x) => [x.version, x.sha256]), list);
   const newList = () => JSON.parse(build()).migrations.map((x) => [x.version, x.sha256]);
 
@@ -159,6 +170,9 @@ if (!SERVER) {
       assert.deepStrictEqual({ reset: again.reset, applied: again.applied, failed: again.failed }, { reset: false, applied: [], failed: [] }, 'a second run changes nothing');
       const n = await sql.begin(async (t) => { await t`set local role dog_owner`; return t`select count(*)::int as n from app.change_log`; });
       assert.strictEqual(n[0].n, 1, 'a run that changes nothing writes no change record');
+      // R-14: main's own manifest (no reset entry) applied to the built database changes nothing either.
+      const plain = await core.run(sql, await mainOnly(), claims());
+      assert.deepStrictEqual({ reset: plain.reset, applied: plain.applied, failed: plain.failed }, { reset: false, applied: [], failed: [] });
       await assert.rejects(sql.begin(async (t) => { await t`set local role dog_owner`; await t`delete from app.change_log`; }), /append-only/);
     });
   });
@@ -230,6 +244,26 @@ if (!SERVER) {
     });
   });
 
+  test('R-2: the catalog checks (also in the daily status answer) pass on the built database and catch a hand change', async () => {
+    await withDatabase(async (sql) => {
+      await buildLive(sql);
+      const built = await freshBuild();
+      await core.run(sql, built, claims());
+      assert.deepStrictEqual(await core.catalogChecks(sql), [], 'all pass on main\'s build');
+      assert.deepStrictEqual(await core.checks(sql, built.files), [], 'and checks() is the ledger check plus these');
+      // A table left without forced row-level security, as a hand change would leave it; rolled back after.
+      let flagged;
+      await sql.begin(async (t) => {
+        await t`set local role dog_owner`;
+        await t.unsafe('alter table app.members no force row level security');
+        flagged = await core.catalogChecks(t);
+        throw new Error('roll back');
+      }).catch((e) => { if (e.message !== 'roll back') throw e; });
+      assert.deepStrictEqual(flagged, ['row-level security forced on every app table']);
+      assert.deepStrictEqual(await core.catalogChecks(sql), [], 'nothing was changed');
+    });
+  });
+
   test('row 15: one real row stops the fresh build, and nothing changes', async () => {
     await withDatabase(async (sql) => {
       await buildLive(sql);
@@ -266,7 +300,8 @@ if (!SERVER) {
   test('row 15: a file that does not match its fingerprint stops the run before the database is touched', async () => {
     const core2 = await import('../supabase/functions/dog-migrate/core.mjs');
     await assert.rejects(core2.load((p) => (p === 'db/migrations/003_posts.sql' ? local(p) + '\n-- edited' : local(p))), /003_posts: file does not match/);
-    await assert.rejects(core2.load((p) => (p === 'db/reset/fresh-build.sql' ? 'drop schema app cascade;' : local(p))), /reset file does not match/);
+    const named = (p) => (p === 'db/manifest.json' ? JSON.stringify({ ...JSON.parse(local(p)), reset: oct24Reset() }) : local(p));
+    await assert.rejects(core2.load((p) => (p === 'db/reset/fresh-build.sql' ? 'drop schema app cascade;' : named(p))), /reset file does not match/);
   });
 
   test('row 15: the way back works: the Oct 23 build can be rebuilt exactly over the fresh build', async () => {
@@ -275,7 +310,7 @@ if (!SERVER) {
       await core.run(sql, await freshBuild(), claims());
       const back = newList().find((x) => x[0] === '015_change_log');
       const rollback = await core.load((p) => (p === 'db/manifest.json'
-        ? liveManifest({ reset: { file: 'db/reset/fresh-build.sql', sha256: JSON.parse(build()).reset.sha256, when: { version: back[0], sha256: back[1] } } })
+        ? liveManifest({ reset: { ...oct24Reset(), when: { version: back[0], sha256: back[1] } } })
         : p.startsWith('db/reset/') ? local(p) : fromLive(p)));
       const r = await core.run(sql, rollback, claims());
       assert.strictEqual(r.reset, true);

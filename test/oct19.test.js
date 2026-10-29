@@ -213,7 +213,8 @@ test('launch checks: the go-live gate, sign-in and security headers are watched,
   const uptime = require('../scripts/uptime');
   const gate = uptime.CHECKS.find((c) => c.name === 'Go-live gate');
   const r = (status, h = {}) => ({ status, headers: { get: (k) => h[k.toLowerCase()] || null } });
-  const REFUSED = JSON.stringify({ error: require('../launch').PREVIEW_MESSAGE });
+  // What the removed preview stage answered signed-out readers (launch.js before R-14).
+  const REFUSED = JSON.stringify({ error: 'This part of Day One Great isn\u2019t open yet.' });
   assert.ok(gate.test(r(200), '{"posts":[]}'), 'closed or public');
   assert.ok(!gate.test(r(401, { 'cache-control': 'no-store' }), REFUSED), 'no stage refuses signed-out visitors now');
   assert.ok(!gate.test(r(500), '{}'), 'a server error is a fault');

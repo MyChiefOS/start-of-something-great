@@ -36,11 +36,11 @@ Nobody applies changes by hand, Claude included, and no database password or key
 
 When the runner's own code changes, Claude deploys it once from the merged commit and records it in OPERATIONS.md. The workflow waits for that deploy (up to 40 minutes) rather than failing.
 
-**The one-time fresh build (PR 2).** `db/manifest.json` names `db/reset/fresh-build.sql` and the exact migration that must be live for it to run (014_passkeys at its Oct 23 fingerprint). It runs once, refuses if any table holds a row (other than the ledger, the runner's records and seeded settings), drops the old schema, and the runner then builds 001 onward. Once 014_passkeys is gone it never runs again; a later PR removes the entry.
+**The one-time fresh build (PR 2, Oct 24).** `db/reset/fresh-build.sql` ran once, on Oct 24, against the Oct 23 build (014_passkeys at its Oct 23 fingerprint): it refused if any table held a row (other than the ledger, the runner's records and seeded settings), dropped the old schema, and the runner then built 001 onward. `db/manifest.json` no longer names it (R-14, the runner-alerts PR): it could never run again, because the live ledger holds 014_subagents. The runner still accepts a reset entry, and `test/runner.test.js` still rehearses this one, naming it itself.
 
-**The way back.** The Oct 23 build can be rebuilt exactly: a PR restoring those files (commit 9b1fcd7) with a reset entry whose "when" is `015_change_log`. `test/runner.test.js` proves it on every build.
+**The way back.** The Oct 23 build can be rebuilt exactly: a PR restoring those files (commit 9b1fcd7) with a reset entry in `db/manifest.json` (written by `scripts/manifest.js`, which that PR would change to add it) whose "when" is `015_change_log`. `test/runner.test.js` proves it on every build.
 
-**Older paths.** `MIGRATION_DATABASE_URL` and the `production` environment are no longer used by "Database migrations". The Production setup workflow (`setup.yml`) still exists, needs Aaron's approval to run, and is not part of this path. Don't run it without Aaron's decision: its database step migrates outside the runner (harness/PLAN.md, traps).
+**Older paths.** `MIGRATION_DATABASE_URL` and the `production` environment are no longer used by "Database migrations". The Production setup workflow (`setup.yml`) still exists for its keys, stage, admin and redeploy steps and is not part of this path; its database step, which migrated outside the runner, was removed (R-14). Its job names the `production` environment, which has no approval rule (found Oct 25, OPERATIONS.md), so a run would not wait for Aaron; it can't run today anyway, since the secrets it needs don't exist.
 
 ## Changing the schema
 
@@ -52,8 +52,8 @@ When the runner's own code changes, Claude deploys it once from the merged commi
 ## What this does not protect against
 
 - **A bug in our own server code.** Postgres trusts the actor that `db/index.js` sets. A bug that set the wrong actor, or code that ran its own SQL, could act as someone else. The code checks above keep that to one reviewed file. Agents and people never get SQL access; they reach the database only through our functions. A stronger lock, where the database itself verifies a signed claim from sign-in, is on the list for review before 1,000 members.
-- **Someone holding the owner or superuser login** (the migration secret). They could remove the triggers. That login stays in the protected environment, and only the manual migration workflow, with your approval, uses it.
-- **Changes made by hand in production.** These are caught when the coverage check runs after each migration, not continuously.
+- **Someone holding the owner or superuser login.** They could remove the triggers. Since route B no workflow holds it as a secret (`MIGRATION_DATABASE_URL` doesn't exist, checked Oct 25): the runner and the gate use the login Supabase gives every Edge Function (`SUPABASE_DB_URL`), and the project's owner can reach it through Supabase.
+- **Changes made by hand in production.** The runner's catalog checks (row-level security forced on every table, no passkey objects, no login role of ours but the narrow site login) run after each migration and, from the runner-alerts PR, in the daily drift check; a failure comments on the "JEVs alerts" issue (R-2). The full coverage check against `db/snapshot.txt` runs only in CI. So a hand change is reported within a day, not prevented.
 
 ## JEVs on GitHub and giscus (PR 3, Oct 24, 2026)
 

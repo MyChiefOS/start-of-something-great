@@ -1,6 +1,8 @@
 # Backup restore test (O2, RISKS.md RK12): rebuilds the live data in a throwaway database inside this run and checks
-# every table matches. Started by hand only (Actions tab, "Restore test", on main), in the protected "production"
-# environment, so Aaron approves each run. The copy never leaves the runner and is never uploaded.
+# every table matches. Started by hand only (Actions tab, "Restore test"), and it runs only on main. It names the
+# "production" environment for its secret, but that environment has no approval or branch rule (found Oct 25, probe
+# PR #46, OPERATIONS.md), so a run does not wait for anyone's approval. The copy never leaves the runner and is never
+# uploaded.
 name: Restore test
 
 on:

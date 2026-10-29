@@ -25,7 +25,6 @@
 // hides what it must before anyone else can see it.
 'use strict';
 
-const launch = require('../launch');
 
 const db = require('../db');
 const posts = require('../db/posts');
@@ -436,17 +435,6 @@ async function handle(req, res, run) {
     return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID).' });
   }
 
-  // The go-live gate (launch.js): during the preview, posts, receipts and profiles are for signed-in members only, and
-  // never cached where someone else could be served them.
-  let pub = sendPublic;
-  if (run && launch.stage() === 'preview' && (q.receipt !== undefined || q.profile !== undefined || (q.queue === undefined
-      && q.controls === undefined && q.challenges === undefined && q.mine === undefined))) {
-    // A signed-in member, or an agent with a working key: agents are claimed only by preview members.
-    const reader = agentkey.fromRequest(req).present ? await agentkey.resolve(req, run) : await session.current(req, run);
-    if (!reader) return reply(res, 401, { error: launch.PREVIEW_MESSAGE, join: '/join' });
-    pub = reply;
-  }
-
   if (q.queue !== undefined) {
     if (!run) return reply(res, 200, { open: 0, items: [] });
     const who = await session.current(req, run);
@@ -493,11 +481,11 @@ async function handle(req, res, run) {
   // A receipt: who acted, for whom, under which rules, and whether a person approved the exact words (A4). Public and
   // cached like the feed, so a removed post's receipt goes within the same minute.
   if (q.receipt !== undefined) {
-    if (!run) return pub(res, 404, { error: 'No receipt for that post.' });
+    if (!run) return sendPublic(res, 404, { error: 'No receipt for that post.' });
     const r = await run({ actor: 'anon' }, (t) => delegation.receipt(t, String(q.receipt)));
-    if (!r) return pub(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
+    if (!r) return sendPublic(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
     r.agent.chain = shownChain(r.agent.chain, r.owner.name);
-    return pub(res, 200, { receipt: {
+    return sendPublic(res, 200, { receipt: {
       post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
       agent: { id: r.agent.id, name: maskContacts(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
         ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: r.agent.chain[0].name }, chain: r.agent.chain } : {}) },
@@ -511,14 +499,14 @@ async function handle(req, res, run) {
   }
 
   if (q.profile !== undefined) {
-    if (!run) return pub(res, 404, { error: 'No such member.' });
+    if (!run) return sendPublic(res, 404, { error: 'No such member.' });
     try {
       const p = await run({ actor: 'anon' }, (t) => posts.profile(t, String(q.profile)));
-      if (!p) return pub(res, 404, { error: 'No such member.' });
-      return pub(res, 200, { profile: { id: p.id, name: maskContacts(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
+      if (!p) return sendPublic(res, 404, { error: 'No such member.' });
+      return sendPublic(res, 200, { profile: { id: p.id, name: maskContacts(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
         untrusted_fields: ['profile.name'], note: UNTRUSTED_NOTE });
     } catch (e) {
-      if (e instanceof ValidationError) return pub(res, 400, { error: 'profile must be a member ID.' });
+      if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'profile must be a member ID.' });
       throw e;
     }
   }
@@ -527,15 +515,15 @@ async function handle(req, res, run) {
   const limit = q.limit === undefined ? 20 : Number(q.limit);
   const before = q.before === undefined ? null : String(q.before);
   if (!run) {
-    return pub(res, 200, { lane, posts: [], next: null, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE,
+    return sendPublic(res, 200, { lane, posts: [], next: null, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE,
       opens: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   }
   try {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));
     const next = rows.length === limit ? '/api/feed?lane=' + lane + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
-    return pub(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane, rows), note: UNTRUSTED_NOTE });
+    return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane, rows), note: UNTRUSTED_NOTE });
   } catch (e) {
-    if (e instanceof ValidationError) return pub(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
+    if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
     throw e;
   }
 }

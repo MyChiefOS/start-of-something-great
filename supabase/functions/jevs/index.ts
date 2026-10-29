@@ -9,11 +9,14 @@ import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
 import { tokenUsed } from "../dog-migrate/core.mjs";
 import { BadEvent, handle } from "./gate.mjs";
+import { SOURCE_DIGEST } from "./source-digest.mjs";
 
 const AUDIENCE = "https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/jevs";
 // GitHub allows 65,536 characters; in JSON, writing outside Latin script can take up to 6 bytes a character.
 const MAX_REQUEST = 400_000;
-const reply = (status: number, body: unknown) => Response.json(body, { status });
+// x-source-digest on every answer (R-3): the SHA-256 digest of this function's source files on the commit it was
+// deployed from (./source-digest.mjs), read by the daily watch (.github/workflows/watch.yml).
+const reply = (status: number, body: unknown) => Response.json(body, { status, headers: { "x-source-digest": SOURCE_DIGEST } });
 
 let hashKey: string | null = null; // read once from Supabase Vault; never logged or returned
 

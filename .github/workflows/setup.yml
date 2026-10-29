@@ -1,19 +1,22 @@
-# Production setup: the database, the site's login role, the sign-in keys, the go-live stage and the administrator,
-# done from GitHub so nothing runs on anyone's own computer and no secret is ever shown to a person (SETUP.md).
-# Started by hand only (Actions tab, "Production setup", Run workflow, on main). Its secrets live in the protected
-# "production" environment: only main, and only after Aaron approves the run.
+# Production setup: the sign-in keys, the go-live stage and the administrator, done from GitHub so nothing runs on
+# anyone's own computer and no secret is ever shown to a person (SETUP.md). The database step was removed (R-14): the
+# database changes only through the runner (database.yml), and under route B migration 022 makes the site's login.
+# Started by hand only (Actions tab, "Production setup", Run workflow), and its jobs run only on main.
+# The "setup" job names the "production" environment, but that environment has no approval or branch rule (found
+# Oct 25, probe PR #46, OPERATIONS.md): a run does NOT wait for Aaron's approval, and no secret should be kept there
+# until it has one (RISKS.md RK71).
 #
-# Two jobs: "plan" reads the inputs alone (no secrets, no environment) and writes what the run will do into the run's
-# summary, and refuses bad input; "setup" waits for Aaron's approval and does it. So he sees the plan before approving.
+# Two jobs: "plan" reads the inputs alone (no secrets, no environment), writes what the run will do into the run's
+# summary, and refuses bad input before any secret is read; "setup" then does it.
 name: Production setup
 
 on:
   workflow_dispatch:
     inputs:
       steps:
-        description: 'Steps, comma separated: database, keys, stage, admin, redeploy (always run in that order)'
+        description: 'Steps, comma separated: keys, stage, admin, redeploy (always run in that order)'
         required: true
-        default: 'database,keys,stage,redeploy'
+        default: 'keys,stage,redeploy'
       stage:
         description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
         type: choice
@@ -23,10 +26,6 @@ on:
         description: 'For the "admin" step: your member_id from https://dayonegreat.com/auth/me after signing in once'
         required: false
         default: ''
-      rotate_db_password:
-        description: 'Give the site''s login role a new password (and update DATABASE_URL to match)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -53,15 +52,14 @@ jobs:
       - name: Install locked dependencies (no install scripts)
         run: npm ci --ignore-scripts
 
-      - name: What this run will do (from the inputs alone; refuses bad input before anyone approves)
+      - name: What this run will do (from the inputs alone; refuses bad input before any secret is read)
         env:
           SETUP_STEPS: ${{ inputs.steps }}
           SETUP_STAGE: ${{ inputs.stage }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
-          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: |
           node scripts/setup-production.js --plan | tee plan.txt
-          { echo '## This run will'; echo; cat plan.txt; echo; echo 'Approve the "setup" job to do it, or cancel the run.'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '## This run will'; echo; cat plan.txt; echo; echo 'The "setup" job does it next (the production environment has no approval rule).'; } >> "$GITHUB_STEP_SUMMARY"
 
   setup:
     needs: plan
@@ -93,5 +91,4 @@ jobs:
           SETUP_STEPS: ${{ inputs.steps }}
           SETUP_STAGE: ${{ inputs.stage }}
           SETUP_ADMIN_MEMBER_ID: ${{ inputs.admin_member_id }}
-          SETUP_ROTATE_DB_PASSWORD: ${{ inputs.rotate_db_password && 'yes' || 'no' }}
         run: node scripts/setup-production.js

@@ -3,7 +3,9 @@
 # runner checks that the token is from this workflow on main, then applies the files of that exact commit and records
 # the run in app.change_log. There is no secret anywhere: no database password, no Supabase key, nothing to paste.
 # The result goes in this run's summary and as a comment on the merged pull request. A failed run fails loudly
-# (GitHub emails the owner) and leaves nothing half-applied: the whole run is one transaction.
+# (GitHub emails the owner) and leaves nothing half-applied: the whole run is one transaction. The runner checks the
+# result AFTER that transaction commits, so a failed check doesn't undo or refuse anything: it is reported, and the
+# run then also comments on the "JEVs alerts" issue (R-2). The daily drift check runs the same catalog checks.
 name: Database migrations
 
 on:
@@ -89,6 +91,36 @@ jobs:
           pr=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number // empty' || true)
           if [ -n "$pr" ]; then gh api "repos/${{ github.repository }}/issues/$pr/comments" -F body=@summary.md > /dev/null || true; fi
 
+      - name: Alert when the runner's checks failed, or the run did (R-2)
+        # The migrations stay applied when a check fails (the runner reports; it does not undo), so the failure must be
+        # seen where alerts go, not only in the run. Alert only: it changes nothing.
+        if: always() && steps.run.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          [ -f result.json ] || echo '{"ok":false,"error":"the runner never answered"}' > result.json
+          if jq -e '.ok == true and ((.failed // []) | length == 0)' result.json > /dev/null 2>&1; then echo "Passed; no alert."; exit 0; fi
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, and any database drift.' -f 'labels[]=jevs-alert' --jq .number)
+          jq -r --arg sha "${SHA:0:7}" --arg run "$RUN_URL" '
+            "Database migrations at " + $sha + ": "
+            + (if ((.failed // []) | length) > 0
+               then "the runner applied " + ((.applied // []) | if length == 0 then "nothing new" else join(", ") end)
+                 + ", and then these checks FAILED: " + (.failed | join("; "))
+                 + ". The migrations stay applied (the runner checks after it commits and reports; it does not undo). Fix it with a new migration in a PR."
+               else "the run FAILED" + (if .error then " (" + (.error | tostring) + ")" else "" end)
+                 + ". The run is one transaction, so nothing was half-applied."
+               end)
+            + "\n\nRun: " + $run' result.json > alert.txt 2>/dev/null || printf 'Database migrations at %s: the run failed and its answer could not be read. Run: %s\n' "${SHA:0:7}" "$RUN_URL" > alert.txt
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
+          echo "alert added"
+
   drift:
     # Daily, and after every merge that changes the database: the live ledger must equal db/manifest.json on main.
     # A difference means something changed the database outside a merged PR. It alerts; it never changes anything.
@@ -117,6 +149,9 @@ jobs:
             -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data '{"mode":"status"}') || true
           unset token
           [ "$code" = 200 ] || { echo "drift check: the runner answered $code"; echo "result=unreachable" >> "$GITHUB_OUTPUT"; exit 0; }
+          # R-2: the runner's catalog checks on the live database (a runner deployed before R-2 sends none).
+          jq -r '(.failed // [])[]' status.json > failed.txt
+          if [ -s failed.txt ]; then echo "checks=failed" >> "$GITHUB_OUTPUT"; echo "CHECKS FAILED on the live database:"; cat failed.txt; fi
           live=$(jq -c '[.ledger[] | [.version, .sha256]] | sort' status.json)
           want=$(jq -c '[.migrations[] | [.version, .sha256]] | sort' db/manifest.json)
           if [ "$live" = "$want" ]; then echo "result=same" >> "$GITHUB_OUTPUT"; echo "No drift: the live database matches main."
@@ -126,11 +161,12 @@ jobs:
             + ([$want[] | select(. as $x | $live | index([$x]) | not) | .[0]] | join(", "))' status.json > diff.txt
 
       - name: Alert on drift
-        if: always() && (failure() || steps.drift.outputs.result == 'drift' || steps.drift.outputs.result == 'unreachable')
+        if: always() && (failure() || steps.drift.outputs.result == 'drift' || steps.drift.outputs.result == 'unreachable' || steps.drift.outputs.checks == 'failed')
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RESULT: ${{ steps.drift.outputs.result }}
+          CHECKS: ${{ steps.drift.outputs.checks }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
@@ -138,11 +174,17 @@ jobs:
             gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
           issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
           [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, and any database drift.' -f 'labels[]=jevs-alert' --jq .number)
+          : > alert.txt
           if [ -z "$RESULT" ]; then
-            printf 'The drift check itself failed, so the database was not compared with main. Run: %s\n' "$RUN_URL" > alert.txt
+            printf 'The drift check itself failed, so the database was not compared with main.\n' >> alert.txt
           elif [ "$RESULT" = drift ]; then
-            { echo "Database drift: the live database doesn't match the migrations on main. Something changed it outside a merged PR."; echo; cat diff.txt; echo; echo "Run: $RUN_URL"; } > alert.txt
-          else
-            printf 'The drift check could not reach the database runner. Run: %s\n' "$RUN_URL" > alert.txt
+            { echo "Database drift: the live database doesn't match the migrations on main. Something changed it outside a merged PR."; echo; cat diff.txt; } >> alert.txt
+          elif [ "$RESULT" = unreachable ]; then
+            printf 'The drift check could not reach the database runner.\n' >> alert.txt
           fi
+          if [ "$CHECKS" = failed ]; then
+            if [ -s alert.txt ]; then echo >> alert.txt; fi
+            echo "The runner's checks FAILED on the live database (R-2): $(paste -sd ';' failed.txt | sed 's/;/; /g'). Something changed it outside a migration, or a migration left it so." >> alert.txt
+          fi
+          printf '\nRun: %s\n' "$RUN_URL" >> alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null

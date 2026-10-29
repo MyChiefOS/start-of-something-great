@@ -1,0 +1,127 @@
+# The daily watch (harness/REVIEW-2026-10-26.md, R-3 and R-7). Once a day, and when started by hand, it checks two
+# things and alerts on the one "JEVs alerts" issue (the same place as the database drift check). It only reads: it
+# never changes a function, the database, a dependency or a pull request, and nothing it finds can stop the site,
+# the JEVs gate or the runner (Aaron: checks alert, never lock out).
+#
+#   1. Function drift (R-3). Each Edge Function in supabase/functions returns x-source-digest, the SHA-256 digest of
+#      its source files on the commit it was deployed from (source-digest.mjs, written by scripts/function-digests.js).
+#      A plain GET (each function's existing 405 refusal; no token, no secret) reads it, and it must equal main's.
+#      It proves which source version is deployed, not that nobody changed the deployed code while keeping the
+#      digest file (RISKS.md RK71). dog-probe, deployed from outside the repository, is reported while it answers.
+#   2. Dependency audit (R-7). npm audit on package-lock.json, and on the npm packages the Edge Functions import
+#      (npm:name@version in their code), against the public advisory database. It alerts; it never opens a PR.
+#
+# A finding that hasn't changed is repeated at most once a week, so the alert issue stays readable.
+name: Daily watch
+
+on:
+  schedule:
+    - cron: '43 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # only to add a comment to the "JEVs alerts" issue (and open it if there is none)
+
+jobs:
+  watch:
+    if: github.repository_id == 1418125608
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      FUNCTIONS_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Function drift (each deployed function's source digest against main's)
+        run: |
+          set -uo pipefail
+          : > findings.txt
+          node scripts/function-digests.js --check > /dev/null 2>&1 || echo "- main's digest files are out of date (node scripts/function-digests.js --check failed); the comparison below may be wrong" >> findings.txt
+          for dir in supabase/functions/*/; do
+            fn=$(basename "$dir")
+            case "$fn" in _*) continue ;; esac
+            [ -f "$dir/index.ts" ] || continue
+            want=$(sed -n 's/^export const SOURCE_DIGEST = "\([0-9a-f]\{64\}\)";$/\1/p' "$dir/source-digest.mjs" 2>/dev/null)
+            code=$(curl -sS --max-time 30 -o /dev/null -D headers.txt -w '%{http_code}' -X GET "$FUNCTIONS_URL/$fn" || echo none)
+            got=$(tr -d '\r' < headers.txt 2>/dev/null | awk -F': ' 'tolower($1) == "x-source-digest" { print $2 }' | head -n 1)
+            rm -f headers.txt
+            if [ -z "$want" ]; then
+              echo "- $fn: main has no source digest for it" >> findings.txt
+            elif [ "$got" = "$want" ]; then
+              echo "$fn: matches main (${want:0:12}, GET answered $code)"
+            elif [ -z "$got" ]; then
+              echo "- $fn: the deployed function sent no source digest (GET answered $code); it may predate R-3 or be unreachable. Main's is ${want:0:12}" >> findings.txt
+            elif [[ ! "$got" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "- $fn: the deployed function sent a malformed source digest (GET answered $code)" >> findings.txt
+            else
+              echo "- $fn: DEPLOYED CODE DIFFERS FROM MAIN: deployed ${got:0:12}, main ${want:0:12} (GET answered $code)" >> findings.txt
+            fi
+          done
+          # dog-probe was deployed from outside the repository (R-3); deleting it is Aaron's call (the review's decision 3).
+          code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X GET "$FUNCTIONS_URL/dog-probe" || echo none)
+          if [ "$code" = 404 ]; then echo "dog-probe: gone (404)"
+          else echo "- dog-probe: still deployed, not in the repository (GET answered $code)" >> findings.txt; fi
+          { echo "## Function drift"; echo; if [ -s findings.txt ]; then cat findings.txt; else echo "Every function matches main."; fi; echo; } >> "$GITHUB_STEP_SUMMARY"
+          cp findings.txt functions.txt
+
+      - name: Dependency audit (package-lock.json and the Edge Functions' npm imports)
+        run: |
+          set -uo pipefail
+          : > audit.txt
+          report() { # $1: label, $2: npm audit --json output
+            jq -r --arg label "$1" '
+              if (.metadata.vulnerabilities.total // 0) == 0 then empty
+              else "- " + $label + ": " + (.metadata.vulnerabilities.total | tostring) + " advisories: "
+                + ([.vulnerabilities | to_entries[] | .key + " (" + .value.severity + ")"] | join(", "))
+              end' "$2" >> audit.txt 2>/dev/null || echo "- $1: npm audit gave no readable answer" >> audit.txt
+          }
+          npm audit --package-lock-only --json > root.json 2>/dev/null || true
+          report "the site (package-lock.json)" root.json
+          # The functions' npm imports, e.g. npm:postgres@3.4.9, audited as a throwaway lock file.
+          grep -rhoE '"npm:[^"]+"' supabase/functions | tr -d '"' | sed 's/^npm://' | sort -u > fn-deps.txt
+          if [ -s fn-deps.txt ]; then
+            mkdir -p fn-audit
+            node -e '
+              const deps = {};
+              for (const s of require("fs").readFileSync("fn-deps.txt", "utf8").split("\n").filter(Boolean)) {
+                const at = s.lastIndexOf("@");
+                if (at > 0) deps[s.slice(0, at)] = s.slice(at + 1);
+              }
+              require("fs").writeFileSync("fn-audit/package.json", JSON.stringify({ name: "fn-audit", private: true, dependencies: deps }));'
+            (cd fn-audit && npm install --package-lock-only --ignore-scripts --no-audit --no-fund > /dev/null 2>&1 && npm audit --package-lock-only --json > ../fn.json 2>/dev/null) || true
+            [ -s fn.json ] && report "the Edge Functions ($(tr '\n' ' ' < fn-deps.txt | sed 's/ $//'))" fn.json || echo "- the Edge Functions: their npm imports could not be audited" >> audit.txt
+          fi
+          { echo "## Dependency audit"; echo; if [ -s audit.txt ]; then cat audit.txt; else echo "No known advisories."; fi; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Alert (the "JEVs alerts" issue)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          { [ -s functions.txt ] && { echo "Function drift (R-3):"; cat functions.txt; echo; }
+            [ -s audit.txt ] && { echo "Dependency audit (R-7):"; cat audit.txt; echo; }
+            [ -f functions.txt ] && [ -f audit.txt ] || echo "A watch step did not finish, so part of the check is missing."; } > findings.txt 2>/dev/null
+          [ -s findings.txt ] || { echo "Nothing to report."; exit 0; }
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, any database drift, and the daily watch.' -f 'labels[]=jevs-alert' --jq .number)
+          # The same findings are repeated at most once a week (a marker with their hash goes in each comment).
+          key=$(sha256sum findings.txt | cut -c1-16)
+          since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          seen=$(gh api --paginate "repos/$REPO/issues/$issue/comments?since=$since&per_page=100" \
+            --jq "[.[] | select(.body | contains(\"daily-watch:$key\"))] | length" 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')
+          if [ "${seen:-0}" -gt 0 ]; then echo "The same findings were alerted in the last 7 days; not repeated."; exit 0; fi
+          { echo "Daily watch: something to look at. It only reports; nothing was changed or stopped."; echo; cat findings.txt; echo "Run: $RUN_URL"; echo; echo "<!-- daily-watch:$key -->"; } > alert.txt
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
+          echo "alert added"

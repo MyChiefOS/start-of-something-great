@@ -34,21 +34,16 @@ test('the stage is closed unless set to public, whatever else is written; previe
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'PUBLIC' }), 'public');
 });
 
-test('the allow-list takes account IDs and email addresses, and ignores user names and anything malformed', () => {
-  const env = { LAUNCH_PREVIEW_ALLOW: 'github:12345, x:678 email:Aaron@Example.com github:aaronc x:@handle email:not-an-address bogus:1 , ,' };
-  assert.deepStrictEqual([...launch.allowList(env)].sort(), ['email:aaron@example.com', 'github:12345', 'x:678']);
-  // Forgiving where it's safe: a space after the colon, semicolons, and leading zeros (providers send none).
-  const loose = { LAUNCH_PREVIEW_ALLOW: 'github: 7002; github:07003;x:  0009' };
-  assert.deepStrictEqual([...launch.allowList(loose)].sort(), ['github:7002', 'github:7003', 'x:9']);
-  assert.strictEqual(launch.allowList({}).size, 0);
-});
-
-test('mayJoin never stands in the way: preview is no longer a stage, and while closed db.configured() keeps sign-in off', () => {
-  // The allow-list paths are unreachable now (R-14 removes them). Setting LAUNCH_STAGE=preview can't switch them on.
-  const preview = { LAUNCH_STAGE: 'preview', LAUNCH_PREVIEW_ALLOW: 'github:12345' };
-  assert.strictEqual(launch.mayJoin('github', '999', preview), true);
-  assert.strictEqual(launch.mayJoin('github', '999', { LAUNCH_STAGE: 'public' }), true);
-  assert.strictEqual(launch.mayJoin('github', '999', {}), true);
+test('R-14: the preview paths PR #50 made unreachable are gone (no allow-list, no preview-only reading, no preview check)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(__dirname, '..');
+  assert.deepStrictEqual(Object.keys(launch).sort(), ['STAGES', 'stage'], 'launch.js exports only the stage');
+  const files = ['launch.js', 'join.js', 'signin/flow.js', 'api/feed.js', 'api/agents.js', 'api/mcp.js', 'scripts/setup-production.js'];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(root, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    assert.doesNotMatch(src, /LAUNCH_PREVIEW_ALLOW|allowList|mayJoin|PREVIEW_MESSAGE|stage\(\)\s*===\s*'preview'|error=preview|sent=preview|sent_preview/, f);
+  }
 });
 
 test('only an exact public stage opens Release 2: a stage added later stays closed (F2)', async () => {

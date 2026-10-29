@@ -8,7 +8,10 @@
 //      reset, under an advisory lock (a migration already applied must still match; one missing from the manifest stops);
 //   4. checks the result: every app table has row-level security forced, the ledger equals the manifest, no
 //      passkey table or step-up trigger exists, no dog_* role can sign in but the site login, and that one is no
-//      wider than dog_app (fix 4);
+//      wider than dog_app (fix 4). The checks run AFTER the transaction commits: a failed check does not undo or
+//      refuse the migrations, it is reported (the answer's "failed", a 500, and an alert on the "JEVs alerts" issue
+//      from database.yml; R-2). The daily status answer runs the same catalog checks, so a change made by hand is
+//      reported within a day;
 //   5. writes one app.change_log row if anything changed; the token's ID is recorded as soon as it is checked.
 // It returns versions, counts and check names only: no data, settings or secrets.
 
@@ -26,7 +29,9 @@ export function checkManifest(m) {
   m.migrations.forEach((x, i) => {
     const v = VERSION.exec(x && x.version);
     if (!v || Number(v[1]) !== i + 1) throw new Error('manifest migrations must be numbered 001, 002, ... with no gaps');
-    if (!HEX64.test(x.sha256)) throw new Error('manifest fingerprint malformed: ' + x.version);
+    // HEX64 is anchored with one fixed-length class and no nesting, so it runs in linear time (Semgrep's regex_dos is a
+    // heuristic); the manifest comes from the merged commit.
+    if (!HEX64.test(x.sha256)) throw new Error('manifest fingerprint malformed: ' + x.version); // nosemgrep: semgrep.ajinabraham.njsscan.dos.regex_dos.regex_dos
   });
   if (m.reset != null) {
     const r = m.reset;
@@ -159,6 +164,13 @@ export async function checks(sql, files, { siteLogin = SITE_LOGIN } = {}) {
   const have = await sql.begin(ledger);
   const same = have.size === files.length && files.every((f) => have.get(f.version) === f.sha256);
   if (!same) failed.push('ledger equals the merged migrations');
+  return failed.concat(await catalogChecks(sql, { siteLogin }));
+}
+
+// The checks that need only the live catalog (no merged files): run after every migration and in the daily status
+// answer (R-2). Read-only.
+export async function catalogChecks(sql, { siteLogin = SITE_LOGIN } = {}) {
+  const failed = [];
   const [r] = await sql`
     select
       (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace

@@ -13,7 +13,8 @@ export const POOLER_HOSTS = ['aws-0-us-east-1.pooler.supabase.com', 'aws-1-us-ea
 // Vault name -> the setting name the site reads (signin/config.js). The keys are sent as base64 of their exact bytes,
 // which is the form the site reads, so the site and the JEVs gate use the same key bytes.
 export const KEYS = { dog_session_secret: 'SESSION_SECRET', dog_ip_hash_key: 'IP_HASH_KEY', dog_fingerprint_key_1: 'FINGERPRINT_KEY_1' };
-const PASSWORD = 'dog_web_password';
+// The Vault entry's name (not a secret): migration 022 keeps the site login's password under it.
+const LOGIN_ENTRY = 'dog_web_password';
 const MIN_KEY_BYTES = 32;
 
 const b64 = (s) => {
@@ -25,7 +26,7 @@ const b64 = (s) => {
 
 // Reads the four values from Vault in one query. Never logged or kept beyond the reply.
 export async function read(sql) {
-  const names = [PASSWORD, ...Object.keys(KEYS)];
+  const names = [LOGIN_ENTRY, ...Object.keys(KEYS)];
   const rows = await sql`select name, decrypted_secret as v from vault.decrypted_secrets where name = any(${names})`;
   return Object.fromEntries(rows.map((r) => [r.name, r.v]));
 }
@@ -34,7 +35,7 @@ export async function read(sql) {
 // rather than sent, so the site never runs with a weak key.
 export function shape(v) {
   const missing = [];
-  if (typeof v[PASSWORD] !== 'string' || v[PASSWORD].length < 32) missing.push(PASSWORD);
+  if (typeof v[LOGIN_ENTRY] !== 'string' || v[LOGIN_ENTRY].length < 32) missing.push(LOGIN_ENTRY);
   const keys = {};
   for (const [name, setting] of Object.entries(KEYS)) {
     if (typeof v[name] !== 'string' || new TextEncoder().encode(v[name]).length < MIN_KEY_BYTES) missing.push(name);
@@ -42,7 +43,7 @@ export function shape(v) {
   }
   if (missing.length) return { missing };
   return {
-    database: { user: 'dog_web.' + PROJECT_REF, password: v[PASSWORD], hosts: POOLER_HOSTS, port: 6543, database: 'postgres' },
+    database: { user: 'dog_web.' + PROJECT_REF, password: v[LOGIN_ENTRY], hosts: POOLER_HOSTS, port: 6543, database: 'postgres' },
     keys
   };
 }
