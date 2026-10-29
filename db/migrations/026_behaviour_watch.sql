@@ -73,8 +73,10 @@ begin
   -- Never wait long for a lock: the site runs this in its own transaction after the sign-in, which has already worked.
   perform set_config('lock_timeout', '300ms', true);
   select m.is_admin into adm from app.members m where m.id = me;
-  -- Everyone's rows unseen for 90 days, at every sign-in (the index on last_seen keeps it cheap).
-  delete from app.watch_seen w where w.last_seen < now() - interval '90 days';
+  -- Everyone's rows unseen for 90 days, at every sign-in (the index on last_seen keeps it cheap). Rows another sign-in
+  -- or a deletion holds are skipped, not waited for: the next sign-in takes them (the re-check, P6).
+  delete from app.watch_seen w where w.id in (select x.id from app.watch_seen x where x.last_seen < now() - interval '90 days'
+                                              for update skip locked);
   select count(*) into n from app.sessions s where s.member_id = me and s.expires_at > now();
   select s.max_sessions into lim from app.watch_settings s limit 1;
   if n > coalesce(lim, 5) then
@@ -91,8 +93,10 @@ begin
        and not exists (select 1 from app.watch_seen w where w.member_id = me and w.kind = r.kind and w.key_hash = r.key_hash) then
       -- The new row first, so the alert names the row, never the hash; a country seen again after 90 days has a new row
       -- and alerts again.
-      insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash) returning id into rid;
-      if app.notify(null, 'alert',
+      -- Two sign-ins from the same new place at once: the second finds the row made and stays quiet.
+      insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash)
+        on conflict (member_id, kind, key_hash) do nothing returning id into rid;
+      if rid is not null and app.notify(null, 'alert',
            case when r.kind = 'country' then 'A sign-in from a new country' else 'Your account signed in from a new network' end,
            case when r.kind = 'country' then 'A member signed in from a country none of their sign-ins in the last 90 days came from.'
                 else 'The administrator''s account signed in from a network it hasn''t used in the last 90 days. If that wasn''t you, '
@@ -102,6 +106,7 @@ begin
       end if;
     end if;
     if rid is null then
+      -- Seen before (or just made by a sign-in at the same moment): remember it was seen now.
       insert into app.watch_seen (member_id, kind, key_hash) values (me, r.kind, r.key_hash)
         on conflict (member_id, kind, key_hash) do update set last_seen = now();
     end if;

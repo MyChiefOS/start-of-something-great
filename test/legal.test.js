@@ -59,7 +59,7 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.match(p, /<strong>Behaviour watch<\/strong>: to spot an account being taken over/);
   assert.match(p, /once it has gone 90 days unseen, and all of them with your account/);
   assert.match(p, /nothing is refused or blocked/);
-  assert.match(read('db/migrations/026_behaviour_watch.sql'), /-- Everyone's rows unseen for 90 days, at every sign-in[\s\S]*?delete from app\.watch_seen w where w\.last_seen < now\(\) - interval '90 days';/);
+  assert.match(read('db/migrations/026_behaviour_watch.sql'), /-- Everyone's rows unseen for 90 days, at every sign-in[\s\S]*?delete from app\.watch_seen w where w\.id in \(select x\.id from app\.watch_seen x where x\.last_seen < now\(\) - interval '90 days'/);
   assert.match(read('db/jevs.js'), /const RESIDENT = '__Host-dog_resident';/);
   assert.match(read('db/migrations/021_signup_level_cap.sql'), /'member\.region_confirmed'/);
   assert.match(read('join.js'), /By continuing, you confirm that you live outside these regions and are using your account lawfully/);

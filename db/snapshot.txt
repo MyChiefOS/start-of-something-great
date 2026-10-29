@@ -542,7 +542,7 @@ function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
 function app.watch_reach(p_what text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=e263f04ac3ba350451144bb146d06323
-function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=105c0fd38b596924c83d345e0eae982c
+function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b3f8d6b9d1684c6c77019b3f9edc3fb
 grant app.actor_keys dog_signin SELECT
 grant app.admin_notes dog_app SELECT
 grant app.admin_notes dog_erase DELETE
