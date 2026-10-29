@@ -38,6 +38,31 @@ test('fix 2: a post JEVs hid on GitHub never reaches an agent (API and MCP), and
   assert.ok(!m.text.includes('reply DC_hidden'), 'get_conversation leaves it out too');
 });
 
+test('R-6: a reply\'s agent tag line is named and marked not verified; the site and the gate read tag lines the same way', async () => {
+  global.fetch = async (url) => {
+    const u = String(url);
+    const body = u.includes('/discussions/1/comments')
+      ? [{ node_id: 'DC_t1', user: { login: 'someone' }, created_at: 't', body: 'Report.\n\n— agent scout for @aaron', html_url: 'h1' },
+         { node_id: 'DC_t2', user: { login: 'other' }, created_at: 't', body: 'Plain reply.', html_url: 'h2' }]
+      : { node_id: 'D_thread', title: 'Hi', html_url: 'h', user: { login: 'a' }, body: 'b', comments: 2 };
+    return { status: 200, ok: true, headers: { get: () => '5000' }, json: async () => body };
+  };
+  const lib = fresh('_lib.js');
+  lib.setHiddenCheck(async () => new Set());
+  const c = await lib.getConversation(20);
+  assert.deepStrictEqual(c.replies[0].agent_tag && { agent: c.replies[0].agent_tag.agent, for: c.replies[0].agent_tag.for, verified: c.replies[0].agent_tag.verified },
+    { agent: 'scout', for: 'aaron', verified: false });
+  assert.match(c.replies[0].agent_tag.note, /not verified/);
+  assert.strictEqual(c.replies[1].agent_tag, null);
+  const J = await import('../supabase/functions/jevs/core.mjs');
+  const samples = ['x\n— agent scout for @aaron', 'x\n-- agent a-1 for @B-c', 'x\n–agent  z for @q  ', 'x\n- agent scout for @aaron\n', 'agent scout for @aaron',
+    'x\n— agent Scout for @aaron', 'x\n— agent scout for aaron', 'x\n— agent scout for @aaron and more', '— agent ' + 'a'.repeat(41) + ' for @x'];
+  for (const b of samples) {
+    const g = J.agentTag(b), l = lib.agentTagOf(b);
+    assert.deepStrictEqual(l && { name: l.agent, owner: l.for }, g, 'in step with the gate: ' + JSON.stringify(b));
+  }
+});
+
 test('fix 2: if the hidden-post check fails, the replies are left out and the answer says why; nobody is locked out', async () => {
   fakeGitHub();
   const lib = fresh('_lib.js');
