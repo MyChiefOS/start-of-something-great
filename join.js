@@ -92,7 +92,7 @@
   }
   function askRegion(name, at) {
     askedAt = at;
-    document.getElementById('code-region-text').textContent = 'You appear to be in ' + name + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland, and new sign-ups from there are declined. If you\u2019re already a member and live elsewhere (for example, you\u2019re travelling), you can continue.';
+    document.getElementById('code-region-text').textContent = 'You appear to be in ' + name + '. Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland, and new sign-ups from there are declined. If you\u2019re already a member and live elsewhere (for example, you\u2019re travelling), you can continue. By continuing, you confirm that you live outside these regions and are using your account lawfully and in line with our terms.';
     ask.hidden = false;
     say('');
   }

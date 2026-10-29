@@ -1,6 +1,6 @@
 # Sign-in setup kit
 
-> **Superseded (Oct 28, 2026).** Aaron chose a sign-in that needs no GitHub or X sign-in app and no secret: a GitHub username, a key file and a one-time code posted through giscus on /join (built and deployed in #53, off until launch; ARCHITECTURE.md section 3, db/README.md). Nothing below is needed for it, and nothing below is asked of Aaron. Kept for the record of the earlier plan.
+> **Superseded (Oct 28, 2026).** Aaron chose a sign-in that needs no GitHub or X sign-in app and no secret: a GitHub username, a key file and a one-time code posted through giscus on /join (built and merged in #53, off until launch; ARCHITECTURE.md section 3, db/README.md). Nothing below is needed for it, and nothing below is asked of Aaron. Kept for the record of the earlier plan.
 
 Everything Aaron needs to switch sign-in on, prepared so his part is short. Claude can't create accounts, handle secrets, spend money or accept terms of service for anyone, so each step below is Aaron's. Everything around those steps is ready.
 

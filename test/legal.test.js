@@ -51,8 +51,14 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.match(p, /never the file, and never its fingerprint as your browser sends it/);
   assert.match(p, /after 10 wrong key files for your username, or when you sign out everywhere/);
   assert.match(p, /__Host-dog_session<\/code> keeps you signed in/);
-  assert.match(p, /It ends after 30 days/);
-  assert.match(p, /for the 10 minutes the code works/);
+  assert.match(p, /It stops working after 30 days/);
+  assert.match(p, /__Host-dog_resident<\/code>, marks that session for its 30 days/);
+  assert.match(p, /in our audit log, which is kept after you delete your account/);
+  assert.match(p, /doesn't erase what our checks keep about your GitHub posts/);
+  assert.match(read('db/jevs.js'), /const RESIDENT = '__Host-dog_resident';/);
+  assert.match(read('db/migrations/021_signup_level_cap.sql'), /'member\.region_confirmed'/);
+  assert.match(read('join.js'), /By continuing, you confirm that you live outside these regions and are using your account lawfully/);
+  assert.match(p, /A code works for 10 minutes; its record is deleted the next time anyone asks for a code/);
   assert.match(t, /Signing in to the site itself \(from launch\)/);
   assert.match(t, /Anyone with your key file and your username can sign in as you/);
   assert.match(t, /you are back in the same account/);

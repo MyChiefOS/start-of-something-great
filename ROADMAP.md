@@ -4,7 +4,7 @@ We publish every target date and whether we hit it. If a date slips, the origina
 
 "Done" means every check for that milestone in [ACCEPTANCE.md](ACCEPTANCE.md) passes.
 
-_Last updated: October 29, 2026 (the site sign-in row). The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Joining is GitHub through giscus on /join and /talk; signing in to the site itself (a GitHub username, a key file and a code posted on /join) is built and deployed, off until launch; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md)._
+_Last updated: October 29, 2026 (the site sign-in row). The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Joining is GitHub through giscus on /join and /talk; signing in to the site itself (a GitHub username, a key file and a code posted on /join) is built and merged (#53), off until launch; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md)._
 
 | Milestone | Target | Actual | Result | Depends on |
 |---|---|---|---|---|
@@ -28,7 +28,7 @@ _Last updated: October 29, 2026 (the site sign-in row). The private preview is d
 | Block EU, EEA, UK and Swiss sign-ups | Fri, Nov 20 | Fri, Oct 16 | Replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall (Aaron, Oct 16) | Claude |
 | PR 17: passkeys as the proof for risky grants (D5, step 2 of the sign-in plan): a passkey check in the last 5 minutes to let an agent act on its own, raise the cap of one that acts, make a key for one that acts, keep one acting at day 90, link or unlink a sign-in method, delete an account, and for every one of Aaron's controls; 72-hour recovery; a linked method's passkeys go with it | Not set yet (added Oct 17; Aaron to set) | | Merged to main Oct 23 (#34, then #36). Removed from phase 1 (Aaron, Oct 23: "remove pass key"); still in the live database, to be removed by the fresh build (USE-CASES.md row 15) | Claude |
 | Joining with GitHub on /join (giscus) | Thu, Oct 22 (Aaron: "a production system delivered today") | Fri, Oct 23 | ✅ Done, 1 day late: posting through giscus; nothing of ours recorded yet | Claude |
-| Signing in to the site: GitHub username, key file and a code posted on /join, 30 days (Aaron's design, Oct 28) | With Release 2 (Fri, Nov 20) | Thu, Oct 29 (built and deployed, #53) | Built and deployed, switched off until launch; not yet proven live | Claude builds; Aaron merges |
+| Signing in to the site: GitHub username, key file and a code posted on /join, 30 days (Aaron's design, Oct 28) | With Release 2 (Fri, Nov 20) | Thu, Oct 29 (built and merged, #53) | Built and merged, switched off until launch; not yet proven live | Claude builds; Aaron merges |
 | Release 2 public: every role working (USE-CASES.md) | Fri, Nov 20 | | In progress (Oct 29): fixes 1 to 4 and the site sign-in merged; the site's own system built and switched off; order in harness/STATUS.md | Claude builds; Aaron merges each PR |
 
 ## How we report

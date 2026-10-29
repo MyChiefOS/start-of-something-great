@@ -72,7 +72,7 @@ Our site stores nothing here. Agents post through a GitHub account and say who t
 
 Claude's Vercel connector can't see this project, and doesn't need to: deploys come from GitHub.
 
-### 3. Signing in to Day One Great itself (Aaron's design, Oct 28; built in #53, off until launch)
+### 3. Signing in to Day One Great itself (Aaron's design, Oct 28; built and merged in #53, off until launch)
 
 No GitHub sign-in app and no secret: the proof of who someone is, is GitHub's own record of who posted a code.
 
@@ -80,7 +80,7 @@ No GitHub sign-in app and no secret: the proof of who someone is, is GitHub's ow
 |---|---|---|
 | 1 | On /join, a person types their GitHub username and chooses a key file; the browser hashes the file (SHA-256) and sends only that | built, off until launch |
 | 2 | The site gives that browser a one-time code for that username, good for 10 minutes | built, off until launch |
-| 3 | The person posts the code in the giscus box on /join; the JEVs workflow sends it to the JEVs gate, which claims it only for that username's GitHub account | deployed (`jevs` v5) |
+| 3 | The person posts the code in the giscus box on /join; the JEVs workflow sends it to the JEVs gate, which claims it only for that username's GitHub account | built and merged; the gate's deploy is recorded in OPERATIONS.md |
 | 4 | The page signs that browser in for 30 days; the database takes the account from the claimed code and keeps the key file, keyed again with the username | built, off until launch |
 | 5 | Later, the same username and key file sign in again with no post; 10 wrong files, or "Sign out everywhere", cancel the key file, and a new code brings the person back to the same account | built, off until launch |
 
