@@ -11,7 +11,7 @@
     slow: 'Too many tries in a short time. Please wait a few minutes.',
     email: 'That doesn’t look like an email address.',
     signin: 'Please sign in first.',
-    email_off: 'Sign-in by email isn\u2019t switched on yet. Please use GitHub or X for now.',
+    email_off: 'Sign-in by email isn\u2019t switched on. Please sign in with GitHub on this page.',
     deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.',
     fast: 'That was quick! Please press the button once more.',
     linked: 'Linked. To keep your account safe, adding a sign-in method signs you out everywhere, here too. Sign in again with any of your sign-in methods.',

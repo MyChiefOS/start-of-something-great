@@ -11,7 +11,7 @@ All by merge, in this order (each PR names its own decision first):
 - [ ] #56 to #59: the gate hardening, the sign-in lock-down, the behaviour watch, the runner alerts (#59 rewords GAP-44's charter row).
 - [ ] #60: the risk sign-off (RISKS.md): every open row, with RK62's 24-hour rule, the public JEVs thresholds and RK82's option not taken now.
 - [ ] #61: the pre-opening safety release (it rewords the Oct 26 timer condition: a failed run waits for the next slot).
-- [ ] The go-live PR: the site opens, its JEVs enforces, and Aaron becomes administrator at his first code sign-in (fix 9, as recommended there).
+- [ ] The go-live PR: the site opens, its JEVs enforces, and Aaron becomes administrator at his first code sign-in after the gate's redeploy (fix 9, as recommended there).
 
 ## Accounts and settings
 
@@ -34,5 +34,5 @@ Nothing to set up by hand under route B. The site's database login and keys are 
 
 - [ ] Aaron merges the go-live PR: that is the go-live decision. Nothing goes public before it.
 - [ ] Claude carries out its on-merge steps (OPERATIONS.md): the runner applies 028, `jevs` is redeployed and compared with the merge, and the live answers are checked read-only.
-- [ ] Aaron's first code sign-in on /join makes him administrator (RISKS.md RK92); Claude records it.
+- [ ] Aaron's first code sign-in on /join after the gate's redeploy (Claude says when) makes him administrator (RISKS.md RK92); Claude records it.
 - [ ] Fix 10: Claude proves every flow live and records it in OPERATIONS.md (harness/PLAN.md).

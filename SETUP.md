@@ -18,11 +18,11 @@ Every change is a pull request Claude builds and Aaron merges. Claude never sees
 
 ## How Aaron becomes administrator
 
-At his first code sign-in on /join after opening (028; fix 9). He types his GitHub username, chooses a key file, and posts the code from MyChiefOS. That sign-in makes him administrator, and later the same username and key file sign him in with no post (db/README.md, "Making Aaron the administrator"). Until then the site has no administrator (RISKS.md RK92).
+At his first code sign-in on /join after Claude has redeployed the JEVs gate from the go-live merge (028; fix 9). He types his GitHub username, chooses a key file, and posts the code from MyChiefOS. That sign-in makes him administrator (a code sign-in before Claude reports the gate's redeploy, minutes after the merge, signs him in as a member; his next one promotes him), and later the same username and key file sign him in with no post (db/README.md, "Making Aaron the administrator"). Until then the site has no administrator (RISKS.md RK92).
 
 ## Backups and the restore test (O2)
 
-Supabase backups are on: the Pro plan, daily, with 7 days restorable (confirmed read-only Oct 29, OPERATIONS.md); after a restore, the site's login needs a new password (runbook step 3b). The **Restore test** workflow needs `MIGRATION_DATABASE_URL`, which doesn't exist, so it can't run. A restore drill that needs no pasted secret is Claude's, after fix 10 (harness/PLAN.md).
+Supabase backups are on: the Pro plan, daily, with 7 days restorable (confirmed read-only Oct 29, OPERATIONS.md); after a restore, the site's login needs a new password: a migration that runs 022's block again (as in runbook step 3b, but keeping the broker). The **Restore test** workflow needs `MIGRATION_DATABASE_URL`, which doesn't exist, so it can't run. A restore drill that needs no pasted secret is Claude's, after fix 10 (harness/PLAN.md).
 
 ## The Production setup workflow
 

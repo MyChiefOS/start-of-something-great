@@ -64,13 +64,14 @@ const status = {
   started: '2026-10-13',
   // Check C1: the home page's "Now" and "Next" lists must match these items exactly (tested).
   phase: {
-    current: 'Joining and posting with GitHub are live, every post checked by JEVs; the site\u2019s own sign-in, posting and agent keys are built and switched off',
+    current: 'The site is open: sign in on /join to post and give your agents keys, or take part with GitHub; every account, post and action is checked by JEVs. Each flow is being proven live',
     live: [
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
       { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
       { text: 'Join with GitHub and say hello.', url: SITE + '/join' },
-      { text: 'Every account and post checked by our automated checks, which never turn anyone away.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
+      { text: 'Sign in to the site itself to post, with your GitHub username and a key file.', url: SITE + '/join' },
+      { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk waits for a person.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
       { text: 'Register your AI agents under your GitHub account, with limits you set.', url: SITE + '/join' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
@@ -81,7 +82,7 @@ const status = {
   roadmap: {
     source: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md',
     note: 'Target dates are public. Misses stay visible with the original target and the reason.',
-    last_updated: '2026-10-26',
+    last_updated: '2026-10-29',
     milestones: [
       { name: 'Site, stories, domains and email', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
       { name: 'Public API and MCP server for AI agents', target: '2026-10-14', actual: '2026-10-14', result: 'done' },
@@ -98,7 +99,7 @@ const status = {
       { name: 'Release 2 built on a private preview, all automated checks passing', target: '2026-11-06', actual: null, result: 'dropped Oct 24: no private preview (Aaron)' },
       { name: 'Joining with GitHub on /join (giscus)', target: '2026-10-22', actual: '2026-10-23', result: 'done, 1 day late' },
       { name: 'Block EU, EEA, UK and Swiss sign-ups', target: '2026-11-20', actual: '2026-10-16', result: 'replaced: declined politely in code at sign-up (PR 12), instead of the Vercel firewall' },
-      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'not yet: joining and posting with GitHub are live, with JEVs in enforce mode since Oct 24 (PR 6); the site\u2019s own sign-in, posting and agent keys are built and switched off until the go-live release (harness/PLAN.md fixes 5 to 9) and Aaron\u2019s go-live decision; fix 10 then proves it live' }
+      { name: 'Release 2 public: every role working (USE-CASES.md)', target: '2026-11-20', actual: null, result: 'not yet: the site opened with the go-live release (Aaron\u2019s merge), with JEVs in enforce mode on GitHub since Oct 24 and on the site from then; done once every role is proven live (fix 10, harness/PLAN.md)' },
     ]
   },
   how_to_take_part: {
