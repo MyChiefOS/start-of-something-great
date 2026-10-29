@@ -137,7 +137,7 @@ jobs:
             ([.decisions[] | select(.risk == "high" or .action == "post.appeal" or .effect == "alert" or (.questions | any(. == "J16" or . == "J17")))
               | "- " + .action + ": questions " + (if (.questions | length) > 0 then (.questions | join(", ")) else "none" end)
                 + (if .reason == "banned" then " (ban list)" elif .reason == "tree_cap" then " (an agent tree over its top agent\u0027s daily limit)" elif .reason == "level1_owner" then " (an agent owner at level 1)" else "" end)] | join("\n"))
-            + (if (.signin.founder // false) then "\n- a sign-in code was claimed by the founder\u0027s account: a browser can now sign in as Aaron, the administrator. If that wasn\u0027t Aaron, sign out everywhere and remove agent keys he didn\u0027t make" else "" end)
+            + (if (.signin.founder // false) then "\n- a sign-in code was claimed by the founder\u0027s account: a browser can now sign in as Aaron, the administrator (and, if nobody was yet, has just been made the administrator, ending his other sessions). If that wasn\u0027t Aaron: get a new code on /join and post it (it replaces the key file), then sign out everywhere, and remove agent keys he didn\u0027t make" else "" end)
             + "\n\nMode: " + .mode + ". Run: " + $run' result.json > alert.txt
           gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
           echo "alert added"

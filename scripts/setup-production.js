@@ -8,8 +8,9 @@
 // Steps (SETUP_STEPS, comma separated, in this order whatever order they're given):
 //   keys      SESSION_SECRET, IP_HASH_KEY, FINGERPRINT_KEY_1 and CRON_SECRET, each made only if it isn't there yet.
 //             An existing key is never replaced: members are recognised by FINGERPRINT_KEY_1.
-//   stage     LAUNCH_STAGE (closed or public; "unchanged", the default, leaves it alone). "preview" is no longer a
-//             stage (launch.js) and is refused.
+//   stage     LAUNCH_STAGE (closed or public; "unchanged", the default, leaves it alone). Since the go-live release
+//             it can only close the site: closed closes it, public lifts that close, and the repository's launch.json
+//             decides the stage (launch.js). "preview" is no longer a stage and is refused.
 //   admin     makes SETUP_ADMIN_MEMBER_ID the administrator (after Aaron has signed in once and read it at /auth/me);
 //             refuses if someone else already is (one administrator), and writes an audit row.
 //   redeploy  redeploys the deployment production currently serves (so it works after a rollback too), waits for it
@@ -208,7 +209,7 @@ function plan(env = process.env) {
     if (s === 'stage') {
       if (stage === 'unchanged') lines.push('stage: unchanged');
       else if (!STAGES.includes(stage)) throw new Error('SETUP_STAGE must be unchanged, closed or public');
-      else lines.push(stage === 'public' ? 'stage: PUBLIC. This is the go-live decision: Release 2 opens to everyone' : 'stage: CLOSED. Release 2 is off; the site looks as before');
+      else lines.push(stage === 'public' ? 'stage: PUBLIC. Lifts a close set in Vercel; the repository\'s launch.json decides whether Release 2 is open (the go-live decision is Aaron\'s merge)' : 'stage: CLOSED. Release 2 is off, whatever launch.json says, until this setting is lifted');
     }
     if (s === 'admin') {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(env.SETUP_ADMIN_MEMBER_ID || '').trim())) throw new Error('SETUP_ADMIN_MEMBER_ID must be your member_id from https://dayonegreat.com/auth/me after signing in once');

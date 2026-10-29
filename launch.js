@@ -29,8 +29,12 @@ function repoStage(f = FILE) {
   return STAGES.includes(s) ? s : 'closed';
 }
 
-// What LAUNCH_STAGE allows: everything when unset, empty or public; closed otherwise.
+// What the Vercel settings allow: everything when LAUNCH_STAGE is unset, empty or public; closed otherwise. And a
+// deployment Vercel marks as anything but production (a preview) is always closed (no preview systems, Aaron, Oct 24;
+// the CSO's review of the go-live release, S2), whatever the repository says. Outside Vercel VERCEL_ENV is unset.
 function envCap(env = process.env) {
+  const vercel = env.VERCEL_ENV == null ? '' : String(env.VERCEL_ENV).trim().toLowerCase();
+  if (vercel !== '' && vercel !== 'production') return 'closed';
   const raw = env.LAUNCH_STAGE == null ? '' : String(env.LAUNCH_STAGE).trim().toLowerCase();
   return raw === '' || raw === 'public' ? 'public' : 'closed';
 }

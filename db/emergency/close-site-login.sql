@@ -10,7 +10,7 @@
 --     sessions of roles it administers; if it can't, they end within 30 minutes, the site's pool's longest
 --     connection life, db/index.js). A refusal there doesn't stop the rest.
 --   * Nothing else: the JEVs gate on GitHub, the public pages and the read API keep working. To take the site's own
---     pages off as well, launch-cap.json goes to "closed" in the same pull request.
+--     pages off as well, launch.json goes to "closed" in the same pull request.
 do $close$
 begin
   if exists (select 1 from pg_roles where rolname = 'dog_web') then

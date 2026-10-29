@@ -36,6 +36,10 @@ test('the repository decides the stage (launch.json), LAUNCH_STAGE can only clos
   for (const v of [undefined, '', 'public', 'PUBLIC']) assert.strictEqual(launch.stage({ LAUNCH_STAGE: v }, open), 'public', String(v));
   for (const v of ['closed', 'open', 'live', ' Preview ', 'preview']) assert.strictEqual(launch.stage({ LAUNCH_STAGE: v }, open), 'closed', v);
   assert.strictEqual(launch.stage({ LAUNCH_STAGE: 'public' }, shut), 'closed', 'the Vercel setting never opens the site');
+  // A preview (Vercel's VERCEL_ENV anything but production) is always closed; production and outside Vercel follow the file.
+  for (const v of ['preview', 'development', 'Preview']) assert.strictEqual(launch.stage({ VERCEL_ENV: v }, open), 'closed', v);
+  assert.strictEqual(launch.stage({ VERCEL_ENV: 'production' }, open), 'public');
+  assert.strictEqual(launch.stage({ VERCEL_ENV: 'production', LAUNCH_STAGE: 'closed' }, open), 'closed');
 });
 
 test('R-14: the preview paths PR #50 made unreachable are gone (no allow-list, no preview-only reading, no preview check)', () => {

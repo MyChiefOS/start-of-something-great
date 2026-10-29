@@ -20,7 +20,7 @@ Nothing to set up by hand under route B. The site's database login and keys are 
 - [x] **The GitHub sign-in app** (SIGNIN-SETUP.md): not needed in phase 1. People sign in with a code posted through giscus and a key file (023; Aaron, Oct 28).
 - [x] **The `production` environment and the first setup run**: no longer needed (route B; the setup run's database step was removed in R-14).
 - [x] **Backups** (O2; RISKS.md RK12): confirmed read-only Oct 29: the Pro plan, backed up daily with 7 days restorable (OPERATIONS.md). A restore drill that needs no pasted secret is Claude's, after fix 10.
-- [x] **Deployment Protection** (RK68): checked read-only Oct 29: previews are protected; production deployments' own generated addresses are public. That matters only after stepping back from public, and the runbook's close covers it (a new password for the site's login). Covering production addresses too is a Vercel setting Claude can't reach: optional, Aaron's.
+- [x] **Deployment Protection** (RK68): checked read-only Oct 29: previews are protected; production deployments' own generated addresses are public. From the go-live build on, every generated address redirects to dayonegreat.com, and a real close carries the site's login off (RISKS.md RK68). Covering production addresses too is a Vercel setting Claude can't reach: optional, Aaron's.
 - [x] **`LAUNCH_STAGE` in Vercel**: not set (checked Oct 29: the live `/api/ready` answers `"launch_stage_set": false`), so opening needs nothing there.
 - Not in phase 1: the X sign-in app (SIGNIN-SETUP.md) and email sign-in links (EMAIL-SETUP.md).
 

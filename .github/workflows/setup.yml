@@ -18,7 +18,7 @@ on:
         required: true
         default: 'keys,stage,redeploy'
       stage:
-        description: 'Go-live stage for the "stage" step. unchanged leaves it as it is; closed keeps Release 2 off; public is the go-live decision.'
+        description: 'LAUNCH_STAGE for the "stage" step. unchanged leaves it as it is; closed closes Release 2 whatever launch.json says; public lifts that close (launch.json decides; the go-live decision is a merge).'
         type: choice
         options: [unchanged, closed, public]
         default: unchanged
