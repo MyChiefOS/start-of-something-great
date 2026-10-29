@@ -118,7 +118,9 @@ const DEFINERS = {
   'app.watch_reach(text)': 'dog_signin',
   'app.watch_first(text)': 'dog_jevs',
   // 027 (the CSO's control 6): the timers, at most once every 50 seconds, with no timer secret on the site.
-  'app.timers_run(boolean)': 'dog_timers'
+  'app.timers_run(boolean)': 'dog_timers',
+  // 027 (the CSO's review, B1): the 90-day clock of an agent's tree, which an agent can't read for itself.
+  'app.act_clock_expired(uuid)': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -300,6 +302,8 @@ async function problems(sql, { snapshot } = {}) {
   else {
     for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (timers[k]) add(TIMERS + ' can ' + label + '; it must not (027)');
     if (timers.member_of.join() !== 'dog_app') add(TIMERS + ' belongs to ' + (timers.member_of.join(', ') || 'no role') + '; it must belong to dog_app only (027)');
+    // Memberships that pass on rights (SET or INHERIT), so the creator's ADMIN-only membership (Postgres 16 and later; on
+    // Supabase, the runner's postgres login) is left out, while a membership it later grants itself is caught (N4).
     const holders = roles.filter((x) => x.member_of.includes(TIMERS)).map((x) => x.name);
     if (holders.length) add(holders.join(', ') + ' can act as ' + TIMERS + '; no role may (027)');
     const [own] = await sql`select coalesce(array_agg(p.oid::regprocedure::text order by 1), '{}') as fns from pg_proc p

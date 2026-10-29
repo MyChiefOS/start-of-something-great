@@ -21,10 +21,11 @@ const store = require('../db/signin');
 const delegation = require('../db/delegation');
 const notices = require('../db/notify');
 const posts = require('../db/posts');
+const agentsDb = require('../db/agents');
 const launch = require('../launch');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { agentCtx, promote } = require('./helpers');
+const { promote } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -153,6 +154,36 @@ test('controls 2 and 4: after a refused password, sitekeys asks the broker again
   assert.ok(!db.passwordRefused({ code: '57014' }) && !db.passwordRefused(null));
 });
 
+test('controls 2 and 4 (the CSO\'s review, S3 and N1): refetch cools down for 30 seconds after one that gave the same address, and uses only a token the broker accepted', async () => {
+  const sitekeys = require('../db/sitekeys');
+  sitekeys._reset();
+  const body = (pw) => ({ ok: true, database: { user: 'dog_web.ref', password: pw, hosts: ['aws-0-us-east-1.pooler.supabase.com'], port: 6543, database: 'postgres' },
+    keys: { SESSION_SECRET: 's'.repeat(44), IP_HASH_KEY: 'i'.repeat(44), FINGERPRINT_KEY_1: 'f'.repeat(44) } });
+  const pw = 'only-password-0123456789abcdef0123';
+  const used = [];
+  const fetchImpl = async (url, init) => { used.push(init.headers.authorization); return { status: 200, json: async () => body(pw) }; };
+  const env = { LAUNCH_STAGE: 'public' };
+  const open = () => 'public';
+  let clock = 5_000_000;
+  const now = () => clock;
+  try {
+    await sitekeys.ensure({ headers: { 'x-vercel-oidc-token': 'accepted-' + 'a'.repeat(40) } }, { fetchImpl, env, stage: open });
+    // N1: a later request's token, never checked by the broker (the answer came from the 10-minute cache), isn't kept.
+    await sitekeys.ensure({ headers: { 'x-vercel-oidc-token': 'unchecked-' + 'b'.repeat(40) } }, { fetchImpl, env, stage: open });
+    assert.strictEqual(used.length, 1);
+    used.length = 0;
+    // S3: 30 refused requests in a row ask the broker once; it gives the same address, so the rest wait 30 seconds.
+    for (let i = 0; i < 30; i++) { await sitekeys.refetch({ fetchImpl, env, stage: open, now }); clock += 500; }
+    assert.strictEqual(used.length, 1, '30 refusals, one ask');
+    assert.strictEqual(used[0], 'Bearer accepted-' + 'a'.repeat(40), 'the token the broker accepted (N1)');
+    clock += 30_000;
+    assert.strictEqual(await sitekeys.refetch({ fetchImpl, env, stage: open, now }), true, 'after 30 seconds it may ask again');
+    assert.strictEqual(used.length, 2);
+  } finally {
+    sitekeys._reset();
+  }
+});
+
 test('controls 2 and 4: db.run retries a refused password once on the new address, and nothing else', async () => {
   const env = { DATABASE_URL: 'old' };
   let tries = 0;
@@ -278,6 +309,14 @@ async function member(name) {
   return { id: out.memberId, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
 
+// An agent's key made by its owner, as the site makes one (portable: no superuser needed, so it runs on Supabase's
+// image too; the CSO's review of 027, S4).
+async function ownerKey(owner, agentId) {
+  const keyHash = c.sha256hex('key ' + crypto.randomUUID());
+  await run(owner.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${agentId}, ${keyHash})`);
+  return { actor: 'agent', memberId: owner.id, agentId, keyHash };
+}
+
 test('R-9: the heartbeat is empty before the timers first run (read by the site as anyone)', async () => {
   assert.strictEqual(await run(ANON, (t) => notices.timersAge(t)), null);
 });
@@ -292,9 +331,9 @@ test('control 6: the timers run with no secret, at most once every 50 seconds, a
     return { out, kind: who.kind };
   });
   assert.deepStrictEqual(first, { out: { ran: true, failed: false }, kind: 'anon' }, 'ran, and the caller is anonymous again afterwards');
-  assert.deepStrictEqual(await slot(), { ran: false, why: 'early' }, 'a second call within 50 seconds does nothing');
+  assert.deepStrictEqual(await slot(), { ran: false, why: 'early', failed: false }, 'a second call within 50 seconds does nothing');
   await q("update app.timer_slot set last_at = now() - interval '49 seconds'");
-  assert.deepStrictEqual(await slot(), { ran: false, why: 'early' }, '49 seconds: still too early');
+  assert.deepStrictEqual(await slot(), { ran: false, why: 'early', failed: false }, '49 seconds: still too early');
   await backdateSlot();
   assert.deepStrictEqual(await slot(), { ran: true, failed: false });
   const age = await run(ANON, (t) => notices.timersAge(t));
@@ -314,18 +353,27 @@ test('control 6: the timers run with no secret, at most once every 50 seconds, a
   assert.deepStrictEqual({ ...still }, { kind: 'member', id: m.id });
 });
 
-test('control 6: a failed run is undone and gives its slot back, keeps the failure, and alerts Aaron once a day', async () => {
+test('control 6 (the CSO\'s review, S1): a failed run is undone, recorded and alerted once a day, and still holds the slot for 50 seconds', async () => {
   const [orig] = await q("select pg_get_functiondef('app.containment_lift_job()'::regprocedure) as def");
   await backdateSlot();
-  const [before] = await q('select last_at, failures from app.timer_slot');
+  const [before] = await q('select last_ok_at, failures from app.timer_slot');
   await asOwner(`create or replace function app.containment_lift_job() returns integer language plpgsql as $$
     begin perform app.require_system(); raise exception 'planted failure' using errcode = 'P0001'; end $$`);
   try {
+    const started = Date.now();
+    const outs = [];
+    for (let i = 0; i < 20; i++) outs.push(await slot(false));
+    assert.deepStrictEqual(outs[0], { ran: false, failed: true });
+    assert.ok(outs.slice(1).every((o) => o.why === 'early' && !o.ran), '19 more calls at once: none runs the failing timers again');
+    assert.ok(Date.now() - started < 30_000);
+    const [after] = await q('select last_at, last_ok_at, failures, last_failure_state from app.timer_slot');
+    assert.strictEqual(after.last_ok_at.getTime(), before.last_ok_at.getTime(), 'the heartbeat keeps the last good run');
+    assert.ok(Date.now() - after.last_at.getTime() < 60_000, 'the slot was taken by the failed run');
+    assert.deepStrictEqual([after.failures, after.last_failure_state], [before.failures + 1, 'P0001']);
+    // The next slot, 50 seconds on (Vercel Cron's next call), tries again.
+    await backdateSlot();
     assert.deepStrictEqual(await slot(), { ran: false, failed: true });
-    assert.deepStrictEqual(await slot(), { ran: false, failed: true }, 'the slot was given back: the next call tries again at once');
-    const [after] = await q('select last_at, failures, last_failure_state from app.timer_slot');
-    assert.strictEqual(after.last_at.getTime(), before.last_at.getTime(), 'last_at is the last good run\'s');
-    assert.deepStrictEqual([after.failures, after.last_failure_state], [before.failures + 2, 'P0001']);
+    assert.strictEqual((await q('select failures from app.timer_slot'))[0].failures, before.failures + 2);
     const a = await alerts('alert:timers:failed:');
     assert.strictEqual(a.length, 1, 'one alert a day');
     assert.match(a[0].body, /\(error P0001\)/);
@@ -333,8 +381,64 @@ test('control 6: a failed run is undone and gives its slot back, keeps the failu
   } finally {
     await asOwner(orig.def);
   }
-  assert.deepStrictEqual(await slot(), { ran: true, failed: false }, 'fixed: it runs at once');
+  assert.deepStrictEqual(await slot(), { ran: false, why: 'early', failed: false }, 'fixed, but within the failed run\'s 50 seconds: it waits');
+  await backdateSlot();
+  assert.deepStrictEqual(await slot(), { ran: true, failed: false }, 'at the next slot it runs');
   assert.strictEqual((await q('select failures from app.timer_slot'))[0].failures, 0);
+});
+
+test('control 6 (the CSO\'s review, S2): a run cut off by the statement timeout (57014) is recorded, alerts and holds the slot', async () => {
+  const [orig] = await q("select pg_get_functiondef('app.containment_lift_job()'::regprocedure) as def");
+  await q("delete from app.notices where dedupe_key like 'alert:timers:failed:%'");
+  await backdateSlot();
+  // db/index.js gives every request 5 seconds; this timer sleeps past that.
+  await asOwner(`create or replace function app.containment_lift_job() returns integer language plpgsql as $$
+    begin perform app.require_system(); perform pg_sleep(6); return 0; end $$`);
+  try {
+    assert.deepStrictEqual(await slot(), { ran: false, failed: true }, 'caught, not an aborted transaction');
+    const [s] = await q('select last_failure_state, last_at from app.timer_slot');
+    assert.strictEqual(s.last_failure_state, '57014');
+    assert.ok(Date.now() - s.last_at.getTime() < 60_000, 'the slot is held');
+    assert.deepStrictEqual(await slot(), { ran: false, why: 'early', failed: false });
+    const a = await alerts('alert:timers:failed:');
+    assert.strictEqual(a.length, 1);
+    assert.match(a[0].body, /\(error 57014\)/);
+  } finally {
+    await asOwner(orig.def);
+  }
+});
+
+test('control 6 (N3): a run that finds another holding the timers\' lock is "busy", not a success, and the heartbeat doesn\'t move', async () => {
+  await backdateSlot();
+  const [before] = await q('select last_ok_at from app.timer_slot');
+  let out;
+  await su.begin(async (t) => {
+    await t`select pg_advisory_xact_lock(hashtext('dayonegreat.timers'), 0)`;
+    out = await slot();
+  });
+  assert.deepStrictEqual(out, { ran: false, why: 'busy', failed: false });
+  const [after] = await q('select last_ok_at from app.timer_slot');
+  assert.strictEqual(after.last_ok_at.getTime(), before.last_ok_at.getTime());
+});
+
+test('control 6 (N2): the run clears the caller\'s app.note and puts it back after', async () => {
+  const [orig] = await q("select pg_get_functiondef('app.containment_lift_job()'::regprocedure) as def");
+  await backdateSlot();
+  await asOwner(`create or replace function app.containment_lift_job() returns integer language plpgsql as $$
+    begin perform app.require_system();
+      if coalesce(current_setting('app.note', true), '') <> '' then raise exception 'a caller''s note reached the timers'; end if;
+      return 0; end $$`);
+  try {
+    const got = await run(ANON, async (t) => {
+      await t`select set_config('app.note', 'the caller''s note', true)`;
+      const r = await notices.timerSlot(t, true);
+      const [n] = await t`select current_setting('app.note', true) as note`;
+      return { r, note: n.note };
+    });
+    assert.deepStrictEqual(got, { r: { ran: true, failed: false }, note: "the caller's note" });
+  } finally {
+    await asOwner(orig.def);
+  }
 });
 
 test('control 6: runs not started by Vercel Cron are counted as evidence and alert past 30 a day; cron runs are not counted', async () => {
@@ -377,7 +481,7 @@ test('control 3: an hour of 100 hand-outs or any broker failure alerts Aaron thr
 test('R-9: an agent past 90 days without its owner\'s re-confirmation drafts at its next post even if no timer ran; never off', async () => {
   const owner = await member('Long runner');
   const [a] = await run(owner.ctx, (t) => t`insert into app.agents (name) values ('Veteran') returning id`);
-  const ag = { id: a.id, ctx: await agentCtx(su, owner.id, a.id) };
+  const ag = { id: a.id, ctx: await ownerKey(owner, a.id) };
   await run({ ...owner.ctx, fresh: true }, (t) => delegation.setRules(t, { agent: a.id, post: 'act', reply: 'draft', report: 'draft', dailyCap: 1000 }));
   const age = (days) => su.begin(async (t) => {
     await t.unsafe('alter table app.agent_rules disable trigger agent_rules_guard');
@@ -405,6 +509,47 @@ test('R-9: an agent past 90 days without its owner\'s re-confirmation drafts at 
   assert.ok((await say('confirmed again')).posted);
 });
 
+test('R-9 (the CSO\'s review, B1): a sub-agent is judged by its tree\'s 90-day clock: one made at day 91 drafts, and one made earlier drafts once its root passes 90 days', async () => {
+  const owner = await member('Tree owner');
+  const [a] = await run(owner.ctx, (t) => t`insert into app.agents (name) values ('Root') returning id`);
+  const root = await ownerKey(owner, a.id);
+  await run({ ...owner.ctx, fresh: true }, (t) => delegation.setRules(t, { agent: a.id, post: 'act', reply: 'act', report: 'act', dailyCap: 1000 }));
+  const age = (days) => su.begin(async (t) => {
+    await t.unsafe('alter table app.agent_rules disable trigger agent_rules_guard');
+    await t.unsafe(`update app.agent_rules set created_at = now() - interval '${days} days' where agent_id = '${a.id}'`);
+    await t.unsafe('alter table app.agent_rules enable always trigger agent_rules_guard');
+  });
+  const makeSub = async (name) => {
+    const keyHash = c.sha256hex('sub ' + crypto.randomUUID());
+    const out = await run(root, (t) => agentsDb.createSub(t, { name, keyHash, callerKeyHash: root.keyHash, rules: { post: 'act', reply: 'act', report: 'act' }, ttlHours: 168 }));
+    assert.ok(out.id, JSON.stringify(out));
+    return { out, ctx: { actor: 'agent', memberId: owner.id, agentId: out.id, keyHash } };
+  };
+  const say = (ctx, body) => run(ctx, (t) => delegation.submit(t, { body }));
+  await age(89);
+  const early = await makeSub('Made at day 89');
+  assert.deepStrictEqual([early.out.rules.post, early.out.rules.reply, early.out.rules.report], ['act', 'act', 'act'], 'day 89: as asked');
+  assert.ok((await say(early.ctx, 'sub-agent, day 89')).posted);
+  await age(91);
+  // No timer has run. The root drafts its own posts (above), and now its sub-agents too.
+  const late = await makeSub('Made at day 91');
+  assert.deepStrictEqual([late.out.rules.post, late.out.rules.reply, late.out.rules.report], ['draft', 'draft', 'draft'], 'made drafting, not refused, not off');
+  const lateSays = await say(late.ctx, 'sub-agent made at day 91');
+  assert.ok(lateSays.drafted, JSON.stringify(lateSays));
+  const earlySays = await say(early.ctx, 'sub-agent made at day 89, now day 91');
+  assert.ok(earlySays.drafted, 'judged by its root\'s clock, not its own rules (which never restart it): ' + JSON.stringify(earlySays));
+  await assert.rejects(run(early.ctx, (t) => posts.create(t, { body: 'straight in' })), /agent_drafts/, 'the database refuses it as drafts');
+  assert.ok((await say(root, 'the root at day 91')).drafted);
+  // The agent can't read its root's rules itself: the clock runs as the sign-in role.
+  const visible = await run(early.ctx, (t) => t`select count(*)::int as n from app.agent_rules where agent_id = ${a.id}`);
+  assert.strictEqual(visible[0].n, 0);
+  // The timers then lower the root, and its sub-agents with it.
+  await backdateSlot();
+  await slot();
+  const [low] = await q(`select post_mode from app.agent_rules where agent_id = '${early.out.id}' order by version desc limit 1`);
+  assert.strictEqual(low.post_mode, 'draft');
+});
+
 test('the coverage check and the runner report dog_timers made wider (a login, a role acting as it, another membership, a second function), and 027 leaves no role acting as it', async () => {
   assert.deepStrictEqual(await problems(su), []);
   const [held] = await q("select count(*)::int as n from pg_auth_members a join pg_roles r on r.oid = a.roleid where r.rolname = 'dog_timers' and (a.set_option or a.inherit_option)");
@@ -415,8 +560,11 @@ test('the coverage check and the runner report dog_timers made wider (a login, a
     ['alter role dog_timers login', /dog_timers can sign in directly/],
     [`grant dog_timers to ${WEB}`, new RegExp(WEB + ' can act as dog_timers')],
     ['grant dog_jevs to dog_timers', /dog_timers belongs to dog_app, dog_jevs/],
-    ["create function app.timers_extra() returns integer language sql as 'select 1'; alter function app.timers_extra() owner to dog_timers",
-      /dog_timers owns app.timers_run\(boolean\), app.timers_extra\(\); it must own app.timers_run\(boolean\) only/]
+    // Portable (S4): the test's login takes the membership itself for this rolled-back transaction, which a superuser
+    // and Supabase's postgres (its creator, holding the ADMIN option: N4) both may, instead of relying on SET ROLE rights.
+    ['grant dog_timers to current_user with inherit false, set true; set local role dog_owner; grant create on schema app to dog_timers; '
+      + "create function app.timers_extra() returns integer language sql as 'select 1'; reset role; alter function app.timers_extra() owner to dog_timers",
+      /dog_timers owns [^;]*app\.timers_extra\(\)[^;]*; it must own app\.timers_run\(boolean\) only/]
   ]) {
     let found, runner;
     await su.begin(async (t) => {

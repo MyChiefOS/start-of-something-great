@@ -3,7 +3,8 @@
 // and the key broker check, 027). Notices are in-app only, so nothing is emailed here.
 // The timer slot (the CSO's control 6, route B; the conditions Aaron accepted on Oct 26, harness/FACTS.md): the address
 // is open to anyone and needs no secret. The database runs the timers as the site itself at most once every 50
-// seconds (app.timers_run, 027), and the slot and the timers are one transaction, so a failed run gives its slot back.
+// seconds (app.timers_run, 027). The slot and the timers are one transaction: a failed run's work is undone and recorded, and
+// the slot stays taken for its 50 seconds (the CSO's review of 027, S1), so Vercel Cron's next call retries it.
 // This route:
 //   * replies only {ok:true} (or {ok:false} with 500 when the run failed, and 503 while the site is closed): never
 //     counts or anything else from the run;
@@ -15,9 +16,10 @@
 // never set and app.actor_keys.system_hash stays empty (RISKS.md RK85).
 // Delivery is best effort (a run can be missed or arrive twice), and every step is safe to repeat and catches up on
 // everything due: the timers take a database lock and skip if another run holds it, and every notice has its own
-// dedupe key. A containment whose time is up also ends when its owner's rules are read or written, and an agent past
-// its 90 days drafts at its next post even if no timer ran (027), so a missed run never makes a pause longer or lets
-// an agent act on its own longer.
+// dedupe key. A containment whose time is up also ends when its owner's rules are read or written, so a missed run
+// never makes a pause longer. Past its tree's 90 days, an agent's posts become drafts and the sub-agents it makes
+// draft, even if no timer ran (027); until the timers run, its rules still read "act" on the owner's page and the
+// owner hasn't been told. The timer slot: every run that takes the slot holds it for 50 seconds, a failed one too.
 'use strict';
 
 const db = require('../db');
