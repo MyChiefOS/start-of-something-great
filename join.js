@@ -65,6 +65,10 @@
     if (r.ok) box.hidden = false;
   }).catch(function () { /* sign-in stays hidden */ });
 
+  // The page that sent the person here (return_to), sent with the sign-in; the server checks it again (signin/http.js
+  // returnPath) and otherwise goes to the feed.
+  var back = new URLSearchParams(location.search).get('return_to');
+  if (!back || back.length > 200 || !/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/.test(back)) back = null;
   var timer = null, deadline = null, busy = false, started = 0, confirmed = false, askedAt = 'start';
   function stop() {
     if (timer) { clearInterval(timer); timer = null; }
@@ -74,9 +78,11 @@
   function check() {
     if (busy) return; // one request at a time, so two answers can't race (the CSO's review, finding 5)
     busy = true;
-    post('/auth/code/finish', confirmed ? { confirm: '1' } : {}).then(function (d) {
+    var fb = confirmed ? { confirm: '1' } : {};
+    if (back) fb.return_to = back;
+    post('/auth/code/finish', fb).then(function (d) {
       if (!timer) return;
-      if (d.signed_in) { stop(); say('Signed in. Taking you to your feed\u2026'); location.href = d.go || '/'; return; }
+      if (d.signed_in) { stop(); say('Signed in. Taking you on\u2026'); location.href = d.go || '/'; return; }
       // The region can look different by the time the code is used (a network that changed while travelling): ask
       // then, and carry on with the same code once they confirm (the CSO's re-check, N1).
       if (d.region) { clearInterval(timer); timer = null; askRegion(d.region, 'finish'); return; }
@@ -112,10 +118,11 @@
       if (!h) { say('Choose your key file first.'); return null; }
       var body = { login: login, file: h };
       if (confirmed) body.confirm = '1';
+      if (back) body.return_to = back;
       return post('/auth/key', body);
     }).then(function (d) {
       if (!d) return;
-      if (d.signed_in) { say('Signed in. Taking you to your feed\u2026'); location.href = d.go || '/'; return; }
+      if (d.signed_in) { say('Signed in. Taking you on\u2026'); location.href = d.go || '/'; return; }
       if (d.region) { askRegion(d.region, 'key'); return; }
       if (d.declined) { say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
       if (d.refused) { say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }

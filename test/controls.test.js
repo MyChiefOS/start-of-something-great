@@ -17,7 +17,7 @@ const posts = require('../db/posts');
 const controls = require('../db/controls');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { keyFor, promote } = require('./helpers');
+const { keyFor, promote, shadowMode } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -85,6 +85,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 6 });
   aaron = await member(1, 'Aaron');

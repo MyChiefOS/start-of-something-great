@@ -9,7 +9,7 @@
 //                   a PR that reads the right name (the CLJO's review: X's settings turned out misnamed)
 //   database        the pooler addresses tried, in order, until one logs dog_web in and runs "select 1" ("reached")
 //   stage           the go-live stage, and whether LAUNCH_STAGE is set in Vercel
-//   stage_cap       the highest stage launch-cap.json allows (the close switch, 027's PR): "public" means no effect
+//   stage_repo      the stage the repository says (launch.json, the go-live release); LAUNCH_STAGE can only close it
 //   timers          the heartbeat (R-9): { last_run_s_ago } since the timers last finished, "never", "closed" while
 //                   the site is closed (the timers don't run then), or "unreadable". A time, nothing else. The uptime
 //                   monitor raises its issue when the site is open and this passes 15 minutes
@@ -107,7 +107,7 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
     database,
     code_signin_keys: codeKeys(got, env),
     stage: launch.stage(env),
-    stage_cap: launch.cap(),
+    stage_repo: launch.repoStage(),
     launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim()),
     timers: await heartbeat(env, timersAge)
   };

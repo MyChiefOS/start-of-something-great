@@ -103,6 +103,8 @@ const DEFINERS = {
   // with a claimed one; only the JEVs gate's role may claim a code, for the GitHub account that posted it.
   'app.code_issue(text, text, text, text)': 'dog_signin',
   'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
+  'app.code_claim(text, text, text, boolean)': { owner: 'dog_signin', callers: 'dog_jevs' },
+  'app.founder_promote(uuid)': { owner: 'dog_owner', callers: 'dog_signin' },
   'app.code_sign_in(text, text, text, integer, text)': 'dog_signin',
   // The key file (Aaron, Oct 28): signing in again with the username and file, for every account.
   'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',

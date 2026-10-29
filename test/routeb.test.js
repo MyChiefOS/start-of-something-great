@@ -152,8 +152,8 @@ test('code sign-in, /api/ready: says whether the site hashes codes with the gate
     sk._reset(); ready._reset();
     return ready.check({ method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'x'.repeat(40) + '.sig' } }, { env, connect, fetchImpl });
   };
-  assert.strictEqual((await ask({})).code_signin_keys, 'same_as_gate');
-  const differs = await ask({ FINGERPRINT_KEY_1: 'b3RoZXI=' });
+  assert.strictEqual((await ask({ LAUNCH_STAGE: 'closed' })).code_signin_keys, 'same_as_gate');
+  const differs = await ask({ LAUNCH_STAGE: 'closed', FINGERPRINT_KEY_1: 'b3RoZXI=' });
   assert.strictEqual(differs.code_signin_keys, 'vercel_settings', 'a Vercel setting that wins over the broker\'s key is reported');
   assert.ok(!JSON.stringify(differs).includes('b3RoZXI=') && !JSON.stringify(differs).includes('ZnA='), 'never a key');
 });
@@ -172,14 +172,14 @@ test('route B, /api/ready: says what is present and which step failed, never a v
     sql.end = async () => {};
     return sql;
   };
-  const env = { GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'x' };
+  const env = { GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'x', LAUNCH_STAGE: 'closed' };
   const req = { method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'x'.repeat(40) + '.sig' } };
   const out = await ready.check(req, { env, connect, fetchImpl });
   assert.deepStrictEqual(out, { identity_token: true, broker: 'ok', keys: true, github_signin: true, github_setting_names: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
-    database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', stage_cap: 'public', launch_stage_set: false, timers: 'closed' }, 'stops at the first address that answers');
+    database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', stage_repo: 'public', launch_stage_set: true, timers: 'closed' }, 'stops at the first address that answers');
   assert.ok(!JSON.stringify(out).includes('"x"'), 'names only, never a value');
   // L2: while closed, the check's answer stays inside the check: nothing is written where the site reads settings.
-  assert.deepStrictEqual(Object.keys(env).sort(), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']);
+  assert.deepStrictEqual(Object.keys(env).sort(), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'LAUNCH_STAGE']);
   // M3: the token is gone from the request once read.
   assert.strictEqual(req.headers['x-vercel-oidc-token'], undefined);
   assert.ok(!JSON.stringify(out).includes(body.database.password), 'no password');

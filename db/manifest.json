@@ -107,6 +107,10 @@
     {
       "version": "027_preopen_safety",
       "sha256": "66738962bd1f582b20038257a20fa248f4742ead15224318d3fd967c8d58d381"
+    },
+    {
+      "version": "028_go_live",
+      "sha256": "a26905c029b8aa7e6258c23fc62725d7a61360f438ded6a03fb8015b4b290d29"
     }
   ]
 }

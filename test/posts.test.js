@@ -1,7 +1,7 @@
 // Release 2, PR 3: posting and lanes (F5, F6 groundwork, S2, S9, G2, P4, C7), against a real Postgres.
 'use strict';
 
-const { promote } = require('./helpers');
+const { promote, shadowMode } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 // Acting as an administrator straight in the database (the test superuser), the way the site does it.
@@ -88,6 +88,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });
 });
