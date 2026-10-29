@@ -120,7 +120,7 @@ The table below lists what the site reads. Under route B they come from the brok
 
 ### Fix 10: live proof of every flow. Claude; Aaron approves (corrected Oct 26). Unknown: how Claude proves the flows that need a real person signed in with GitHub, without asking Aaron to use the site.
 
-Run once on production and record in OPERATIONS.md: sign-in and JEVs' first check; a site post (live, challenged, held) and a report; an agent registered, claimed, posting as draft, approved, capped, making a sub-agent, revoked; the 80-day and 90-day timer paths (timers on); a ban and a brake; a GitHub post in enforce mode (scored, alerted, hidden with a reason, `/appeal`, `/approve`); account deletion and a GitHub post deletion (records erased); the restore test.
+Run once on production and record in OPERATIONS.md: sign-in and JEVs' first check (a code posted on /join, then the key file on another browser, the same account after starting again, and whether a phone picking a photo from its library gives the same fingerprint each time: unknown); a site post (live, challenged, held) and a report; an agent registered, claimed, posting as draft, approved, capped, making a sub-agent, revoked; the 80-day and 90-day timer paths (timers on); a ban and a brake; a GitHub post in enforce mode (scored, alerted, hidden with a reason, `/appeal`, `/approve`); account deletion and a GitHub post deletion (records erased); the restore test.
 
 ### After fix 10 (owner named, not yet scheduled)
 

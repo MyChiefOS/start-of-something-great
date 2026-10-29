@@ -216,7 +216,7 @@ const HIDDEN_BECAUSE = {
 
 // What the reply to a sign-in code says. Logins are in code quotes, so nobody is @-mentioned.
 const SIGNED_IN = (login) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
-  + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account), '
+  + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account; this also cancels the key file), '
   + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once and is hidden now.';
 const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it was made for a different GitHub username, has expired (codes '
   + 'last 10 minutes), was already used, or wasn\'t one the site gave out. Get a new one at https://dayonegreat.com/join. '

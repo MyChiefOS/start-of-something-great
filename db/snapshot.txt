@@ -103,6 +103,7 @@ constraint app.email_tokens email_tokens_key_version_check CHECK (((key_version 
 constraint app.email_tokens email_tokens_pkey PRIMARY KEY (id)
 constraint app.email_tokens email_tokens_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.email_tokens email_tokens_token_hash_key UNIQUE (token_hash)
+constraint app.file_keys file_keys_failed_check CHECK (((failed >= 0) AND (failed <= 10)))
 constraint app.file_keys file_keys_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
 constraint app.file_keys file_keys_fingerprint_key UNIQUE (fingerprint)
 constraint app.file_keys file_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
@@ -318,6 +319,7 @@ default app.email_suppressions.id = app.uuid_v7()
 default app.email_tokens.created_at = now()
 default app.email_tokens.id = app.uuid_v7()
 default app.file_keys.created_at = now()
+default app.file_keys.failed = 0
 default app.file_keys.id = app.uuid_v7()
 default app.gh_accounts.first_seen_at = now()
 default app.gh_accounts.id = app.uuid_v7()
@@ -460,7 +462,8 @@ function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_b
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
 function app.feed(p_lane text, p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb) body_md5=535ea91b8aa8e22fe80658bba6d9f9e2
-function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=e5625f9ae6a6d1e28c742ed4e4932c2a
+function app.file_key_revoke() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=379443262a94f2ed1462918badda4803
+function app.file_sign_in(p_login_hash text, p_key_hash text, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=bc0a38cd81c51da5e1406b60259186e8
 function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.gh_hidden(p_nodes text[]) owner=dog_jevs execute=dog_jevs,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF text body_md5=ad846da3a078644d20feb1901d0cb575
 function app.identities_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=7515e26c8188fcc76cc26f3ef97c412b
@@ -743,6 +746,7 @@ grant app.email_tokens.used_at dog_signin UPDATE
 grant app.file_keys dog_signin DELETE
 grant app.file_keys dog_signin SELECT
 grant app.file_keys.created_at dog_signin UPDATE
+grant app.file_keys.failed dog_signin UPDATE
 grant app.file_keys.fingerprint dog_signin INSERT
 grant app.file_keys.key_hash dog_signin INSERT
 grant app.file_keys.key_hash dog_signin UPDATE

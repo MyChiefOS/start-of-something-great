@@ -165,6 +165,8 @@ async function sessionEnd(t, sessionHash) {
 // "Log out everywhere": as the member, through their own row-level security policy.
 async function sessionsEndAll(t) {
   const rows = await t`delete from app.sessions where member_id = app.current_member() returning id`;
+  // The key file goes too (Aaron, Oct 28): the member starts again with a new code, back in the same account.
+  await t`select app.file_key_revoke()`;
   return rows.length;
 }
 

@@ -298,21 +298,49 @@ if (!SERVER) {
     assert.ok(!dump.includes(FILE_A) && !dump.includes('keeper'), 'neither the file\'s hash nor the username is stored as sent, only keyed again');
     // A new code sign-in with a new file replaces the old one.
     const again = jar();
-    const s2 = await start(again, { login: 'keeper', file: FILE_B });
+    const s2 = await start(again, { login: 'keeper', file: FILE_B, ip: '203.0.113.73' });
     await post(8020, 'keeper', s2.code);
     assert.strictEqual((await finish(again)).signed_in, true);
+    assert.strictEqual((await me(again)).member_id, who.member_id, 'a new code brings the person back to the same account (Aaron, Oct 28)');
     assert.match((await key(jar(), { login: 'keeper', file: FILE_A })).error, /don’t match/, 'the old file no longer works');
-    assert.strictEqual((await key(jar(), { login: 'keeper', file: FILE_B })).signed_in, true);
+    const phone = jar();
+    assert.strictEqual((await key(phone, { login: 'keeper', file: FILE_B })).signed_in, true);
+    // "Sign out everywhere" cancels the key file too; a new code brings the member back to the same account.
+    const out = res(); await flow.logout(req('POST', '/auth/logout-all', { cookie: phone.header() }), out, true);
+    assert.strictEqual((await me(phone)).signed_in, false);
+    assert.match((await key(jar(), { login: 'keeper', file: FILE_B })).error, /don’t match/, 'sign out everywhere cancels the key file');
+    const back = jar();
+    const s3 = await start(back, { login: 'keeper', file: FILE_A, ip: '203.0.113.71' });
+    await post(8020, 'keeper', s3.code);
+    assert.strictEqual((await finish(back)).signed_in, true);
+    assert.strictEqual((await me(back)).member_id, who.member_id, 'the same account after starting again');
   });
 
-  test('the key file: tries are limited per username, an administrator always posts a code, and a deleted account\'s file is gone', async () => {
+  test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), an administrator always posts a code, and a deleted account\'s file is gone', async () => {
     const b = jar();
     const s = await start(b, { login: 'tries', file: FILE_A });
     await post(8021, 'tries', s.code);
     assert.strictEqual((await finish(b)).signed_in, true);
     const key = async (body, ip) => { const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body, ip }), r); return { status: r.statusCode, ...JSON.parse(r.body) }; };
-    for (let i = 0; i < 10; i++) await key({ login: 'tries', file: sha('guess ' + i) }, '198.51.100.' + (i + 1));
-    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.99')).status, 429, 'ten tries an hour per username, from any network');
+    const tries = jar();
+    const memberId = (await me(b)).member_id;
+    // A right file resets the count: 9 wrong, 1 right, then 9 wrong still works.
+    for (let i = 0; i < 9; i++) assert.match((await key({ login: 'tries', file: sha('guess ' + i) }, '198.51.100.' + (i + 1))).error, /don’t match/);
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.40')).signed_in, true, 'nine wrong files, then the right one works');
+    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('again ' + i) }, '198.51.100.' + (i + 11));
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.41')).signed_in, true, 'the right file reset the count');
+    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('more ' + i) }, '198.51.100.' + (i + 21));
+    const tenth = await key({ login: 'TRIES', file: sha('more 9') }, '198.51.100.31');
+    assert.strictEqual(tenth.start_again, true, 'the 10th wrong file, in any spelling of the username, from any network');
+    assert.match(tenth.error, /start again: get a new code/);
+    assert.match((await key({ login: 'tries', file: FILE_A }, '198.51.100.42')).error, /don’t match/, 'the key file is cancelled');
+    const [note] = await owner(`select title, link from app.notices where member_id = '${memberId}' and kind = 'signin_keyfile' and dedupe_key like 'signin:keyfile:cancelled:%'`);
+    assert.deepStrictEqual({ ...note }, { title: 'Your key file was cancelled', link: '/join' }, 'the member is told');
+    const s4 = await start(tries, { login: 'tries', file: FILE_B, ip: '203.0.113.72' });
+    await post(8021, 'tries', s4.code);
+    assert.strictEqual((await finish(tries)).signed_in, true);
+    assert.strictEqual((await me(tries)).member_id, memberId, 'starting again brings back the same account');
+    assert.strictEqual((await key({ login: 'tries', file: FILE_B }, '198.51.100.43')).signed_in, true, 'with the new file');
     // An administrator: the file signs nobody in as administrator.
     const a = jar();
     const sa = await start(a, { login: 'boss', file: FILE_A });

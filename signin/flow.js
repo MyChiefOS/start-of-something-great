@@ -66,7 +66,6 @@ const ANON = { actor: 'anon' };
 const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
   // The key file (Aaron, Oct 28): tries per username, so nobody can try file after file against one account.
-  keyfile_login: { windowSeconds: 3600, max: 10 },
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
@@ -379,7 +378,8 @@ function make(deps) {
     },
 
     // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
-    // network and per username; each sign-in leaves the member an in-app notice. An administrator posts a code instead.
+    // network; the 10th wrong file for a username cancels its key file (the database counts), and the person is asked
+    // to start again with a new code. Each sign-in leaves the member an in-app notice. An administrator posts a code.
     async keyFileSignIn(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
       if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
@@ -388,12 +388,13 @@ function make(deps) {
       if (!login || !file) return json(res, 200, { error: 'Type your GitHub username and choose your key file.' });
       const country = region.declined(req);
       if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
-      if (await limited('signin_ip', h.ipKey(req, config.ipKey)) || await limited('keyfile_login', loginHash(login))) {
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
         return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       }
       const token = c.token(32);
       const out = await run(ANON, (t) => store.fileSignIn(t, { loginHash: loginHash(login), keyHash: fileKey(login, file),
         displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
+      if (out.status === 'start_again') return json(res, 200, { start_again: true, error: 'Too many wrong key files. Please start again: get a new code, post it, and choose a new key file. You\u2019ll be back in your same account.' });
       if (out.status === 'no_match') return json(res, 200, { error: 'That username and key file don\u2019t match. Check both, or get a new code.' });
       if (out.status === 'post_needed') return json(res, 200, { post_needed: true, error: 'This account signs in by posting a code each time. Get a new code.' });
       if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }

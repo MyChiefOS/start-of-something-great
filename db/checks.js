@@ -100,7 +100,9 @@ const DEFINERS = {
   'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
   'app.code_sign_in(text, text, text, integer, text)': 'dog_signin',
   // The key file (Aaron, Oct 28): signing in again with the username and file, never as an administrator.
-  'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin'
+  'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',
+  // "Sign out everywhere" cancels the member's own key file.
+  'app.file_key_revoke()': 'dog_signin'
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
