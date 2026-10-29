@@ -403,7 +403,7 @@ The audit row for something JEVs did (`jevs.hold`, `jevs.challenge`, `jevs.queue
 
 Deleting an account removes its decisions, challenges, marks, prints, link domains and deletion review with everything else (F8).
 
-**How Aaron sets the real thresholds (no pull request).** The seeds in `010_jevs.sql` are public, so they are only a starting point. Aaron changes a setting in the provider's SQL editor, as the owner role, the same way he becomes the administrator:
+**How the thresholds are tuned.** Since the risk sign-off PR (RK16, decided by Aaron's merge), tuning goes by a migration PR through the runner, so the values stay public: nothing depends on them being secret (the F11 residual stands). The SQL-editor route below, as the owner role, still works but needs Aaron's hands and is kept only as a fallback:
 
 ```sql
 begin;
