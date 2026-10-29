@@ -80,7 +80,7 @@ No GitHub sign-in app and no secret: the proof of who someone is, is GitHub's ow
 |---|---|---|
 | 1 | On /join, a person types their GitHub username and chooses a key file; the browser hashes the file (SHA-256) and sends only that | built, off until launch |
 | 2 | The site gives that browser a one-time code for that username, good for 10 minutes | built, off until launch |
-| 3 | The person posts the code in the giscus box on /join; the JEVs workflow sends it to the JEVs gate, which claims it only for that username's GitHub account | built and merged; the gate's deploy is recorded in OPERATIONS.md |
+| 3 | The person posts the code in the giscus box on /join; the JEVs workflow sends it to the JEVs gate, which claims it only for that username's GitHub account | built and merged; the gate's deploy is recorded in OPERATIONS.md by PR #54 |
 | 4 | The page signs that browser in for 30 days; the database takes the account from the claimed code and keeps the key file, keyed again with the username | built, off until launch |
 | 5 | Later, the same username and key file sign in again with no post; 10 wrong files, or "Sign out everywhere", cancel the key file, and a new code brings the person back to the same account | built, off until launch |
 
