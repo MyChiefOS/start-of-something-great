@@ -124,6 +124,12 @@ test.before(async () => {
   // The ban above ended A's sessions, so A signs in again, leaving a session row.
   A.sessionHash = (await signIn(2, 'Member A', A.fp)).sessionHash;
   A.ctx = { ...A.ctx, session: A.sessionHash };
+  // 030: the behaviour watch's web records for A's session and account (a request, and its sealed place), as the site
+  // writes them, and a removal count.
+  await run({ actor: 'anon' }, (t) => store.watchSession(t, { sessionHash: A.sessionHash, ua: c.sha256hex('ua a'), country: c.sha256hex('country a') }));
+  await run({ actor: 'anon' }, (t) => store.watchTravel(t, { sessionHash: A.sessionHash, place: 'p'.repeat(64) }));
+  await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.watch_counts (member_id, kind, hour)
+    values ('${A.id}', 'post.remove', date_trunc('hour', now()))`); });
   // PR 2 (Oct 24, 2026): one change-log row and one used runner token, as the migration runner writes them (dog_owner).
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_owner');

@@ -115,6 +115,10 @@
     {
       "version": "029_founder_account",
       "sha256": "b3f8d4fa4b3d1d19b666e8783fdc3b0c8534bc6512fad309339a180be215861e"
+    },
+    {
+      "version": "030_behaviour_watch_web",
+      "sha256": "fd6ea7b9d19d901752749e8498911fbbcc58d347decfd660479b79701b4229c2"
     }
   ]
 }
