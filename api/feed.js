@@ -231,9 +231,16 @@ function shapeQueued(i) {
     actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'] };
 }
 
+// The JEVs behaviour watch (026): a signed-in member who isn't the administrator asking for the review queue or the
+// owner controls alerts Aaron, once a day per member and page. Alerts only; a failure never changes the answer.
+async function reach(run, who, what) {
+  if (!who || !who.memberId || !run) return;
+  try { await run(session.actorFor(who), (t) => store.watchReach(t, what)); } catch (e) { jevs.logFailure('behaviour watch', e); }
+}
+
 // A reviewer's decision (SF5: one tap from the queue). Recorded in the audit log by the database (O3).
 async function decide(req, res, run, who, body) {
-  if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can decide on posts.' });
+  if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can decide on posts.' }); }
   try {
     const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such post.' });
@@ -321,7 +328,7 @@ const DELETION_DONE = {
   restored: 'Restored. The account is active again; its owner signs in again and gives their agents new keys and rules.'
 };
 async function control(req, res, run, who, body) {
-  if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can use the owner controls.' });
+  if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can use the owner controls.' }); }
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
     + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
@@ -444,7 +451,7 @@ async function handle(req, res, run) {
     if (!run) return reply(res, 200, { open: 0, items: [] });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
-    if (!session.canReview(who)) return reply(res, 403, { error: 'Only reviewers can see the review queue.' });
+    if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see the review queue.' }); }
     const qd = await run(session.actorFor(who), (t) => review.queue(t, {}));
     return reply(res, 200, { open: qd.open, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
   }
@@ -453,7 +460,7 @@ async function handle(req, res, run) {
     if (!run) return reply(res, 200, { totals: null, everyone: null, owners: [] });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
-    if (!session.canControl(who)) return reply(res, 403, { error: 'Only Aaron can see the owner controls.' });
+    if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can see the owner controls.' }); }
     const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
       deletion_reviews: await controls.deletionReviews(t) }));
     return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs,

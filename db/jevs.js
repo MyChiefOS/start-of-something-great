@@ -261,6 +261,7 @@ async function claimMarks(t, token) {
 // effect: none | challenge | hold | hide | promote | queue | draft (PR 16: a sub-agent made with everything drafting); applied: whether it was carried out (shadow mode carries
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
+const WATCH_FIRST = ['agent.key', 'agent.rules', 'account.delete'];
 async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false }) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error('JEVs has no action ' + action);
@@ -281,6 +282,11 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
   try {
     const [d] = await t.savepoint((x) => x`select * from app.jevs_decide(${action}, ${sub}::uuid, ${x.json(scores)}, ${spec.impact}, ${error},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint, ${netHash})`);
+    // The JEVs behaviour watch (026): a member's first agent key, rules change or deletion request alerts Aaron. Alerts
+    // only, in its own savepoint, so a failure here never changes the decision.
+    if (WATCH_FIRST.includes(action)) {
+      try { await t.savepoint((x) => x`select app.watch_first(${action})`); } catch (e) { logFailure('behaviour watch', e); }
+    }
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,
       challengeStatus: d.challenge_status, scores, error };
   } catch (e) {

@@ -172,6 +172,7 @@ function make(deps) {
   // After a sign-in: a new account's network mark (sign-up only, so an established member's network never counts
   // against them; the JEVs review, F3) and an email link's marks, then JEVs's account check, which can promote the
   // member to level 2. A failure here never undoes the sign-in; it is logged.
+  const f0 = (req) => (req ? region.country(req) : null);
   async function afterSignIn(req, out, emailToken = null, confirmed = false) {
     try {
       const f = { ...jevs.facts(req, config.ipKey), ...(confirmed ? { confirmed: true } : {}) };
@@ -184,6 +185,19 @@ function make(deps) {
       });
     } catch (e) {
       jevs.logFailure('after sign-in', e);
+    }
+    // The JEVs behaviour watch (Aaron, Oct 28; 026): many sessions at once, a new country, and for the administrator a
+    // new network. Keyed with the gate's key, so the database never holds a country or network in readable form.
+    // Alerts only, and a failure here never stops the sign-in.
+    if (codeKey && out.memberId) {
+      try {
+        const country = f0(req);
+        await run({ actor: out.isAdmin ? 'admin' : 'member', memberId: out.memberId, session: out.sessionHash || null }, (t) => store.watchSignin(t, {
+          country: country ? c.hmacHex(codeKey.key, 'watch-country:' + country) : null,
+          net: req ? c.hmacHex(codeKey.key, 'watch-net:' + h.netRange(req)) : null }));
+      } catch (e) {
+        jevs.logFailure('behaviour watch', e);
+      }
     }
   }
 

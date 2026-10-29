@@ -256,4 +256,17 @@ async function codeSignIn(t, { browserHash, displayName, sessionHash, sessionDay
   }
 }
 
-module.exports = { codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+// The JEVs behaviour watch (026): after a sign-in, as the member just signed in. country and net are the site's keyed
+// hashes of the request's country and network, or null. Alerts only; never refuses.
+async function watchSignin(t, { country = null, net = null }) {
+  const opt = (field, x) => (x === null ? null : hex(field, x));
+  const [r] = await t`select app.watch_signin(${opt('country', country)}, ${opt('net', net)}) as out`;
+  return r.out;
+}
+// A signed-in member who isn't the administrator asking for an administrator's page ('review' or 'controls').
+async function watchReach(t, what) {
+  const [r] = await t`select app.watch_reach(${v.text('what', what, { max: 20, pattern: /^(review|controls)$/ })}) as alerted`;
+  return r.alerted === true;
+}
+
+module.exports = { watchSignin, watchReach, codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
