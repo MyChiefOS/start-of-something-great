@@ -189,7 +189,7 @@ function isCodeLine(line) {
   while (end > start && line[end - 1] === ' ') end -= 1;
   if (start > 3 || end - start !== 13) return false;
   const raw = line.slice(start, end);
-  // ASCII only before capitalizing: the long s ("ſ") capitalizes to "S" (the re-review, Oct 30, bypass B).
+  // ASCII only before capitalizing: the long s (U+017F) capitalizes to "S" (the re-review, Oct 30, bypass B).
   for (let i = 0; i < raw.length; i += 1) if (raw.charCodeAt(i) > 127) return false;
   const x = raw.toUpperCase();
   if (x.slice(0, 4) !== 'DOG-' || x[8] !== '-') return false;
