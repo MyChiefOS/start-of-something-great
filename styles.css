@@ -298,6 +298,8 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 .nownext h3 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.25rem; }
 .nownext a { color: var(--text); font-family: var(--display); font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em; text-decoration-color: var(--amber); text-underline-offset: 0.25em; }
 .nownext a:hover { color: var(--amber); }
+/* At least 24 by 24 CSS px to tap (WCAG 2.5.8; the UI/UX review, item 24): these links stand alone, not in a sentence. */
+.nownext li > a, .people h3 > a { display: inline-block; min-height: 24px; padding-block: 2px; }
 .nownext span { display: block; font-size: 0.92rem; margin-top: 0.2rem; }
 @media (min-width: 48rem) { .nownext { grid-template-columns: 1fr 1fr; } }
 
@@ -534,3 +536,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+
+/* Skip to content (WCAG 2.4.1; the UI/UX review, item 22): the first thing a keyboard reaches on every page, shown
+   only while it has focus. */
+.skip-link { position: absolute; left: -9999px; top: 0; }
+.skip-link:focus { left: 1rem; top: 1rem; z-index: 100; padding: 0.5rem 0.9rem; background: var(--ink); color: var(--text); border: 2px solid var(--amber); border-radius: 6px; }

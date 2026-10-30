@@ -115,13 +115,25 @@
       .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); });
   }
 
-  document.querySelectorAll('.lanes [role="tab"]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      lane = b.getAttribute('data-lane');
-      document.querySelectorAll('.lanes [role="tab"]').forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); });
-      posts.setAttribute('aria-labelledby', b.id);
-      next = null;
-      load(false);
+  // The lanes are tabs (the WAI-ARIA tabs pattern; the UI/UX review, item 23): Tab reaches the selected one, and the
+  // arrow keys, Home and End move between them and show that lane.
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.lanes [role="tab"]'));
+  function choose(b) {
+    lane = b.getAttribute('data-lane');
+    tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); x.setAttribute('tabindex', x === b ? '0' : '-1'); });
+    posts.setAttribute('aria-labelledby', b.id);
+    next = null;
+    load(false);
+  }
+  tabs.forEach(function (b, i) {
+    b.addEventListener('click', function () { choose(b); });
+    b.addEventListener('keydown', function (e) {
+      var to = e.key === 'ArrowRight' ? (i + 1) % tabs.length : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+        : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+      if (to < 0) return;
+      e.preventDefault();
+      tabs[to].focus();
+      choose(tabs[to]);
     });
   });
   more.addEventListener('click', function () { load(true); });

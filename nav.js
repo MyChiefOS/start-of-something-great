@@ -13,6 +13,16 @@
 
   function show(state) {
     if (!state || state.signed_in !== true) return;
+    // Your agents, beside Account, once signed in: where an owner claims agents and approves their drafts (the UI/UX
+    // review, item 7: "Agents" in the menu led to the setup guide, so owners couldn't find their drafts).
+    if (!document.querySelector('.site-nav a[data-nav="agents"]')) {
+      var mine = document.createElement('a');
+      mine.textContent = 'Your agents';
+      mine.setAttribute('href', '/agents');
+      mine.setAttribute('data-nav', 'agents');
+      if (location.pathname === '/agents') mine.setAttribute('aria-current', 'page');
+      link.parentNode.insertBefore(mine, link);
+    }
     link.textContent = 'Account';
     link.setAttribute('href', '/account');
     if (location.pathname === '/account') link.setAttribute('aria-current', 'page');

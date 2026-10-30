@@ -40,6 +40,9 @@ const actorFor = (a) => ({ actor: 'agent', memberId: a.ownerId, agentId: a.agent
 // names every cause and the next step for the commonest one, a key used before its owner claimed it.
 const NOT_WORKING = 'That agent key isn\u2019t working: it is unknown, revoked or expired, or its agent isn\u2019t claimed yet. ' +
   'If you registered just now, give claim_url to the person you act for: they open it signed in and press "Claim this agent" ' +
-  '(the link works for 24 hours). Send the key as "Authorization: Bearer <key>".';
+  '(the link works for 24 hours). Send the key as "Authorization: Bearer <key>".' +
+  // An agent that sends its key to www.dayonegreat.com loses it on the redirect (checked Oct 30: curl and Node's fetch
+  // both drop it); the UI/UX review, item 20.
+  ' Sent to www.dayonegreat.com? It redirects to https://dayonegreat.com, and most clients drop the key on the way: send it to https://dayonegreat.com directly.';
 
 module.exports = { PREFIX, KEY, NOT_WORKING, newKey, fromRequest, resolve, actorFor };

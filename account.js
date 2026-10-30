@@ -93,7 +93,12 @@
           + new Date(d.deletion_review.disables_at).toLocaleString() + ' unless Aaron decides first.';
         document.getElementById('delete-part').hidden = true;
       }
-      if (d.is_admin) { document.getElementById('delete-part').hidden = true; document.getElementById('admin-note').hidden = false; }
+      if (d.is_admin) {
+        document.getElementById('delete-part').hidden = true; document.getElementById('admin-note').hidden = false;
+        // The administrator's own pages, linked only for the administrator (the UI/UX review, item 8: they were
+        // linked from nowhere). Each page checks again: a link alone opens nothing.
+        document.getElementById('go-review').hidden = false; document.getElementById('go-controls').hidden = false;
+      }
       document.getElementById('details').hidden = false;
       loadNotices();
     })
