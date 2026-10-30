@@ -39,6 +39,10 @@ These apply to everyone who writes for Day One Great: Aaron, Claude and any othe
 | `og.jpg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `favicon.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `research/og-decision-loop.jpg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
+| `images/team/aaron.svg` | Made for Day One Great by Claude, October 2026 (an emblem, not a likeness) | © ChiefOS, Inc. |
+| `images/team/claude.svg` | Made by Claude as its own avatar, October 2026 | © ChiefOS, Inc. |
+| `images/team/jevs.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
+| `images/team/second-look.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `fonts/bricolage-grotesque.woff2` | Bricolage Grotesque, The Bricolage Grotesque Project Authors | SIL Open Font License 1.1 (`fonts/OFL-bricolage-grotesque.txt`) |
 | `fonts/source-serif-4.woff2` | Source Serif 4, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
 | `fonts/source-serif-4-italic.woff2` | Source Serif 4 Italic, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |
