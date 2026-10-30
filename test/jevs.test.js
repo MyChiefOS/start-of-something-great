@@ -1241,3 +1241,61 @@ test('a sign-up leaves JEVs\'s network mark and lands at level 2 at once; later 
     await setMode('shadow');
   }
 });
+
+// ---- 031, fair checks (the UI/UX review, items 17 and 9; Aaron, Oct 30: "Yes, all 15 in that order") ----
+test('031: J06 counts a network\'s new agents only against an agent registering itself, never against an established member\'s or agent\'s later actions (item 17)', async () => {
+  const m = await member({ level: 2, name: 'On a busy cloud network', ageDays: 30 });
+  const net = c.sha256hex('busy shared cloud network ' + crypto.randomBytes(4).toString('hex'));
+  // Twelve agents registered from this network today, whoever owns them (the Oct 29 simulation's shared cloud).
+  for (let i = 0; i < 12; i++) await q(`insert into app.jevs_marks (agent_id, kind, key_hash) values ('${crypto.randomUUID()}', 'net', '${net}')`);
+  const signals = async (ctx, action, subject = null) => (await run(ctx, (t) => t`select app.jevs_signals(${action}, ${subject}, ${net}, null, null) as s`))[0].s;
+  const post = await say(m, 'An ordinary post from a busy network.');
+  assert.strictEqual((await signals(m.ctx, 'post.create', post.json.id)).net_agents_24h, 0, 'a post is judged by the owner\'s own count only');
+  for (const action of ['account.check', 'agent.claim', 'agent.rules']) {
+    assert.strictEqual((await signals(m.ctx, action)).net_agents_24h, 0, action + ' is judged by the owner\'s own count only');
+  }
+  const reg = await signals({ actor: 'anon' }, 'agent.register');
+  assert.strictEqual(reg.net_agents_24h, 12, 'a burst of self-registrations from one network still counts against the next one');
+  assert.strictEqual(jevs.score('agent.register', reg).J06, 50);
+  // The question's public description says so.
+  assert.match(jevs.QUESTIONS.find((x) => x.id === 'J06').description, /for an agent registering itself, agents registered from its network/);
+});
+
+test('031: the author of a held or hidden post is told which checks asked about it, by name and never a score, and can ask Aaron to look again; nobody else is told (item 9)', async () => {
+  await setMode('enforce');
+  try {
+    const author = await member({ level: 2, name: 'Told why', ageDays: 30 });
+    // Medium: two links to new sites. The answer names the question; no number appears anywhere.
+    const medium = await say(author, 'Places I found this week, ' + crypto.randomBytes(6).toString('hex') + ': ' + links(2));
+    assert.strictEqual(medium.status, 202);
+    assert.deepStrictEqual(medium.json.asked_about, ['Links and new domains']);
+    assert.match(medium.json.message, /Our checks asked about: Links and new domains\./);
+    // High: held for Aaron.
+    const high = await say(author, links(4) + ' or mail me at told@example.com, ' + crypto.randomBytes(6).toString('hex'));
+    assert.strictEqual(high.status, 202);
+    assert.ok(high.json.asked_about.includes('Links and new domains'), JSON.stringify(high.json.asked_about));
+    assert.match(high.json.message, /ask him to look again from Your posts on \/feed/);
+    // Your posts: why each isn't live, and the appeal only where Aaron decides.
+    const mine = (await feed('GET', { cookie: author.cookie, query: { mine: '1' } })).json.posts;
+    const m1 = mine.find((p) => p.id === medium.json.id), m2 = mine.find((p) => p.id === high.json.id);
+    assert.deepStrictEqual(m1.checks, { effect: 'challenge', asked_about: ['Links and new domains'], can_appeal: false });
+    assert.strictEqual(m2.checks.effect, 'hold');
+    assert.strictEqual(m2.checks.can_appeal, true);
+    assert.ok(!/\d/.test(JSON.stringify([m1.checks, m2.checks, medium.json.asked_about, high.json.asked_about])), 'no scores, totals or thresholds');
+    const live = await say(author, 'Just a plain hello, ' + crypto.randomBytes(6).toString('hex') + '.');
+    assert.strictEqual((await feed('GET', { cookie: author.cookie, query: { mine: '1' } })).json.posts.find((p) => p.id === live.json.id).checks, null);
+    // The appeal: once is enough; again says the same.
+    const a = await feed('POST', { cookie: author.cookie, json: { appeal: high.json.id } });
+    assert.deepStrictEqual([a.status, a.json.status], [202, 'appealed']);
+    assert.strictEqual((await feed('POST', { cookie: author.cookie, json: { appeal: high.json.id } })).json.status, 'appealed');
+    // Nobody else learns why: not another member, not a visitor.
+    const other = await member({ level: 2, name: 'Curious', ageDays: 30 });
+    for (const ctx of [other.ctx, { actor: 'anon' }]) {
+      const [r] = await run(ctx, (t) => t`select app.jevs_post_reasons(${high.json.id}) as r`);
+      assert.strictEqual(r.r, null);
+    }
+    assert.strictEqual((await feed('POST', { cookie: other.cookie, json: { appeal: high.json.id } })).status, 404);
+  } finally {
+    await setMode('shadow');
+  }
+});

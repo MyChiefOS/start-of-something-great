@@ -99,7 +99,7 @@ const QUESTIONS = [
       return Math.max(band(num(s.net_members_24h), [[10, 80], [5, 50], [2, 25]]), band(num(s.domain_members_7d), [[10, 60], [3, 30]]),
         band(num(s.net_signups_1h), [[20, 50], [5, 25]]), site);
     } },
-  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours (sub-agents are counted by J15 instead), or agents registered from one network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
+  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours (sub-agents are counted by J15 instead), or, for an agent registering itself, agents registered from its network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
     score: (s) => Math.max(band(num(s.owner_agents_24h), [[25, 70], [10, 50], [4, 25]]), band(num(s.net_agents_24h), [[25, 70], [10, 50], [4, 25]])) },
   { id: 'J07', title: 'Links and new domains', description: 'Links in the text: 25 for each site not linked to by a low-risk post that has stayed up here for at least a day, and 10 for each link after the third. At most 100.',
     score: (s) => Math.min(100, 25 * num(s.new_domains) + 10 * Math.max(0, num(s.links) - 3)) },
@@ -339,6 +339,16 @@ async function pending(t) {
 
 // The author appeals JEVs holding or hiding their post: it joins JEVs's flag in Aaron's queue.
 // { status: 'appealed' } (also when an appeal is already open) or { refused: 'not_found' }.
+// Which questions asked about the member's own post that JEVs held, asked them to confirm, or hid (031; the UI/UX review,
+// item 9): their public titles, never a score, a total or a threshold. null for any other post, or for an agent.
+async function postReasons(t, postId) {
+  const id = v.uuid('post', postId);
+  const [r] = await t`select app.jevs_post_reasons(${id}) as r`;
+  if (!r || !r.r || !Array.isArray(r.r.questions)) return null;
+  const titles = r.r.questions.map((q) => (QUESTIONS.find((x) => x.id === q) || {}).title).filter(Boolean);
+  return { effect: r.r.effect, asked_about: titles };
+}
+
 async function appeal(t, postId) {
   const id = v.uuid('post', postId);
   try {
@@ -387,4 +397,4 @@ async function summary(t) {
 const publicQuestions = () => QUESTIONS.map((q) => ({ id: q.id, title: q.title, description: q.description }));
 
 module.exports = { RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, emailDomain, emailMarks,
-  onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, regionDecline, summary, publicQuestions };
+  onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, postReasons, regionDecline, summary, publicQuestions };

@@ -81,6 +81,9 @@ const DEFINERS = {
   'app.jevs_mark(text, text, text, uuid)': 'dog_jevs',
   'app.jevs_mark_claim(text)': 'dog_jevs',
   'app.jevs_appealable(uuid)': 'dog_jevs',
+  // 031 (the UI/UX review, item 9): which public questions asked about the author's own held or hidden post, by ID,
+  // never a score; the same decisions app.jevs_appealable already reads, for the post's own author only.
+  'app.jevs_post_reasons(uuid)': 'dog_jevs',
   'app.region_decline(text)': 'dog_jevs',
   'app.jevs_settings_audit()': 'dog_jevs',
   // PR 12, after its review: the scheduled sweep that keeps marks no longer than promised, and the commit-time check
