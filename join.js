@@ -21,7 +21,8 @@
   };
   var key = q.get('sent') === '1' ? 'sent' : q.get('sent') === 'region' ? 'region' : q.get('deleted') === '1' ? 'deleted' : q.get('linked') === '1' ? 'linked' : q.get('error');
   var el = document.getElementById('message');
-  if (el && key && text[key]) { el.textContent = text[key]; el.hidden = false; }
+  // Only the messages above, never a built-in name like "constructor" (the review of the sign-in fix, finding 2).
+  if (el && key && Object.prototype.hasOwnProperty.call(text, key)) { el.textContent = text[key]; el.hidden = false; }
 })();
 
 // After signing in with GitHub or X, go back to the page that sent you here (for example /review). The server
@@ -61,8 +62,17 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body || {}).toString() })
       .then(function (r) { return r.json(); });
   };
+  // Shown only to someone signed out: a member already signed in who got a new code would replace their key file
+  // (the review of the sign-in fix, finding 1). /auth/me answers 200 either way, and 503 while sign-in is off.
   fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
-    if (r.ok) box.hidden = false;
+    return r.ok ? r.json() : null;
+  }).then(function (d) {
+    if (!d) return;
+    if (d.signed_in === false) { box.hidden = false; return; }
+    if (d.signed_in === true) {
+      var m = document.getElementById('message');
+      if (m && m.hidden) { m.textContent = 'You\u2019re signed in. Your posts are on Posts (/feed) and your settings on your account page (/account).'; m.hidden = false; }
+    }
   }).catch(function () { /* sign-in stays hidden */ });
 
   // The page that sent the person here (return_to), sent with the sign-in; the server checks it again (signin/http.js
