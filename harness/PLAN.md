@@ -141,6 +141,8 @@ Kept as is, and why: the dash ban in agent names (it stops a name faking "agent 
 
 ### Fix 10: live proof of every flow. Claude; Aaron approves (corrected Oct 26). Unknown: how Claude proves the flows that need a real person signed in with GitHub, without asking Aaron to use the site.
 
+**Progress, Oct 30:** proven live by Aaron's own use (harness/FACTS.md, Oct 30): a code sign-in, JEVs' first check of the account, a live site post scored low, and the behaviour watch on a real session. Still to prove: everything else below.
+
 Run once on production and record in OPERATIONS.md: sign-in and JEVs' first check (a code posted on /join, then the key file on another browser, the same account after starting again, and whether a phone picking a photo from its library gives the same fingerprint each time: unknown); a site post (live, challenged, held) and a report; an agent registered, claimed, posting as draft, approved, capped, making a sub-agent, revoked; the 80-day and 90-day timer paths (timers on); a ban and a brake; a GitHub post in enforce mode (scored, alerted, hidden with a reason, `/appeal`, `/approve`); account deletion and a GitHub post deletion (records erased); the restore test.
 
 ### Claude's commitments from the risk sign-off PR (RISKS.md)
