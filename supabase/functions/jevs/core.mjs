@@ -166,13 +166,36 @@ export function agentTag(body) {
   return m ? { name: m[1].toLowerCase(), owner: m[2] } : null;
 }
 
-// Signing in to the site with a code (023; Aaron, Oct 28): a comment that is exactly the code the site showed, such as
-// DOG-7K4M-Q2XH. No 0, O, 1 or I, so it can't be misread. Upper or lower case; spaces around it are ignored. Anything
-// else in the comment means it isn't a sign-in code. Returns the code in upper case, or null.
-const SIGNIN_CODE = /^\s*(DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})\s*$/i;
+// Signing in to the site with a code (023; Aaron, Oct 28): the code the site showed, such as DOG-7K4M-Q2XH. No 0, O, 1
+// or I, so it can't be misread. Upper or lower case. Since Oct 30 (Aaron: "Most people are going to say something when
+// they post"), the code may sit inside a message ("Hello! DOG-7K4M-Q2XH, thanks"): a comment that holds exactly one
+// code claims it. That is safe because the code, not the wording, carries the protection: it works only for the GitHub
+// username typed on /join, only for the browser that asked, once, for 10 minutes. Two or more codes claim nothing, so
+// it's never a guess which. A code must stand alone as a word: not inside a longer run of letters, digits or dashes.
+// Only the first 4,000 characters are read (a sign-in is a short post).
+const SIGNIN_CODE_ANYWHERE = /(?:^|[^A-Za-z0-9-])(DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})(?=$|[^A-Za-z0-9-])/gi;
+const SIGNIN_CODE_ALONE = /^\s*DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}\s*$/i;
+// Something shaped like a code that isn't a valid one (a misread 0 or O, a character missing or extra), so the reply
+// can say so. Capitals and digits with both dashes, as the site shows codes, so everyday words ("dog-friendly",
+// "dog eat dog") never get a reply.
+const CODE_LOOKALIKE = /(?:^|[^A-Za-z0-9-])DOG-[A-Z0-9]{3,5}-[A-Z0-9]{3,5}(?=$|[^A-Za-z0-9-])/;
+
+// { code, count, alone }: code is the one code in upper case when the comment holds exactly one (else null); count is
+// how many it holds; alone is true when the comment is nothing but that code (only then is it hidden once seen).
+export function signinCodes(body) {
+  const text = String(body).slice(0, 4000);
+  const found = [...new Set([...text.matchAll(SIGNIN_CODE_ANYWHERE)].map((m) => m[1].toUpperCase()))];
+  const code = found.length === 1 ? found[0] : null;
+  return { code, count: found.length, alone: Boolean(code) && SIGNIN_CODE_ALONE.test(text) };
+}
+// The one code in a comment, or null (kept for callers that need only the code).
 export function signinCode(body) {
-  const m = SIGNIN_CODE.exec(String(body).slice(0, 100));
-  return m ? m[1].toUpperCase() : null;
+  return signinCodes(body).code;
+}
+// True when a comment holds no valid code but something that looks like one.
+export function looksLikeCode(body) {
+  const text = String(body).slice(0, 4000);
+  return signinCodes(text).count === 0 && CODE_LOOKALIKE.test(text);
 }
 
 // ---- The questions ----

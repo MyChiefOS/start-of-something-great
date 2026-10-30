@@ -60,20 +60,33 @@ function jar() {
   };
 }
 
-test('the code the site shows is exactly what the gate reads; anything else in the comment is not a code', async () => {
+test('the gate reads the code the site shows, alone or inside a message; two codes, or a code inside a word, are none', async () => {
   const J = await import('../supabase/functions/jevs/core.mjs');
   assert.strictEqual(J.signinCode('DOG-7K4M-Q2XH'), 'DOG-7K4M-Q2XH');
   assert.strictEqual(J.signinCode('  dog-7k4m-q2xh \n'), 'DOG-7K4M-Q2XH', 'case and spaces around it are forgiven');
-  for (const b of ['my code: DOG-7K4M-Q2XH', 'DOG-7K4M-Q2XH thanks', 'DOG-7K4M-Q2X', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH', '']) {
+  // Aaron, Oct 30: "Most people are going to say something when they post." His own first sign-in was a hello, the
+  // code and a thank-you, and the gate (then reading only a comment that was nothing but the code) ignored it.
+  for (const b of ['Hello,\n\nDOG-7K4M-Q2XH\n\nThanks.', 'my code: DOG-7K4M-Q2XH', 'DOG-7K4M-Q2XH thanks', '(dog-7k4m-q2xh)', '`DOG-7K4M-Q2XH`', 'DOG-7K4M-Q2XH DOG-7K4M-Q2XH']) {
+    assert.strictEqual(J.signinCode(b), 'DOG-7K4M-Q2XH', JSON.stringify(b));
+  }
+  for (const b of ['DOG-7K4M-Q2X', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH', 'xDOG-7K4M-Q2XH', 'DOG-7K4M-Q2XH-2', 'DOG-7K4M-Q2XH and DOG-AAAA-BBBB', '']) {
     assert.strictEqual(J.signinCode(b), null, JSON.stringify(b));
   }
+  assert.deepStrictEqual(J.signinCodes('DOG-7K4M-Q2XH'), { code: 'DOG-7K4M-Q2XH', count: 1, alone: true });
+  assert.deepStrictEqual(J.signinCodes('Hi! DOG-7K4M-Q2XH'), { code: 'DOG-7K4M-Q2XH', count: 1, alone: false });
+  assert.deepStrictEqual(J.signinCodes('DOG-7K4M-Q2XH, DOG-AAAA-BBBB'), { code: null, count: 2, alone: false });
+  assert.strictEqual(J.signinCode('x'.repeat(4100) + ' DOG-7K4M-Q2XH'), null, 'only the first 4,000 characters are read');
+  // A lookalike gets a helpful reply; everyday words never do.
+  for (const b of ['Hi DOG-7KOM-Q2XH', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH']) assert.strictEqual(J.looksLikeCode(b), true, JSON.stringify(b));
+  for (const b of ['dog friendly park', 'dog-eat-dog world', 'We love DOGS', 'DOG-7K4M-Q2XH', '']) assert.strictEqual(J.looksLikeCode(b), false, JSON.stringify(b));
   const flow = read('signin/flow.js');
   assert.match(flow, /const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';/, 'no 0, O, 1 or I: 32 characters, 40 random bits in a code');
 });
 
 test('the workflow hides a sign-in code comment in either mode, replies, and a failed hide stops nothing', () => {
   const y = read('.github/workflows/jevs.yml');
-  assert.match(y, /- name: Hide a sign-in code \(used or not, in either mode\)\n[\s\S]*?continue-on-error: true[\s\S]*?jq -e '\.signin != null' result\.json[\s\S]*?classifier: OUTDATED/);
+  assert.match(y, /- name: Hide a sign-in code \(used or not, in either mode\)\n[\s\S]*?continue-on-error: true[\s\S]*?jq -e '\.signin != null and \(\.signin\.alone \/\/ true\)' result\.json[\s\S]*?classifier: OUTDATED/,
+    'only a comment that is just the code is hidden; a gate from before Oct 30 (no "alone") hides as before');
   assert.match(y, /- name: Reply to \/agent commands and sign-in codes/);
 });
 
@@ -142,13 +155,13 @@ if (!SERVER) {
     assert.strictEqual(s.expires_in, 600);
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true }, 'not posted yet');
     const g = await post(8001, 'coder', s.code);
-    assert.deepStrictEqual(g.signin, { claimed: true, founder: false });
+    assert.deepStrictEqual(g.signin, { claimed: true, founder: false, alone: true });
     assert.match(g.reply, /This code is now claimed for `@coder`: the browser that asked for it can sign in to Day One Great as you\. If that wasn't you, sign out everywhere/);
     assert.strictEqual(g.alert, false, 'an ordinary member\'s sign-in alerts no one');
     const replay = await G.handle(su, { event: 'discussion_comment', action: 'created', mode: 'enforce', discussion: 1,
       post: { node_id: 'DC_code_' + n, thread_node_id: 'c' + n, body: s.code, created_at: new Date().toISOString() },
       author: { id: 8001, login: 'coder', type: 'User', created_at: '2015-01-01T00:00:00Z' } }, { key: GATE_KEY });
-    assert.deepStrictEqual(replay.signin, { claimed: true, founder: false }, 'a retried run of the same post still says claimed (the CSO\'s finding 8)');
+    assert.deepStrictEqual(replay.signin, { claimed: true, founder: false, alone: true }, 'a retried run of the same post still says claimed (the CSO\'s finding 8)');
     const f = await finish(b);
     assert.deepStrictEqual(f, { status: 200, signed_in: true, go: '/feed' });
     assert.ok(b.get(SESSION), 'a session cookie');
@@ -166,6 +179,40 @@ if (!SERVER) {
     assert.ok(!dump.includes(s.code) && !dump.includes('8001') && !dump.includes('coder'), 'no code, ID or name is stored, only keyed hashes');
   });
 
+  test('a code inside a hello signs the person in, and their message stays up; two codes or a lookalike sign nobody in, with a reply that says why', async () => {
+    const b = jar();
+    // Its own network, so this test doesn't use up the shared one's 30 codes in 10 minutes (signin_ip) for later tests.
+    const s = await start(b, { login: 'greeter', ip: '192.0.2.31' });
+    const g = await post(8011, 'greeter', 'Hello,\n\n' + s.code + '\n\nThanks.');
+    assert.deepStrictEqual(g.signin, { claimed: true, founder: false, alone: false });
+    assert.match(g.reply, /This code is now claimed for `@greeter`/);
+    assert.match(g.reply, /Your message stays up; the code in it can't be used again\./);
+    assert.ok(!/is hidden now/.test(g.reply));
+    assert.strictEqual((await finish(b)).signed_in, true);
+    // Someone else posting the same code, inside a message too, gets nothing: the code was made for "greeter".
+    const other = await post(8012, 'someone', 'Is this yours? ' + s.code);
+    assert.deepStrictEqual(other.signin, { claimed: false, founder: false, alone: false });
+    assert.match(other.reply, /This code didn't sign anyone in/);
+    // Two codes: neither is used, and the reply says to post just one.
+    const b2 = jar();
+    const s2 = await start(b2, { login: 'twice', ip: '192.0.2.31' });
+    const two = await post(8013, 'twice', s2.code + ' or maybe DOG-AAAA-BBBB');
+    assert.strictEqual(two.signin, undefined, 'nothing claimed');
+    assert.match(two.reply, /more than one sign-in code in it, so none of them was used/);
+    assert.deepStrictEqual(await finish(b2), { status: 200, waiting: true });
+    // The same person then posts the one code, with a hello: signed in.
+    assert.strictEqual((await post(8013, 'twice', 'Sorry! ' + s2.code)).signin.claimed, true);
+    assert.strictEqual((await finish(b2)).signed_in, true);
+    // A lookalike (a zero where the site never puts one) gets a reply that says what a code looks like.
+    const look = await post(8014, 'typo', 'DOG-7K0M-Q2XH');
+    assert.strictEqual(look.signin, undefined);
+    assert.match(look.reply, /looks like a sign-in code, but it isn't one the site gives out/);
+    // Everyday words get no reply at all.
+    const chat = await post(8015, 'chatter', 'Is the park dog-friendly? Our DOGS would love it.');
+    assert.strictEqual(chat.signin, undefined);
+    assert.strictEqual(chat.reply, null);
+  });
+
   test('a code works once, only for the browser that asked for it', async () => {
     const b = jar(), thief = jar();
     const s = await start(b, { login: 'once' });
@@ -174,7 +221,7 @@ if (!SERVER) {
     assert.deepStrictEqual(await finish(thief), { status: 200, waiting: true }, 'another browser gets nothing from this code');
     assert.strictEqual((await finish(b)).signed_in, true);
     const again = await post(8003, 'late', s.code);
-    assert.deepStrictEqual(again.signin, { claimed: false, founder: false }, 'posting a used code claims nothing');
+    assert.deepStrictEqual(again.signin, { claimed: false, founder: false, alone: true }, 'posting a used code claims nothing');
     assert.match(again.reply, /This code didn't sign anyone in/);
     const b2 = jar();
     assert.deepStrictEqual(await finish(b2), { status: 200, expired: true }, 'a browser with no code of its own');
@@ -185,7 +232,7 @@ if (!SERVER) {
     const s = await start(b, { login: 'slow' });
     await owner(`update app.code_signins set expires_at = now() - interval '1 second' where status = 'waiting'`);
     const late = await post(8004, 'slow', s.code);
-    assert.deepStrictEqual(late.signin, { claimed: false, founder: false });
+    assert.deepStrictEqual(late.signin, { claimed: false, founder: false, alone: true });
     assert.deepStrictEqual(await finish(b), { status: 200, expired: true });
     const b2 = jar();
     const s2 = await start(b2, { login: 'editor' });
@@ -214,12 +261,12 @@ if (!SERVER) {
     const b = jar();
     const s = await start(b, { login: 'banned-one' });
     const banned = await post(8006, 'banned-one', s.code, { bans: [8006] });
-    assert.deepStrictEqual(banned.signin, { claimed: false, founder: false });
+    assert.deepStrictEqual(banned.signin, { claimed: false, founder: false, alone: true });
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true });
     const b2 = jar();
     const s2 = await start(b2, { login: 'MyChiefOS' });
     const f = await post(304218593, 'MyChiefOS', s2.code, { bans: [304218593] });
-    assert.deepStrictEqual(f.signin, { claimed: true, founder: true }, 'Aaron can always sign in, whatever the ban list says');
+    assert.deepStrictEqual(f.signin, { claimed: true, founder: true, alone: true }, 'Aaron can always sign in, whatever the ban list says');
     assert.strictEqual(f.alert, true, 'a code claimed by the founder\'s account (Aaron\'s, which Claude also posts as) alerts on the JEVs alerts issue (the CSO\'s finding 1)');
     assert.strictEqual((await finish(b2)).signed_in, true);
     // 028 (fix 9): with no administrator yet, that sign-in made him administrator; undone here so the tests below
@@ -269,11 +316,11 @@ if (!SERVER) {
     const b = jar();
     const s = await start(b, { login: '@Owner-One' });
     const copy = await post(8010, 'watcher', s.code);
-    assert.deepStrictEqual(copy.signin, { claimed: false, founder: false }, 'a watcher who reposts the code first gets nothing');
+    assert.deepStrictEqual(copy.signin, { claimed: false, founder: false, alone: true }, 'a watcher who reposts the code first gets nothing');
     assert.match(copy.reply, /made for a different GitHub username/);
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true }, 'the owner\'s browser is untouched');
     const own = await post(8011, 'owner-one', s.code);
-    assert.deepStrictEqual(own.signin, { claimed: true, founder: false }, 'the username matches whatever its case, with or without @');
+    assert.deepStrictEqual(own.signin, { claimed: true, founder: false, alone: true }, 'the username matches whatever its case, with or without @');
     const f = await finish(b);
     assert.strictEqual(f.signed_in, true);
     const [row] = await owner(`select count(*)::int as n from app.identities where fingerprint = '${c.fingerprints(SITE_KEYS, 'github', '8011')[0]}'`);
@@ -563,7 +610,7 @@ if (!SERVER) {
     // as administrator with exactly one session.
     const b = jar();
     const g = await post(304218593, 'MyChiefOS', (await start(b, { login: 'MyChiefOS' , ip: '198.51.100.23' })).code);
-    assert.deepStrictEqual(g.signin, { claimed: true, founder: true });
+    assert.deepStrictEqual(g.signin, { claimed: true, founder: true, alone: true });
     assert.strictEqual(g.alert, true, 'still alerts on GitHub');
     assert.strictEqual((await finish(b)).signed_in, true);
     assert.strictEqual(await adminOf(aaron), true);

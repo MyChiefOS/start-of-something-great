@@ -223,12 +223,18 @@ const HIDDEN_BECAUSE = {
 };
 
 // What the reply to a sign-in code says. Logins are in code quotes, so nobody is @-mentioned.
-const SIGNED_IN = (login) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
+// A comment that is only the code is hidden once seen; a code inside a longer message stays up with it (Aaron, Oct 30:
+// hiding it would hide the person's hello), and is harmless by then: it works once, for one username and one browser.
+const AFTER = (alone) => (alone ? 'The code is hidden now.' : 'Your message stays up; the code in it can\'t be used again.');
+const SIGNED_IN = (login, alone) => 'This code is now claimed for ' + at(login) + ': the browser that asked for it can sign in to '
   + 'Day One Great as you. If that wasn\'t you, sign out everywhere from your account page (https://dayonegreat.com/account; this also cancels the key file), '
-  + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once and is hidden now.';
-const NOT_SIGNED_IN = 'This code didn\'t sign anyone in: it was made for a different GitHub username, has expired (codes '
-  + 'last 10 minutes), was already used, or wasn\'t one the site gave out. Get a new one at https://dayonegreat.com/join. '
-  + 'The code is hidden now.';
+  + 'remove any agent keys you didn\'t make, and never post a code someone else gave you. The code works once. ' + AFTER(alone);
+const NOT_SIGNED_IN = (alone) => 'This code didn\'t sign anyone in: it was made for a different GitHub username, has expired (codes '
+  + 'last 10 minutes), was already used, or wasn\'t one the site gave out. Get a new one at https://dayonegreat.com/join. ' + AFTER(alone);
+const SEVERAL_CODES = 'This post has more than one sign-in code in it, so none of them was used. Post again with just the one '
+  + 'code https://dayonegreat.com/join showed you (you can add a hello).';
+const LOOKALIKE = 'This looks like a sign-in code, but it isn\'t one the site gives out (codes look like DOG-7K4M-Q2XH and never use '
+  + '0, O, 1 or I). Use the Copy button on https://dayonegreat.com/join and post the code from there.';
 
 // /approve and /appeal, replied under a post in the same thread.
 async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banned }) {
@@ -486,14 +492,21 @@ export async function handle(sql, raw, { key }) {
 
     if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body, tagged: Boolean(tag), banned });
 
-    // Signing in to the site with a code (023; Aaron, Oct 28). A new comment that is exactly a sign-in code claims it
-    // for the GitHub account that posted it, by that account's fingerprint: the same keyed hash GitHub sign-in uses,
-    // made with the same key (dog_fingerprint_key_1). The post was scored above like any other. A banned account claims
-    // nothing. The workflow then hides the code comment, used or not, and replies, which GitHub tells the poster about:
+    // Signing in to the site with a code (023; Aaron, Oct 28). A new comment that holds exactly one sign-in code, alone
+    // or inside a message (Aaron, Oct 30), claims it for the GitHub account that posted it, by that account's
+    // fingerprint: the same keyed hash GitHub sign-in uses, made with the same key (dog_fingerprint_key_1). The post was
+    // scored above like any other. A banned account claims nothing. The workflow then hides a comment that is only the
+    // code, used or not, and replies to every code, which GitHub tells the poster about:
     // the alert if someone talked them into posting a code that wasn't theirs. A code claimed by the founder's account
     // (Aaron's, which Claude also posts as) also alerts on the JEVs alerts issue, outside the site, where a session made
     // from it can't hide the alert: that session would be the administrator's (the CSO's review, finding 1).
-    const code = ev.event === 'discussion_comment' && ev.action === 'created' ? J.signinCode(body) : null;
+    const newComment = ev.event === 'discussion_comment' && ev.action === 'created';
+    const found = newComment ? J.signinCodes(body) : { code: null, count: 0, alone: false };
+    const code = found.code;
+    // Two or more codes claim nothing; a lookalike gets a reply saying what a code looks like (Aaron, Oct 30: nobody is
+    // left guessing). Neither is hidden: nothing in it can sign anyone in.
+    if (newComment && found.count > 1) out.replies.push(SEVERAL_CODES);
+    else if (newComment && !code && J.looksLikeCode(body)) out.replies.push(LOOKALIKE);
     if (code) {
       let claimed = false;
       if (!banned) {
@@ -503,9 +516,10 @@ export async function handle(sql, raw, { key }) {
         claimed = Boolean(c && c.ok);
       }
       const founderClaim = claimed && ev.author.id === FOUNDER_ID;
-      out.signin = { claimed, founder: founderClaim };
+      // alone: the comment is only the code, so the workflow hides it; a code inside a message stays up (see AFTER).
+      out.signin = { claimed, founder: founderClaim, alone: found.alone };
       if (founderClaim) out.alert = true;
-      out.replies.push(claimed ? SIGNED_IN(ev.author.login) : NOT_SIGNED_IN);
+      out.replies.push(claimed ? SIGNED_IN(ev.author.login, found.alone) : NOT_SIGNED_IN(found.alone));
     }
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;
