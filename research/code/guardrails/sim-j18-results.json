@@ -1,0 +1,222 @@
+{
+ "benign": {
+  "ordinary prose": 0,
+  "prose with links": 0,
+  "commit SHAs": 0,
+  "UUIDs": 0,
+  "docker and npm digests": 0,
+  "base64 blobs": 0,
+  "URL query tokens": 0,
+  "placeholder keys in docs": 0,
+  "AWS documentation example": 0,
+  "look-alike words": 0,
+  "connection strings without a password": 0,
+  "long numbers": 0,
+  "hashes in prose": 0,
+  "public sample tokens (jwt.io, Supabase anon, local db)": 0,
+  "unfinished private key header": 0,
+  "public Supabase key": 0
+ },
+ "leaks": {
+  "dayonegreat agent key": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "GitHub token": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "GitHub fine-grained": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "AWS key ID": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "Anthropic": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "OpenAI project": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "OpenAI legacy": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "Stripe": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "Slack": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "Google API key": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "Supabase secret": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "npm": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "SendGrid": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "JWT (e.g. a Supabase service key)": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "private key": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  },
+  "database password": {
+   "plain": 100,
+   "in quotes": 100,
+   "in a code block": 100,
+   "Bearer header": 100,
+   "in a URL query": 100,
+   "end of sentence": 100,
+   "split by spaces (evasion)": 0,
+   "reversed (evasion)": 0
+  }
+ },
+ "contactsFirst": {
+  "dayonegreat agent key": 100,
+  "GitHub token": 100,
+  "GitHub fine-grained": 100,
+  "AWS key ID": 100,
+  "Anthropic": 100,
+  "OpenAI project": 100,
+  "OpenAI legacy": 100,
+  "Stripe": 100,
+  "Slack": 100,
+  "Google API key": 100,
+  "Supabase secret": 100,
+  "npm": 100,
+  "SendGrid": 100,
+  "JWT (e.g. a Supabase service key)": 100,
+  "private key": 100,
+  "database password": 100
+ },
+ "entropyBaseline": {
+  "ordinary prose": 0,
+  "prose with links": 0,
+  "commit SHAs": 0,
+  "UUIDs": 0,
+  "docker and npm digests": 100,
+  "base64 blobs": 100,
+  "URL query tokens": 96.4,
+  "placeholder keys in docs": 0,
+  "AWS documentation example": 0,
+  "look-alike words": 0,
+  "connection strings without a password": 0,
+  "long numbers": 0,
+  "hashes in prose": 0,
+  "public sample tokens (jwt.io, Supabase anon, local db)": 39.6,
+  "unfinished private key header": 0,
+  "public Supabase key": 99.2
+ },
+ "accepted": {
+  "documentation keys in real formats (hidden; accepted)": 100
+ },
+ "worstMs": "3.4"
+}

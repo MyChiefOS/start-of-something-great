@@ -147,6 +147,12 @@ async function timersAge(t) {
   return r && r.age != null ? r.age : null;
 }
 
+// The rules' heartbeat (032): seconds since the hourly never-break checks last finished, or null if they never have.
+async function rulesAge(t) {
+  const [r] = await t`select floor(extract(epoch from now() - last_ok_at))::int as age from app.invariant_slot limit 1`; // the site may read only last_ok_at
+  return r && r.age != null ? r.age : null;
+}
+
 // ---- Addresses that bounced for good or complained (the site itself), as keyed fingerprints only ----
 // Recorded from a verified SNS message; true if it is new.
 async function suppress(t, { fp, reason }) {
@@ -167,4 +173,4 @@ async function suppressed(t, fps) {
 }
 
 module.exports = { inbox, unread, markRead, reconfirm, actClock, liftDue, myContainment, appeal, appeals, decideAppeal, runTimers,
-  timerSlot, timersAge, suppress, suppressed };
+  timerSlot, timersAge, rulesAge, suppress, suppressed };

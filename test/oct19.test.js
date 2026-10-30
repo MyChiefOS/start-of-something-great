@@ -192,7 +192,7 @@ test('C4: the uptime monitor confirms a failure before alerting, and reports eve
     : {
       status: 200,
       headers: hdr({ 'strict-transport-security': 'max-age=63072000; includeSubDomains; preload', 'content-security-policy': "default-src 'self'" }),
-      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"' + uptime.EXPECTED + '"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : url.endsWith('/api/ready') ? '{"timers":{"last_run_s_ago":30},"broker":"ok"}' : '<title>Day One Great</title>')
+      text: async () => (url.endsWith('/api/status') ? '{"name":"Day One Great","stage":"' + uptime.EXPECTED + '"}' : url.endsWith('/api/proposals') ? '{"proposals":[]}' : url.endsWith('/api/mcp') ? '{"jsonrpc":"2.0","id":1,"result":{}}' : url.endsWith('/api/feed') ? '{"posts":[]}' : url.endsWith('/api/ready') ? '{"timers":{"last_run_s_ago":30},"rules":{"last_run_s_ago":600},"broker":"ok"}' : '<title>Day One Great</title>')
     });
   let waits = 0;
   const all = await uptime.checkAll(okFetch, async () => { waits++; });

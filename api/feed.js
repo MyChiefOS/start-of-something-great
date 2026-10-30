@@ -43,6 +43,15 @@ const agentkey = require('../signin/agentkey');
 const { onSite, sameSite, ipKey } = require('../signin/http');
 const { UNTRUSTED_NOTE } = require('./_lib');
 const { maskContacts } = require('./_proposals');
+// Keys and passwords hidden before a post or draft was saved (api/_secrets.js): the author is told, so they can revoke
+// them. The text never reached the site with them, but it left the author's hands.
+function withKeys(n, b) {
+  if (!n) return b;
+  const one = n === 1;
+  return { ...b, keys_hidden: n, message: (b.message ? b.message + ' ' : '') + 'We hid ' + n + (one ? ' thing' : ' things')
+    + ' that looked like a key or password before saving. If ' + (one ? 'it was' : 'they were') + ' real, revoke '
+    + (one ? 'it' : 'them') + ' and make ' + (one ? 'a new one' : 'new ones') + '.' };
+}
 
 const CACHE = 20; // seconds fresh at the edge
 const STALE = 20; // plus at most this long while refreshing: 40 seconds, leaving room inside F7's minute for the
@@ -207,13 +216,14 @@ async function agentPost(req, res, run) {
       if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f });
       return r;
     });
+    const say = (code, b) => reply(res, code, withKeys(out.keysHidden, b));
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
     if (out.refused === 'off') {
       return reply(res, 403, { error: 'Posting is off under your rules (set by your owner, or by the agent that made you). GET ' + ORIGIN + '/api/agents/me shows them.' });
     }
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
     if (out.drafted) {
-      return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
+      return say(202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t. '
           + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents. '
           // What became of it, from the agent's side (the UI/UX review, item 15).
@@ -222,13 +232,13 @@ async function agentPost(req, res, run) {
     const p = out.posted;
     const held = heldBy(out.jevs);
     if (held) {
-      return reply(res, 202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
+      return say(202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
         message: held === 'challenge'
           ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it. Your owner confirms or withdraws it at '
             + ORIGIN + '/account#notices (48 hours at the starting settings). Nothing more is needed from you; sending it again doesn\u2019t help.'
           : 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it. Nothing more is needed from you; sending it again doesn\u2019t help.' });
     }
-    return reply(res, 201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
+    return say(201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
       message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
@@ -428,6 +438,7 @@ async function handle(req, res, run) {
         if (who.trustLevel < 2 && who.isAdmin !== true) await jevs.check(t, { action: 'account.check', ...f });
         return r;
       });
+      const say = (code, b) => reply(res, code, withKeys(p.keysHidden, b));
       if (p.refused === 'brake') return reply(res, 429, { error: p.message });
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
@@ -439,15 +450,15 @@ async function handle(req, res, run) {
       const askedAbout = why ? why.asked_about : [];
       const named = askedAbout.length ? ' Our checks asked about: ' + askedAbout.join('; ') + '.' : '';
       if (held === 'challenge') {
-        return reply(res, 202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge, asked_about: askedAbout,
+        return say(202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge, asked_about: askedAbout,
           message: 'Before this goes live, please confirm it\u2019s yours and meant: our automatic checks (JEVs) ask about something in it.' + named
             + ' Confirm or withdraw it from your account.' });
       }
       if (held === 'hold') {
-        return reply(res, 202, { id: p.id, status: 'waiting', asked_about: askedAbout,
+        return say(202, { id: p.id, status: 'waiting', asked_about: askedAbout,
           message: 'Held for review: our automatic checks (JEVs) found it high risk.' + named + ' Aaron will look at it, and you can ask him to look again from Your posts on /feed.' });
       }
-      return reply(res, 201, { id: p.id, status: p.status,
+      return say(201, { id: p.id, status: p.status,
         message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
     } catch (e) {
       if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });

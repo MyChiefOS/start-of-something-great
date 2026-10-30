@@ -123,6 +123,10 @@
     {
       "version": "031_fair_checks",
       "sha256": "6fe3b818af863b4836803d1acee49886e5855d0c4deb21554bf2fbea31fb2dc9"
+    },
+    {
+      "version": "032_guardrails",
+      "sha256": "fbce69d1b06879f93edec9f6c9e0b037dced181e6ef48f58c6a60f1eea7179cf"
     }
   ]
 }

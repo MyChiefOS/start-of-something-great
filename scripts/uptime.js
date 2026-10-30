@@ -61,6 +61,15 @@ const CHECKS = [
     }
   },
   {
+    // 032 (the fresh review of guardrails round 1): the hourly never-break checks must have finished within 3 hours, so
+    // checks that stop running (a lost grant, the function missing) don't go unnoticed. It only opens the uptime issue.
+    name: 'Rules heartbeat', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
+    test: (r, t) => {
+      const rules = r.status === 200 ? JSON.parse(t).rules : null;
+      return Boolean(rules) && typeof rules.last_run_s_ago === 'number' && rules.last_run_s_ago <= RULES_HEARTBEAT_S;
+    }
+  },
+  {
     // The CSO's control 3 (027's PR): once the site is open, the key broker answers ("ok"), or isn't used because
     // Vercel's settings are (route A). "stale" means the site is running on the last good keys after a broker failure.
     name: 'Key broker', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
@@ -68,6 +77,7 @@ const CHECKS = [
   }
 ];
 const HEARTBEAT_S = 15 * 60;
+const RULES_HEARTBEAT_S = 3 * 60 * 60;
 
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize?';
 
@@ -146,4 +156,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error(e.message); process.exit(1); });
 
-module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED, HEARTBEAT_S };
+module.exports = { checkAll, report, decide, CHECKS, STAGES, EXPECTED, HEARTBEAT_S, RULES_HEARTBEAT_S };

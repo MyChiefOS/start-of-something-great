@@ -45,7 +45,7 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
 // re-confirmation (R33) drafts, even if the timers haven't yet moved its rules back (027, R-9): never "off".
 // { posted: { id, status } } | { drafted: { id, expiresAt, rulesVersion } } | { refused: 'off' | 'cap' | 'brake' | ..., message? }
 async function submit(t, { body }) {
-  const text = v.text('body', body, { max: 5000, multiline: true });
+  const { text, hidden } = posts.hideKeys(body);
   for (let attempt = 0; attempt < 2; attempt++) {
     const [r] = await t`select post_mode, app.act_clock_expired(agent_id) as expired from app.agent_rules
                         where agent_id = app.current_agent() order by version desc limit 1`;
@@ -55,10 +55,10 @@ async function submit(t, { body }) {
       if (mode === 'act') {
         const p = await posts.create(t, { body: text });
         if (p.refused) return p;
-        return { posted: { id: p.id, status: p.status } };
+        return { posted: { id: p.id, status: p.status }, keysHidden: hidden };
       }
       const [d] = await t.savepoint((s) => s`insert into app.agent_drafts (body) values (${text}) returning id, expires_at, rules_version`);
-      return { drafted: { id: d.id, expiresAt: d.expires_at, rulesVersion: d.rules_version } };
+      return { drafted: { id: d.id, expiresAt: d.expires_at, rulesVersion: d.rules_version }, keysHidden: hidden };
     } catch (e) {
       if (e.code !== 'P0001') throw e;
       if (e.message === 'agent_cap') return { refused: 'cap', message: e.hint };

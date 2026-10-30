@@ -118,10 +118,13 @@ test('sealed state can\'t be read or changed, and fingerprints depend on the key
   assert.ok(!sealed.includes(secret) && !Buffer.from(sealed, 'base64url').includes(Buffer.from(secret)));
   assert.ok(!sealed.includes(Buffer.from(JSON.stringify({ s: secret })).toString('base64url').slice(0, 40)), 'not merely encoded');
   const k1 = { version: 1, key: crypto.randomBytes(32) }, k2 = { version: 2, key: crypto.randomBytes(32) };
-  const [a, b] = c.fingerprints([k2, k1], 'github', '12345');
+  // A long account ID: a 5-digit one turns up in a random 64-character hex fingerprint now and then, which failed this
+  // test by chance on main (Oct 30, after #76's merge).
+  const id = '583920174628';
+  const [a, b] = c.fingerprints([k2, k1], 'github', id);
   assert.notStrictEqual(a, b);
-  assert.notStrictEqual(c.fingerprints([k1], 'x', '12345')[0], b, 'the provider is part of the fingerprint');
-  assert.ok(!a.includes('12345'));
+  assert.notStrictEqual(c.fingerprints([k1], 'x', id)[0], b, 'the provider is part of the fingerprint');
+  assert.ok(!a.includes(id));
   assert.strictEqual(config.parseKeys('1:' + Buffer.alloc(16).toString('base64')), null, 'keys shorter than 32 bytes are refused');
   assert.strictEqual(config.parseKeys('1:' + key() + ',1:' + key()), null, 'duplicate versions are refused');
   const env = { FINGERPRINT_KEY_1: key(), FINGERPRINT_KEY_2: key(), FINGERPRINT_KEY_X: key(), OTHER: 'x' };

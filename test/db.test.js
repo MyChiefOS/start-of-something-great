@@ -275,7 +275,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_not_watched, audit_insert_owner, audit_insert_signin, audit_select/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_not_watched, audit_insert_owner, audit_insert_signin, audit_jevs_select, audit_select/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     // 030: the restrictive policy made permissive (which would only widen the audit log) is caught.
     ['set local role dog_owner; drop policy audit_insert_not_watched on app.audit_log; create policy audit_insert_not_watched on app.audit_log for insert to dog_app, dog_delegate, dog_erase, dog_signin with check (action <> all (array[\'admin.set\', \'jevs.setting\']))', /audit_insert_not_watched differs from the reviewed one/],

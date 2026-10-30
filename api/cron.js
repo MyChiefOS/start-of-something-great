@@ -48,6 +48,16 @@ async function handle(req, res, run, { now = Date.now } = {}) {
   } catch {
     return reply(res, 500, { ok: false });
   }
+  // The rules that must never break (032), at most once an hour, in their own transaction after the timers': a
+  // failure here is recorded and alerted by the database and never changes this reply or the timers' work.
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.invariants_check()`);
+  } catch {
+    // The check alerts Aaron itself when it fails inside the database. Failing to reach it at all (the function not
+    // there yet, a lost grant, the connection) shows in /api/ready's "rules" heartbeat, which the uptime monitor reads:
+    // it opens an issue if the checks haven't finished for 3 hours (the fresh review of round 1). This route logs
+    // nothing (027).
+  }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 
