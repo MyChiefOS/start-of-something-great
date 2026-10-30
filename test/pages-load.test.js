@@ -182,5 +182,6 @@ test('/auth/me tells a member how many notices are unread, as a count only', () 
 
 test('/join shows "Sign in to the site" as a choice only when the sign-in itself shows', () => {
   assert.match(read('join.html'), /<li id="choice-signin" hidden>/);
-  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; if \(choice\) choice\.hidden = false; return; \}/);
+  // resume(): a code this tab was waiting for before the comment box's GitHub round trip (test/join-page.test.js).
+  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; if \(choice\) choice\.hidden = false; resume\(\); return; \}/);
 });

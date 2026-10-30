@@ -37,10 +37,11 @@
       else sessionStorage.removeItem(KEY);
     } catch (e) { /* no storage: ask each time */ }
   }
-  // Signing out (the forms on /account) forgets it at once, so the next page doesn't show Account for a minute.
+  // Signing out (the forms on /account) forgets it at once, so the next page doesn't show Account for a minute, and
+  // forgets any sign-in code /join kept in this tab (join.js; the server clears that code's cookie too).
   if (document.querySelectorAll) {
     Array.prototype.forEach.call(document.querySelectorAll('form[action^="/auth/logout"]'), function (f) {
-      f.addEventListener('submit', function () { try { sessionStorage.removeItem(KEY); } catch (e) { /* nothing kept */ } });
+      f.addEventListener('submit', function () { try { sessionStorage.removeItem(KEY); sessionStorage.removeItem('dog-code'); } catch (e) { /* nothing kept */ } });
     });
   }
 

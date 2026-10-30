@@ -405,7 +405,7 @@ if (!SERVER) {
     assert.strictEqual(n.n, 1, 'an in-app notice each time the key file is used');
     assert.match((await key(jar(), { login: 'keeper', file: FILE_B })).error, /don’t match/, 'another file');
     assert.match((await key(jar(), { login: 'someone-else', file: FILE_A })).error, /don’t match/, 'another username with the same file');
-    assert.match((await key(jar(), { login: 'keeper' })).error, /choose your key file/, 'no file');
+    assert.strictEqual((await key(jar(), { login: 'keeper' })).error, 'Choose your key file.', 'no file');
     assert.strictEqual((await key(jar(), { login: 'keeper', file: FILE_A }, { origin: 'https://evil.example' })).status, 403);
     const dump = JSON.stringify(await owner(`select * from app.file_keys`)) + JSON.stringify(await owner(`select * from app.code_signins`));
     assert.ok(!dump.includes(FILE_A) && !dump.includes('keeper'), 'neither the file\'s hash nor the username is stored as sent, only keyed again');
@@ -427,6 +427,54 @@ if (!SERVER) {
     await post(8020, 'keeper', s3.code);
     assert.strictEqual((await finish(back)).signed_in, true);
     assert.strictEqual((await me(back)).member_id, who.member_id, 'the same account after starting again');
+  });
+
+  test('a name or an email in the username box says where to find a GitHub username, on both buttons (the sign-in simulation, Oct 30)', async () => {
+    const b = jar();
+    for (const login of ['Doris Whitfield', 'brenda.walsh58@outlook.com', 'me@', '-dash', 'x'.repeat(40)]) {
+      const s = await start(b, { login, ip: '192.0.2.61' });
+      assert.strictEqual(s.code, undefined, login);
+      assert.match(s.error, /^That isn’t a GitHub username\. Use the username in your GitHub address \(github\.com\/your-username\), not your name or email\. To find it, open github\.com signed in and click your picture/, login);
+    }
+    assert.match((await start(b, { login: '@Coder2', ip: '192.0.2.61' })).code, /^DOG-/, 'an @ and capitals are still fine');
+    const key = async (body) => { const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body, ip: '192.0.2.62' }), r); return JSON.parse(r.body); };
+    assert.match((await key({ login: 'Doris Whitfield', file: FILE_A })).error, /^That isn’t a GitHub username/);
+    assert.strictEqual((await key({ login: 'doris', file: 'not a hash' })).error, 'Choose your key file.');
+  });
+
+  test('the Copy button\'s code pasted into a hello signs the waiting browser in, and the hello stays up (the sign-in simulation, Oct 30)', async () => {
+    const b = jar();
+    const s = await start(b, { login: 'brenda-w', ip: '192.0.2.63' });
+    // The comment box's GitHub round trip reloads /join; the server side was never part of the problem: the code and this
+    // browser's code cookie still match after it. (join.js keeps the page waiting: test/join-page.test.js.)
+    assert.deepStrictEqual(await finish(b), { status: 200, waiting: true });
+    const g = await post(8061, 'brenda-w', "Hi, Brenda here (Danny's aunt).\n\ncode: " + '\n\n' + s.code + '\n\n');
+    assert.deepStrictEqual(g.signin, { claimed: true, founder: false, alone: false });
+    assert.match(g.reply, /Your message stays up; the code in it is used now\./);
+    assert.strictEqual((await finish(b)).signed_in, true);
+  });
+
+  test('signing out, or signing in with the key file, ends a code this browser was still waiting for (the review of the sign-in friction PR, Low 1)', async () => {
+    const codeCookie = (b) => /__Host-dog_code=/.test(b.header());
+    // Signing out: the waiting code's cookie goes, so /join can't finish that code for the next person at this browser.
+    const b = jar();
+    const s = await start(b, { login: 'leaver', ip: '192.0.2.64' });
+    assert.ok(codeCookie(b));
+    await post(8064, 'leaver', s.code);
+    const out = res(); await flow.logout(req('POST', '/auth/logout', { cookie: b.header() }), out, false); b.take(out);
+    assert.strictEqual(codeCookie(b), false);
+    assert.deepStrictEqual(await finish(b), { status: 200, expired: true }, 'the posted code signs this browser in no more');
+    // The key file: someone with a key file who also asked for a code here is signed in, and the code is ended.
+    const k = jar();
+    const first = await start(k, { login: 'keyholder', file: FILE_A, ip: '192.0.2.64' });
+    await post(8065, 'keyholder', first.code);
+    assert.strictEqual((await finish(k)).signed_in, true);
+    const later = jar();
+    await start(later, { login: 'keyholder', file: FILE_A, ip: '192.0.2.64' });
+    assert.ok(codeCookie(later));
+    const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { cookie: later.header(), body: { login: 'keyholder', file: FILE_A }, ip: '192.0.2.64' }), r); later.take(r);
+    assert.strictEqual(JSON.parse(r.body).signed_in, true);
+    assert.strictEqual(codeCookie(later), false);
   });
 
   test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {

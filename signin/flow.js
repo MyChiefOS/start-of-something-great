@@ -104,6 +104,10 @@ function make(deps) {
     return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(l) ? l : null;
   };
   const fileOf = (form) => (typeof form.file === 'string' && /^[0-9a-f]{64}$/.test(form.file) ? form.file : null);
+  // What a name, an email or anything else that isn't a GitHub username gets (the sign-in simulation, Oct 30: 2 of 10
+  // people typed their name or email, and "letters, numbers and dashes" didn't tell them where to find it).
+  const LOGIN_HELP = 'That isn\u2019t a GitHub username. Use the username in your GitHub address (github.com/your-username), '
+    + 'not your name or email. To find it, open github.com signed in and click your picture: it\u2019s at the top of the menu.';
   const loginHash = (login) => c.hmacHex(codeKey.key, 'signin-login:' + login.toLowerCase());
   const fileKey = (login, file) => c.hmacHex(codeKey.key, 'signin-file:' + login.toLowerCase() + ':' + file);
   const json = (res, status, body) => {
@@ -341,7 +345,7 @@ function make(deps) {
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       // The GitHub username this code is for (Aaron, Oct 28: option 2): only a post by that account claims it.
       const login = loginOf(form);
-      if (!login) return json(res, 200, { error: 'Type your GitHub username: letters, numbers and dashes.' });
+      if (!login) return json(res, 200, { error: LOGIN_HELP });
       // The key file's SHA-256, made in the browser (the file never leaves the device), kept if this code signs in.
       const file = fileOf(form);
       if (!file) return json(res, 200, { error: 'Choose your key file first.' });
@@ -389,7 +393,8 @@ function make(deps) {
       if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
       const form = (await h.form(req)) || {};
       const login = loginOf(form), file = fileOf(form);
-      if (!login || !file) return json(res, 200, { error: 'Type your GitHub username and choose your key file.' });
+      if (!login) return json(res, 200, { error: LOGIN_HELP });
+      if (!file) return json(res, 200, { error: 'Choose your key file.' });
       const country = region.declined(req);
       if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
@@ -404,6 +409,7 @@ function make(deps) {
       if (out.refused) return json(res, 200, { refused: out.refused });
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
       if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      h.addCookie(res, h.clear(CODE_BROWSER)); // signed in by the key file: a code still waiting here has nothing left to do
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
@@ -546,6 +552,10 @@ function make(deps) {
       }
       h.addCookie(res, h.clear(SESSION));
       h.addCookie(res, h.clear(RESIDENT));
+      // A code this browser asked for and never finished goes too, so /join (which keeps a waiting code across the
+      // comment box's GitHub round trip) can't finish it for whoever uses this browser next (the review of the sign-in
+      // friction PR, Low 1).
+      h.addCookie(res, h.clear(CODE_BROWSER));
       return h.redirect(res, '/');
     },
 
