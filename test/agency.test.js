@@ -397,3 +397,38 @@ test('migration 008 refuses, with a plain message, a database that already has a
     await server.unsafe(`drop database if exists ${D} with (force)`);
   }
 });
+
+test('an agent sees what became of each of its drafts: waiting, approved with its post, declined, expired; only its own (the UI/UX review, item 15)', async () => {
+  const owner = await member(2, 'Decider');
+  const a = await newAgent(owner, 'Asker');
+  const drafts = (key, query = {}) => api({ ...req('GET', 'drafts', { key }), query: { route: 'drafts', ...query } });
+  const d1 = await say(a.key, 'First, to approve');
+  assert.match(d1.json.message, new RegExp('GET https://dayonegreat\\.com/api/agents/drafts\\?draft=' + d1.json.draft_id + ' with your key'));
+  let one = await drafts(a.key, { draft: d1.json.draft_id });
+  assert.strictEqual(one.status, 200);
+  assert.deepStrictEqual([one.json.drafts.length, one.json.drafts[0].status, one.json.drafts[0].post], [1, 'waiting', null]);
+  // Approved: the post, and its public receipt once live.
+  const ok = await approve(owner, d1.json.draft_id, 'First, to approve');
+  assert.strictEqual(ok.status, 201);
+  one = await drafts(a.key, { draft: d1.json.draft_id });
+  assert.deepStrictEqual([one.json.drafts[0].status, one.json.drafts[0].post.id, one.json.drafts[0].post.status], ['approved', ok.json.post.id, 'live']);
+  assert.strictEqual(one.json.drafts[0].post.receipt, 'https://dayonegreat.com/receipt?post=' + ok.json.post.id);
+  // Declined, and expired.
+  const d2 = await say(a.key, 'Second, to decline');
+  await api(req('POST', 'decline', { cookie: owner.cookie, origin: ORIGIN, json: { draft: d2.json.draft_id } }));
+  const d3 = await say(a.key, 'Third, left to expire');
+  await q(`alter table app.agent_drafts disable trigger agent_drafts_guard; update app.agent_drafts set created_at = now() - interval '49 hours', expires_at = now() - interval '1 hour' where id = '${d3.json.draft_id}'; alter table app.agent_drafts enable always trigger agent_drafts_guard`);
+  const all = (await drafts(a.key)).json;
+  const by = Object.fromEntries(all.drafts.map((d) => [d.id, d.status]));
+  assert.deepStrictEqual([by[d1.json.draft_id], by[d2.json.draft_id], by[d3.json.draft_id]], ['approved', 'declined', 'expired']);
+  // Newest first (the expired one was backdated 49 hours, so it is the oldest), each with the start of its words.
+  assert.deepStrictEqual(all.drafts.map((d) => d.excerpt), ['Second, to decline', 'First, to approve', 'Third, left to expire']);
+  assert.ok(all.statuses.expired && all.untrusted_fields.includes('drafts[].excerpt'));
+  // Only its own: another agent, even of the same owner, sees none of them; no key, no answer; a bad ID is a 400.
+  const b = await newAgent(owner, 'Sibling');
+  assert.strictEqual((await drafts(b.key, { draft: d1.json.draft_id })).status, 404);
+  assert.deepStrictEqual((await drafts(b.key)).json.drafts, []);
+  assert.strictEqual((await drafts(undefined)).status, 401);
+  assert.strictEqual((await drafts(a.key, { draft: 'not-an-id' })).status, 400);
+  assert.strictEqual((await drafts(a.key, { limit: '500' })).status, 400);
+});

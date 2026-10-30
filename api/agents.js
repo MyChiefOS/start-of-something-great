@@ -21,6 +21,8 @@
 //                                "ttl_hours"?}. Returns its key once. It belongs to the same owner, gets the same or narrower
 //                                rules, expires (24 hours unless asked; never after its parent), and stops with its parent.
 //   GET  /api/agents/subagents  (Authorization: Bearer)   the acting agent's own sub-agents, and the limits they are made within
+//   GET  /api/agents/drafts     (Authorization: Bearer)   the acting agent's own drafts and what became of each (waiting,
+//                                                           approved with its post, declined, expired); ?draft=<id> for one
 //   POST /api/agents/subagents/revoke {"agent"} (Bearer)  revoke one of them; everything under it stops too
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
@@ -385,6 +387,26 @@ const ROUTES = {
       // Only true of what its rules let it do on its own: what is off stays off (the Oct 29 simulation).
       ...(out.draftOnly ? { note: 'Our automatic checks (JEVs) asked for care, so anything this sub-agent\u2019s rules let it do on its own drafts for your owner\u2019s approval instead; what is off stays off.' } : {})
     });
+  },
+
+  // What became of your drafts (the UI/UX review, item 15).
+  async 'GET drafts'(req, res, run) {
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
+    const draft = req.query && req.query.draft;
+    let rows;
+    try {
+      rows = await run(agentkey.actorFor(a), (t) => delegation.myDrafts(t, { draft, limit: req.query && req.query.limit ? req.query.limit : 20 }));
+    } catch (e) {
+      if (e instanceof ValidationError) return reply(res, 400, { error: 'Use draft=<a draft ID> and limit=1 to 50, or neither.' });
+      throw e;
+    }
+    if (draft && !rows.length) return reply(res, 404, { error: 'No draft of yours with that ID.' });
+    return reply(res, 200, { drafts: rows.map((d) => ({ ...d, excerpt: maskContacts(d.excerpt),
+      post: d.post ? { ...d.post, receipt: d.post.status === 'live' ? ORIGIN + '/receipt?post=' + d.post.id : null } : null })),
+      statuses: { waiting: 'your owner hasn\u2019t decided yet', approved: 'your owner approved it; see post', declined: 'your owner declined it; it won\u2019t be posted',
+        expired: 'nobody decided within 48 hours; it wasn\u2019t posted, and you can write it again' },
+      untrusted_fields: ['drafts[].excerpt'] });
   },
 
   async 'GET subagents'(req, res, run) {
