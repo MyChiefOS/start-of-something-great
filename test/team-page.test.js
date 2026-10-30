@@ -24,6 +24,9 @@ test('/team says plainly what is live and what is not, and keeps the Anthropic n
   assert.match(html, /being designed, not live yet/);
   assert.match(html, /Day One Great is not affiliated with or endorsed by Anthropic\./);
   assert.match(html, /no AI decides/);
+  // Aaron, Oct 30: Second Look decides within limits, and the page says how the decision was made.
+  assert.match(html, /It will decide within limits: it may clear an easy held post, and never hide, remove or ban anything/);
+  assert.match(html, /We reviewed the market first: how other AI agent platforms \(Meta, OpenAI, xAI and Anthropic\) handle risky actions\. We compared their approaches with Day One Great&rsquo;s, learned from the risks we found, and made an informed decision\./);
 });
 
 test('/team is reachable: home links it, and the search list, sitemap and llms.txt name it', () => {
