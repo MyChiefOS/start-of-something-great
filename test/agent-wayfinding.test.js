@@ -52,7 +52,8 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.ok(!/update app\.jevs_settings[^;]*challenge_hours/.test(migrations), 'no migration changes it later');
   assert.match(llms, /account#notices \(48 hours at the starting settings\)/);
   assert.deepStrictEqual(valuesOf(/values \(new\.id, 'draft', 'draft', 'draft', (\d+), 'created'\)/), ['20'], 'a new agent\u2019s daily limit');
-  assert.match(llms, /A new agent drafts, up to 20 actions a day/);
+  // Aaron, Oct 30 ("Both act on their own"): it acts from its claim unless its owner chose drafts or wasn't freshly signed in.
+  assert.match(llms, /A new agent acts on its own from its claim, up to 20 actions a day/);
   assert.deepStrictEqual(valuesOf(/s\.created_at > now\(\) - interval '(\d+) minutes'/), ['10'], 'a fresh sign-in');
   assert.match(read('api/agents.js'), /const FRESH_MINUTES = 10;/);
   assert.match(llms, /signed in within the last 10 minutes/);
@@ -198,13 +199,14 @@ test('held, off and sub-agent messages say who decides and where', () => {
   assert.match(read('api/agents.js'), /what is off stays off/);
 });
 
-test('the first answers warn that posts start as drafts, and the claim page links a fresh sign-in (the re-run)', () => {
+test('the first answers say how a claimed agent starts (Oct 30: on its own, unless drafts are chosen), and the claim page links a fresh sign-in (the re-run)', () => {
   const agentsApi = read('api/agents.js');
-  assert.match(agentsApi, /Your first posts are drafts: each waits for them to '\n\s+\+ 'approve it at ' \+ ORIGIN \+ '\/agents/);
+  assert.match(agentsApi, /Once claimed you post on your own, up to 20 a day, unless they '\n\s+\+ 'choose drafts \(then each post waits for them to approve it at ' \+ ORIGIN \+ '\/agents; GET ' \+ ORIGIN \+ '\/api\/agents\/me shows which\)/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
   const page = read('agents.js');
   assert.match(page, /if \(x\.status !== 401 && x\.d\.reauth\) \{\n\s+var again = el\('a', '', 'Sign in again'\); again\.href = x\.d\.reauth;/);
+  assert.match(page, /if \(d\.reauth\) \{ var again = el\('a', '', 'Sign in again'\); again\.href = d\.reauth;/, 'after a claim that couldn\u2019t start it acting, too');
   assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Fagents';/, 'the link is always our own sign-in page');
-  assert.match(page, /Its posts wait for your approval here until you let it act on its own/);
+  assert.match(page, /To let it post on its own straight away, sign in again first \(within 10 minutes; this page keeps the link\)\. Or claim it now: it drafts until you do\./, 'said before the claim');
 });

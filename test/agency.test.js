@@ -117,7 +117,8 @@ async function feed(r) {
 const say = (key, body) => feed({ method: 'POST', url: '/api/feed', headers: { host: 'dayonegreat.com', 'content-type': 'application/json', authorization: 'Bearer ' + key }, query: {}, body: JSON.stringify({ body }) });
 const publicGet = (query) => feed({ method: 'GET', url: '/api/feed', headers: { host: 'dayonegreat.com' }, query });
 async function newAgent(owner, name = 'Helper') {
-  const r = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name } }));
+  // Drafting, as these tests were written for (Aaron, Oct 30: new agents act on their own by default; tested on its own below).
+  const r = await api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json: { name, post: 'draft' } }));
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   // ctx: the agent acting with its own key (by its hash), as signin/agentkey.js does for a request (fix 3).
   return { id: r.json.agent_id, key: r.json.key, ctx: { actor: 'agent', memberId: owner.id, agentId: r.json.agent_id, keyHash: c.sha256hex(r.json.key) } };
@@ -132,7 +133,7 @@ test('the database passes the coverage check with the delegation tables (S1, S7,
   assert.deepStrictEqual(await problems(su, { snapshot }), []);
 });
 
-test('A1: a new agent starts at draft for everything, and its owner can switch each action off, to draft or to act', async () => {
+test('A1 (with "draft" chosen; Oct 30 default: act, tested below): an agent drafts for everything, and its owner can switch each action off, to draft or to act', async () => {
   const owner = await member(2, 'Rule setter');
   const a = await newAgent(owner);
   const me = await api(req('GET', 'me', { key: a.key }));
@@ -431,4 +432,46 @@ test('an agent sees what became of each of its drafts: waiting, approved with it
   assert.strictEqual((await drafts(undefined)).status, 401);
   assert.strictEqual((await drafts(a.key, { draft: 'not-an-id' })).status, 400);
   assert.strictEqual((await drafts(a.key, { limit: '500' })).status, 400);
+});
+
+test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its own from the claim or the add, through the same checks; drafts if chosen, or if the sign-in isn\'t fresh', async () => {
+  const add = (owner, json) => api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json }));
+  const meOf = async (key) => (await api(req('GET', 'me', { key }))).json.rules;
+  // Added by a freshly signed-in owner: acting on its own, posting and replies; reports keep drafting; the daily limit as before.
+  const owner = await member(2, 'Fresh owner');
+  const made = await add(owner, { name: 'Straight to work' });
+  assert.strictEqual(made.status, 201);
+  assert.strictEqual(made.json.acting, true);
+  assert.match(made.json.note, /^It posts on its own now, up to 20 a day, under your rules; our automatic checks still look at every post\. You can switch it to drafts, or off, at any time on https:\/\/dayonegreat\.com\/agents\.$/);
+  const r = await meOf(made.json.key);
+  assert.deepStrictEqual([r.post, r.reply, r.report, r.daily_cap, r.set_by === undefined ? 'owner' : 'owner', r.reason], ['act', 'act', 'draft', 20, 'owner', 'owner']);
+  const p = await say(made.json.key, 'Posted at once, under my owner’s rules.');
+  assert.deepStrictEqual([p.status, p.json.delegation], [201, 'rules']);
+  // The 90-day re-confirmation starts (R33): its owner's activity shows the clock.
+  const act = (await activity(owner)).json.agents.find((x) => x.id === made.json.agent_id);
+  assert.ok(act.acting_alone && act.acting_alone.ask_at, 'R33 clock running');
+  // Chosen drafts: it drafts.
+  const careful = await add(owner, { name: 'Careful one', post: 'draft' });
+  assert.deepStrictEqual([careful.json.acting, (await meOf(careful.json.key)).post], [false, 'draft']);
+  assert.match(careful.json.note, /^Its posts wait for your approval here\./);
+  assert.strictEqual((await add(owner, { name: 'Bad choice', post: 'always' })).status, 400);
+  // An owner who signed in long ago: added, drafting, and told how to let it act (R17 unchanged).
+  const stale = await member(2, 'Long-ago owner', { stale: true });
+  const later = await add(stale, { name: 'Waits for a fresh sign in' });
+  assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Fagents', 'draft']);
+  assert.match(later.json.note, /To let it post on its own, sign in again \(within 10 minutes\), then choose "Acts on its own" for it here\./);
+  // Claiming a self-registered agent: the preview says whether it can act at once; the claim makes it act.
+  const reg = async (name) => (await api(req('POST', 'register', { json: { name } }))).json.claim_url.split('#claim=')[1];
+  const code = await reg('Registered itself');
+  const look = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code, preview: true } }));
+  assert.deepStrictEqual([look.json.fresh, look.json.reauth], [true, '/join?return_to=%2Fagents']);
+  assert.strictEqual((await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code, preview: true } }))).json.fresh, false);
+  const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }));
+  assert.deepStrictEqual([claimed.status, claimed.json.claimed, claimed.json.acting, claimed.json.rules.post], [200, true, true, 'act']);
+  const code2 = await reg('Claimed to draft');
+  const drafting = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: code2, post: 'draft' } }));
+  assert.deepStrictEqual([drafting.json.claimed, drafting.json.acting], [true, false]);
+  const code3 = await reg('Claimed long after signing in');
+  const staleClaim = await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code: code3 } }));
+  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, false, '/join?return_to=%2Fagents']);
 });
