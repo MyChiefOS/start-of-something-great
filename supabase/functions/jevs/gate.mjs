@@ -235,12 +235,14 @@ const NOT_SIGNED_IN = (alone) => 'This code didn\'t sign anyone in: it was made 
 // A code mentioned rather than posted on purpose (in a sentence, a quote, a code block or markup) signs nobody in (the
 // fresh review, Oct 30: a mention must never be a sign-in).
 const MENTIONED = 'This post mentions a sign-in code but doesn\'t use it, so nobody was signed in. To sign in, put the code '
-  + 'https://dayonegreat.com/join showed you on a line of its own (you can write a hello above or below it). Never post or quote '
-  + 'a code someone else gave you.';
+  + 'https://dayonegreat.com/join showed you on a line of its own, with an empty line above and below it (a plain hello around '
+  + 'it is fine; no links, quotes or formatting). Never post or quote a code someone else gave you.';
 const MENTIONED_FOUNDER = 'This post mentions a sign-in code but doesn\'t use it, so nobody was signed in. This account (the '
   + 'administrator\'s) signs in only with a comment that is the code and nothing else.';
 const SEVERAL_CODES = 'This post has more than one sign-in code in it, so none of them was used. Post again with just the one '
-  + 'code https://dayonegreat.com/join showed you, on a line of its own.';
+  + 'code https://dayonegreat.com/join showed you, on a line of its own with an empty line above and below it.';
+// A banned account's code claims nothing; the general reasons in NOT_SIGNED_IN wouldn't be true for it.
+const BANNED_CODE = 'This account can\'t sign in to Day One Great, so this code didn\'t sign anyone in.';
 const LOOKALIKE = 'This looks like a sign-in code, but it isn\'t one the site gives out (codes look like DOG-7K4M-Q2XH and never use '
   + '0, O, 1 or I). Use the Copy button on https://dayonegreat.com/join and post the code from there.';
 // Codes are read only in the welcome thread that /join and /talk show (giscus, discussion 1): a code anywhere else in
@@ -504,7 +506,7 @@ export async function handle(sql, raw, { key }) {
     if (ev.action === 'created') await moderate(t, out, { ev, acct, principal, mode, body, tagged: Boolean(tag), banned });
 
     // Signing in to the site with a code (023; Aaron, Oct 28). A new comment in the welcome thread that posts one sign-in
-    // code on purpose, alone or on its own line under a hello (Aaron, Oct 30; core.mjs signinCodes), claims it for the
+    // code on purpose, alone or as a paragraph of its own beside a plain hello (Aaron, Oct 30; core.mjs signinCodes), claims it for the
     // GitHub account that posted it, by that account's
     // fingerprint: the same keyed hash GitHub sign-in uses, made with the same key (dog_fingerprint_key_1). The post was
     // scored above like any other. A banned account claims nothing. The workflow then hides a comment that is only the
@@ -535,7 +537,7 @@ export async function handle(sql, raw, { key }) {
       // alone: the comment is only the code, so the workflow hides it; a code inside a message stays up (see AFTER).
       out.signin = { claimed, founder: founderClaim, alone: found.alone };
       if (founderClaim) out.alert = true;
-      out.replies.push(claimed ? SIGNED_IN(ev.author.login, found.alone) : NOT_SIGNED_IN(found.alone));
+      out.replies.push(claimed ? SIGNED_IN(ev.author.login, found.alone) : banned ? BANNED_CODE : NOT_SIGNED_IN(found.alone));
     }
 
     const reply = out.replies.length ? out.replies.join('\n\n') : null;

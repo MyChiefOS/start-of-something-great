@@ -67,28 +67,37 @@ test('the gate reads a code posted on purpose: alone, or on its own line under a
   assert.strictEqual(J.signinCode('  dog-7k4m-q2xh \n'), C, 'case and spaces around it are forgiven');
   // Aaron, Oct 30: "Most people are going to say something when they post." His own first sign-in was a hello, the code
   // on its own line and a thank-you, which the gate (then reading only a comment that was nothing but the code) ignored.
-  for (const b of ['Hello,\n\n' + C + '\n\nThanks.', 'Hi!\n' + C, C + '\nthanks', 'hi\n\n  ' + C + '  \n', 'hi\n' + C + '\n' + C]) {
+  for (const b of ['Hello,\n\n' + C + '\n\nThanks.', 'Hi!\n\n' + C, C + '\n\nthanks', 'hi\n\n   ' + C + '  \n', 'hi\r\n\r\n' + C + '\r\n\r\nbye',
+    'hi\n\n' + C + '\n\n' + C]) {
     assert.strictEqual(J.signinCode(b), C, JSON.stringify(b));
   }
   assert.deepStrictEqual(J.signinCodes(C), { code: C, count: 1, alone: true, mentioned: false });
-  assert.deepStrictEqual(J.signinCodes('Hello,\n' + C), { code: C, count: 1, alone: false, mentioned: false });
+  assert.deepStrictEqual(J.signinCodes('Hello,\n\n' + C), { code: C, count: 1, alone: false, mentioned: false });
   // A mention is never a sign-in (the fresh review, Oct 30): "@you is this yours? DOG-..." and a quote-reply would
   // otherwise sign the asker's browser in as you. Nor is a code a reader can't see (the Keybase lesson).
   for (const b of ['my code: ' + C, '@you is this yours? ' + C, '> ' + C, 'Hi\n> ' + C + '\nwhat is this?', 'what is `' + C + '`?',
     '<!-- ' + C + ' -->\nhello', '<!--\n' + C + '\n-->\nhi', '[site](https://x/' + C + ')', '```\n' + C + '\n```\nhi',
-    '<details><summary>x</summary>\n\n' + C + '\n</details>', 'hi\u200B\n' + C, 'hi &#8203;\n' + C, '(' + C + ')']) {
+    '<details><summary>x</summary>\n\n' + C + '\n</details>', 'hi\u200B\n\n' + C, 'hi &#8203;\n\n' + C, '(' + C + ')',
+    // The second fresh review (Oct 30): a code a reader never sees, hidden by plain Markdown, or a line that renders as
+    // something other than plain text, or a sentence pushed past the first 4,000 characters.
+    'Hi all!\n\n[x]: /u \'\n' + C + '\n\'\n\nGlad to be here.', 'Hi all!\n\n[x]: /u (\n' + C + '\n)\n\nGlad to be here.',
+    'hi [there](/u "\n\n' + C + '\n\n")', 'hi\n\n![\n\n' + C + '\n\n](x.png)', '$$\n\\phantom{\n\n' + C + '\n\n}\n$$',
+    'hi\n' + C, C + '\n===', 'hi\n\n- ' + C, 'hi\n\n    ' + C, 'hi\n\n\t' + C, 'hi\n\n| ' + C + ' |',
+    '````\n```\n\n' + C + '\n\n```\n````', '~~~\n\n' + C + '\n\n~~~', 'hi\u{E0041}\n\n' + C, 'hi\u{FFA0}\n\n' + C,
+    C + ' '.repeat(3990) + ' is this yours, @victim?', 'hi\n\n' + C + '\n\n' + 'x'.repeat(4100)]) {
     assert.deepStrictEqual(J.signinCodes(b), { code: null, count: 1, alone: false, mentioned: true }, JSON.stringify(b));
   }
   for (const b of ['DOG-7K4M-Q2X', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH', 'xDOG-7K4M-Q2XH', 'DOG-7K4M-Q2XH-2', '']) {
     assert.strictEqual(J.signinCode(b), null, JSON.stringify(b));
   }
-  assert.deepStrictEqual(J.signinCodes('hi\n' + C + '\nor\nDOG-AAAA-BBBB'), { code: null, count: 2, alone: false, mentioned: false }, 'two codes: none');
-  assert.strictEqual(J.signinCode('x'.repeat(4100) + '\n' + C), null, 'only the first 4,000 characters are read');
+  assert.deepStrictEqual(J.signinCodes('hi\n\n' + C + '\n\nor\n\nDOG-AAAA-BBBB'), { code: null, count: 2, alone: false, mentioned: false }, 'two codes: none');
+  assert.strictEqual(J.signinCode('x'.repeat(4100) + '\n\n' + C), null, 'a post over 4,000 characters is not a sign-in');
   // A lookalike gets a helpful reply; everyday words never do.
   for (const b of ['Hi DOG-7KOM-Q2XH', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH']) assert.strictEqual(J.looksLikeCode(b), true, JSON.stringify(b));
   for (const b of ['dog friendly park', 'dog-eat-dog world', 'We love DOGS', C, '']) assert.strictEqual(J.looksLikeCode(b), false, JSON.stringify(b));
   const flow = read('signin/flow.js');
   assert.match(flow, /const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';/, 'no 0, O, 1 or I: 32 characters, 40 random bits in a code');
+  assert.match(read('supabase/functions/jevs/core.mjs'), /const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';/, 'the gate reads exactly the letters the site makes');
 });
 
 test('the workflow hides a sign-in code comment in either mode, replies, and a failed hide stops nothing', () => {
@@ -221,7 +230,7 @@ if (!SERVER) {
     }
     assert.deepStrictEqual(await finish(victim), { status: 200, waiting: true }, 'the asker\u2019s browser got nothing');
     // Someone else's copy, on its own line: claims nothing (the code is for "victim"), and the reply doesn't say it's dead.
-    const other = await post(8012, 'someone', 'Is this yours?\n' + bait.code);
+    const other = await post(8012, 'someone', 'Is this yours?\n\n' + bait.code);
     assert.deepStrictEqual(other.signin, { claimed: false, founder: false, alone: false });
     assert.match(other.reply, /This code didn't sign anyone in/);
     assert.match(other.reply, /Your message stays up\.$/);
@@ -232,11 +241,11 @@ if (!SERVER) {
     // Two codes: neither is used, and the reply says to post just one.
     const b2 = jar();
     const s2 = await start(b2, { login: 'twice', ip });
-    const two = await post(8013, 'twice', s2.code + '\nor maybe\nDOG-AAAA-BBBB');
+    const two = await post(8013, 'twice', s2.code + '\n\nor maybe\n\nDOG-AAAA-BBBB');
     assert.strictEqual(two.signin, undefined, 'nothing claimed');
     assert.match(two.reply, /more than one sign-in code in it, so none of them was used/);
     assert.deepStrictEqual(await finish(b2), { status: 200, waiting: true });
-    assert.strictEqual((await post(8013, 'twice', 'Sorry!\n' + s2.code)).signin.claimed, true);
+    assert.strictEqual((await post(8013, 'twice', 'Sorry!\n\n' + s2.code)).signin.claimed, true);
     assert.strictEqual((await finish(b2)).signed_in, true);
     // A lookalike (a zero where the site never puts one) gets a reply that says what a code looks like.
     const look = await post(8014, 'typo', 'DOG-7K0M-Q2XH');
@@ -297,6 +306,8 @@ if (!SERVER) {
     const s = await start(b, { login: 'banned-one' });
     const banned = await post(8006, 'banned-one', s.code, { bans: [8006] });
     assert.deepStrictEqual(banned.signin, { claimed: false, founder: false, alone: true });
+    assert.match(banned.reply, /This account can't sign in to Day One Great, so this code didn't sign anyone in\.$/, 'a reply that is true for a banned account');
+    assert.ok(!/has expired|different GitHub username/.test(banned.reply), 'not the general reasons, which aren\u2019t true for it');
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true });
     const b2 = jar();
     const s2 = await start(b2, { login: 'MyChiefOS' });

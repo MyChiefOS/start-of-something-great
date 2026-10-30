@@ -170,46 +170,62 @@ export function agentTag(body) {
 // or I, so it can't be misread. Upper or lower case.
 //
 // Since Oct 30 (Aaron: "Most people are going to say something when they post") a hello may go around the code, but the
-// code must still be posted on purpose, because a comment that merely mentions a code must never sign anyone in (the
-// fresh review, Oct 30: otherwise "@you is this yours? DOG-..." and a quote-reply would sign the attacker's browser in
-// as you). A code counts when the comment holds exactly one code and either the comment is nothing but that code, or
-// the code is on a line of its own (outside quotes and code blocks) in a comment with no HTML and no invisible
-// characters, so nothing a reader can't see can carry it (the Keybase lesson: proofs hidden in markup). Only the first
-// 4,000 characters are read (a sign-in is a short post).
+// code must still be posted on purpose, plainly visible, because a comment that merely mentions a code, or hides one,
+// must never sign anyone in. The fresh reviews (Oct 30) found both: "@you is this yours? DOG-..." and a quote-reply
+// would sign the asker's browser in as you, and Markdown can hide a code in a link title or image text that nobody
+// sees. So a code counts when the comment holds exactly one code and either the comment is nothing but that code, or
+// the code is a paragraph of its own (a blank line, or the start or end of the comment, above and below it; at most 3
+// spaces before it, no tab) in a comment with no HTML, no Markdown that can hide or reformat text ([, ], $, `, ~, |),
+// no invisible characters, and no more than 4,000 characters (a sign-in is a short post).
 const SIGNIN_CODE_ANYWHERE = /(?:^|[^A-Za-z0-9-])(DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})(?=$|[^A-Za-z0-9-])/gi;
 const SIGNIN_CODE_ALONE = /^\s*DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}\s*$/i;
-const SIGNIN_CODE_LINE = /^[ \t]*DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}[ \t]*$/i;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // as signin/flow.js CODE_ALPHABET: no 0, O, 1 or I
+// A line that is a code and nothing else: at most 3 spaces before it, spaces after it, no tab. Plain character checks
+// (no regular expression on what people post).
+function isCodeLine(line) {
+  let start = 0;
+  while (start < line.length && line[start] === ' ') start += 1;
+  let end = line.length;
+  while (end > start && line[end - 1] === ' ') end -= 1;
+  if (start > 3 || end - start !== 13) return false;
+  const x = line.slice(start, end).toUpperCase();
+  if (x.slice(0, 4) !== 'DOG-' || x[8] !== '-') return false;
+  for (const i of [4, 5, 6, 7, 9, 10, 11, 12]) if (!CODE_CHARS.includes(x[i])) return false;
+  return true;
+}
+const MAX_SIGNIN_POST = 4000;
 // HTML of any kind (a tag, a comment, a doctype) or an entity: markup can hide text from a reader.
 const HTML_MARKUP = /<[A-Za-z!/?]|&#?[A-Za-z0-9]+;/;
+// Markdown that can hide text (link and image titles and text, reference definitions, math) or turn a line into
+// something other than plain text (code spans and fences, tables).
+const HIDING_MARKDOWN = /[[\]$`|~]/;
 // Invisible or direction-changing characters, which can hide or disguise text.
-const INVISIBLE = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF]/;
-const FENCE = /^[ \t]{0,3}(```|~~~)/;
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 // Something shaped like a code that isn't a valid one (a misread 0 or O, a character missing or extra), so the reply
 // can say so. Capitals and digits with both dashes, as the site shows codes, so everyday words ("dog-friendly",
 // "dog eat dog") never get a reply.
 const CODE_LOOKALIKE = /(?:^|[^A-Za-z0-9-])DOG-[A-Z0-9]{3,5}-[A-Z0-9]{3,5}(?=$|[^A-Za-z0-9-])/;
 
-// The lines of a comment that are a code on their own, outside fenced code blocks.
-function codeLines(text) {
-  let fenced = false;
-  const out = [];
-  for (const line of text.split(/\r?\n/)) {
-    if (FENCE.test(line)) { fenced = !fenced; continue; }
-    if (!fenced && SIGNIN_CODE_LINE.test(line)) out.push(line.trim().toUpperCase());
-  }
-  return out;
+// The lines of a comment that are a code as a paragraph of their own.
+function codeParagraphs(text) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const blank = (i) => i < 0 || i >= lines.length || lines[i].trim() === '';
+  return lines.filter((l, i) => isCodeLine(l) && blank(i - 1) && blank(i + 1)).map((l) => l.trim().toUpperCase());
 }
 
 // { code, count, alone, mentioned }: code is the code in upper case when the comment posts exactly one code on purpose
-// (else null); count is how many different codes the comment holds anywhere; alone is true when the comment is nothing
-// but that code (only then is it hidden once seen); mentioned is true when it holds one code but doesn't post it on
-// purpose (quoted, in a sentence, in markup), so the reply can say how to sign in, and that nothing happened.
+// (else null); count is how many different codes the comment holds; alone is true when the comment is nothing but that
+// code (only then is it hidden once seen); mentioned is true when it holds one code but doesn't post it on purpose
+// (in a sentence, a quote, a code block or markup), so the reply can say how to sign in, and that nothing happened.
 export function signinCodes(body) {
-  const text = String(body).slice(0, 4000);
+  const full = String(body);
+  const text = full.slice(0, MAX_SIGNIN_POST);
   const found = [...new Set([...text.matchAll(SIGNIN_CODE_ANYWHERE)].map((m) => m[1].toUpperCase()))];
-  const alone = found.length === 1 && SIGNIN_CODE_ALONE.test(text);
-  const lines = found.length === 1 && !HTML_MARKUP.test(text) && !INVISIBLE.test(text) ? codeLines(text) : [];
-  const onPurpose = alone || (lines.length >= 1 && lines.every((l) => l === found[0]));
+  const short = full.length <= MAX_SIGNIN_POST;
+  const alone = short && found.length === 1 && SIGNIN_CODE_ALONE.test(full);
+  const plain = short && found.length === 1 && !HTML_MARKUP.test(full) && !HIDING_MARKDOWN.test(full) && !INVISIBLE.test(full);
+  const paragraphs = plain ? codeParagraphs(full) : [];
+  const onPurpose = alone || (paragraphs.length >= 1 && paragraphs.every((l) => l === found[0]));
   return { code: onPurpose ? found[0] : null, count: found.length, alone, mentioned: found.length === 1 && !onPurpose };
 }
 // The code a comment posts on purpose, or null (kept for callers that need only the code).
