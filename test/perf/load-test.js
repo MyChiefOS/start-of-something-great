@@ -146,7 +146,11 @@ async function main() {
         if (!d) return [r.statusCode === 200, r.statusCode];
         const r2 = res();
         await agentsApi.handle(request('POST', '/api/agents/approve', { cookie: a.owner.cookie, json: { draft: d.id, hash: c.sha256hex(d.body) }, query: { route: 'approve' } }), r2, run, CFG);
-        return [[201, 409].includes(r2.statusCode), r2.statusCode + ' ' + r2.body.slice(0, 80)];
+        // An approved draft is checked by JEVs again, and a burst of agents from one network can be held for Aaron:
+        // "Approved, and held for review" (202) is the system working, as for the other steps. CI found this twice
+        // (Oct 29: 1 approval in 89), which the test had counted as an error.
+        const held = r2.statusCode === 202 && /held for review/.test(r2.body);
+        return [[201, 409].includes(r2.statusCode) || held, r2.statusCode + ' ' + r2.body.slice(0, 80)];
       }],
       [6, 'member reports a post', async () => {
         if (!live.length) return [true, 'none yet'];

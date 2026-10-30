@@ -43,6 +43,7 @@ const jevs = require('../db/jevs');
 const region = require('./region');
 
 const session = require('./session');
+const notices = require('../db/notify');
 const { SESSION, isToken } = session;
 const EMAIL_BROWSER = '__Host-dog_email';
 // A sign-in waiting for a traveller's confirmation: sealed, 10 minutes, cleared when used. Nothing is stored for it.
@@ -621,11 +622,17 @@ function make(deps) {
 
     async me(req, res) {
       const who = await current(req);
+      // How many of your notices are unread, for the menu's "Account (n)" (nav.js), so the menu needs one request per
+      // page and not two (the people-wayfinding review, finding 1). A count only; null if it can't be read.
+      let unread = null;
+      if (who) {
+        try { unread = await run(session.actorFor(who), (t) => notices.unread(t)); } catch { unread = null; }
+      }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       // Your own member ID is shown to you (Aaron needs it once, to make himself the administrator).
-      res.end(JSON.stringify(who ? { signed_in: true, member_id: who.memberId, display_name: who.displayName, trust_level: who.trustLevel } : { signed_in: false }));
+      res.end(JSON.stringify(who ? { signed_in: true, member_id: who.memberId, display_name: who.displayName, trust_level: who.trustLevel, unread } : { signed_in: false }));
     },
 
     current

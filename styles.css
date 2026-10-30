@@ -183,6 +183,9 @@ a:focus-visible, .button:focus-visible {
 .site-nav a { text-decoration: none; color: var(--muted); }
 .site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--text); }
 .site-nav a[aria-current="page"] { text-decoration: underline; text-decoration-color: var(--amber); }
+/* Join (Account once signed in): the one call to action in the menu, at least 24 px tall (WCAG 2.5.8). */
+.site-nav a.nav-join { color: var(--amber); font-weight: 700; display: inline-block; min-height: 24px; line-height: 24px; }
+.site-nav a.nav-join:hover { color: var(--text); }
 
 /* Hero: the horizon */
 .hero {
@@ -367,6 +370,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 /* Proposals page */
 .story ol.steps { max-width: var(--measure); padding-left: 1.4rem; }
 .story ol.steps li { margin-bottom: 0.4rem; }
+/* /join's two ways to take part, and its folded details (the UI/UX review, Oct 29). */
+.story ol.choices { max-width: var(--measure); padding-left: 1.4rem; }
+.story ol.choices li { margin-bottom: 0.6rem; }
+.story details { max-width: var(--measure); margin: 1rem 0; }
+.story details summary { cursor: pointer; font-family: var(--display); min-height: 24px; }
 .proposal-list { display: flex; flex-direction: column; gap: 1rem; max-width: calc(var(--measure) + 3rem); margin-top: 1rem; }
 .proposal { border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem 1.25rem 0.4rem; }
 .proposal h3 { margin: 0.35rem 0 0.4rem; font-size: 1.25rem; overflow-wrap: anywhere; }

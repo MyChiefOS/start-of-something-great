@@ -306,7 +306,7 @@ test('F1: joining with GitHub takes one round trip and lands at level 1, back wh
   assert.ok(browser.get(SESSION), 'a session cookie is set');
   assert.ok(!browser.get('__Host-dog_oauth_github'), 'the state cookie is gone');
   const who = await me(env, browser);
-  assert.deepStrictEqual({ ...who, member_id: undefined }, { signed_in: true, member_id: undefined, display_name: 'New member', trust_level: 1 },
+  assert.deepStrictEqual({ ...who, member_id: undefined }, { signed_in: true, member_id: undefined, display_name: 'New member', trust_level: 1, unread: 0 },
     'names and usernames from GitHub are not kept (S12)');
   assert.match(who.member_id, /^[0-9a-f-]{36}$/, 'you can see your own member ID');
 });
