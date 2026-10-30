@@ -188,7 +188,10 @@ function isCodeLine(line) {
   let end = line.length;
   while (end > start && line[end - 1] === ' ') end -= 1;
   if (start > 3 || end - start !== 13) return false;
-  const x = line.slice(start, end).toUpperCase();
+  const raw = line.slice(start, end);
+  // ASCII only before capitalizing: the long s ("ſ") capitalizes to "S" (the re-review, Oct 30, bypass B).
+  for (let i = 0; i < raw.length; i += 1) if (raw.charCodeAt(i) > 127) return false;
+  const x = raw.toUpperCase();
   if (x.slice(0, 4) !== 'DOG-' || x[8] !== '-') return false;
   for (const i of [4, 5, 6, 7, 9, 10, 11, 12]) if (!CODE_CHARS.includes(x[i])) return false;
   return true;
@@ -209,7 +212,9 @@ const CODE_LOOKALIKE = /(?:^|[^A-Za-z0-9-])DOG-[A-Z0-9]{3,5}-[A-Z0-9]{3,5}(?=$|[
 // The lines of a comment that are a code as a paragraph of their own.
 function codeParagraphs(text) {
   const lines = text.split(/\r\n|\r|\n/);
-  const blank = (i) => i < 0 || i >= lines.length || lines[i].trim() === '';
+  // Empty means spaces and tabs only, as Markdown sees it: trim() would also count a non-breaking space, U+3000 or
+  // U+2028 as empty, and a line holding one of those keeps a quote or list going (the re-review, Oct 30, bypass A).
+  const blank = (i) => i < 0 || i >= lines.length || [...lines[i]].every((ch) => ch === ' ' || ch === '\t');
   return lines.filter((l, i) => isCodeLine(l) && blank(i - 1) && blank(i + 1)).map((l) => l.trim().toUpperCase());
 }
 

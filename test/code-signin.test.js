@@ -84,13 +84,17 @@ test('the gate reads a code posted on purpose: alone, or on its own line under a
     'hi [there](/u "\n\n' + C + '\n\n")', 'hi\n\n![\n\n' + C + '\n\n](x.png)', '$$\n\\phantom{\n\n' + C + '\n\n}\n$$',
     'hi\n' + C, C + '\n===', 'hi\n\n- ' + C, 'hi\n\n    ' + C, 'hi\n\n\t' + C, 'hi\n\n| ' + C + ' |',
     '````\n```\n\n' + C + '\n\n```\n````', '~~~\n\n' + C + '\n\n~~~', 'hi\u{E0041}\n\n' + C, 'hi\u{FFA0}\n\n' + C,
-    C + ' '.repeat(3990) + ' is this yours, @victim?', 'hi\n\n' + C + '\n\n' + 'x'.repeat(4100)]) {
+    C + ' '.repeat(3990) + ' is this yours, @victim?', 'hi\n\n' + C + '\n\n' + 'x'.repeat(4100),
+    // The re-review (Oct 30): a line that only looks empty keeps a quote or a list going, so the code renders inside it.
+    '> quoting you\n\u00A0\n' + C + '\n\nthanks', '- item\n\u00A0\n' + C, '> quoting you\n\u3000\n' + C, '> quoting you\n\u2028\n' + C]) {
     assert.deepStrictEqual(J.signinCodes(b), { code: null, count: 1, alone: false, mentioned: true }, JSON.stringify(b));
   }
   for (const b of ['DOG-7K4M-Q2X', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH', 'xDOG-7K4M-Q2XH', 'DOG-7K4M-Q2XH-2', '']) {
     assert.strictEqual(J.signinCode(b), null, JSON.stringify(b));
   }
   assert.deepStrictEqual(J.signinCodes('hi\n\n' + C + '\n\nor\n\nDOG-AAAA-BBBB'), { code: null, count: 2, alone: false, mentioned: false }, 'two codes: none');
+  // The long s capitalizes to S: a near-miss in its own paragraph must not stand in for a code mentioned in a sentence.
+  assert.strictEqual(J.signinCode('Is this yours? DOG-SK4M-Q2XH\n\nDOG-\u017FK4M-Q2XH'), null, 'the long s');
   assert.strictEqual(J.signinCode('x'.repeat(4100) + '\n\n' + C), null, 'a post over 4,000 characters is not a sign-in');
   // A lookalike gets a helpful reply; everyday words never do.
   for (const b of ['Hi DOG-7KOM-Q2XH', 'DOG-7K0M-Q2XH', 'DOG-7K4M-Q2XHH']) assert.strictEqual(J.looksLikeCode(b), true, JSON.stringify(b));
