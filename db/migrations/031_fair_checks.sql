@@ -1,15 +1,19 @@
 -- 031 Fair checks (the UI/UX review, items 17 and 9; Aaron, Oct 30: "I would like you to implement the changes",
 --   "Yes, all 15 in that order").
---   1. J06 counts the agents registered from one network only when an agent registers itself (agent.register). Until now
---      every action of every member and agent on that network counted them, so an agent posting from a busy shared cloud
---      network (10 or more agents registered there that day, whoever owns them) had each post asked about, however
---      established its owner (harness/FACTS.md, Oct 29). Everything else is judged by the owner's own count, as before.
---      Only the signal changes: the questions, their scores and the thresholds don't (db/jevs.js; app.jevs_settings).
---   2. app.jevs_post_reasons: the author of their own post that JEVs held, asked them about or hid is told which
---      questions asked about it, by ID (the site shows each one's public title), never a score, a total or a threshold.
---      The most it reveals is which public question scored 25 or more, which the public code already describes. Read
---      as the author, through dog_jevs (which already reads these decisions for app.jevs_appealable); no new grant on
---      any table.
+--   1. J06 counts the agents registered from one network only where that says something about the account itself: an
+--      agent registering itself (agent.register), and a member's sign-up and account checks (signup, account.check: the
+--      checks that decide automatic level 2, unchanged). Until now every action on that network counted them too, so an
+--      agent posting from a busy shared cloud network (10 or more agents registered there that day, whoever owns them)
+--      had each post asked about, however established its owner (harness/FACTS.md, Oct 29). Posts, drafts, approvals,
+--      claims, rules, keys and deletions are judged by the owner's own count. Only the signal changes: the questions,
+--      their scores and the thresholds don't (db/jevs.js; app.jevs_settings). The fresh review of this PR found the
+--      first version also changed the level-2 check; this one doesn't (RISKS.md RK96).
+--   2. app.jevs_post_reasons: the author of their own post that JEVs is still holding, still asking them about, or
+--      hid and Aaron hasn't yet decided, is told which questions asked about it, by ID in a fixed order (the site shows
+--      each one's public title), never a score, a total or a threshold, nor which scored higher. Once the author
+--      answers, the challenge expires or Aaron decides, it says nothing (the fresh review: an out-of-date "held" and an
+--      appeal button after his decision would put work back on him). Read as the author, through dog_jevs, which
+--      already reads these decisions, challenges and review flags; no new grant on any table.
 set local role dog_owner;
 
 grant create on schema app to dog_jevs;
@@ -106,10 +110,11 @@ begin
   res := res || jsonb_build_object(
     'net_signups_1h', case when p_net is null then 0 else (select count(*) from app.jevs_marks k where k.kind = 'net' and k.key_hash = p_net
                                                               and k.token_hash is null and k.created_at > now() - interval '1 hour') end,
-    -- 031: only for an agent registering itself, where a burst of new agents from one network means something. Every
-    -- other action is judged by its owner's own count (owner_agents_24h): an agent posting from a busy shared cloud
-    -- network isn't held for other people's agents (the UI/UX review, item 17).
-    'net_agents_24h', case when p_net is null or p_action <> 'agent.register' then 0
+    -- 031: only for an agent registering itself and a member's sign-up and account checks, where a burst of new agents
+    -- from one network says something about the account. Every other action is judged by its owner's own count
+    -- (owner_agents_24h): an agent posting from a busy shared cloud network isn't asked about each post because of
+    -- other people's agents (the UI/UX review, item 17).
+    'net_agents_24h', case when p_net is null or p_action not in ('agent.register', 'signup', 'account.check') then 0
                            else (select count(distinct k.agent_id) from app.jevs_marks k where k.kind = 'net' and k.key_hash = p_net
                                                               and k.agent_id is not null and k.created_at > now() - interval '24 hours') end,
     'site_signups_1h', (select count(*) from app.members x where x.created_at > now() - interval '1 hour'),
@@ -185,9 +190,22 @@ begin
   if not found then
     return null;
   end if;
+  -- Still current: a challenge the author hasn't answered and that hasn't expired, on a post still waiting; or a hold
+  -- (waiting) or a hide (removed) whose JEVs flag in Aaron's queue is still open.
+  if d.effect = 'challenge' then
+    if not exists (select 1 from app.posts p where p.id = p_post and p.status = 'waiting')
+       or not exists (select 1 from app.jevs_challenges c where c.subject_kind = 'post' and c.subject_id = p_post
+                      and c.status = 'pending' and c.expires_at > now()) then
+      return null;
+    end if;
+  elsif not exists (select 1 from app.posts p where p.id = p_post and p.status = case when d.effect = 'hold' then 'waiting' else 'removed' end)
+        or not exists (select 1 from app.review_flags f where f.post_id = p_post and f.source = 'classifier' and f.classifier = 'jevs'
+                       and f.resolved_at is null) then
+    return null;
+  end if;
   return jsonb_build_object(
     'effect', d.effect,
-    'questions', coalesce((select jsonb_agg(q.k order by q.v desc, q.k)
+    'questions', coalesce((select jsonb_agg(q.k order by q.k)
                            from (select e.key as k, (e.value)::numeric as v from jsonb_each(d.scores) e
                                  where e.key ~ '^J[0-9]{2}$' and jsonb_typeof(e.value) = 'number' and (e.value)::numeric >= 25) q), '[]'::jsonb));
 end

@@ -1243,7 +1243,7 @@ test('a sign-up leaves JEVs\'s network mark and lands at level 2 at once; later 
 });
 
 // ---- 031, fair checks (the UI/UX review, items 17 and 9; Aaron, Oct 30: "Yes, all 15 in that order") ----
-test('031: J06 counts a network\'s new agents only against an agent registering itself, never against an established member\'s or agent\'s later actions (item 17)', async () => {
+test('031: J06 counts a network\'s new agents for self-registration and a member\'s own account checks, never against posts or the other steps (item 17)', async () => {
   const m = await member({ level: 2, name: 'On a busy cloud network', ageDays: 30 });
   const net = c.sha256hex('busy shared cloud network ' + crypto.randomBytes(4).toString('hex'));
   // Twelve agents registered from this network today, whoever owns them (the Oct 29 simulation's shared cloud).
@@ -1251,14 +1251,17 @@ test('031: J06 counts a network\'s new agents only against an agent registering 
   const signals = async (ctx, action, subject = null) => (await run(ctx, (t) => t`select app.jevs_signals(${action}, ${subject}, ${net}, null, null) as s`))[0].s;
   const post = await say(m, 'An ordinary post from a busy network.');
   assert.strictEqual((await signals(m.ctx, 'post.create', post.json.id)).net_agents_24h, 0, 'a post is judged by the owner\'s own count only');
-  for (const action of ['account.check', 'agent.claim', 'agent.rules']) {
+  for (const action of ['agent.claim', 'agent.rules', 'agent.key', 'agent.create']) {
     assert.strictEqual((await signals(m.ctx, action)).net_agents_24h, 0, action + ' is judged by the owner\'s own count only');
   }
   const reg = await signals({ actor: 'anon' }, 'agent.register');
   assert.strictEqual(reg.net_agents_24h, 12, 'a burst of self-registrations from one network still counts against the next one');
   assert.strictEqual(jevs.score('agent.register', reg).J06, 50);
+  // Automatic level 2 is judged exactly as before (the fresh review of 031, finding 2): sign-up and account checks count it.
+  assert.strictEqual((await signals(m.ctx, 'account.check')).net_agents_24h, 12);
+  assert.strictEqual((await signals({ actor: 'anon' }, 'signup')).net_agents_24h, 12);
   // The question's public description says so.
-  assert.match(jevs.QUESTIONS.find((x) => x.id === 'J06').description, /for an agent registering itself, agents registered from its network/);
+  assert.match(jevs.QUESTIONS.find((x) => x.id === 'J06').description, /or agents registered from its network \(only when an agent registers itself, or for a member’s sign-up and account checks\)/);
 });
 
 test('031: the author of a held or hidden post is told which checks asked about it, by name and never a score, and can ask Aaron to look again; nobody else is told (item 9)', async () => {
@@ -1266,10 +1269,16 @@ test('031: the author of a held or hidden post is told which checks asked about 
   try {
     const author = await member({ level: 2, name: 'Told why', ageDays: 30 });
     // Medium: two links to new sites. The answer names the question; no number appears anywhere.
-    const medium = await say(author, 'Places I found this week, ' + crypto.randomBytes(6).toString('hex') + ': ' + links(2));
+    // Words nobody else in these tests wrote, so only the links are asked about (J09 compares a post's words with others').
+    // Letters only: digits could read as a phone number (J08).
+    const own = Array.from({ length: 12 }, () => Array.from(crypto.randomBytes(6), (b) => String.fromCharCode(97 + (b % 26))).join('')).join(' ');
+    const medium = await say(author, 'My own notes ' + own + ' ' + links(2));
     assert.strictEqual(medium.status, 202);
-    assert.deepStrictEqual(medium.json.asked_about, ['Links and new domains']);
-    assert.match(medium.json.message, /Our checks asked about: Links and new domains\./);
+    // Links are named; "copies" may be too, since other tests here post similar link-heavy words (J09 compares them).
+    const titles = jevs.QUESTIONS.map((x) => x.title);
+    assert.ok(medium.json.asked_about.includes('Links and new domains'), JSON.stringify(medium.json.asked_about));
+    assert.ok(medium.json.asked_about.every((n) => titles.includes(n)), 'only public question titles');
+    assert.match(medium.json.message, /Our checks asked about: [^.]*Links and new domains/);
     // High: held for Aaron.
     const high = await say(author, links(4) + ' or mail me at told@example.com, ' + crypto.randomBytes(6).toString('hex'));
     assert.strictEqual(high.status, 202);
@@ -1278,11 +1287,11 @@ test('031: the author of a held or hidden post is told which checks asked about 
     // Your posts: why each isn't live, and the appeal only where Aaron decides.
     const mine = (await feed('GET', { cookie: author.cookie, query: { mine: '1' } })).json.posts;
     const m1 = mine.find((p) => p.id === medium.json.id), m2 = mine.find((p) => p.id === high.json.id);
-    assert.deepStrictEqual(m1.checks, { effect: 'challenge', asked_about: ['Links and new domains'], can_appeal: false });
+    assert.deepStrictEqual(m1.checks, { effect: 'challenge', asked_about: medium.json.asked_about, can_appeal: false });
     assert.strictEqual(m2.checks.effect, 'hold');
     assert.strictEqual(m2.checks.can_appeal, true);
     assert.ok(!/\d/.test(JSON.stringify([m1.checks, m2.checks, medium.json.asked_about, high.json.asked_about])), 'no scores, totals or thresholds');
-    const live = await say(author, 'Just a plain hello, ' + crypto.randomBytes(6).toString('hex') + '.');
+    const live = await say(author, 'Just a plain hello, ' + own.split(' ').slice(0, 3).join(' ') + '.');
     assert.strictEqual((await feed('GET', { cookie: author.cookie, query: { mine: '1' } })).json.posts.find((p) => p.id === live.json.id).checks, null);
     // The appeal: once is enough; again says the same.
     const a = await feed('POST', { cookie: author.cookie, json: { appeal: high.json.id } });
@@ -1295,7 +1304,42 @@ test('031: the author of a held or hidden post is told which checks asked about 
       assert.strictEqual(r.r, null);
     }
     assert.strictEqual((await feed('POST', { cookie: other.cookie, json: { appeal: high.json.id } })).status, 404);
+    // Nor an agent, even its owner's (the fresh review: proven, not inferred).
+    const owned = await agentsApi('POST', '', { cookie: author.cookie, json: { name: 'Nosy helper', post: 'draft' } });
+    const helperCtx = { actor: 'agent', memberId: author.id, agentId: owned.json.agent_id, keyHash: c.sha256hex(owned.json.key) };
+    assert.strictEqual((await run(helperCtx, (t) => t`select app.jevs_post_reasons(${high.json.id}) as r`))[0].r, null);
+    // A fixed order (by question), so the order never tells which scored higher (the fresh review, finding 3).
+    const twoMails = await say(author, 'Write to one@example.com or two@example.com about ' + links(1) + ' ' + crypto.randomBytes(6).toString('hex'));
+    const twoLinks = await say(author, 'See ' + links(2) + ' or write to three@example.com ' + crypto.randomBytes(6).toString('hex'));
+    const order = (x) => x.json.asked_about.filter((n) => n === 'Links and new domains' || n === 'Contact details');
+    if (order(twoMails).length === 2 && order(twoLinks).length === 2) assert.deepStrictEqual(order(twoMails), order(twoLinks));
+    const ids = (names) => names.map((n) => jevs.QUESTIONS.find((q) => q.title === n).id);
+    for (const x of [medium, high, twoMails, twoLinks]) assert.deepStrictEqual(ids(x.json.asked_about), [...ids(x.json.asked_about)].sort(), 'in question order');
+    // Only while it is current (the fresh review, finding 1): withdrawn, or decided by Aaron, says nothing, and offers no appeal.
+    await feed('POST', { cookie: author.cookie, json: { challenge: medium.json.challenge, answer: 'decline' } });
+    const removedByAaron = await say(author, links(4) + ' write to gone@example.com ' + crypto.randomBytes(6).toString('hex'));
+    assert.strictEqual((await run(aaron.ctx, (t) => review.decide(t, { post: removedByAaron.json.id, decision: 'remove' }))).status, 'removed');
+    const after = (await feed('GET', { cookie: author.cookie, query: { mine: '1' } })).json.posts;
+    assert.strictEqual(after.find((p) => p.id === medium.json.id).checks, null, 'withdrawn: nothing more to say');
+    assert.strictEqual(after.find((p) => p.id === removedByAaron.json.id).checks, null, 'Aaron decided: no reasons, no appeal button');
+    assert.strictEqual(after.find((p) => p.id === high.json.id).checks.can_appeal, true, 'still waiting for him: still current');
   } finally {
     await setMode('shadow');
+  }
+});
+
+test('031: if the reasons can\'t be read (say the site is deployed before the database has 031), your posts still show, without them (the fresh review, finding 4)', async () => {
+  const m = await member({ level: 2, name: 'Still sees posts', ageDays: 30 });
+  const p = await say(m, 'A post before the reasons go missing ' + crypto.randomBytes(6).toString('hex'));
+  await q(`update app.posts set status = 'waiting', published_at = null where id = '${p.json.id}'`).catch(() => null);
+  await q('revoke execute on function app.jevs_post_reasons(uuid) from dog_app');
+  try {
+    const mine = await feed('GET', { cookie: m.cookie, query: { mine: '1' } });
+    assert.strictEqual(mine.status, 200);
+    const row = mine.json.posts.find((x) => x.id === p.json.id);
+    assert.ok(row, 'the post is listed');
+    assert.strictEqual(row.checks, null);
+  } finally {
+    await q('grant execute on function app.jevs_post_reasons(uuid) to dog_app');
   }
 });

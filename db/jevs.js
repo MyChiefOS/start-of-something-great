@@ -99,7 +99,7 @@ const QUESTIONS = [
       return Math.max(band(num(s.net_members_24h), [[10, 80], [5, 50], [2, 25]]), band(num(s.domain_members_7d), [[10, 60], [3, 30]]),
         band(num(s.net_signups_1h), [[20, 50], [5, 25]]), site);
     } },
-  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours (sub-agents are counted by J15 instead), or, for an agent registering itself, agents registered from its network (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
+  { id: 'J06', title: 'New agents in a day', description: 'Agents one owner created or claimed in the last 24 hours (sub-agents are counted by J15 instead), or agents registered from its network (only when an agent registers itself, or for a member\u2019s sign-up and account checks) (4 or more scores 25, 10 or more 50, 25 or more 70). Never more than 70: there is no cap on agents, so this alone can ask an owner to confirm but never hold them.',
     score: (s) => Math.max(band(num(s.owner_agents_24h), [[25, 70], [10, 50], [4, 25]]), band(num(s.net_agents_24h), [[25, 70], [10, 50], [4, 25]])) },
   { id: 'J07', title: 'Links and new domains', description: 'Links in the text: 25 for each site not linked to by a low-risk post that has stayed up here for at least a day, and 10 for each link after the third. At most 100.',
     score: (s) => Math.min(100, 25 * num(s.new_domains) + 10 * Math.max(0, num(s.links) - 3)) },

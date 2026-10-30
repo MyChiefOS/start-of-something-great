@@ -501,7 +501,9 @@ async function handle(req, res, run) {
     // public names, and whether the author can ask Aaron to look again (a post JEVs held for him or hid).
     const rows = await run(session.actorFor(who), async (t) => {
       const out = await posts.mine(t);
-      for (const r of out) r.checks = r.status === 'live' ? null : await jevs.postReasons(t, r.id);
+      // Each in its own savepoint: if the reasons can't be read (say the site is deployed before the database has 031),
+      // the posts still show, without them (the fresh review of this PR, finding 4).
+      for (const r of out) r.checks = r.status === 'live' ? null : await t.savepoint((s) => jevs.postReasons(s, r.id)).catch(() => null);
       return out;
     });
     return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, created_at: r.created_at, published_at: r.published_at,

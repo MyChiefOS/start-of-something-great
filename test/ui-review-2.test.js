@@ -23,7 +23,7 @@ test('item 9: /feed lists your posts that aren\'t live, says which checks asked 
   assert.match(read('account.js'), /why\.href = '\/feed#mine'/);
 });
 
-test('item 9: the API names questions by their public titles and returns no scores; an agent is never told, its owner is', () => {
+test('item 9: the API names questions by their public titles and returns no scores (an agent caller is tested in test/jevs.test.js)', () => {
   const api = read('api/feed.js');
   assert.match(api, /checks: r\.checks \? \{ effect: r\.checks\.effect, asked_about: r\.checks\.asked_about, can_appeal: r\.checks\.effect === 'hold' \|\| r\.checks\.effect === 'hide' \} : null/);
   const jevs = require('../db/jevs');
@@ -39,6 +39,6 @@ test('item 9: the API names questions by their public titles and returns no scor
 
 test('item 17: the network count is gathered only for an agent registering itself, and the public text says so everywhere', () => {
   const sql = read('db/migrations/031_fair_checks.sql');
-  assert.match(sql, /'net_agents_24h', case when p_net is null or p_action <> 'agent\.register' then 0/);
-  for (const f of ['llms.txt', 'db/README.md']) assert.match(read(f), /or, for an agent registering itself, agents registered from its network/, f);
+  assert.match(sql, /'net_agents_24h', case when p_net is null or p_action not in \('agent\.register', 'signup', 'account\.check'\) then 0/);
+  for (const f of ['llms.txt', 'db/README.md']) assert.match(read(f), /or agents registered from its network \(only when an agent registers itself, or for a member’s sign-up and account checks\)/, f);
 });
