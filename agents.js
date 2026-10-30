@@ -264,7 +264,8 @@
       .catch(function () { status.textContent = 'Your agents could not be loaded. Please try again.'; });
   }
 
-  // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19).
+  // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19). Its
+  // styles are .start-mode in styles.css, kept without a comment there: every page loads that file (SF2's page weight).
   function chosen(name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : 'act'; }
   // The answer's note, and a link to sign in again when letting it act needed one.
   function noted(target, d) {

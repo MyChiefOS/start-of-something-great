@@ -541,8 +541,6 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
    only while it has focus. */
 .skip-link { position: absolute; left: -9999px; top: 0; }
 .skip-link:focus { left: 1rem; top: 1rem; z-index: 100; padding: 0.5rem 0.9rem; background: var(--ink); color: var(--text); border: 2px solid var(--amber); border-radius: 6px; }
-
-/* How a new agent starts (the UI/UX review, items 16 and 19). */
 .start-mode { border: 1px solid var(--rule); border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
 .start-mode legend { font-family: var(--display); font-weight: 600; padding: 0 0.3rem; }
 .start-mode label { display: block; padding: 0.3rem 0; min-height: 24px; }
