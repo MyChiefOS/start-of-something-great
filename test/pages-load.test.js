@@ -96,7 +96,7 @@ test('every page with a menu loads nav.js, except the pages that run no script; 
   }
   const js = read('nav.js');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'text only');
-  assert.deepStrictEqual([...js.matchAll(/setAttribute\('href', '([^']+)'\)/g)].map((m) => m[1]), ['/account']);
+  assert.deepStrictEqual([...js.matchAll(/setAttribute\('href', '([^']+)'\)/g)].map((m) => m[1]), ['/agents', '/account'], 'our own paths only: Your agents (the UI/UX review, item 7) and Account');
   assert.deepStrictEqual([...js.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1]), ['/auth/me'], 'one request: /auth/me carries the count');
   assert.match(js, /if \(!state \|\| state\.signed_in !== true\) return;/, 'a visitor keeps "Join"');
   assert.match(read('styles.css'), /\.site-nav a\.nav-join \{[^}]*min-height: 24px/, 'the Join link is a 24 px target');
@@ -128,8 +128,12 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
   const store = new Map(stored ? [['dog-nav', JSON.stringify(stored)]] : []);
   const calls = [];
   const forms = [{ handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); } }];
+  // "Your agents" is added before Account once signed in (the UI/UX review, item 7).
+  const added = [];
+  link.parentNode = { insertBefore: (n) => added.push(n) };
   const ctx = {
-    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : null), querySelectorAll: () => forms },
+    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : q === '.site-nav a[data-nav="agents"]' ? (added[0] || null) : null), querySelectorAll: () => forms,
+      createElement: () => ({ attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = String(v); } }) },
     location: { pathname: where },
     sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
     fetch: (u) => { calls.push(u); return Promise.resolve({ ok: true, json: () => Promise.resolve(me) }); },
@@ -137,7 +141,7 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
   };
   ctx.window = ctx;
   vm.runInNewContext(read('nav.js'), ctx);
-  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store, forms }))));
+  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store, forms, added }))));
 }
 
 test('nav.js, run: a visitor keeps Join; a member sees Account with the unread count; one request, then reused for a minute', async () => {
@@ -149,6 +153,8 @@ test('nav.js, run: a visitor keeps Join; a member sees Account with the unread c
   assert.strictEqual(member.link.textContent, 'Account (3)');
   assert.strictEqual(member.link.attrs.href, '/account');
   assert.strictEqual(member.link.attrs['aria-label'], 'Account, 3 unread notices');
+  assert.deepStrictEqual(member.added.map((a) => [a.textContent, a.attrs.href]), [['Your agents', '/agents']], 'and Your agents beside it');
+  assert.deepStrictEqual(visitor.added, [], 'a visitor gets no Your agents');
   const kept = JSON.parse(member.store.get('dog-nav'));
   assert.deepStrictEqual(Object.keys(kept).sort(), ['at', 'signed_in', 'unread'], 'only the yes/no and the count are kept, never an ID or a name');
   assert.strictEqual((await runNav({ me: { signed_in: true, unread: 250 } })).link.textContent, 'Account (99+)');
