@@ -193,8 +193,12 @@ function shapeIssue(issue) {
   };
 }
 
+// A closed proposal whose title starts with "[Test]" was a check of the proposal flow, not a proposal (Aaron, Oct 30:
+// "Hide them from the page"; the UI/UX review, item 10). Nothing on GitHub is changed; an open one still shows.
+const isClosedTest = (i) => i.state === 'closed' && /^\s*(proposal:\s*)?\[test\]/i.test(String(i.title || ''));
+
 function shapeList(issues) {
-  const proposals = (issues || []).filter((i) => !i.pull_request).map(shapeIssue);
+  const proposals = (issues || []).filter((i) => !i.pull_request && !isClosedTest(i)).map(shapeIssue);
   const counts = {};
   for (const p of proposals) counts[p.status] = (counts[p.status] || 0) + 1;
   return {
