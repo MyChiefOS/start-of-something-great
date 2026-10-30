@@ -119,6 +119,10 @@
     {
       "version": "030_behaviour_watch_web",
       "sha256": "fd6ea7b9d19d901752749e8498911fbbcc58d347decfd660479b79701b4229c2"
+    },
+    {
+      "version": "031_fair_checks",
+      "sha256": "6fe3b818af863b4836803d1acee49886e5855d0c4deb21554bf2fbea31fb2dc9"
     }
   ]
 }

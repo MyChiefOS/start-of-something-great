@@ -166,6 +166,11 @@
       var c = ctx.challenges && ctx.challenges.find(function (x) { return x.id === n.subject.id; });
       if (!c || !c.subject || c.subject.kind !== 'post') return null;
       if (c.body) box.appendChild(el('blockquote', 'draft-words', c.body));
+      // Which checks asked, by name: on Your posts (the UI/UX review, item 9).
+      var why = el('a', 'fine', 'Why was it held? See Your posts');
+      why.href = '/feed#mine';
+      box.appendChild(why);
+      box.appendChild(document.createTextNode(' '));
       box.appendChild(button('Confirm: post it', 'primary', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'confirm' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
       box.appendChild(document.createTextNode(' '));
       box.appendChild(button('Withdraw it', '', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'decline' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));

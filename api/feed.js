@@ -431,14 +431,19 @@ async function handle(req, res, run) {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
       }
       const held = heldBy(p.jevs);
+      // Which checks asked, by their public names, never a score (031; the UI/UX review, item 9). Best effort: the post
+      // is already saved, so a failure here only leaves the names out.
+      const why = held ? await run(session.actorFor(who), (t) => jevs.postReasons(t, p.id)).catch(() => null) : null;
+      const askedAbout = why ? why.asked_about : [];
+      const named = askedAbout.length ? ' Our checks asked about: ' + askedAbout.join('; ') + '.' : '';
       if (held === 'challenge') {
-        return reply(res, 202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge,
-          message: 'Before this goes live, please confirm it\u2019s yours and meant: our automatic checks (JEVs) ask about something in it, '
-            + 'such as links to new sites, contact details or words someone else posted. Confirm or withdraw it from your account.' });
+        return reply(res, 202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge, asked_about: askedAbout,
+          message: 'Before this goes live, please confirm it\u2019s yours and meant: our automatic checks (JEVs) ask about something in it.' + named
+            + ' Confirm or withdraw it from your account.' });
       }
       if (held === 'hold') {
-        return reply(res, 202, { id: p.id, status: 'waiting',
-          message: 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it, and you can appeal.' });
+        return reply(res, 202, { id: p.id, status: 'waiting', asked_about: askedAbout,
+          message: 'Held for review: our automatic checks (JEVs) found it high risk.' + named + ' Aaron will look at it, and you can ask him to look again from Your posts on /feed.' });
       }
       return reply(res, 201, { id: p.id, status: p.status,
         message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
@@ -492,8 +497,18 @@ async function handle(req, res, run) {
     if (!run) return reply(res, 200, { posts: [] });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see your posts.', join: '/join' });
-    const rows = await run(session.actorFor(who), (t) => posts.mine(t));
-    return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, created_at: r.created_at, published_at: r.published_at })) });
+    // A post that isn't live says why, if our checks were the reason (031; the UI/UX review, item 9): the questions'
+    // public names, and whether the author can ask Aaron to look again (a post JEVs held for him or hid).
+    const rows = await run(session.actorFor(who), async (t) => {
+      const out = await posts.mine(t);
+      // Each in its own savepoint: if the reasons can't be read (say the site is deployed before the database has 031),
+      // the posts still show, without them (the fresh review of this PR, finding 4).
+      for (const r of out) r.checks = r.status === 'live' ? null : await t.savepoint((s) => jevs.postReasons(s, r.id)).catch(() => null);
+      return out;
+    });
+    return reply(res, 200, { posts: rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, status: r.status, created_at: r.created_at, published_at: r.published_at,
+      checks: r.checks ? { effect: r.checks.effect, asked_about: r.checks.asked_about, can_appeal: r.checks.effect === 'hold' || r.checks.effect === 'hide' } : null })),
+      untrusted_fields: ['posts[].body'] });
   }
 
   // A receipt: who acted, for whom, under which rules, and whether a person approved the exact words (A4). Public and

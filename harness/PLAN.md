@@ -141,7 +141,7 @@ Kept as is, and why: the dash ban in agent names (it stops a name faking "agent 
 
 ### Fix 10: live proof of every flow. Claude; Aaron approves (corrected Oct 26). Unknown: how Claude proves the flows that need a real person signed in with GitHub, without asking Aaron to use the site.
 
-**The UI/UX review's 15 open items (Aaron, Oct 30: "Yes, all 15 in that order"):** group 1 (items 7, 8, 10, 12, 13, 18, 20, 22 to 24) is built as a PR after the sign-in friction PR; then group 2, fair checks (17, 9); group 3, agents see their drafts (15); group 4, one screen after the claim, with site agents acting on their own from the claim (16, 19: "Both act on their own").
+**The UI/UX review's 15 open items (Aaron, Oct 30: "Yes, all 15 in that order"):** group 1 (items 7, 8, 10, 12, 13, 18, 20, 22 to 24) is built as a PR after the sign-in friction PR (#73); group 2, fair checks (17, 9: migration 031), is built after it; group 3, agents see their drafts (15); group 4, one screen after the claim, with site agents acting on their own from the claim (16, 19: "Both act on their own").
 
 **Sign-in friction (Aaron, Oct 30: 99.8% of people should sign in):** the sign-in friction PR (A to C) after #71; then count real sign-ins on the live site (codes made against sign-ins finished, counts only) and report the rate with its confidence. Found and not built (his call, "A to C only for now"): an emoji with an invisible joining character in a hello stops the code counting; a code typed or selected by hand into a sentence; the 10-minute code can run out during a slow GitHub login; "expired or was used" confuses; the username help assumes the person is signed in to GitHub; two tabs can show an older code as waiting.
 

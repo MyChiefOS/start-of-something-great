@@ -146,9 +146,56 @@
   fetch('/auth/me', { headers: { Accept: 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (me) {
-      if (me && me.signed_in) { form.hidden = false; document.getElementById('signin-hint').hidden = true; }
+      if (me && me.signed_in) { form.hidden = false; document.getElementById('signin-hint').hidden = true; loadMine(); }
     })
     .catch(function () {});
+
+  // Your posts that aren't live, and why (031; the UI/UX review, item 9): which of our checks asked about each one, by
+  // their public names (never a score), and, for a post held for Aaron or hidden, a way to ask him to look again.
+  var mine = document.getElementById('mine');
+  var mineList = document.getElementById('mine-list');
+  var STATE = { challenge: 'Waiting for you to confirm it on your account page.', hold: 'Held for Aaron to review.', hide: 'Hidden by our checks.' };
+  function loadMine() {
+    fetch('/api/feed?mine=1', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var rows = d && Array.isArray(d.posts) ? d.posts.filter(function (p) { return p.status !== 'live'; }) : [];
+        mineList.textContent = '';
+        mine.hidden = rows.length === 0;
+        rows.forEach(function (p) {
+          var box = el('div', 'notice');
+          var words = String(p.body || '');
+          box.appendChild(el('p', '', words.length > 160 ? words.slice(0, 160) + '…' : words));
+          var c = p.checks;
+          var state = c && STATE[c.effect] ? STATE[c.effect]
+            : p.status === 'waiting' ? 'Waiting for review: your first 3 posts are reviewed.' : 'Removed.';
+          box.appendChild(el('p', 'fine', state));
+          if (c && c.asked_about && c.asked_about.length) box.appendChild(el('p', 'fine', 'Our checks asked about: ' + c.asked_about.join('; ') + '.'));
+          if (c && c.effect === 'challenge') {
+            var go = el('a', '', 'Confirm or withdraw it on your account page');
+            go.href = '/account#notices';
+            box.appendChild(go);
+          }
+          if (c && c.can_appeal) {
+            var said = el('p', 'fine', '');
+            said.setAttribute('role', 'status');
+            var ask = el('button', 'button', 'Ask Aaron to look again');
+            ask.type = 'button';
+            ask.addEventListener('click', function () {
+              ask.disabled = true;
+              fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ appeal: p.id }) })
+                .then(function (r) { return r.json().then(function (x) { return { ok: r.ok, x: x }; }); })
+                .then(function (y) { said.textContent = y.ok ? y.x.message : y.x.error; ask.disabled = y.ok; })
+                .catch(function () { said.textContent = 'That didn\u2019t go through. Please try again.'; ask.disabled = false; });
+            });
+            box.appendChild(ask);
+            box.appendChild(said);
+          }
+          mineList.appendChild(box);
+        });
+      })
+      .catch(function () { /* the section stays hidden */ });
+  }
   body.addEventListener('input', function () { count.textContent = Array.from(body.value).length.toLocaleString() + ' / 5,000'; });
   form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -157,7 +204,7 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
         status.textContent = x.ok ? x.d.message : x.d.error;
-        if (x.ok) { body.value = ''; count.textContent = '0 / 5,000'; if (x.d.status === 'live') { next = null; load(false); } }
+        if (x.ok) { body.value = ''; count.textContent = '0 / 5,000'; if (x.d.status === 'live') { next = null; load(false); } else loadMine(); }
       })
       .catch(function () { status.textContent = 'That didn’t go through. Please try again.'; });
   });
