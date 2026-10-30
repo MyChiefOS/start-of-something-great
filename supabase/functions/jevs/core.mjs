@@ -167,28 +167,52 @@ export function agentTag(body) {
 }
 
 // Signing in to the site with a code (023; Aaron, Oct 28): the code the site showed, such as DOG-7K4M-Q2XH. No 0, O, 1
-// or I, so it can't be misread. Upper or lower case. Since Oct 30 (Aaron: "Most people are going to say something when
-// they post"), the code may sit inside a message ("Hello! DOG-7K4M-Q2XH, thanks"): a comment that holds exactly one
-// code claims it. That is safe because the code, not the wording, carries the protection: it works only for the GitHub
-// username typed on /join, only for the browser that asked, once, for 10 minutes. Two or more codes claim nothing, so
-// it's never a guess which. A code must stand alone as a word: not inside a longer run of letters, digits or dashes.
-// Only the first 4,000 characters are read (a sign-in is a short post).
+// or I, so it can't be misread. Upper or lower case.
+//
+// Since Oct 30 (Aaron: "Most people are going to say something when they post") a hello may go around the code, but the
+// code must still be posted on purpose, because a comment that merely mentions a code must never sign anyone in (the
+// fresh review, Oct 30: otherwise "@you is this yours? DOG-..." and a quote-reply would sign the attacker's browser in
+// as you). A code counts when the comment holds exactly one code and either the comment is nothing but that code, or
+// the code is on a line of its own (outside quotes and code blocks) in a comment with no HTML and no invisible
+// characters, so nothing a reader can't see can carry it (the Keybase lesson: proofs hidden in markup). Only the first
+// 4,000 characters are read (a sign-in is a short post).
 const SIGNIN_CODE_ANYWHERE = /(?:^|[^A-Za-z0-9-])(DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})(?=$|[^A-Za-z0-9-])/gi;
 const SIGNIN_CODE_ALONE = /^\s*DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}\s*$/i;
+const SIGNIN_CODE_LINE = /^[ \t]*DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}[ \t]*$/i;
+// HTML of any kind (a tag, a comment, a doctype) or an entity: markup can hide text from a reader.
+const HTML_MARKUP = /<[A-Za-z!/?]|&#?[A-Za-z0-9]+;/;
+// Invisible or direction-changing characters, which can hide or disguise text.
+const INVISIBLE = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF]/;
+const FENCE = /^[ \t]{0,3}(```|~~~)/;
 // Something shaped like a code that isn't a valid one (a misread 0 or O, a character missing or extra), so the reply
 // can say so. Capitals and digits with both dashes, as the site shows codes, so everyday words ("dog-friendly",
 // "dog eat dog") never get a reply.
 const CODE_LOOKALIKE = /(?:^|[^A-Za-z0-9-])DOG-[A-Z0-9]{3,5}-[A-Z0-9]{3,5}(?=$|[^A-Za-z0-9-])/;
 
-// { code, count, alone }: code is the one code in upper case when the comment holds exactly one (else null); count is
-// how many it holds; alone is true when the comment is nothing but that code (only then is it hidden once seen).
+// The lines of a comment that are a code on their own, outside fenced code blocks.
+function codeLines(text) {
+  let fenced = false;
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (FENCE.test(line)) { fenced = !fenced; continue; }
+    if (!fenced && SIGNIN_CODE_LINE.test(line)) out.push(line.trim().toUpperCase());
+  }
+  return out;
+}
+
+// { code, count, alone, mentioned }: code is the code in upper case when the comment posts exactly one code on purpose
+// (else null); count is how many different codes the comment holds anywhere; alone is true when the comment is nothing
+// but that code (only then is it hidden once seen); mentioned is true when it holds one code but doesn't post it on
+// purpose (quoted, in a sentence, in markup), so the reply can say how to sign in, and that nothing happened.
 export function signinCodes(body) {
   const text = String(body).slice(0, 4000);
   const found = [...new Set([...text.matchAll(SIGNIN_CODE_ANYWHERE)].map((m) => m[1].toUpperCase()))];
-  const code = found.length === 1 ? found[0] : null;
-  return { code, count: found.length, alone: Boolean(code) && SIGNIN_CODE_ALONE.test(text) };
+  const alone = found.length === 1 && SIGNIN_CODE_ALONE.test(text);
+  const lines = found.length === 1 && !HTML_MARKUP.test(text) && !INVISIBLE.test(text) ? codeLines(text) : [];
+  const onPurpose = alone || (lines.length >= 1 && lines.every((l) => l === found[0]));
+  return { code: onPurpose ? found[0] : null, count: found.length, alone, mentioned: found.length === 1 && !onPurpose };
 }
-// The one code in a comment, or null (kept for callers that need only the code).
+// The code a comment posts on purpose, or null (kept for callers that need only the code).
 export function signinCode(body) {
   return signinCodes(body).code;
 }

@@ -158,13 +158,14 @@ jobs:
         # unreadable: anyone can still expand it on GitHub. That is safe because a code works only once, only for the
         # browser that asked for it, and expires in 10 minutes. A code inside a longer message (Aaron, Oct 30) is left
         # up, so the person's hello isn't hidden with it; the gate says which ("alone"). A gate from before Oct 30 sends
-        # no "alone", and its comments are always only the code, so they are hidden as before.
+        # no "alone", and its comments are always only the code, so they are hidden as before. (Not `.alone // true`:
+        # in jq, `false // true` is true, which would hide every hello; the fresh review, Oct 30.)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          jq -e '.signin != null and (.signin.alone // true)' result.json > /dev/null || exit 0
+          jq -e '.signin != null and .signin.alone != false' result.json > /dev/null || exit 0
           [ "$GITHUB_EVENT_NAME" = discussion_comment ] || exit 0
           gh api graphql -f query='mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }' \
             -f id="$(cat node_id.txt)" > /dev/null

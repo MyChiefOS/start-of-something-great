@@ -156,7 +156,7 @@
       if (!d.code) { say(d.error || 'Couldn\u2019t get a code. Please try again.'); return; }
       document.getElementById('code-value').textContent = d.code;
       show.hidden = false;
-      say('Post this code in the box below; you can write a hello around it. This page signs you in once GitHub tells us.');
+      say('Post this code in the box below, on a line of its own (a hello above or below it is fine). This page signs you in once GitHub tells us.');
       started = Date.now();
       stop();
       timer = setInterval(check, 2000);
