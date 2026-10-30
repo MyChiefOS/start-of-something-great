@@ -40,7 +40,10 @@ function load(env = process.env) {
     error,
     from: env.SES_FROM || FROM_DEFAULT,
     replyTo: REPLY_TO,
-    topicArn: env.SNS_TOPIC_ARN || null
+    topicArn: env.SNS_TOPIC_ARN || null,
+    // Whether email is switched on at all. Off (phase 1 is GitHub-only, Oct 23), the bounce address doesn't exist
+    // (api/notify.js): the code stays built for later (Aaron, Oct 30: "We can leave the code for email").
+    emailOn: env.EMAIL_TRANSPORT === 'ses'
   };
 }
 

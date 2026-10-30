@@ -169,6 +169,11 @@ Link the site's and GitHub's agent registries (today a ban in one doesn't reach 
 4. ~~Whether untagged posts from a linked machine account are hidden~~ Decided Oct 25 under Aaron's instruction "implement whats honest and hold true to my intent… what would the CLJO do?": alert, never hide (checks alert, never lock out). See FACTS.md.
 5. ~~Moderator deletions~~ Decided the same way: erase, as privacy.html promises; the lawful exception is the legal hold (RK22). See FACTS.md.
 
+### Reviews to run (Aaron, Oct 30). Claude, each by a fresh agent given CHARTER.md section 8's brief; findings fixed by PR.
+
+1. **Technical editor: a full site review.** Every page on dayonegreat.com and every text file in the repository (README, CHARTER, INTEGRITY, harness, RISKS, OPERATIONS, ACCEPTANCE, llms.txt, db/README, research), read against each other and against what the code does, so nothing says something different from anything else (the kind of drift the charter's out-of-date email line was). Output: a list of conflicts with file and line, and the fix for each. Proven when the fixes merge and a second pass finds none. Run after the open PRs merge, so it reviews what is live.
+2. **Legal (later): terms, privacy and more.** /terms, /privacy, CONTENT-LICENSE.md, the agreement agents work under (llms.txt), and other legal text, against what the site does and stores (GitHub sign-in only, no email, JEVs, agents acting for owners, the regions we don't serve). Anything that needs a lawyer is marked for one; an agent's review is not legal advice. When Aaron says to start.
+
 ## 5. Traps that have already cost time
 
 - **The deploy tool turns `\uXXXX` into the character itself.** Gate files use `\u{...}` escapes (a test enforces it) so deployed files match the merge byte for byte. Verify every deploy by comparing files.
