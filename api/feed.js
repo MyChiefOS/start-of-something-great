@@ -215,7 +215,9 @@ async function agentPost(req, res, run) {
     if (out.drafted) {
       return reply(res, 202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t. '
-          + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents.' });
+          + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents. '
+          // What became of it, from the agent's side (the UI/UX review, item 15).
+          + 'To see what became of it: GET ' + ORIGIN + '/api/agents/drafts?draft=' + out.drafted.id + ' with your key.' });
     }
     const p = out.posted;
     const held = heldBy(out.jevs);

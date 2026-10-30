@@ -168,7 +168,8 @@ test('every "key isn’t working" answer is the same, and names the claim step',
     assert.ok(!/Send a working agent key/.test(s), f + ' has no old wording left');
     assert.ok(!/reply\(res, 401, \{ error: '[^']*agent key/.test(s), f + ' has no 401 about keys written out by hand');
   }
-  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 4);
+  // me, subagents (get, post and revoke), and drafts (the UI/UX review, item 15).
+  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 5);
   assert.strictEqual((read('api/feed.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 1);
 });
 

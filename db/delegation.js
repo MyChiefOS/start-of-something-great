@@ -151,4 +151,23 @@ async function receipt(t, postId) {
     minutesToApprove: r.minutes_to_approve };
 }
 
-module.exports = { MODES, current, setRules, submit, inbox, approve, decline, activity, receipt };
+// The acting agent's own drafts and what became of each (the UI/UX review, item 15: an agent couldn't see whether its
+// draft was approved, so drafts expired quietly). Read as the agent: the database shows an agent only its own drafts,
+// and only the posts it made. Newest first; one draft by ID, or the most recent.
+async function myDrafts(t, { draft, limit = 20 } = {}) {
+  const n = v.int('limit', limit, { min: 1, max: 50 });
+  const one = draft === undefined || draft === null || draft === '' ? null : v.uuid('draft', draft);
+  const rows = await t`select d.id, d.status, d.created_at, d.expires_at, d.decided_at, left(d.body, 120) as excerpt,
+                              p.id as post_id, p.status as post_status
+                       from app.agent_drafts d left join app.posts p on p.draft_id = d.id
+                       where d.agent_id = app.current_agent() and (${one}::uuid is null or d.id = ${one}::uuid)
+                       order by d.created_at desc, d.id desc limit ${n}`;
+  return rows.map((r) => {
+    const expired = r.status === 'pending' && new Date(r.expires_at) <= new Date();
+    return { id: r.id, status: expired ? 'expired' : r.status === 'pending' ? 'waiting' : r.status, excerpt: r.excerpt,
+      created_at: r.created_at, expires_at: r.expires_at, decided_at: r.decided_at,
+      post: r.post_id ? { id: r.post_id, status: r.post_status } : null };
+  });
+}
+
+module.exports = { MODES, current, setRules, submit, inbox, approve, decline, activity, receipt, myDrafts };
