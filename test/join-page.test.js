@@ -115,3 +115,17 @@ test('what Copy puts in, pasted the ways people wrote in the simulation, is read
   // Wrapped in markup it is still not a sign-in: Copy changes nothing about what counts.
   assert.strictEqual(J.signinCodes('`' + copied + '`').code, null);
 });
+
+test('the region question in the middle of a wait keeps the code; the expiry, when it fires, drops it (the review of this PR)', async () => {
+  const kept = JSON.stringify({ code: CODE, until: Date.now() + 300000 });
+  const p = page({ stored: kept, answers: (u) => (u === '/auth/me' ? { signed_in: false } : u === '/auth/code/finish' ? { region: 'France' } : {}) });
+  await settle();
+  assert.strictEqual(p.el['code-region'].hidden, false, 'the page asks where the person lives');
+  assert.strictEqual(p.store.get('dog-code'), kept, 'and keeps the code for after they answer');
+  const q = page({ stored: kept, answers: signedOut });
+  await settle();
+  q.timers.find((t) => t.kind === 'timeout').f();
+  assert.strictEqual(q.store.has('dog-code'), false);
+  assert.strictEqual(q.el['code-show'].hidden, true);
+  assert.match(q.el['code-status'].textContent, /expired or was used/);
+});

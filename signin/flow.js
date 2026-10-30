@@ -409,6 +409,7 @@ function make(deps) {
       if (out.refused) return json(res, 200, { refused: out.refused });
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
       if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      h.addCookie(res, h.clear(CODE_BROWSER)); // signed in by the key file: a code still waiting here has nothing left to do
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
@@ -551,6 +552,10 @@ function make(deps) {
       }
       h.addCookie(res, h.clear(SESSION));
       h.addCookie(res, h.clear(RESIDENT));
+      // A code this browser asked for and never finished goes too, so /join (which keeps a waiting code across the
+      // comment box's GitHub round trip) can't finish it for whoever uses this browser next (the review of the sign-in
+      // friction PR, Low 1).
+      h.addCookie(res, h.clear(CODE_BROWSER));
       return h.redirect(res, '/');
     },
 

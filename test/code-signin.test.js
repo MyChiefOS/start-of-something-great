@@ -454,6 +454,29 @@ if (!SERVER) {
     assert.strictEqual((await finish(b)).signed_in, true);
   });
 
+  test('signing out, or signing in with the key file, ends a code this browser was still waiting for (the review of the sign-in friction PR, Low 1)', async () => {
+    const codeCookie = (b) => /__Host-dog_code=/.test(b.header());
+    // Signing out: the waiting code's cookie goes, so /join can't finish that code for the next person at this browser.
+    const b = jar();
+    const s = await start(b, { login: 'leaver', ip: '192.0.2.64' });
+    assert.ok(codeCookie(b));
+    await post(8064, 'leaver', s.code);
+    const out = res(); await flow.logout(req('POST', '/auth/logout', { cookie: b.header() }), out, false); b.take(out);
+    assert.strictEqual(codeCookie(b), false);
+    assert.deepStrictEqual(await finish(b), { status: 200, expired: true }, 'the posted code signs this browser in no more');
+    // The key file: someone with a key file who also asked for a code here is signed in, and the code is ended.
+    const k = jar();
+    const first = await start(k, { login: 'keyholder', file: FILE_A, ip: '192.0.2.64' });
+    await post(8065, 'keyholder', first.code);
+    assert.strictEqual((await finish(k)).signed_in, true);
+    const later = jar();
+    await start(later, { login: 'keyholder', file: FILE_A, ip: '192.0.2.64' });
+    assert.ok(codeCookie(later));
+    const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { cookie: later.header(), body: { login: 'keyholder', file: FILE_A }, ip: '192.0.2.64' }), r); later.take(r);
+    assert.strictEqual(JSON.parse(r.body).signed_in, true);
+    assert.strictEqual(codeCookie(later), false);
+  });
+
   test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
     const b = jar();
     const s = await start(b, { login: 'tries', file: FILE_A });
