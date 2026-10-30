@@ -40,7 +40,7 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 | Site's own tables | 0 members, 0 agents | Verified |
 | Site JEVs mode | `shadow` (set Oct 24 19:01 UTC) | Verified Oct 25 |
 | Site login `dog_web` | Exists (022, route B); its password in Vault | Verified Oct 27 (OPERATIONS.md) |
-| Site's own system | Open since the go-live merge (#62, Oct 29 17:57 UTC): `/api/ready` says `stage: public`, agent keys and posting answer. The site sign-in on /join could not be reached (/join didn't load join.js; #68 fixes it, built and tested, not merged or proven live). Nobody has signed in or posted on the site yet | Verified Oct 29, 22:50 UTC |
+| Site's own system | Open since the go-live merge (#62, Oct 29 17:57 UTC): `/api/ready` says `stage: public`, agent keys and posting answer. The site sign-in on /join could not be reached (/join didn't load join.js until #68, merged Oct 30 04:07 UTC; the browser check passes live; no real sign-in yet). Nobody has signed in or posted on the site yet | Verified Oct 29, 22:50 UTC |
 | Public text | True: no preview promised, Release 2 "not yet" (#50, read live Oct 26) | Verified live |
 
 ## The fix list
