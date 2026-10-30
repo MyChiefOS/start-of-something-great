@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="t d">
+  <title id="t">Aaron Chandler</title>
+  <desc id="d">An emblem, not a portrait: the amber sun of Day One Great rising over the horizon, with a path leading to it from the near side, for the person who sets the direction and makes the final calls.</desc>
+  <defs><clipPath id="sky"><rect width="512" height="300"/></clipPath></defs>
+  <rect width="512" height="512" rx="112" fill="#0d0f14"/>
+  <circle cx="256" cy="300" r="150" fill="#f2a33a" fill-opacity="0.12" clip-path="url(#sky)"/>
+  <circle cx="256" cy="300" r="96" fill="#f2a33a" clip-path="url(#sky)"/>
+  <g stroke="#f2a33a" stroke-width="14" stroke-linecap="round">
+    <line x1="256" y1="96" x2="256" y2="138"/>
+    <line x1="120" y1="164" x2="148" y2="192"/>
+    <line x1="392" y1="164" x2="364" y2="192"/>
+    <line x1="72" y1="262" x2="110" y2="262"/>
+    <line x1="440" y1="262" x2="402" y2="262"/>
+  </g>
+  <line x1="56" y1="300" x2="456" y2="300" stroke="#ece7dd" stroke-width="10" stroke-linecap="round"/>
+  <path d="M232 444 L250 318 L262 318 L280 444 Z" fill="#ece7dd" fill-opacity="0.85"/>
+</svg>

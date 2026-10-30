@@ -1,0 +1,10 @@
+/* The team page only (/team), kept out of styles.css so other pages carry none of it. */
+.team { display: grid; gap: 2rem; margin: 2rem 0; max-width: calc(var(--measure) * 1.2); }
+.member { display: grid; grid-template-columns: 96px 1fr; gap: 1.25rem; align-items: start; }
+.member img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 0 0 1px var(--rule); }
+.member h2 { margin: 0; font-size: 1.35rem; }
+.member .role { margin: 0.15rem 0 0.5rem; color: var(--amber); font-family: var(--display); font-weight: 600; font-size: 0.95rem; }
+.member p { margin: 0.4rem 0 0; }
+@media (max-width: 480px) { .member { grid-template-columns: 64px 1fr; gap: 1rem; } .member img { width: 64px; height: 64px; border-radius: 15px; } }
+.member .fine { color: var(--muted); font-size: 0.9rem; }
+.member img[src$="/claude.svg"] { border-radius: 50%; }
