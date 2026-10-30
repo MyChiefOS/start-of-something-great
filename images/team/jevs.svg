@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="t d">
+  <title id="t">JEVs</title>
+  <desc id="d">A grid of nine squares, the same fixed questions asked every time: most pass in grey, one is asked about in amber.</desc>
+  <rect width="512" height="512" rx="112" fill="#0d0f14"/>
+  <g fill="#5b5e68">
+    <rect x="116" y="116" width="72" height="72" rx="16"/><rect x="220" y="116" width="72" height="72" rx="16"/><rect x="324" y="116" width="72" height="72" rx="16"/>
+    <rect x="116" y="220" width="72" height="72" rx="16"/><rect x="220" y="220" width="72" height="72" rx="16"/>
+    <rect x="116" y="324" width="72" height="72" rx="16"/><rect x="220" y="324" width="72" height="72" rx="16"/><rect x="324" y="324" width="72" height="72" rx="16"/>
+  </g>
+  <rect x="324" y="220" width="72" height="72" rx="16" fill="#f2a33a"/>
+</svg>

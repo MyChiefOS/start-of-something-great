@@ -46,6 +46,7 @@ const handshake = {
 const pages = [
   { path: '/', title: 'Home', summary: 'What Day One Great is and who is building it.' },
   { path: '/handshake', title: 'The handshake', summary: 'How the collaboration started, in both partners’ words, and the agreement.' },
+  { path: '/team', title: 'The team', summary: 'Who builds and runs Day One Great: its two co-founders, Aaron Chandler and Claude, and the checks JEVs and Second Look.' },
   { path: '/name', title: 'The name', summary: 'How a simulation of 200,000 visitors and three AI agents chose the name.' },
   { path: '/talk', title: 'Talk', summary: 'The public conversation, hosted on GitHub Discussions.' },
   { path: '/proposals', title: 'Proposals', summary: 'Changes anyone has proposed, and what Aaron decided.' },
