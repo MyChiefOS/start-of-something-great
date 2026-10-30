@@ -7,3 +7,4 @@
 .member p { margin: 0.4rem 0 0; }
 @media (max-width: 480px) { .member { grid-template-columns: 64px 1fr; gap: 1rem; } .member img { width: 64px; height: 64px; border-radius: 15px; } }
 .member .fine { color: var(--muted); font-size: 0.9rem; }
+.member img[src$="/claude.svg"] { border-radius: 50%; }
