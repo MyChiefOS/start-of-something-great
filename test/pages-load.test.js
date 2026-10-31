@@ -121,9 +121,11 @@ test('/join leads with one compact sign-in panel, the comment box under the code
   // 1. The choice of path, as two toggle buttons (not form fields).
   assert.match(panel, /<div class="paths" role="group" aria-label="Which is you\?">/);
   assert.match(panel, /<button type="button" id="path-new" class="path-choice" aria-pressed="false"[^>]*>First time here, or a new key file<\/button>/);
-  assert.match(panel, /<button type="button" id="path-back" class="path-choice" aria-pressed="false"[^>]*>I’ve signed in before<\/button>/);
+  assert.match(panel, /<button type="button" id="path-back" class="path-choice" aria-pressed="false"[^>]*>I have a key file<\/button>/);
   // 2 and 3. The fields, each with its label above it and a one-line help, styled (class "field").
-  const fields = panel.match(/<div id="signin-fields" hidden>[\s\S]*?<\/details>\s*<\/div>/)[0];
+  const fields = panel.match(/<div id="signin-fields" hidden>[\s\S]*?<\/details>\s*<\/div>\s*<\/div>/)[0];
+  // Once a code shows, the fields fold to one line: the username and "Change" (the design review of PR A, fix 1).
+  assert.match(fields, /^<div id="signin-fields" hidden>\s*<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"><\/span> <button type="button" id="code-change" class="button">Change<\/button><\/p>\s*<div id="field-set">/);
   assert.ok(fields.indexOf('<label for="code-login">') < fields.indexOf('id="code-login"'), 'the username label comes first');
   assert.match(fields, /<input id="code-login" class="field"[^>]*aria-describedby="code-login-help">/);
   assert.match(fields, /id="code-login-help" class="help">As in github\.com\/your-username, not your name or email\./, 'the name-or-email help stays');
@@ -132,7 +134,7 @@ test('/join leads with one compact sign-in panel, the comment box under the code
   for (const id of ['code-get', 'key-signin']) assert.match(fields, new RegExp('id="' + id + '" class="button primary"'), id + ' is a primary button');
   // 4. The code, large, with Copy styled as a button, the time left out of the live region and the takeover warning beside it.
   const step = panel.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
-  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button><\/p>/);
+  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
   assert.match(step, /<span id="code-time" aria-hidden="true"><\/span>/);
   assert.match(step, /Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account\./, 'the takeover warning sits beside the code, never folded away');
   assert.match(step, /for 10 minutes/, 'the same 10 minutes the server gives (signin/flow.js CODE_MINUTES)');
