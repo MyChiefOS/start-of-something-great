@@ -39,7 +39,8 @@ rules:
   pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id|note|fresh|session)\b|\bset\s+(local\s+)?(session|role|app\.)|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)
 - id: dayonegreat.routeb.identity-token-only-to-broker
   message: Vercel's identity token proves the site to the key broker (route B). Read it only in db/sitekeys.js, which
-    sends it only to the broker's fixed address, and in api/ready.js, which only checks that it arrived. Forwarding it
+    sends it only to the broker's fixed address (and hands it, through peekToken, only to secondlook/v1.js for Vercel's
+    own AI Gateway at a fixed address, 034), and in api/ready.js, which only checks that it arrived. Forwarding it
     anywhere else would let that place ask the broker for the site's keys (the CSO's control 8).
   languages: [javascript]
   severity: ERROR

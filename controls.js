@@ -194,6 +194,24 @@
       });
     }
 
+    // Second Look (034): its mode and its record. Numbers only.
+    var sl = clear('second-look');
+    var s = d.second_look;
+    if (!s) sl.appendChild(el('p', 'fine', 'Second Look isn\u2019t set up in the database yet.'));
+    else {
+      sl.appendChild(el('p', '', 'Mode: ' + s.mode + (s.paused ? ' (paused itself after a removal)' : '')
+        + (s.mode === 'shadow' ? ' (logging only)' : s.mode === 'on' ? ' (publishing easy held posts)' : ' (not running)')));
+      stat(sl, 'decisions in 7 days', s.decisions_7d);
+      stat(sl, 'clears in 7 days', s.clears_7d);
+      stat(sl, 'rejects in 7 days (flags only)', s.rejects_7d);
+      stat(sl, 'left because the model gave no usable answer, 7 days', s.failed_closed_7d);
+      stat(sl, 'published in all', s.published_total);
+      stat(sl, 'of those, removed by you', s.reversed_total);
+      stat(sl, 'shadow clears you decided', s.shadow_clears_decided);
+      stat(sl, 'of those, removed by you', s.shadow_clears_removed);
+      sl.appendChild(el('p', 'fine', '95% upper bound on its error rate in shadow: ' + s.shadow_error_upper_95 + ' (1 in 80 is 0.0125).'));
+    }
+
     var rep = clear('repeated');
     if (!d.repeated_texts.length) rep.appendChild(el('p', 'fine', 'No repeated text in the last 7 days.'));
     d.repeated_texts.forEach(function (r) {
@@ -251,6 +269,32 @@
       })
       .catch(function () { summary.textContent = 'The controls could not be loaded. Please try again.'; });
   }
+
+  // Second Look's mode switch and its security questions (Aaron only; the server checks).
+  Array.prototype.forEach.call(document.querySelectorAll('.sl-modes button'), function (b) {
+    b.addEventListener('click', function () {
+      var out = document.getElementById('sl-mode-result');
+      out.textContent = 'Switching…';
+      post({ second_look: 'mode', mode: b.getAttribute('data-mode') }).then(function (x) {
+        out.textContent = x.d.message || x.d.error || '';
+        if (x.ok) load();
+      }).catch(function () { out.textContent = 'That didn’t go through. Please try again.'; });
+    });
+  });
+  document.getElementById('sl-ask').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var go = document.getElementById('sl-ask-go');
+    var out = clear('sl-answer');
+    go.disabled = true;
+    out.appendChild(el('p', 'fine', 'Asking…'));
+    post({ second_look: 'ask', question: document.getElementById('sl-question').value }).then(function (x) {
+      go.disabled = false;
+      out = clear('sl-answer');
+      if (!x.ok) { out.appendChild(el('p', 'fine', x.d.error || 'No answer.')); return; }
+      x.d.answer.split(/\n{2,}/).forEach(function (para) { out.appendChild(el('p', '', para)); });
+      out.appendChild(el('p', 'fine', x.d.note + ' Model: ' + x.d.model + '.'));
+    }).catch(function () { go.disabled = false; clear('sl-answer').appendChild(el('p', 'fine', 'That didn’t go through. Please try again.')); });
+  });
 
   document.getElementById('refresh').addEventListener('click', load);
   load();

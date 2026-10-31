@@ -62,6 +62,18 @@
       <p class="fine">What JEVs decided in the last 24 hours, and the latest high-risk decisions and scoring errors from the last 7 days. In shadow mode it only records what it would have done. Thresholds are changed by a migration pull request, never here.</p>
       <div id="jevs"></div>
 
+      <h2>Second Look, the narrow AI</h2>
+      <p class="fine">What Second Look decided about easy held posts, and its record against your decisions. In shadow mode it only logs what it would do; in on mode it publishes easy held posts itself, at most its daily cap, and pauses itself if you remove one. It never removes anything.</p>
+      <div id="second-look"></div>
+      <p class="sl-modes"><button type="button" class="button" data-mode="off">Off</button> <button type="button" class="button" data-mode="shadow">Shadow</button> <button type="button" class="button" data-mode="on">On</button></p>
+      <p class="fine" id="sl-mode-result" aria-live="polite"></p>
+      <form id="sl-ask">
+        <label for="sl-question">Ask Second Look a security question</label>
+        <textarea id="sl-question" maxlength="2000" rows="3"></textarea>
+        <p><button type="submit" class="button" id="sl-ask-go">Ask</button></p>
+      </form>
+      <div id="sl-answer" aria-live="polite"></div>
+
       <h2>Same text, many posts</h2>
       <p class="fine">Posts in the last 7 days with the same text, ignoring case, spaces and punctuation. This only measures; it never blocks a post.</p>
       <div id="repeated"></div>

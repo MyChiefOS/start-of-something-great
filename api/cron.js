@@ -37,7 +37,7 @@ function reply(res, code, body) {
 
 const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.headers['user-agent']) || ''));
 
-async function handle(req, res, run, { now = Date.now } = {}) {
+async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
   if (!run) return reply(res, 503, { ok: false });
   if (now() - lastAsked < SKIP_MS) return reply(res, 200, { ok: true });
@@ -58,13 +58,22 @@ async function handle(req, res, run, { now = Date.now } = {}) {
     // it opens an issue if the checks haven't finished for 3 hours (the fresh review of round 1). This route logs
     // nothing (027).
   }
+  // Second Look v1 (034): the next eligible held posts put to the model, in their own transactions after the timers'
+  // and the rules', with the site's Vercel identity token for the AI Gateway (read before sitekeys removes it from the
+  // request, and passed only to the gateway). Off, paused, capped or failing, it changes nothing and this reply is the
+  // same; every failure leaves the posts held for Aaron.
+  if (oidc) {
+    try { await require('../db/secondlook').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
+  }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 
 module.exports = async (req, res) => {
   try {
+    // The identity token, for Second Look's model calls, before sitekeys takes it off the request (M3).
+    const oidc = require('../db/sitekeys').peekToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
-    await handle(req, res, db.configured() ? db.run : null);
+    await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {
     if (!res.headersSent) reply(res, 500, { ok: false });
   }

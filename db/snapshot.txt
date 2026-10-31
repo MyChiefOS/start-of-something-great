@@ -213,7 +213,7 @@ constraint app.notices notices_body_check CHECK ((char_length(body) <= 2000))
 constraint app.notices notices_check CHECK (((member_id IS NOT NULL) OR (kind = 'alert'::text)))
 constraint app.notices notices_dedupe_key_check CHECK ((((char_length(dedupe_key) >= 1) AND (char_length(dedupe_key) <= 160)) AND (dedupe_key ~ '^[a-z0-9_:.-]+$'::text)))
 constraint app.notices notices_dedupe_key_key UNIQUE (dedupe_key)
-constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['draft_waiting'::text, 'draft_expired'::text, 'report_upheld'::text, 'brake_on'::text, 'contained'::text, 'containment_lifted'::text, 'appeal_decided'::text, 'act_reconfirm'::text, 'act_expired'::text, 'challenge'::text, 'account_flagged'::text, 'alert'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text])))
+constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['draft_waiting'::text, 'draft_expired'::text, 'report_upheld'::text, 'brake_on'::text, 'contained'::text, 'containment_lifted'::text, 'appeal_decided'::text, 'act_reconfirm'::text, 'act_expired'::text, 'challenge'::text, 'account_flagged'::text, 'alert'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'post_published'::text])))
 constraint app.notices notices_link_check CHECK (((char_length(link) <= 200) AND (link ~ '^/([A-Za-z0-9?=&#._~%-][A-Za-z0-9/?=&#._~%-]*)?$'::text)))
 constraint app.notices notices_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.notices notices_pkey PRIMARY KEY (id)
@@ -251,7 +251,7 @@ constraint app.review_flags review_flags_check1 CHECK (((source = 'report'::text
 constraint app.review_flags review_flags_check2 CHECK (((source = 'classifier'::text) = (classifier IS NOT NULL)))
 constraint app.review_flags review_flags_check3 CHECK (((source = 'classifier'::text) OR (score IS NULL)))
 constraint app.review_flags review_flags_check4 CHECK (((resolved_at IS NULL) = (decision IS NULL)))
-constraint app.review_flags review_flags_check5 CHECK (((resolved_at IS NULL) = (resolved_by IS NULL)))
+constraint app.review_flags review_flags_check5 CHECK ((((resolved_at IS NULL) = (resolved_by IS NULL)) OR ((resolved_at IS NOT NULL) AND (resolved_by IS NULL) AND (source = 'classifier'::text) AND (classifier = 'jevs'::text) AND (decision = 'approve'::text))))
 constraint app.review_flags review_flags_classifier_check CHECK (((char_length(classifier) <= 64) AND (classifier ~ '^[a-z][a-z0-9_]*$'::text)))
 constraint app.review_flags review_flags_decision_check CHECK ((decision = ANY (ARRAY['approve'::text, 'keep'::text, 'remove'::text, 'restore'::text])))
 constraint app.review_flags review_flags_note_check CHECK ((char_length(note) <= 500))
@@ -271,6 +271,28 @@ constraint app.sessions sessions_member_id_fkey FOREIGN KEY (member_id) REFERENC
 constraint app.sessions sessions_pkey PRIMARY KEY (id)
 constraint app.sessions sessions_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.sessions sessions_token_hash_key UNIQUE (token_hash)
+constraint app.sl_claims sl_claims_pkey PRIMARY KEY (id)
+constraint app.sl_claims sl_claims_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
+constraint app.sl_claims sl_claims_post_id_key UNIQUE (post_id)
+constraint app.sl_decisions sl_decisions_answers_check CHECK ((octet_length((answers)::text) <= 400))
+constraint app.sl_decisions sl_decisions_answers_check1 CHECK ((jsonb_typeof(answers) = 'object'::text))
+constraint app.sl_decisions sl_decisions_check CHECK (((decision <> 'clear'::text) OR ((answers IS NOT NULL) AND (NOT fail_closed) AND (risk < 15))))
+constraint app.sl_decisions sl_decisions_decision_check CHECK ((decision = ANY (ARRAY['clear'::text, 'leave'::text, 'reject'::text])))
+constraint app.sl_decisions sl_decisions_error_check CHECK ((char_length(error) <= 80))
+constraint app.sl_decisions sl_decisions_latency_ms_check CHECK (((latency_ms >= 0) AND (latency_ms <= 600000)))
+constraint app.sl_decisions sl_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'on'::text])))
+constraint app.sl_decisions sl_decisions_model_check CHECK ((model = ANY (ARRAY['mistral/ministral-3b'::text])))
+constraint app.sl_decisions sl_decisions_pkey PRIMARY KEY (id)
+constraint app.sl_decisions sl_decisions_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
+constraint app.sl_decisions sl_decisions_post_id_key UNIQUE (post_id)
+constraint app.sl_decisions sl_decisions_reason_check CHECK (((char_length(reason) >= 1) AND (char_length(reason) <= 1000)))
+constraint app.sl_decisions sl_decisions_risk_check CHECK (((risk >= 0) AND (risk <= 100)))
+constraint app.sl_decisions sl_decisions_version_check CHECK ((version = ANY (ARRAY['v1'::text])))
+constraint app.sl_outcomes sl_outcomes_pkey PRIMARY KEY (id)
+constraint app.sl_releases sl_releases_decision_id_fkey FOREIGN KEY (decision_id) REFERENCES app.sl_decisions(id) ON DELETE CASCADE
+constraint app.sl_releases sl_releases_pkey PRIMARY KEY (id)
+constraint app.sl_releases sl_releases_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
+constraint app.sl_releases sl_releases_post_id_key UNIQUE (post_id)
 constraint app.sl_reviews sl_reviews_check CHECK ((eligible OR (suggestion = 'leave'::text)))
 constraint app.sl_reviews sl_reviews_model_check CHECK (((char_length(model) <= 5) AND (model ~ '^v[0-9]{1,4}$'::text)))
 constraint app.sl_reviews sl_reviews_pkey PRIMARY KEY (id)
@@ -279,6 +301,19 @@ constraint app.sl_reviews sl_reviews_post_id_model_key UNIQUE (post_id, model)
 constraint app.sl_reviews sl_reviews_reasons_check CHECK (((char_length(reasons) >= 1) AND (char_length(reasons) <= 1000)))
 constraint app.sl_reviews sl_reviews_score_check CHECK (((score >= (0)::double precision) AND (score <= (1)::double precision)))
 constraint app.sl_reviews sl_reviews_suggestion_check CHECK ((suggestion = ANY (ARRAY['clear'::text, 'leave'::text])))
+constraint app.sl_settings sl_settings_clears_today_check CHECK ((clears_today >= 0))
+constraint app.sl_settings sl_settings_daily_call_cap_check CHECK (((daily_call_cap >= 0) AND (daily_call_cap <= 2000)))
+constraint app.sl_settings sl_settings_daily_clear_cap_check CHECK (((daily_clear_cap >= 0) AND (daily_clear_cap <= 50)))
+constraint app.sl_settings sl_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'shadow'::text, 'on'::text])))
+constraint app.sl_settings sl_settings_model_check CHECK ((model = ANY (ARRAY['mistral/ministral-3b'::text])))
+constraint app.sl_settings sl_settings_paused_reason_check CHECK ((char_length(paused_reason) <= 300))
+constraint app.sl_settings sl_settings_pkey PRIMARY KEY (id)
+constraint app.sl_settings sl_settings_published_total_check CHECK ((published_total >= 0))
+constraint app.sl_settings sl_settings_reported_total_check CHECK ((reported_total >= 0))
+constraint app.sl_settings sl_settings_reversed_total_check CHECK ((reversed_total >= 0))
+constraint app.sl_settings sl_settings_singleton_check CHECK (singleton)
+constraint app.sl_settings sl_settings_singleton_key UNIQUE (singleton)
+constraint app.sl_settings sl_settings_unlock_n_check CHECK (((unlock_n >= 80) AND (unlock_n <= 10000)))
 constraint app.subagent_settings subagent_settings_check CHECK ((default_ttl_hours <= max_ttl_hours))
 constraint app.subagent_settings subagent_settings_default_ttl_hours_check CHECK (((default_ttl_hours >= 1) AND (default_ttl_hours <= 720)))
 constraint app.subagent_settings subagent_settings_max_depth_check CHECK (((max_depth >= 1) AND (max_depth <= 10)))
@@ -448,8 +483,30 @@ default app.schema_migrations.applied_at = now()
 default app.sessions.created_at = now()
 default app.sessions.id = app.uuid_v7()
 default app.sessions.last_seen_at = now()
+default app.sl_claims.claimed_at = now()
+default app.sl_claims.id = app.uuid_v7()
+default app.sl_decisions.created_at = now()
+default app.sl_decisions.id = app.uuid_v7()
+default app.sl_decisions.published = false
+default app.sl_outcomes.decided_at = now()
+default app.sl_outcomes.id = app.uuid_v7()
+default app.sl_releases.created_at = now()
+default app.sl_releases.id = app.uuid_v7()
 default app.sl_reviews.created_at = now()
 default app.sl_reviews.id = app.uuid_v7()
+default app.sl_settings.clears_today = 0
+default app.sl_settings.counted_since = now()
+default app.sl_settings.daily_call_cap = 300
+default app.sl_settings.daily_clear_cap = 10
+default app.sl_settings.id = app.uuid_v7()
+default app.sl_settings.mode = 'shadow'::text
+default app.sl_settings.model = 'mistral/ministral-3b'::text
+default app.sl_settings.published_total = 0
+default app.sl_settings.reported_total = 0
+default app.sl_settings.reversed_total = 0
+default app.sl_settings.singleton = true
+default app.sl_settings.unlock_n = 80
+default app.sl_settings.updated_at = now()
 default app.subagent_settings.default_ttl_hours = 24
 default app.subagent_settings.id = app.uuid_v7()
 default app.subagent_settings.max_depth = 3
@@ -601,7 +658,7 @@ function app.posts_delegation() owner=dog_owner execute=dog_owner language=plpgs
 function app.posts_first_published() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=e75035dcb22c717f290c067a968a0eed
 function app.posts_flag_waiting() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=34b6cededdc573064e40593ca1948adb
 function app.posts_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=51cf5ae78befa0e0629bcd391d7e71d9
-function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c08636e33568a7ba2b4ce4e7b074c82b
+function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=af89b57b3f3a7bb212ba7c7e685aae4f
 function app.posts_scored() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=e36af3ace5db4a59ef379b215ae76e48
 function app.profile(p_member uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, display_name text, trust_level smallint, joined timestamp with time zone, live_posts bigint) body_md5=339d442d5da6afdad550b54b384f7fe5
 function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
@@ -614,7 +671,7 @@ function app.review_decide(p_post uuid, p_decision text) owner=dog_owner execute
 function app.review_flags_agent_upheld() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c31a377b1002e32e615cf9b0bb66a462
 function app.review_flags_audit_close() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d057505395d47ce86184e9eeb9a9fb44
 function app.review_flags_audit_new() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=acdb2736ac0b604cb72d7a96b008e49e
-function app.review_flags_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4394db13df24fccbded88235e68bdf51
+function app.review_flags_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c101aadc5b2b6671f2311782f14ba313
 function app.review_flags_recheck() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=83aeee9a787dbd5f271c848eb09b7a24
 function app.run_timers() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=ca7498480836fd6c928141781996aa51
 function app.session_end(p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b546c8242ddd74e8f612239c3e466d5a
@@ -623,7 +680,18 @@ function app.set_administrator(p_member uuid) owner=dog_owner execute=dog_owner 
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=3909648eaeaca764383b8ac7cf549020
 function app.sign_in_core(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=6362fa910745e08a4643a10115455220
 function app.sign_in_known(p_provider text, p_fingerprints text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=682aa6ef67fe945f0e1b08fa2a1567d1
+function app.sl_after_flag_close() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=fd61da67151657acbd5018209e42dbe2
+function app.sl_after_post_change() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=5ee3507e33007dc34c19799bacc2ff50
+function app.sl_after_report() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=52981a267daae5f25d233265e6018549
+function app.sl_claim(p_n integer) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, body text, held text[], account_days integer, sign_in text, model text) body_md5=3eaeef9ee630a8962083fff8b13d0957
+function app.sl_decide(p_post uuid, p_version text, p_model text, p_decision text, p_answers jsonb, p_risk integer, p_reason text, p_fail_closed boolean, p_error text, p_latency integer) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=1bdd3463e76ba728f3e6759e4cfdb3dd
+function app.sl_eligible(p_post uuid) owner=dog_jevs execute=dog_jevs language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=059032046bf138355d82af44334aac6e
 function app.sl_record(p_decision uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=a541f61fbfed77d9bcb01b35012746c6
+function app.sl_report() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=f583e1c793448c92c0b2319702512033
+function app.sl_report_core() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=ff063b79b61bdcd0216de1849dd08ce8
+function app.sl_set_mode(p_mode text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=a082b607370d5bc93e4d2d38e3ef3e98
+function app.sl_try_unlock() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=c2dcc11f9d77e1a02115ba2092e9ffaf
+function app.sl_weekly_report() owner=dog_jevs execute=dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=f88c32ea77bb8e65a4906cbf7f9b1f3e
 function app.stamp_ok() owner=dog_signin execute=dog_signin,dog_app,dog_public,dog_limits,dog_erase,dog_delegate,dog_jevs,dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=b29df82946b44f34f762668db83c2116
 function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=7dce1c744a0223cc4fc6cc86736c162e
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
@@ -1062,6 +1130,7 @@ grant app.posts.author_id dog_public SELECT
 grant app.posts.body dog_app INSERT
 grant app.posts.body dog_delegate INSERT
 grant app.posts.body dog_erase UPDATE
+grant app.posts.body dog_jevs SELECT
 grant app.posts.body dog_public SELECT
 grant app.posts.body_fp dog_jevs SELECT
 grant app.posts.created_at dog_jevs SELECT
@@ -1073,6 +1142,7 @@ grant app.posts.delegation dog_public SELECT
 grant app.posts.draft_id dog_delegate INSERT
 grant app.posts.draft_id dog_jevs SELECT
 grant app.posts.draft_id dog_public SELECT
+grant app.posts.first_published_at dog_jevs SELECT
 grant app.posts.id dog_delegate SELECT
 grant app.posts.id dog_erase SELECT
 grant app.posts.id dog_jevs SELECT
@@ -1082,6 +1152,7 @@ grant app.posts.lane dog_jevs SELECT
 grant app.posts.lane dog_limits SELECT
 grant app.posts.lane dog_public SELECT
 grant app.posts.published_at dog_delegate SELECT
+grant app.posts.published_at dog_jevs SELECT
 grant app.posts.published_at dog_public SELECT
 grant app.posts.rules_version dog_delegate INSERT
 grant app.posts.rules_version dog_public SELECT
@@ -1113,6 +1184,7 @@ grant app.review_flags.classifier dog_jevs SELECT
 grant app.review_flags.created_at dog_jevs SELECT
 grant app.review_flags.decision dog_app UPDATE
 grant app.review_flags.decision dog_jevs SELECT
+grant app.review_flags.decision dog_jevs UPDATE
 grant app.review_flags.id dog_erase SELECT
 grant app.review_flags.id dog_jevs SELECT
 grant app.review_flags.note dog_app INSERT
@@ -1126,6 +1198,7 @@ grant app.review_flags.reporter_id dog_app INSERT
 grant app.review_flags.reporter_id dog_erase SELECT
 grant app.review_flags.reporter_id dog_jevs SELECT
 grant app.review_flags.resolved_at dog_jevs SELECT
+grant app.review_flags.resolved_by dog_jevs SELECT
 grant app.review_flags.score dog_app INSERT
 grant app.review_flags.score dog_jevs INSERT
 grant app.review_flags.source dog_app INSERT
@@ -1149,6 +1222,20 @@ grant app.sessions.member_id dog_app SELECT
 grant app.sessions.member_id dog_erase SELECT
 grant app.sessions.member_id dog_signin INSERT
 grant app.sessions.token_hash dog_signin INSERT
+grant app.sl_claims dog_jevs INSERT
+grant app.sl_claims dog_jevs SELECT
+grant app.sl_decisions dog_app SELECT
+grant app.sl_decisions dog_jevs INSERT
+grant app.sl_decisions dog_jevs SELECT
+grant app.sl_decisions.published dog_jevs UPDATE
+grant app.sl_outcomes dog_app SELECT
+grant app.sl_outcomes dog_jevs INSERT
+grant app.sl_outcomes dog_jevs SELECT
+grant app.sl_releases dog_app SELECT
+grant app.sl_releases dog_jevs INSERT
+grant app.sl_releases dog_jevs SELECT
+grant app.sl_releases.reported_at dog_jevs UPDATE
+grant app.sl_releases.reversed_at dog_jevs UPDATE
 grant app.sl_reviews dog_app SELECT
 grant app.sl_reviews.eligible dog_jevs INSERT
 grant app.sl_reviews.model dog_jevs INSERT
@@ -1158,6 +1245,25 @@ grant app.sl_reviews.post_id dog_jevs SELECT
 grant app.sl_reviews.reasons dog_jevs INSERT
 grant app.sl_reviews.score dog_jevs INSERT
 grant app.sl_reviews.suggestion dog_jevs INSERT
+grant app.sl_settings dog_jevs SELECT
+grant app.sl_settings.clears_day dog_jevs UPDATE
+grant app.sl_settings.clears_today dog_jevs UPDATE
+grant app.sl_settings.counted_since dog_jevs UPDATE
+grant app.sl_settings.daily_call_cap dog_app SELECT
+grant app.sl_settings.daily_clear_cap dog_app SELECT
+grant app.sl_settings.last_claim_at dog_jevs UPDATE
+grant app.sl_settings.last_report_at dog_jevs UPDATE
+grant app.sl_settings.mode dog_app SELECT
+grant app.sl_settings.mode dog_jevs UPDATE
+grant app.sl_settings.model dog_app SELECT
+grant app.sl_settings.paused_reason dog_app SELECT
+grant app.sl_settings.paused_reason dog_jevs UPDATE
+grant app.sl_settings.published_total dog_jevs UPDATE
+grant app.sl_settings.reported_total dog_jevs UPDATE
+grant app.sl_settings.reversed_total dog_jevs UPDATE
+grant app.sl_settings.unlock_n dog_app SELECT
+grant app.sl_settings.updated_at dog_app SELECT
+grant app.sl_settings.updated_at dog_jevs UPDATE
 grant app.subagent_settings dog_app SELECT
 grant app.subagent_settings dog_jevs SELECT
 grant app.subagent_settings dog_signin SELECT
@@ -1363,7 +1469,7 @@ policy app.members members_update cmd=w permissive=true to=dog_app using=(((( SE
 policy app.notices notices_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))
-policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text]))
+policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text, 'post_published'::text]))
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
 policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
@@ -1395,6 +1501,7 @@ policy app.review_flags review_flags_erase_select cmd=r permissive=true to=dog_e
 policy app.review_flags review_flags_insert cmd=a permissive=true to=dog_app using= check=(((source = 'first_posts'::text) AND (reporter_id IS NULL) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.posts p WHERE ((p.id = review_flags.post_id) AND (p.status = 'waiting'::text) AND ((p.author_id = ( SELECT app.current_member() AS current_member)) OR ( SELECT app.is_reviewer() AS is_reviewer)))))) OR ((source = 'report'::text) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (reporter_id = ( SELECT app.current_member() AS current_member)) AND app.reportable(post_id, ( SELECT app.current_member() AS current_member))) OR ((source = 'classifier'::text) AND (reporter_id IS NULL) AND (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) OR ((source = 'appeal'::text) AND (reporter_id IS NULL) AND (reason IS NULL) AND app.jevs_appealable(post_id)))
 policy app.review_flags review_flags_jevs_insert cmd=a permissive=true to=dog_jevs using= check=((source = 'classifier'::text) AND (classifier = 'jevs'::text) AND (reporter_id IS NULL))
 policy app.review_flags review_flags_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
+policy app.review_flags review_flags_jevs_update cmd=w permissive=true to=dog_jevs using=((source = 'classifier'::text) AND (classifier = 'jevs'::text) AND (resolved_at IS NULL)) check=((source = 'classifier'::text) AND (classifier = 'jevs'::text))
 policy app.review_flags review_flags_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (reporter_id = ( SELECT app.current_member() AS current_member))) OR ( SELECT app.is_reviewer() AS is_reviewer)) check=
 policy app.review_flags review_flags_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
 policy app.runner_tokens runner_tokens_owner_only cmd=* permissive=true to=dog_owner using=true check=true
@@ -1408,9 +1515,19 @@ policy app.sessions sessions_signin_delete cmd=d permissive=true to=dog_signin u
 policy app.sessions sessions_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.sessions sessions_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.sessions sessions_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.sl_claims sl_claims_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.sl_decisions sl_decisions_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.sl_decisions sl_decisions_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.sl_outcomes sl_outcomes_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.sl_outcomes sl_outcomes_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.sl_releases sl_releases_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.sl_releases sl_releases_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.sl_reviews sl_reviews_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.sl_reviews sl_reviews_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.sl_reviews sl_reviews_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.sl_settings sl_settings_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
+policy app.sl_settings sl_settings_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
+policy app.sl_settings sl_settings_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
 policy app.subagent_settings subagent_settings_narrow_select cmd=r permissive=true to=dog_signin,dog_jevs using=true check=
 policy app.subagent_settings subagent_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.subagent_settings subagent_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) check=
@@ -1503,10 +1620,13 @@ trigger app.posts enabled=A CREATE TRIGGER posts_flag_waiting AFTER INSERT ON ap
 trigger app.posts enabled=A CREATE TRIGGER posts_limit BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_limit()
 trigger app.posts enabled=A CREATE TRIGGER posts_review_guard BEFORE UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_review_guard()
 trigger app.posts enabled=A CREATE TRIGGER posts_tree_cap BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.agent_tree_cap()
+trigger app.posts enabled=A CREATE TRIGGER sl_after_post_change AFTER UPDATE OF status ON app.posts FOR EACH ROW WHEN (((old.status = ANY (ARRAY['live'::text, 'waiting'::text])) AND (new.status = 'removed'::text))) EXECUTE FUNCTION app.sl_after_post_change()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_agent_upheld AFTER UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_agent_upheld()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_audit_close AFTER UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_audit_close()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_audit_new AFTER INSERT ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_audit_new()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_guard BEFORE UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_guard()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_recheck AFTER INSERT ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_recheck()
+trigger app.review_flags enabled=A CREATE TRIGGER sl_after_flag_close AFTER UPDATE OF decision ON app.review_flags FOR EACH ROW WHEN (((new.resolved_by IS NOT NULL) AND (old.resolved_at IS NULL))) EXECUTE FUNCTION app.sl_after_flag_close()
+trigger app.review_flags enabled=A CREATE TRIGGER sl_after_report AFTER INSERT ON app.review_flags FOR EACH ROW WHEN ((new.source = 'report'::text)) EXECUTE FUNCTION app.sl_after_report()
 trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()

@@ -64,12 +64,15 @@ test('v0 learned only from public data people labelled, never from Claude or mem
 });
 
 test('it is described honestly where people read about it: /team, /privacy, llms.txt', () => {
-  assert.match(read('team.html'), /A narrow AI · in testing: decides nothing yet/);
+  assert.match(read('team.html'), /A narrow AI · starts in shadow mode/);
   const p = read('privacy.html');
-  assert.match(p, /is also read by Second Look, a small automated model in testing/);
-  assert.match(p, /It never decides: a person still decides every held post\./);
+  assert.match(p, /is also read by Second Look, our narrow automated reviewer/);
+  assert.match(p, /In shadow mode it changes nothing, and a person decides every held post\./);
+  assert.match(p, /It never removes or hides anything\./);
+  assert.match(p, /Vercel and the company that runs the model process the text to answer/);
   assert.match(p, /never from posts on GitHub/);
-  assert.match(read('llms.txt'), /It only suggests: Aaron decides every held post\./);
+  assert.match(read('llms.txt'), /it never removes anything\)\. In shadow mode it only logs\./);
+  assert.match(read('terms.html'), /Second Look, our automated reviewer, may publish an easy held post itself/);
 });
 
 // ---- Against a database ----
@@ -132,7 +135,9 @@ async function feed(method, { cookie, json, query = {} }) {
   await require('../api/feed.js').handle({ method, url: '/api/feed', headers, query, body: json === undefined ? undefined : JSON.stringify(json) }, r, run);
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
 }
-const links = (n) => Array.from({ length: n }, (_, i) => 'https://s' + i + '-' + crypto.randomBytes(3).toString('hex') + '.example').join(' ');
+// Letters only: random digits can read as a phone number (contact details, J08) and make the test flaky.
+const letters = (k) => Array.from(crypto.randomBytes(k), (x) => String.fromCharCode(97 + (x % 26))).join('');
+const links = (n) => Array.from({ length: n }, () => 'https://' + letters(8) + '.example/' + letters(10)).join(' ');
 
 test('a held post gets a blind record beside it; nothing shows it; the database checks the floor itself; it changes nothing', async () => {
   const aaron = await member('Aaron', { admin: true });
