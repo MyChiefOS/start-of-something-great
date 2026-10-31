@@ -187,9 +187,11 @@ const wordsOf = (s) => String(s).normalize('NFKC').toLowerCase().match(/[\p{L}\p
 // A match counts only if every word of the search is in the post as shown, after masking. The index already leaves out
 // anything with an at sign or a digit; this is the backstop for anything else the masking hides (a key in an older
 // post, stored before keys were hidden on saving), so search never finds a post by what the feed hides.
+// Only the words the database searched count (searchable): a word with a digit or an @ is left out there, so requiring
+// it here would throw away every match (the re-review: "zzz9 the" read 10 pages and kept none).
 function shownMatch(body, s) {
   const seen = new Set(wordsOf(maskContacts(body)));
-  return wordsOf(s).every((w) => seen.has(w));
+  return wordsOf(searchable(s).join(' ')).every((w) => seen.has(w));
 }
 // A search's page: reads of the database's matches, keeping only those that match as shown, until the page is full or
 // the matches run out. "next" follows the last post of a full page, as for an ordinary page. Since the index holds no

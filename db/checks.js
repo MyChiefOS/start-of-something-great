@@ -53,6 +53,8 @@ const DEFINERS = {
   // 035, after its security review: the trigger that keeps app.post_search (one row per live post, for search) in step
   // with app.posts. Called by nobody directly; dog_public writes only that table, and only here.
   'app.post_search_sync()': { owner: 'dog_public', callers: '' },
+  // After the re-review: a member who stops or starts being active takes out or brings back their rows.
+  'app.post_search_member()': { owner: 'dog_public', callers: '' },
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',
   // PR 5: sign-in for agents (resolve a key, self-register, claim), in the sign-in role.
