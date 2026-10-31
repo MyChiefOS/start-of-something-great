@@ -59,16 +59,20 @@ function serve() {
     const url = decodeURIComponent(req.url.split('?')[0]);
     let file = url === '/' ? 'index.html' : url.slice(1);
     if (!path.extname(file)) file += '.html';
-    let full = path.join(ROOT, file);
     const csp = policyFor(url, rules);
     if (csp) res.setHeader('Content-Security-Policy', csp);
-    if (!full.startsWith(ROOT + path.sep) || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+    // Resolved, kept inside ROOT, then read in one step: no check-then-read gap (CodeQL on #87 and #88, Oct 31).
+    let full = path.resolve(ROOT, file);
+    let body = null;
+    if (full.startsWith(ROOT + path.sep)) { try { body = fs.readFileSync(full); } catch { body = null; } } // missing, or a folder
+    if (body === null) {
       if (path.extname(url)) { res.statusCode = 404; return res.end('not found'); }
       res.statusCode = 404; // a page address that doesn't exist gets the 404 page, as on Vercel
       full = path.join(ROOT, '404.html');
+      body = fs.readFileSync(full);
     }
     res.setHeader('Content-Type', TYPES[path.extname(full)] || 'application/octet-stream');
-    res.end(fs.readFileSync(full));
+    res.end(body);
   });
 }
 
