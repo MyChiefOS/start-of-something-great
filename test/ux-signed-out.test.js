@@ -179,6 +179,9 @@ test('/controls, the administrator: the controls show, and Second Look\'s curren
     assert.strictEqual(p.$('signed-out').hidden, true);
     assert.strictEqual(p.$('sl-modes').shown(), true);
     assert.deepStrictEqual(pressed(p), ['off', 'shadow', 'on'].map((m) => m + '=' + (m === mode)), mode);
+    // In words too, not by styling alone (the design review of PR D, finding 3).
+    assert.deepStrictEqual(['off', 'shadow', 'on'].filter((m) => p.$('sl-' + m + '-now').shown()), [mode], mode);
+    assert.strictEqual(p.$('sl-' + mode + '-now').textContent, 'Now. ');
   }
   const none = controls(200, CONTROLS(null));
   await settle();
@@ -225,20 +228,44 @@ test('/controls: "On" sends nothing on the first tap and switches on at the seco
   assert.strictEqual(r.$('sl-mode-result').textContent, 'Second Look is already in on mode.');
 });
 
+test('/controls: after Second Look pauses itself, choosing Shadow is sent, so the pause clears and the count runs again', async () => {
+  const body = CONTROLS('shadow');
+  body.second_look.paused = true;
+  const p = controls(200, body);
+  await settle();
+  assert.match(p.$('second-look').textContent, /Choose Shadow to clear the pause and start counting again\./);
+  modeButtons(p)[1].click();
+  await settle();
+  assert.deepStrictEqual(p.sent.map((x) => x.body), [{ second_look: 'mode', mode: 'shadow' }]);
+  // Only a switch clears a pause (034, app.sl_set_mode); the unlock waits while paused (app.sl_try_unlock).
+  const mig = read('db/migrations/034_second_look_v1.sql');
+  assert.match(mig, /update app\.sl_settings set mode = p_mode, paused_reason = null, counted_since = now\(\)/);
+  // Not paused, the same tap still sends nothing.
+  const q = controls(200, CONTROLS('shadow'));
+  await settle();
+  modeButtons(q)[1].click();
+  await settle();
+  assert.deepStrictEqual(q.sent, []);
+});
+
 test('/controls: what each mode does is said beside it, and every number in it is the database\'s (034)', () => {
   const html = read('controls.html');
   const mig = read('db/migrations/034_second_look_v1.sql');
   for (const m of ['off', 'shadow', 'on']) assert.match(html, new RegExp('data-mode="' + m + '" aria-pressed="false" aria-describedby="sl-' + m + '-what"'));
   assert.match(html, /role="group" aria-labelledby="sl-modes-label"/);
-  // "Off: Nothing runs." 034: off (nothing runs); it never claims a post in off mode.
-  assert.match(html, /<p id="sl-off-what" class="fine">Nothing runs\.<\/p>/);
-  assert.match(mig, /off \(nothing runs\)/);
+  // "Off: It looks at no posts. You can still ask it questions below." 034: off, it claims no post; the questions
+  // route on /controls doesn't ask the mode (the design review of PR D, finding 2).
+  assert.match(html, /<p id="sl-off-what" class="fine"><span class="sl-now" id="sl-off-now" hidden>Now\. <\/span>It looks at no posts\. You can still ask it questions below\.<\/p>/);
+  assert.match(mig, /if not found or s\.mode = 'off' or \(s\.last_claim_at is not null/);
+  const askRoute = read('api/feed.js').split("if (body.second_look === 'ask') {")[1].split('\n  }\n')[0];
+  assert.ok(askRoute && !/\.mode\b|sl_settings|sl_set_mode/.test(askRoute), 'asking works in every mode');
   // "the last 80 ... switches itself on": the unlock, 80 by default.
   assert.match(html, /Once you have approved all of the last 80 posts it would have published, it switches itself on\./);
   assert.match(mig, /unlock_n integer not null default 80/);
   assert.match(mig, /update app\.sl_settings set mode = 'on', counted_since = now\(\)/);
   // "at most 10 a day ... more than 1 in 80 ... pauses itself back to shadow".
-  assert.match(html, /It publishes easy held posts itself, at most 10 a day\. If you remove more than 1 in 80 of them, it pauses itself back to shadow\./);
+  assert.match(html, /It publishes easy held posts itself, at most 10 a day\. If you remove more than 1 in 80 of them \(any one, before its 80th\), it pauses itself back to shadow\./);
+  assert.match(mig, /if rev \* 80 > pub then/, 'one removal in its first 79 is more than 1 in 80');
   assert.match(mig, /daily_clear_cap integer not null default 10/);
   assert.match(mig, /update app\.sl_settings set mode = 'shadow', counted_since = now\(\), paused_reason/);
   // "Switching here starts its count of 80 again."
@@ -383,6 +410,12 @@ test('/review: nothing waiting says what happens instead; JEVs checks every post
   await settle();
   assert.strictEqual(p.$('summary').textContent, 'Nothing is waiting.');
   assert.strictEqual(p.$('queue').textContent, 'JEVs checks every post, and owners approve their own agents’ drafts. Anything held, hidden, reported or appealed comes here.');
+  // Second Look's part is said once, in the page's static note, never beside an item: the queue stays blind to its
+  // suggestions, so Aaron's decisions stay his own (test/second-look.test.js; the design review of PR D, finding 4).
+  assert.match(read('review.html'), /When Second Look is on, it may publish easy held posts before they reach you, and you get a notice for each\.<\/p>/);
+  const mig34 = read('db/migrations/034_second_look_v1.sql');
+  assert.match(mig34, /if v_decision <> 'clear' or s\.mode <> 'on' or s\.paused_reason is not null then/, 'it publishes only when on');
+  assert.match(mig34, /perform app\.notify\(null, 'alert', 'Second Look published a held post'/, 'a notice to the administrator for each');
   assert.match(read('db/migrations/032_guardrails.sql'), /when p_action in \('post\.create', 'post\.approved'\) then/);
 });
 
@@ -401,6 +434,8 @@ test('/review: an item with several reasons lists them oldest first, says when i
     'Why: 1 report (other).']);
   const cards = p.main.querySelectorAll('article');
   assert.match(cards[0].textContent, /In the queue since .+\./);
+  const when = cards[0].querySelector('time');
+  assert.ok(when && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(when.getAttribute('datetime')), 'a machine-readable time for agents');
   assert.deepStrictEqual(cards.map((c) => c.querySelectorAll('button').map((b) => b.textContent)), [['Approve', 'Remove'], ['Remove', 'Undo'], ['Keep', 'Remove']]);
   // These are the rules the order rests on.
   assert.match(read('db/migrations/010_jevs.sql'), /p\.status in \('waiting', 'removed'\)\s+and exists \(select 1 from app\.jevs_decisions d where d\.subject_id = p\.id and d\.applied and d\.effect in \('hold', 'hide'\)\)/);

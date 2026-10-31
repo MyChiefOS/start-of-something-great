@@ -81,7 +81,15 @@
       card.appendChild(meta);
       i.body.split(/\n{2,}/).forEach(function (para) { card.appendChild(el('p', '', para)); });
       card.appendChild(el('p', 'fine why', why(i)));
-      if (i.flagged_at) card.appendChild(el('p', 'fine', 'In the queue since ' + new Date(i.flagged_at).toLocaleString() + '.'));
+      if (i.flagged_at) {
+        // A <time> with its ISO date, so an agent reads the moment, not the local wording.
+        var since = el('p', 'fine', 'In the queue since ');
+        var t = el('time', '', new Date(i.flagged_at).toLocaleString());
+        t.setAttribute('datetime', new Date(i.flagged_at).toISOString());
+        since.appendChild(t);
+        since.appendChild(document.createTextNode('.'));
+        card.appendChild(since);
+      }
       i.notes.forEach(function (n) { card.appendChild(el('p', 'fine note', 'Reporter: ' + n)); });
       var row = el('div', 'review-actions');
       var result = el('p', 'fine', '');

@@ -85,11 +85,11 @@
       <div id="sl-modes" class="sl-modes" role="group" aria-labelledby="sl-modes-label" hidden>
         <p id="sl-modes-label" class="sl-modes-label">Mode</p>
         <div class="sl-mode"><button type="button" class="button" data-mode="off" aria-pressed="false" aria-describedby="sl-off-what">Off</button>
-          <p id="sl-off-what" class="fine">Nothing runs.</p></div>
+          <p id="sl-off-what" class="fine"><span class="sl-now" id="sl-off-now" hidden>Now. </span>It looks at no posts. You can still ask it questions below.</p></div>
         <div class="sl-mode"><button type="button" class="button" data-mode="shadow" aria-pressed="false" aria-describedby="sl-shadow-what">Shadow</button>
-          <p id="sl-shadow-what" class="fine">It logs what it would do; nothing changes. Once you have approved all of the last 80 posts it would have published, it switches itself on.</p></div>
+          <p id="sl-shadow-what" class="fine"><span class="sl-now" id="sl-shadow-now" hidden>Now. </span>It logs what it would do; nothing changes. Once you have approved all of the last 80 posts it would have published, it switches itself on.</p></div>
         <div class="sl-mode"><button type="button" class="button" data-mode="on" aria-pressed="false" aria-describedby="sl-on-what">On</button>
-          <p id="sl-on-what" class="fine">It publishes easy held posts itself, at most 10 a day. If you remove more than 1 in 80 of them, it pauses itself back to shadow.</p></div>
+          <p id="sl-on-what" class="fine"><span class="sl-now" id="sl-on-now" hidden>Now. </span>It publishes easy held posts itself, at most 10 a day. If you remove more than 1 in 80 of them (any one, before its 80th), it pauses itself back to shadow.</p></div>
         <p class="fine">Switching here starts its count of 80 again. On takes a second tap.</p>
         <p class="fine" id="sl-mode-result" role="status" aria-live="polite"></p>
       </div>

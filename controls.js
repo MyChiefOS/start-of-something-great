@@ -16,6 +16,7 @@
   var modes = document.getElementById('sl-modes');
   var modeOut = document.getElementById('sl-mode-result');
   var current = null; // Second Look's mode, as the last answer gave it
+  var paused = false; // paused itself (034): in shadow, and only a switch clears it
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -207,14 +208,17 @@
     var sl = clear('second-look');
     var s = d.second_look;
     current = s ? s.mode : null;
+    paused = Boolean(s && s.paused);
     modes.hidden = !s;
     Array.prototype.forEach.call(modes.querySelectorAll('button[data-mode]'), function (b) {
-      b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === current));
+      var m = b.getAttribute('data-mode');
+      b.setAttribute('aria-pressed', String(m === current));
+      document.getElementById('sl-' + m + '-now').hidden = m !== current; // in words too, not by styling alone
     });
     if (!s) sl.appendChild(el('p', 'fine', 'Second Look isn\u2019t set up in the database yet.'));
     else {
       // A pause puts it back in shadow until you switch it yourself (034, app.sl_after_post_change and app.sl_try_unlock).
-      if (s.paused) sl.appendChild(el('p', '', 'It paused itself after your removals, so it stays in shadow until you switch it.'));
+      if (s.paused) sl.appendChild(el('p', '', 'It paused itself after your removals, so it stays in shadow. Choose Shadow to clear the pause and start counting again.'));
       stat(sl, 'decisions in 7 days', s.decisions_7d);
       stat(sl, 'clears in 7 days', s.clears_7d);
       stat(sl, 'rejects in 7 days (flags only)', s.rejects_7d);
@@ -291,7 +295,8 @@
   }
 
   // Second Look's mode switch and its security questions (Aaron only; the server checks). Tapping the mode it is
-  // already in sends nothing: switching restarts its count of 80 (034, app.sl_set_mode), so a stray tap mustn't.
+  // already in sends nothing: switching restarts its count of 80 (034, app.sl_set_mode), so a stray tap mustn't. The
+  // one exception: after a pause, Shadow is sent, because only a switch clears the pause and lets the count run.
   // "On" lets it publish easy held posts itself, so it takes a second tap within 5 seconds.
   function switchTo(mode) {
     modeOut.textContent = 'Switching…';
@@ -303,7 +308,7 @@
   Array.prototype.forEach.call(modes.querySelectorAll('button[data-mode]'), function (b) {
     var mode = b.getAttribute('data-mode');
     var act = function () {
-      if (mode === current) { modeOut.textContent = 'Second Look is already in ' + mode + ' mode.'; return; }
+      if (mode === current && !(paused && mode === 'shadow')) { modeOut.textContent = 'Second Look is already in ' + mode + ' mode.'; return; }
       switchTo(mode);
     };
     if (mode === 'on') {

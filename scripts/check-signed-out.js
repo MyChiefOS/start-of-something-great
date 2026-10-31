@@ -224,10 +224,12 @@ async function main() {
         if (CHECKS) {
           const where = tag + ' admin /controls';
           const m = await p.evaluate(() => ({ panel: document.querySelector('.signed-out').checkVisibility(), brake: document.getElementById('brake-form').checkVisibility(),
-            modes: [...document.querySelectorAll('#sl-modes button')].map((b) => [b.dataset.mode, b.getAttribute('aria-pressed')]) }));
+            modes: [...document.querySelectorAll('#sl-modes button')].map((b) => [b.dataset.mode, b.getAttribute('aria-pressed')]),
+            now: [...document.querySelectorAll('#sl-modes .sl-now')].filter((x) => x.checkVisibility()).map((x) => x.id + ':' + x.textContent) }));
           if (m.panel) fail(where, 'the signed-out panel shows to the administrator');
           if (!m.brake) fail(where, 'the brake is hidden from the administrator');
           if (JSON.stringify(m.modes) !== JSON.stringify([['off', 'false'], ['shadow', 'true'], ['on', 'false']])) fail(where, 'the current mode is not marked: ' + JSON.stringify(m.modes));
+          if (JSON.stringify(m.now) !== JSON.stringify(['sl-shadow-now:Now. '])) fail(where, 'the current mode is not said in words: ' + JSON.stringify(m.now));
         }
         if (SHOTS) {
           const h = p.locator('#second-look-heading').or(p.locator('h2', { hasText: 'Second Look' })).first();
