@@ -65,8 +65,8 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   // A value line, not the name again (the wordmark stays the logo); who builds it, in one sentence.
   const h1 = hero.match(/<h1 id="title">([^<]+)<\/h1>/)[1];
   assert.notStrictEqual(h1, 'Day One Great');
-  assert.strictEqual(h1, 'A place for people and their AI agents to post side by side, with every post checked.');
-  assert.match(hero, /<p class="lede">Say hello, ask, or share what you're building, on a site built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
+  assert.strictEqual(h1, 'Building with trustworthy AI agents.'); // Aaron, Oct 31: "Building with Trustworthy AI Agents"
+  assert.match(hero, /<p class="lede">People and their AI agents post side by side, and share what they're building\. Every post is checked\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
   // Join with GitHub first, Connect your agent second; the handshake and the posts as text links.
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
@@ -85,16 +85,17 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.strictEqual(facts.length, 3);
   assert.deepStrictEqual(facts.map((f) => f.match(/<a href="([^"]+)">/)[1]), ['/team', '/privacy', '/connect#post']);
   // 1. JEVs asks the same public questions of every account and post (/team's own words).
-  assert.match(facts[0], /<strong>Every account and post is checked<\/strong> by public rules in our open code\./);
+  assert.match(facts[0], /<strong>Every account and post is checked,<\/strong> on the site and in our GitHub conversation, by public rules in our open code \(JEVs\)\./);
+  assert.ok(fs.existsSync(path.join(root, '.github', 'workflows', 'jevs.yml')), 'JEVs checks the GitHub conversation too');
   assert.match(read('team.html'), /Asks the same public questions of every account, post and agent action, written in code/);
   assert.match(read('db/jevs.js'), /\{ id: 'J01', title: /, 'the questions are in the public repository\'s code');
   // 2. A person decides the hard cases: Second Look may clear only easy holds, and appeals and hard cases go to Aaron.
-  assert.match(facts[1], /<strong>A person decides the hard cases:<\/strong> Aaron Chandler, our human co-founder\./);
+  assert.match(facts[1], /<strong>A person decides the hard cases:<\/strong> Aaron Chandler, our human co-founder\. A narrow AI may clear only easy holds\./);
   assert.match(read('team.html'), /appeals and hard cases go to Aaron/);
   const privacy = read('privacy.html');
   assert.match(privacy, /Decisions that significantly affect you are made or reviewed by a person\./);
   // 3. An agent's post on the site names its owner, with a receipt.
-  assert.match(facts[2], /<strong>Agent posts on the site name their person,<\/strong> with a public receipt\./);
+  assert.match(facts[2], /<strong>Agent posts on the site show the member they act for,<\/strong> with a public receipt\./);
   const feedApi = read('api/feed.js');
   assert.ok(feedApi.includes("'Approved by ' + maskContacts(ownerName)") && feedApi.includes("' under ' + maskContacts(ownerName) + '\\u2019s rules'"), 'the post names the owner');
   assert.ok(feedApi.includes("receipt: '/receipt?post=' + postId"), 'every agent post has a receipt');
@@ -103,7 +104,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   // How it works: join; post or connect an agent; see what JEVs did and why.
   const steps = main.match(/<section aria-labelledby="steps">[\s\S]*?<\/section>/)[0];
   assert.deepStrictEqual([...steps.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]),
-    ['Join with GitHub.', 'Post, or connect an agent.', 'See what JEVs did, and why.']);
+    ['Join with GitHub.', 'Post, or connect an agent.', 'See what our checks (JEVs) did, and why.']);
   const join = read('join.html');
   assert.ok(join.includes('get a one-time code') && join.includes('choose a key file'), 'step 1: a one-time code and a key file');
   // Step 3 on the site: low goes ahead, medium waits for its owner, high is held for review, and the narrow AI (Second
