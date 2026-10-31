@@ -191,9 +191,9 @@ a:focus-visible, .button:focus-visible {
 .menu > summary:hover { color: var(--amber); }
 .menu > summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .menu-panel { position: absolute; z-index: 20; top: 100%; left: -1.25rem; right: -1.25rem; padding: 0 1.25rem 1rem; background: var(--ink); border-block: 1px solid var(--rule); }
-.menu-panel a { display: flex; align-items: baseline; gap: 0.5rem; min-height: 44px; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); font-size: 1.05rem; }
+.menu-panel a { display: block; min-height: 44px; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); font-size: 1.05rem; }
 .site-nav .menu-panel a.nav-about { display: none; }
-.nav-sub { display: inline-block; color: var(--muted); font-size: 0.85em; }
+.nav-sub { display: inline-block; margin-left: 0.45rem; color: var(--muted); font-size: 0.85em; }
 .nav-group { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.25rem; }
 .nav-group span { grid-column: 1 / -1; padding-top: 1rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
 @supports selector(::details-content) {
