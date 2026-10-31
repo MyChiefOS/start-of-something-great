@@ -57,54 +57,113 @@
 // code, signed in to the box, and came back to a page that had forgotten it; posting it then signed nobody in).
 (function () {
   var box = document.getElementById('code-signin');
-  // The second of the two ways to take part shows only when the sign-in below does (the people-wayfinding review, 2).
-  var choice = document.getElementById('choice-signin');
   if (!box || !window.fetch) return;
   var status = document.getElementById('code-status');
   var show = document.getElementById('code-show');
   var ask = document.getElementById('code-region');
-  var say = function (t) { status.textContent = t; };
+  var fields = document.getElementById('signin-fields');
+  var getBtn = document.getElementById('code-get');
+  var newBtn = document.getElementById('code-new');
+  var keyBtn = document.getElementById('key-signin');
+  var copyBtn = document.getElementById('code-copy');
+  var helloHead = document.getElementById('hello-head');
+  // The live region is written only when something changes, never with a ticking count (the UI/UX review of Oct 31,
+  // finding 7; WCAG 2.2, 4.1.3): a person's own action always gets its answer, and the wait for the code is announced
+  // once per state (waiting, a problem, signed in, expired). The seconds go in #code-wait, which screen readers skip.
+  var said = null;
+  var say = function (t, state) {
+    if (state && state === said) return;
+    said = state || null;
+    status.textContent = t;
+  };
   var post = function (path, body) {
     return fetch(path, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body || {}).toString() })
       .then(function (r) { return r.json(); });
   };
+  // Which way in the person chose: "new" (first time, or a new key file: get a code) or "back" (the key file alone).
+  // Only the choice is kept, in this tab (sessionStorage); never a name, a username or a file.
+  var PATH = 'dog-path', path = null, ranOut = false, codeShown = false;
+  function layout() {
+    var chosen = path === 'new' || path === 'back';
+    fields.hidden = !chosen;
+    getBtn.hidden = path !== 'new' || ranOut;
+    document.getElementById('code-again').hidden = path !== 'new' || !ranOut;
+    keyBtn.hidden = path !== 'back';
+    document.getElementById('back-help').hidden = path !== 'back';
+    show.hidden = !(codeShown && path === 'new');
+    // While a code shows, the comment box sits right under it (finding 1): the "Say hello" heading above the box steps
+    // aside, and the code's own step says the post is public.
+    if (helloHead) helloHead.hidden = !show.hidden;
+    document.getElementById('path-new').setAttribute('aria-pressed', String(path === 'new'));
+    document.getElementById('path-back').setAttribute('aria-pressed', String(path === 'back'));
+  }
+  function choose(p) {
+    path = p;
+    try { sessionStorage.setItem(PATH, p); } catch (e) { /* not kept: no storage */ }
+    layout();
+  }
+  document.getElementById('path-new').addEventListener('click', function () { choose('new'); });
+  document.getElementById('path-back').addEventListener('click', function () { choose('back'); });
   // Shown only to someone signed out: a member already signed in who got a new code would replace their key file
   // (the review of the sign-in fix, finding 1). /auth/me answers 200 either way, and 503 while sign-in is off.
   fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
     return r.ok ? r.json() : null;
   }).then(function (d) {
     if (!d) return;
-    if (d.signed_in === false) { box.hidden = false; if (choice) choice.hidden = false; resume(); return; }
+    if (d.signed_in === false) { box.hidden = false; restore(); resume(); return; }
     forget(); // signed in already: a kept code has nothing left to do
     if (d.signed_in === true) {
       var m = document.getElementById('message');
       if (m && m.hidden) { m.textContent = 'You\u2019re signed in. Your posts are on Posts (/feed) and your settings on your account page (/account).'; m.hidden = false; }
     }
   }).catch(function () { /* sign-in stays hidden */ });
+  function restore() {
+    var p = null;
+    try { p = sessionStorage.getItem(PATH); } catch (e) { p = null; }
+    if (p === 'new' || p === 'back') { path = p; layout(); }
+  }
 
   // The page that sent the person here (return_to), sent with the sign-in; the server checks it again (signin/http.js
   // returnPath) and otherwise goes to the feed.
   var back = new URLSearchParams(location.search).get('return_to');
   if (!back || back.length > 200 || !/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/.test(back)) back = null;
-  var timer = null, deadline = null, busy = false, started = 0, confirmed = false, askedAt = 'start';
+  var timer = null, deadline = null, clock = null, busy = false, started = 0, until = 0, confirmed = false, askedAt = 'start';
   function stop() {
     if (timer) { clearInterval(timer); timer = null; }
     if (deadline) { clearTimeout(deadline); deadline = null; }
+    if (clock) { clearInterval(clock); clock = null; }
+    document.getElementById('code-wait').textContent = '';
   }
-  function expired() { stop(); forget(); show.hidden = true; say('That code has expired or was used. Get a new one.'); }
+  // A code that ran out while waiting: hidden so nobody posts it, with "Get a new code" in its place (finding 1).
+  function ranOutNow(t) { stop(); forget(); codeShown = false; ranOut = true; layout(); say(t, 'expired'); }
+  function expired() { ranOutNow('That code has run out. Get a new code to try again.'); }
+  // What the server says when the code is unknown to this browser: it ran out, or was already used.
+  function gone() { ranOutNow('That code has expired or was used. Get a new code to try again.'); }
   // The code this tab is waiting for, kept only here (sessionStorage: this tab, this site) and only until it signs in,
   // expires or is replaced. It is worth nothing elsewhere: it works only with this browser's own code cookie.
   var KEEP = 'dog-code';
   function forget() { try { sessionStorage.removeItem(KEEP); } catch (e) { /* nothing kept */ } }
   function keep(code, until) { try { sessionStorage.setItem(KEEP, JSON.stringify({ code: code, until: until })); } catch (e) { /* not kept: no storage */ } }
-  function wait(code, until) {
+  // The time left and the seconds waited, drawn once a second where screen readers don't go (finding 7). The time left
+  // counts down to the same moment the page stops waiting: what the server gave (expires_in, at most 10 minutes).
+  function tick() {
+    var left = Math.max(0, Math.round((until - Date.now()) / 1000));
+    document.getElementById('code-time').textContent = 'Expires in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2);
+    if (timer) document.getElementById('code-wait').textContent = Math.round((Date.now() - started) / 1000) + ' s so far. Once it\u2019s posted, this usually takes 10 to 20 seconds.';
+  }
+  function wait(code, u) {
     document.getElementById('code-value').textContent = code;
-    show.hidden = false;
+    copyBtn.textContent = 'Copy';
+    path = 'new'; codeShown = true; ranOut = false;
+    layout();
     started = Date.now();
+    until = u;
     stop();
     timer = setInterval(check, 2000);
-    deadline = setTimeout(expired, Math.max(0, until - Date.now()));
+    deadline = setTimeout(expired, Math.max(0, u - Date.now()));
+    clock = setInterval(tick, 1000);
+    tick();
   }
   function resume() {
     var k = null;
@@ -112,7 +171,7 @@
     if (!k || typeof k.code !== 'string' || !/^DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(k.code) ||
         typeof k.until !== 'number' || !(k.until > Date.now()) || k.until - Date.now() > 600000) { forget(); return; }
     wait(k.code, k.until);
-    say('Still waiting for this code. If you haven\u2019t posted it yet, press Copy and paste it into the box below.');
+    say('Still waiting for your post. If you haven\u2019t posted the code yet, press Copy and paste it in the box below.', 'waiting');
     check();
   }
   function check() {
@@ -122,16 +181,15 @@
     if (back) fb.return_to = back;
     post('/auth/code/finish', fb).then(function (d) {
       if (!timer) return;
-      if (d.signed_in) { stop(); forget(); say('Signed in. Taking you on\u2026'); location.href = d.go || '/'; return; }
+      if (d.signed_in) { stop(); forget(); say('Signed in. Taking you on\u2026', 'signed_in'); location.href = d.go || '/'; return; }
       // The region can look different by the time the code is used (a network that changed while travelling): ask
       // then, and carry on with the same code once they confirm (the CSO's re-check, N1).
-      if (d.region) { clearInterval(timer); timer = null; askRegion(d.region, 'finish'); return; }
-      if (d.declined) { stop(); forget(); show.hidden = true; say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
-      if (d.refused) { stop(); forget(); show.hidden = true; say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
-      if (d.expired) { expired(); return; }
-      var secs = Math.round((Date.now() - started) / 1000);
-      say('Waiting for the code in the box below (press Copy and paste it there, if you haven\u2019t yet)\u2026 ' + secs + ' s. Once it\u2019s posted, this usually takes 10 to 20 seconds.');
-    }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026'); })
+      if (d.region) { clearInterval(timer); timer = null; document.getElementById('code-wait').textContent = ''; askRegion(d.region, 'finish'); return; }
+      if (d.declined) { stop(); forget(); codeShown = false; layout(); say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.', 'declined'); return; }
+      if (d.refused) { stop(); forget(); codeShown = false; layout(); say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.', 'refused'); return; }
+      if (d.expired) { gone(); return; }
+      say('Waiting for your post in the box below. Press Copy and paste the code there, if you haven\u2019t yet.', 'waiting');
+    }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026', 'problem'); })
       .then(function () { busy = false; });
   }
   function askRegion(name, at) {
@@ -185,7 +243,7 @@
       var until = Date.now() + Math.min(d.expires_in || 600, 600) * 1000;
       keep(d.code, until);
       wait(d.code, until);
-      say('Press Copy and paste the code into the box below: Copy puts an empty line above and below it for you, so a plain hello around it is fine. This page signs you in once GitHub tells us, even if signing in to the box brings you back here.');
+      say('Waiting for your post. If signing in to the box takes you to GitHub and back, this page keeps your code and keeps waiting.', 'waiting');
     }).catch(function (e) { say(e && e.message === 'big' ? 'That file is over 100 MB. Choose a smaller one.' : 'Couldn\u2019t get a code. Please try again.'); });
   }
   document.getElementById('code-region-yes').addEventListener('click', function () {
@@ -193,13 +251,33 @@
     ask.hidden = true;
     if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else if (askedAt === 'key') keyFileSignIn(); else getCode();
   });
-  document.getElementById('code-get').addEventListener('click', getCode);
-  document.getElementById('key-signin').addEventListener('click', keyFileSignIn);
+  getBtn.addEventListener('click', getCode);
+  newBtn.addEventListener('click', getCode);
+  keyBtn.addEventListener('click', keyFileSignIn);
   // Copy puts the code on a line of its own, with an empty line above and below it, which is how the gate reads a code
   // posted on purpose (core.mjs signinCodes). Pasted after "Hi" or into a sentence, it still stands alone (the sign-in
   // simulation, Oct 30: 5 of 10 posts put the code in a sentence, after "code:", in backticks or with no empty line).
-  document.getElementById('code-copy').addEventListener('click', function () {
-    var text = document.getElementById('code-value').textContent;
-    if (navigator.clipboard) navigator.clipboard.writeText('\n\n' + text + '\n\n').catch(function () {});
+  // It shows "Copied" when the browser took it; if the browser refuses, the code is selected instead and the page
+  // says so (the UI/UX review, finding 1: it used to fail without a word).
+  var copied = null;
+  copyBtn.addEventListener('click', function () {
+    var code = document.getElementById('code-value');
+    var done = function () {
+      copyBtn.textContent = 'Copied';
+      if (copied) clearTimeout(copied);
+      copied = setTimeout(function () { copyBtn.textContent = 'Copy'; copied = null; }, 4000);
+    };
+    var refused = function () {
+      try {
+        var r = document.createRange();
+        r.selectNodeContents(code);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (e) { /* the code is still there to select by hand */ }
+      say('This browser didn\u2019t let the page copy, so the code is selected: copy it yourself, then paste it on a line of its own, with an empty line above and below it.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText('\n\n' + code.textContent + '\n\n').then(done, refused);
+    else refused();
   });
 })();
