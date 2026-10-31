@@ -140,6 +140,7 @@ const DEFINERS = {
   'app.sl_weekly_report()': { owner: 'dog_jevs', callers: '' },
   'app.sl_after_post_change()': { owner: 'dog_jevs', callers: '' },
   'app.sl_after_report()': { owner: 'dog_jevs', callers: '' },
+  'app.sl_after_flag_close()': { owner: 'dog_jevs', callers: '' },
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',

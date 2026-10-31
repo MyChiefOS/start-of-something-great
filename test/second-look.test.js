@@ -64,7 +64,7 @@ test('v0 learned only from public data people labelled, never from Claude or mem
 });
 
 test('it is described honestly where people read about it: /team, /privacy, llms.txt', () => {
-  assert.match(read('team.html'), /A narrow AI · in shadow mode: changes nothing yet/);
+  assert.match(read('team.html'), /A narrow AI · starts in shadow mode/);
   const p = read('privacy.html');
   assert.match(p, /is also read by Second Look, our narrow automated reviewer/);
   assert.match(p, /In shadow mode it changes nothing, and a person decides every held post\./);

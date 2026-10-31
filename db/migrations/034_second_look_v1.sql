@@ -11,8 +11,13 @@
 --   * On: a clear publishes the post, closes JEVs's hold as decided by Second Look, tells the author, and tells Aaron
 --     (his list of what it published). At most 10 a day. "Reject" only records: nothing is removed.
 --   * The unlock (Kimi's shadow gate): shadow becomes on by itself only when Aaron's own decisions agreed with its
---     last 80 shadow clears (he approved all 80 and removed none). Zero wrong in 80 alone doesn't prove 1 in 80 (the
---     95% upper bound is about 1 in 22); the stop below is what holds it to 1 in 80 while it runs.
+--     last 80 shadow clears since the mode last changed (he approved all 80 and removed none). A pause, or Aaron
+--     switching the mode himself, starts that count again, so his "shadow" stays shadow until 80 fresh agreements (the
+--     fresh review of v1, finding 1). Zero wrong in 80 alone doesn't prove 1 in 80 (the 95% upper bound is about 1 in
+--     22); the stop below is what holds it to 1 in 80 while it runs. Aaron can also switch it on himself.
+--   * Counts that outlive account deletion (the fresh review, finding 4): what it published, what Aaron removed, the
+--     day's publications, and Aaron's decisions on its shadow clears (app.sl_outcomes, with no post or person in it),
+--     so an author deleting their account can't erase the evidence the stop and the unlock rest on.
 --   * The stop (Aaron's limit, "1 in 80"): Aaron removing a post Second Look published counts against it. When those
 --     removals go above 1 in 80 of its publications (so the first one, until it has published 80), it pauses itself
 --     back to shadow and alerts Aaron. A report on a post it published puts the post back on hold for him and alerts
@@ -35,6 +40,12 @@ create table app.sl_settings (
   paused_reason text check (char_length(paused_reason) <= 300),
   last_claim_at timestamptz,
   last_report_at timestamptz,
+  counted_since timestamptz not null default now(),  -- the unlock counts Aaron's decisions on shadow clears after this
+  published_total integer not null default 0 check (published_total >= 0),
+  reversed_total integer not null default 0 check (reversed_total >= 0),
+  reported_total integer not null default 0 check (reported_total >= 0),
+  clears_day date,
+  clears_today integer not null default 0 check (clears_today >= 0),
   updated_at timestamptz not null default now()
 );
 insert into app.sl_settings default values;
@@ -42,7 +53,8 @@ alter table app.sl_settings enable row level security;
 alter table app.sl_settings force row level security;
 create policy sl_settings_jevs_select on app.sl_settings for select to dog_jevs using (true);
 create policy sl_settings_jevs_update on app.sl_settings for update to dog_jevs using (true) with check (true);
-grant select, update (mode, paused_reason, last_claim_at, last_report_at, updated_at) on app.sl_settings to dog_jevs;
+grant select, update (mode, paused_reason, last_claim_at, last_report_at, updated_at, counted_since, published_total, reversed_total,
+  reported_total, clears_day, clears_today) on app.sl_settings to dog_jevs;
 create policy sl_settings_admin_select on app.sl_settings for select to dog_app using (app.actor_kind() = 'admin');
 grant select (mode, model, daily_clear_cap, daily_call_cap, unlock_n, paused_reason, updated_at) on app.sl_settings to dog_app;
 
@@ -81,6 +93,19 @@ create policy sl_decisions_jevs on app.sl_decisions for all to dog_jevs using (t
 grant select, insert, update (published) on app.sl_decisions to dog_jevs;
 create policy sl_decisions_admin_select on app.sl_decisions for select to dog_app using (app.actor_kind() = 'admin');
 grant select on app.sl_decisions to dog_app;
+
+-- ---- Aaron's decision on each of its shadow clears: whether he approved the post, and when. No post, no person ----
+create table app.sl_outcomes (
+  id uuid primary key default app.uuid_v7(),
+  decided_at timestamptz not null default now(),
+  approved boolean not null
+);
+alter table app.sl_outcomes enable row level security;
+alter table app.sl_outcomes force row level security;
+create policy sl_outcomes_jevs on app.sl_outcomes for all to dog_jevs using (true) with check (true);
+grant select, insert on app.sl_outcomes to dog_jevs;
+create policy sl_outcomes_admin_select on app.sl_outcomes for select to dog_app using (app.actor_kind() = 'admin');
+grant select on app.sl_outcomes to dog_app;
 
 -- ---- What it published, and what happened to those posts ----
 create table app.sl_releases (
@@ -247,22 +272,19 @@ begin
   if s.mode <> 'shadow' or s.paused_reason is not null then
     return false;
   end if;
-  select count(*), count(*) filter (where x.decision <> 'approve') into n, bad from (
-    select f.decision from app.sl_decisions d
-      join app.review_flags f on f.post_id = d.post_id and f.source = 'classifier' and f.classifier = 'jevs'
-                              and f.resolved_at is not null and f.resolved_by is not null
-     where d.mode = 'shadow' and d.decision = 'clear' and f.decision in ('approve', 'remove')
-     order by d.created_at desc limit s.unlock_n) x;
+  select count(*), count(*) filter (where not x.approved) into n, bad from (
+    select o.approved from app.sl_outcomes o where o.decided_at > s.counted_since
+     order by o.decided_at desc, o.id desc limit s.unlock_n) x;
   if n < s.unlock_n or bad > 0 then
     return false;
   end if;
-  update app.sl_settings set mode = 'on', updated_at = now() where singleton;
+  update app.sl_settings set mode = 'on', counted_since = now(), updated_at = now() where singleton;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('secondlook.mode', null, null, jsonb_build_object('from', 'shadow', 'to', 'on', 'by', 'the unlock', 'agreed', n));
   perform app.notify(null, 'alert', 'Second Look is now publishing easy held posts',
     'You approved all of the last ' || n || ' posts Second Look would have published in shadow mode, so it now publishes '
-    || 'easy held posts itself, at most ' || s.daily_clear_cap || ' a day. You get a notice for each one. If you remove one, '
-    || 'it pauses itself back to shadow.', '/review', null, null, 'secondlook:unlock:' || to_char(now() at time zone 'UTC', 'YYYYMMDDHH24MISS'));
+    || 'easy held posts itself, at most ' || s.daily_clear_cap || ' a day. You get a notice for each one. If your removals of '
+    || 'what it publishes go above 1 in 80, it pauses itself back to shadow.', '/review', null, null, 'secondlook:unlock:' || to_char(now() at time zone 'UTC', 'YYYYMMDDHH24MISS'));
   return true;
 end
 $$;
@@ -359,10 +381,12 @@ begin
   if v_decision <> 'clear' or s.mode <> 'on' or s.paused_reason is not null then
     return 'logged';
   end if;
-  select count(*) into today from app.sl_releases r where r.created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC';
+  today := case when s.clears_day = (now() at time zone 'UTC')::date then s.clears_today else 0 end;
   if today >= s.daily_clear_cap then
     return 'logged';
   end if;
+  update app.sl_settings set clears_day = (now() at time zone 'UTC')::date, clears_today = today + 1,
+    published_total = published_total + 1 where singleton;
   -- Publish: the release row first (the post and flag guards look for it), then the post, then JEVs's hold.
   insert into app.sl_releases (post_id, decision_id) values (p_post, did);
   update app.posts set status = 'live' where id = p_post and status = 'waiting' returning author_id into author;
@@ -397,10 +421,7 @@ declare
   z numeric := 1.96;
   upper numeric;
 begin
-  select count(*), count(*) filter (where f.decision = 'remove') into n, k
-    from app.sl_decisions d join app.review_flags f on f.post_id = d.post_id and f.source = 'classifier' and f.classifier = 'jevs'
-                                                    and f.resolved_by is not null
-   where d.mode = 'shadow' and d.decision = 'clear';
+  select count(*), count(*) filter (where not o.approved) into n, k from app.sl_outcomes o;
   upper := case when n = 0 then 1 else
     ((k::numeric / n + z * z / (2 * n)) + z * sqrt((k::numeric / n) * (1 - k::numeric / n) / n + z * z / (4 * n * n))) / (1 + z * z / n) end;
   select jsonb_build_object(
@@ -409,9 +430,9 @@ begin
     'clears_7d', (select count(*) from app.sl_decisions where decision = 'clear' and created_at > now() - interval '7 days'),
     'rejects_7d', (select count(*) from app.sl_decisions where decision = 'reject' and created_at > now() - interval '7 days'),
     'failed_closed_7d', (select count(*) from app.sl_decisions where fail_closed and created_at > now() - interval '7 days'),
-    'published_total', (select count(*) from app.sl_releases),
-    'reversed_total', (select count(*) from app.sl_releases where reversed_at is not null),
-    'reported_total', (select count(*) from app.sl_releases where reported_at is not null),
+    'published_total', (select published_total from app.sl_settings),
+    'reversed_total', (select reversed_total from app.sl_settings),
+    'reported_total', (select reported_total from app.sl_settings),
     'shadow_clears_decided', n, 'shadow_clears_removed', k, 'shadow_error_upper_95', round(upper, 4),
     'clears_by_new_accounts_7d', (select count(*) from app.sl_decisions d join app.posts p on p.id = d.post_id join app.members m on m.id = p.author_id
                                    where d.decision = 'clear' and d.created_at > now() - interval '7 days' and m.created_at > now() - interval '30 days'),
@@ -465,9 +486,9 @@ begin
   if old.status in ('live', 'waiting') and new.status = 'removed'
      and exists (select 1 from app.sl_releases r where r.post_id = new.id and r.reversed_at is null) then
     update app.sl_releases set reversed_at = now() where post_id = new.id;
-    select count(*), count(*) filter (where reversed_at is not null) into pub, rev from app.sl_releases;
+    update app.sl_settings set reversed_total = reversed_total + 1 where singleton returning published_total, reversed_total into pub, rev;
     if rev * 80 > pub then
-      update app.sl_settings set mode = 'shadow', paused_reason = left('Paused: ' || rev || ' of the ' || pub
+      update app.sl_settings set mode = 'shadow', counted_since = now(), paused_reason = left('Paused: ' || rev || ' of the ' || pub
         || ' posts it published were removed, above 1 in 80', 300), updated_at = now() where singleton and mode = 'on';
       insert into app.audit_log (action, subject_kind, subject_id, detail)
         values ('secondlook.mode', 'post', new.id, jsonb_build_object('to', 'shadow', 'by', 'the stop', 'published', pub, 'removed', rev));
@@ -488,10 +509,25 @@ begin
   if new.source = 'report' and exists (select 1 from app.sl_releases r where r.post_id = new.post_id and r.reported_at is null
                                        and r.reversed_at is null) then
     update app.sl_releases set reported_at = now() where post_id = new.post_id;
+    update app.sl_settings set reported_total = reported_total + 1 where singleton;
     update app.posts set status = 'waiting' where id = new.post_id and status = 'live';
     perform app.notify(null, 'alert', 'A post Second Look published was reported',
       'A member reported a post Second Look published, so it is back on hold for you to decide.',
       '/review', 'post', new.post_id, 'secondlook:reported:' || new.post_id);
+  end if;
+  return null;
+end
+$$;
+
+-- Aaron decides a post Second Look would have cleared in shadow: his decision is kept as an outcome (approved or
+-- not), with no post or person, so the unlock and the report survive the post's deletion.
+create function app.sl_after_flag_close() returns trigger
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if new.resolved_by is not null and new.source = 'classifier' and new.classifier = 'jevs' and new.decision in ('approve', 'remove')
+     and exists (select 1 from app.sl_decisions d where d.post_id = new.post_id and d.mode = 'shadow' and d.decision = 'clear') then
+    insert into app.sl_outcomes (approved) values (new.decision = 'approve');
   end if;
   return null;
 end
@@ -512,7 +548,8 @@ begin
     raise exception 'bad Second Look mode' using errcode = '22023';
   end if;
   select mode into was from app.sl_settings where singleton for update;
-  update app.sl_settings set mode = p_mode, paused_reason = null, updated_at = now() where singleton;
+  -- Aaron's choice stands: the unlock counts only his decisions after this switch.
+  update app.sl_settings set mode = p_mode, paused_reason = null, counted_since = now(), updated_at = now() where singleton;
   insert into app.audit_log (action, subject_kind, subject_id, detail)
     values ('secondlook.mode', null, null, jsonb_build_object('from', was, 'to', p_mode, 'by', 'an administrator'));
   return p_mode;
@@ -528,12 +565,15 @@ alter table app.posts enable always trigger sl_after_post_change;
 create trigger sl_after_report after insert on app.review_flags for each row
   when (new.source = 'report') execute function app.sl_after_report();
 alter table app.review_flags enable always trigger sl_after_report;
+create trigger sl_after_flag_close after update of decision on app.review_flags for each row
+  when (new.resolved_by is not null and old.resolved_at is null) execute function app.sl_after_flag_close();
+alter table app.review_flags enable always trigger sl_after_flag_close;
 set local role dog_jevs;
 
 -- Rights, granted by their owner (JEVs's role).
 revoke execute on function app.sl_eligible(uuid), app.sl_try_unlock(), app.sl_report_core(), app.sl_claim(integer),
   app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer), app.sl_report(), app.sl_weekly_report(),
-  app.sl_after_post_change(), app.sl_after_report(), app.sl_set_mode(text) from public;
+  app.sl_after_post_change(), app.sl_after_report(), app.sl_after_flag_close(), app.sl_set_mode(text) from public;
 grant execute on function app.sl_claim(integer), app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer),
   app.sl_report(), app.sl_set_mode(text) to dog_app;
 
