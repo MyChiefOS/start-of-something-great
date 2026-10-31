@@ -1,0 +1,13 @@
+{
+ "generated": 400,
+ "kept": 348,
+ "kept_by_label": {
+  "spam": 154,
+  "not spam": 194
+ },
+ "dropped": {
+  "a link not on example.com": 47,
+  "a refusal or a note about the task": 4,
+  "a phone number or email address": 1
+ }
+}

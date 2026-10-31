@@ -1,0 +1,38 @@
+{
+ "50 real": {
+  "AUC": 0.953,
+  "share of fine comments cleared within 1 in 80": 0.189
+ },
+ "50 real + their synthetic variations": {
+  "AUC": 0.965,
+  "share of fine comments cleared within 1 in 80": 0.242
+ },
+ "100 real": {
+  "AUC": 0.966,
+  "share of fine comments cleared within 1 in 80": 0.312
+ },
+ "100 real + their synthetic variations": {
+  "AUC": 0.97,
+  "share of fine comments cleared within 1 in 80": 0.25
+ },
+ "200 real": {
+  "AUC": 0.972,
+  "share of fine comments cleared within 1 in 80": 0.429
+ },
+ "200 real + their synthetic variations": {
+  "AUC": 0.975,
+  "share of fine comments cleared within 1 in 80": 0.311
+ },
+ "all real (1,138)": {
+  "AUC": 0.984,
+  "share of fine comments cleared within 1 in 80": 0.343
+ },
+ "all real + all synthetic": {
+  "AUC": 0.983,
+  "share of fine comments cleared within 1 in 80": 0.251
+ },
+ "all real + SMS spam set": {
+  "AUC": 0.982,
+  "share of fine comments cleared within 1 in 80": 0.642
+ }
+}

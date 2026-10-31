@@ -1,0 +1,62 @@
+{
+ "50 real: real": {
+  "AUC": 0.953,
+  "cleared within 1 in 80 (mean)": 0.189,
+  "spread (sd)": 0.143
+ },
+ "50 real: real + synthetic": {
+  "AUC": 0.965,
+  "cleared within 1 in 80 (mean)": 0.242,
+  "spread (sd)": 0.14
+ },
+ "50 real: real + SMS": {
+  "AUC": 0.946,
+  "cleared within 1 in 80 (mean)": 0.207,
+  "spread (sd)": 0.07
+ },
+ "50 real: real + SMS + synthetic": {
+  "AUC": 0.96,
+  "cleared within 1 in 80 (mean)": 0.285,
+  "spread (sd)": 0.098
+ },
+ "100 real: real": {
+  "AUC": 0.966,
+  "cleared within 1 in 80 (mean)": 0.312,
+  "spread (sd)": 0.066
+ },
+ "100 real: real + synthetic": {
+  "AUC": 0.97,
+  "cleared within 1 in 80 (mean)": 0.25,
+  "spread (sd)": 0.109
+ },
+ "100 real: real + SMS": {
+  "AUC": 0.956,
+  "cleared within 1 in 80 (mean)": 0.229,
+  "spread (sd)": 0.051
+ },
+ "100 real: real + SMS + synthetic": {
+  "AUC": 0.965,
+  "cleared within 1 in 80 (mean)": 0.281,
+  "spread (sd)": 0.092
+ },
+ "200 real: real": {
+  "AUC": 0.972,
+  "cleared within 1 in 80 (mean)": 0.429,
+  "spread (sd)": 0.0
+ },
+ "200 real: real + synthetic": {
+  "AUC": 0.975,
+  "cleared within 1 in 80 (mean)": 0.311,
+  "spread (sd)": 0.0
+ },
+ "200 real: real + SMS": {
+  "AUC": 0.966,
+  "cleared within 1 in 80 (mean)": 0.248,
+  "spread (sd)": 0.0
+ },
+ "200 real: real + SMS + synthetic": {
+  "AUC": 0.97,
+  "cleared within 1 in 80 (mean)": 0.441,
+  "spread (sd)": 0.0
+ }
+}
