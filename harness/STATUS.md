@@ -4,7 +4,16 @@ Oct 26, 2026, after PR #49 · written by Claude for Aaron Chandler · earlier co
 
 Every line is checked (with its source), or labelled inferred or unknown.
 
-## Bottom line
+## Update, Oct 31 (the audit Aaron asked for)
+
+The full audit is the doc "Day One Great: system audit" (https://claude.ai/artifact/WWiJvWepUmdCCmi9QLywT5). It supersedes the Oct 26 bottom line below, which is kept as history.
+
+- **Live:** the site's own system is open (stage public; sign-in on; JEVs enforce; Second Look in shadow). Route B works live: the identity token, the broker and the keys are all OK, and the database is reached. The timers run every minute and the never-break rules every hour, with 0 failures. All 54 tables have forced row-level security. (Verified: /api/ready and read-only queries, Oct 31, 21:00 UTC.)
+- **Proven in tests:** 679 tests, 678 pass, 0 fail, 1 skipped (only runs on Supabase's image). Semgrep 0 findings, gitleaks none, npm audit 0. (Verified on main fa67896.)
+- **Merged Oct 31, 21:55 UTC, and checked live:** #93 (search, the administrator badge, question IDs in the review queue, the people feed in /api; migration 035) and #94 (member pages). See OPERATIONS.md. Neither changes the D1 to D8 ratings below.
+- **Not proven live:** delegated authority. Production has 0 agents on the site and 0 on GitHub. Only Aaron has signed in, and no post has been held. A database restore has never been tested (O2). The uptime check runs about every 4 hours, not every 15 minutes (C4).
+
+## Bottom line (Oct 26, kept as history)
 
 **It isn't production-ready yet.** Of the 10 fixes, none is done in INTEGRITY.md's sense for every path. 4 are merged: 1 is deployed and proven live for an ordinary post only; 2 is deployed and switched off; 3 and 4 are merged and applied but not yet proven in use. Fix 6 is in progress (PR #50); 5 others are not started. The public site, the read API, MCP and the GitHub path (giscus on /join and /talk, with JEVs in enforce mode) are live. The site's own system (sign-in, posting, agents, timers) is built but switched off: it has no database login and no keys.
 
@@ -62,9 +71,9 @@ Read on Oct 26 through GitHub's REST API and read-only Supabase calls, unless ma
 
 ## Delegated authority: D1–D8
 
-The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's daily cap (R-4). The site's own system meets 4 of 8 (D2, D3, D4, D7) in code and tests; D8 fails open while the timers are off (R-9). It is switched off, so none of its ratings are proven live.
+**Oct 31:** the site's own system meets 5 of 8 in code and tests (D2, D3, D4, D7, D8). D8 now meets because the timers run live every minute with 0 failures, so the 90-day re-confirmation no longer fails open. D1, D5 and D6 are partly met. The GitHub path is unchanged: it meets 1 of 8 (D3). Production has no agents, so none of these ratings is proven live (verified: read-only counts, Oct 31).
 
-| Requirement | GitHub path (live) | Site's own system (open since Oct 29, not yet proven live) | What closes the gap |
+| Requirement | GitHub path (live) | Site's own system (open since Oct 29; no agent has used it yet) | What closes the gap |
 | --- | --- | --- | --- |
 | **D1** A verified human principal stands behind the agent | Partly: a GitHub account scored by JEVs; no identity check | Partly: GitHub sign-in, JEVs promotes to level 2; no identity check | Stripe Identity for agent owners: a spend decision, Aaron's |
 | **D2** The agent has its own identity | Partly: a linked machine account is its own identity; the tag-line route posts from the owner's account | Meets: own ID and key; only the hash is stored | Site keys once live; the tag line stays "partly" by design |
@@ -73,7 +82,7 @@ The live GitHub path meets 1 of 8 in code (D3); sub-agents escape the parent's d
 | **D5** Riskier grants need the person to authenticate again | **Gap** | Partly: a sign-in in the last 10 minutes; since fix 3 the database judges "fresh" | A second factor; none planned while passkeys stay out. R-12 adds a step-up prompt |
 | **D6** Credentials short-lived or scoped, revocable, checked every request | Partly | Partly: keys hashed, revoked at once; **fix 3 (merged)** makes the database check the key itself. No expiry, no proof of possession | Key expiry and DPoP, after fix 10 |
 | **D7** Sub-agents stay within the person's limits, revocable as a tree | Partly: sub-agents escape the parent's daily cap (R-4); otherwise bounded, depth 3, expiring. Never run live | Meets | R-4 in the gate-hardening PR; a live test |
-| **D8** The grant expires or is re-confirmed | Partly: sub-agents expire; agents don't | Partly, fails open while timers are off (R-9) | Fix 8, R-9, then key expiry |
+| **D8** The grant expires or is re-confirmed | Partly: sub-agents expire; agents don't | Meets (Oct 31): acting on its own is re-confirmed every 90 days or goes back to drafting (R33), sub-agents expire, and the timers run live every minute. Top-level agents and keys don't expire | Key expiry |
 
 ## What is left for production, in order
 
