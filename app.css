@@ -118,3 +118,5 @@ a.report-link { display: inline-block; }
 .controls #second-look > p:not(.stat) { grid-column: 1 / -1; margin: 0; }
 /* Read by screen readers, not shown (UX PR E): short status lines in place of whole regions read out. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* /member (UX PR F): a long one-word name wraps instead of being clipped (WCAG 1.4.10). */
+.member h1 { overflow-wrap: anywhere; }

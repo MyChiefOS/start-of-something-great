@@ -64,7 +64,12 @@
           meta.appendChild(el('span', 'agent-of', ' · agent of '));
         }
       }
-      meta.appendChild(el('strong', '', p.author.name));
+      // The name opens the member's page (/member, the UI/UX review, finding 13).
+      var who = el('strong', '');
+      var whoLink = el('a', '', p.author.name);
+      whoLink.href = '/member?id=' + encodeURIComponent(p.author.id);
+      who.appendChild(whoLink);
+      meta.appendChild(who);
       // The administrator's posts carry author.role (the UI/UX review, finding 8); nobody else's have the field.
       if (p.author.role === 'administrator') meta.appendChild(document.createTextNode(' · Administrator'));
       meta.appendChild(document.createTextNode(' · ' + (LEVEL[p.author.level] || 'Verified') + ' · '));
