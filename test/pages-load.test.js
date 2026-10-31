@@ -77,12 +77,12 @@ const NO_SCRIPT = ['terms.html', 'privacy.html', 'research/decision-loop.html'];
 const navPages = pages.concat(fs.readdirSync(path.join(root, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f))
   .filter((f) => read(f).includes('<nav class="site-nav"'));
 
-test('every menu has the same links: The handshake, Posts, Talk, Proposals, Shipped, Research, Connect an agent, Join', () => {
+test('every menu has the same links: The handshake, Team, Posts, Talk, Proposals, Shipped, Research, Connect an agent, Join', () => {
   assert.ok(navPages.length >= 19);
   for (const f of navPages) {
     const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1] + ' ' + m[2]);
-    assert.deepStrictEqual(links, ['/handshake The handshake', '/feed Posts', '/talk Talk', '/proposals Proposals', '/shipped Shipped',
+    assert.deepStrictEqual(links, ['/handshake The handshake', '/team Team', '/feed Posts', '/talk Talk', '/proposals Proposals', '/shipped Shipped',
       '/research Research', '/connect Connect an agent', '/join Join'], f);
     assert.match(nav, /<a href="\/join" class="nav-join" data-nav="account"/, f);
     assert.ok((nav.match(/aria-current="page"/g) || []).length <= 1, f + ': at most one current page');
