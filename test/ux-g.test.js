@@ -415,13 +415,13 @@ test('finding 2 of the review: what the database strips is exactly the written-o
   const { RANGES, isAtOrDigitCode } = require('../db/at-or-digit');
   const want = [];
   for (const [lo, hi] of RANGES) for (let cp = lo; cp <= hi; cp++) want.push(cp);
-  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
+  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 1114111) cp
     where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
-  assert.deepStrictEqual(have.map(Number), want, 'the database strips exactly the list');
+  assert.deepStrictEqual(have.map(Number), want, 'the database strips exactly the list, across all of Unicode');
   // This runtime's own tables, as the masking reads them (api/_proposals.js): nothing it reads as an at sign or a digit
   // may be missing from the list. If a newer runtime knows more, this fails: extend the list and 035 together.
   const unknown = [];
-  for (let cp = 32; cp < 0x20000; cp++) {
+  for (let cp = 32; cp <= 0x10ffff; cp++) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue;
     const ch = String.fromCodePoint(cp);
     if ((/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) && !isAtOrDigitCode(cp)) unknown.push(cp.toString(16));
@@ -629,16 +629,22 @@ test('the review of e87b924: the member trigger runs only when status changes', 
 });
 
 test('the review of e87b924: what the database counts as a space between words is exactly what the site splits on, whatever the locale', async () => {
-  // Every character either side might call a space, across the first plane (production's ICU locale adds U+001C to
-  // U+001F and U+0085 to [[:space:]]; the word filter no longer uses that class).
-  const js = (ch) => /\s/u.test(ch);
-  const rows = await q(`select c, app.post_search_text('ab' || chr(c) || 'x@y') as t from generate_series(1, 65535) c
-                        where (c < 55296 or c > 57343) and (chr(c) ~ '[[:space:]]' or c in (133, 160, 5760, 8192, 8203, 8232, 8233, 8239, 8287, 12288, 65279))`);
-  const wrong = rows.filter((r) => {
-    const ch = String.fromCodePoint(r.c);
-    // Split there: "ab" survives and the address run goes. Not split: the whole run, "ab" with it, goes.
-    return js(ch) ? !r.t.startsWith('ab') : r.t.includes('ab');
-  }).map((r) => r.c.toString(16));
-  assert.deepStrictEqual(wrong, []);
+  // Every code point, U+0001 to U+10FFFF (the review of 68bb14f and 9ecd3f1 asked for all of Unicode). The database
+  // lists the ones it splits on: "ab" survives when it splits there, and the address run goes on its own.
+  const site = (ch) => /[^\S\uFEFF]/u.test(ch);
+  const [{ have }] = await q(`select coalesce(array_agg(c order by c), '{}') as have from generate_series(1, 1114111) c
+    where (c < 55296 or c > 57343) and app.post_search_text('ab' || chr(c) || 'x@y') like 'ab%'`);
+  const want = [];
+  for (let c = 1; c <= 0x10ffff; c++) { if (c >= 0xd800 && c <= 0xdfff) continue; if (site(String.fromCodePoint(c))) want.push(c); }
+  assert.deepStrictEqual(have.map(Number).map((c) => c.toString(16)), want.map((c) => c.toString(16)));
   assert.ok(!migration().split('\n').filter((l) => !/^\s*--/.test(l)).some((l) => l.includes('[[:space:]]')), 'no locale-dependent space class in 035\'s code');
+  // U+FEFF is part of a word, as the masking reads it: no part of these hidden addresses is indexed.
+  const [{ a, b }] = await q(`select app.post_search_text('hello janedoe' || chr(65279) || '@example.com there') as a,
+                                     app.post_search_text('hello janedoe@' || chr(65279) || 'example.com there') as b`);
+  for (const t of [a, b]) {
+    assert.ok(!/janedoe|example/.test(t), 'nothing of the address: ' + JSON.stringify(t));
+    assert.ok(/hello/.test(t) && /there/.test(t), 'the words around it stay: ' + JSON.stringify(t));
+  }
+  const { searchProblem } = require('../api/feed.js');
+  assert.match(searchProblem('janedoe\uFEFF@example.com') || '', /./, 'the site leaves that search empty too');
 });

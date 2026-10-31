@@ -171,7 +171,9 @@ function canonical(q) {
 // at sign or a digit (api/_proposals.js, fold: NFKC, then any decimal digit); test/ux-g.test.js holds the two the same.
 // The same list the database strips (db/at-or-digit.js, Unicode 17), plus anything this runtime knows beyond it.
 const { isAtOrDigit: atOrDigit } = require('../db/at-or-digit');
-const searchable = (s) => String(s).split(/\s+/).filter((w) => w && ![...w].some(atOrDigit));
+// Words split on JavaScript's \s less U+FEFF, exactly as 035's word filter splits (U+FEFF stays part of a word: the
+// masking treats it as invisible inside an address, so it must never split one).
+const searchable = (s) => String(s).split(/[^\S\uFEFF]+/u).filter((w) => w && ![...w].some(atOrDigit));
 // null when the search is fine.
 function searchProblem(s) {
   if (typeof s !== 'string' || [...s.trim()].length < posts.SEARCH.min || [...s.trim()].length > posts.SEARCH.max) {
