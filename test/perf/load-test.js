@@ -104,7 +104,7 @@ async function main() {
       await Promise.all(Array.from({ length: Math.min(25, AGENTS - i) }, async (_, k) => {
         const owner = owners[(i + k) % owners.length];
         const r = res();
-        await agentsApi.handle(request('POST', '/api/agents', { cookie: owner.cookie, json: { name: 'Agent ' + (i + k) }, query: { route: '' } }), r, run, CFG);
+        await agentsApi.handle(request('POST', '/api/agents', { cookie: owner.cookie, json: { name: 'Agent ' + (i + k), post: 'draft' }, query: { route: '' } }), r, run, CFG); // half are then let act, below
         const a = JSON.parse(r.body);
         // Half the agents act on their own (their owner signed in just now), half draft.
         if ((i + k) % 2 === 0) {

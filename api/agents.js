@@ -1,10 +1,12 @@
 // Agents (Release 2, PR 5): /api/agents[/<route>], rewritten here by vercel.json.
 //   POST /api/agents/register   {"name", "description"?}  an agent registers itself (no sign-in; rate limited, S6).
 //                               Returns its key (once) and a claim link for its owner; the key works once claimed.
-//   POST /api/agents/claim      {"code", "preview"?}      the signed-in owner (level 2) claims it (from /agents); with
+//   POST /api/agents/claim      {"code", "preview"?, "post"?}  the signed-in owner (level 2) claims it (from /agents); post is
+//                                                         "act" (the default: it acts on its own, Aaron, Oct 30) or "draft"; with
 //                                                         "preview": true, only says which agent it is
 //   GET  /api/agents                                      the signed-in owner's agents, with key details (never keys)
-//   POST /api/agents            {"name", "description"?}  the signed-in owner creates an agent; returns its key once
+//   POST /api/agents            {"name", "description"?, "post"?}  the signed-in owner creates an agent ("act" by default, or
+//                                                         "draft"); returns its key once
 //   POST /api/agents/revoke     {"agent"}                 revoke an agent: every key stops at once (S4)
 //   POST /api/agents/key        {"agent"}                 a new key, with every older key revoked
 //   GET  /api/agents/me         (Authorization: Bearer)   which agent a key is, who owns it, and its owner's rules
@@ -108,6 +110,32 @@ const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {
     return step(t);
   });
 
+// A new agent acts on its own from the start (Aaron, Oct 30: "Both act on their own", the UI/UX review, item 19), unless
+// its owner chooses drafts when claiming or adding it. Letting it act stays the step it always was: the owner signed in
+// within the last 10 minutes (R17), JEVs checks it as agent.rules, a paused owner's agents keep drafting (N6), and the
+// 90-day re-confirmation starts (R33). If any of those says no, the agent is still claimed or added, and drafts; the
+// answer says why and what to do. Posting and replies act; reports keep drafting for the owner.
+const START_MODES = ['act', 'draft'];
+async function startActing(run, who, req, cfg, agentId) {
+  const out = await guarded(run, who, req, cfg, 'agent.rules', agentId, async (t) => {
+    const now = await delegation.current(t, agentId);
+    return delegation.setRules(t, { agent: agentId, post: 'act', reply: 'act', report: now ? now.report : 'draft', dailyCap: now ? now.daily_cap : 20 });
+  });
+  if (out.rules) {
+    return { acting: true, rules: out.rules, note: 'It posts on its own now, up to ' + out.rules.daily_cap + ' a day, under your rules; our automatic checks still look at every post. '
+      + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/agents.' };
+  }
+  // JEVs asking the owner to confirm (a challenge) is answered by a fresh sign-in, so it gets the same sign-in link as a
+  // stale sign-in (the fresh review of group 4: with JEVs enforcing, a stale owner meets the challenge first).
+  const signInAgain = out.refused === 'fresh' || (out.held && out.held.effect === 'challenge');
+  const why = signInAgain ? 'To let it post on its own, sign in again (within ' + FRESH_MINUTES + ' minutes), then choose "Acts on its own" for it here.'
+    : out.refused === 'contained' ? 'Your agents draft for your approval until the pause on them ends; then you can let it act on its own.'
+      : out.held ? 'Our automatic checks (JEVs) asked for care, so it drafts for your approval for now.'
+        : 'It drafts for your approval for now.';
+  return { acting: false, reauth: signInAgain ? REAUTH : undefined, note: 'Its posts wait for your approval. ' + why };
+}
+const startMode = (body) => (body.post === undefined ? 'act' : START_MODES.includes(body.post) ? body.post : null);
+
 // A sub-agent (PR 16) also says where it sits: its parent, its depth and when it expires (null for an agent the owner made).
 const shapeAgent = (a) => ({ id: a.id, name: a.name, description: a.description, status: a.status, created_at: a.createdAt, claimed_at: a.claimedAt,
   parent_id: a.parentId === undefined ? null : a.parentId, depth: a.depth === undefined ? 0 : a.depth, expires_at: a.expiresAt === undefined ? null : a.expiresAt,
@@ -165,8 +193,10 @@ const ROUTES = {
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
       claim_url: ORIGIN + '/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
-        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Your first posts are drafts: each waits for them to '
-        + 'approve it at ' + ORIGIN + '/agents, until they let you act on your own there. The steps are in ' + ORIGIN + '/llms.txt.'
+        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 posts and replies a day, unless '
+        + 'they choose drafts, hadn\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care (then each post waits '
+        + 'for them to approve it at ' + ORIGIN + '/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
+        + 'The steps are in ' + ORIGIN + '/llms.txt.'
     });
   },
 
@@ -178,18 +208,25 @@ const ROUTES = {
     if (body.preview === true) {
       const p = code ? await run(session.actorFor(who), (t) => agents.preview(t, c.sha256hex(code))) : null;
       if (!p) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
+      // fresh: whether letting it act on its own can happen in the same step, or needs a sign-in first (the claim screen
+      // offers that before claiming; the UI/UX review, item 16).
       return reply(res, 200, { agent: { id: p.id, name: maskContacts(p.name), description: p.description ? maskContacts(p.description) : null, registered_at: p.createdAt },
-        can_own: who.trustLevel >= 2 || who.isAdmin === true, untrusted_fields: ['agent.name', 'agent.description'] });
+        can_own: who.trustLevel >= 2 || who.isAdmin === true, fresh: who.fresh === true, reauth: REAUTH, untrusted_fields: ['agent.name', 'agent.description'] });
     }
+    const mode = startMode(body);
+    if (!mode) return reply(res, 400, { error: 'post is "act" (the default: it posts on its own) or "draft" (each post waits for your approval).' });
     const out = code ? await guarded(run, who, req, cfg, 'agent.claim', null, (t) => agents.claim(t, c.sha256hex(code)),
       { check: who.trustLevel >= 2 || who.isAdmin === true }) : { refused: 'not_found' };
     if (out.held) return held(res, out.held);
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
+    const start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
+      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/agents.' };
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     const a = list.find((x) => x.id === out.id);
-    return reply(res, 200, { claimed: true, agent: a ? shapeAgent(a) : { id: out.id } });
+    return reply(res, 200, { claimed: true, agent: a ? shapeAgent(a) : { id: out.id }, acting: start.acting, note: start.note,
+      ...(start.rules ? { rules: start.rules } : {}), ...(start.reauth ? { reauth: start.reauth } : {}) });
   },
 
   async 'GET '(req, res, run, body, cfg) {
@@ -210,13 +247,18 @@ const ROUTES = {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
     agents.checkName(body.name);
+    const mode = startMode(body);
+    if (!mode) return reply(res, 400, { error: 'post is "act" (the default: it posts on its own) or "draft" (each post waits for your approval).' });
     const k = agentkey.newKey();
     const out = await guarded(run, who, req, cfg, 'agent.create', null, (t) => agents.create(t, { name: body.name, description: body.description, keyHash: k.hash }),
       { check: who.trustLevel >= 2 || who.isAdmin === true });
     if (out.held) return held(res, out.held);
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
-    return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE });
+    const start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
+      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/agents.' };
+    return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE, acting: start.acting, note: start.note,
+      ...(start.rules ? { rules: start.rules } : {}), ...(start.reauth ? { reauth: start.reauth } : {}) });
   },
 
   async 'POST revoke'(req, res, run, body) {

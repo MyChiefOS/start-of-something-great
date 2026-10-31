@@ -107,7 +107,8 @@ async function fleet({ run, su, cfg, good = 4, bad = 1, round = 0, log = () => {
     const reg = await callAgents('register', 'POST', { json: { name }, ip });
     if (reg.status !== 201) throw new Error(name + ' could not register: ' + reg.status + ' ' + JSON.stringify(reg.json));
     const code = new URL(reg.json.claim_url).hash.replace('#claim=', '');
-    const claim = await callAgents('claim', 'POST', { cookie: owner.cookie, json: { code }, ip });
+    // Claimed to draft: this run walks the whole path, draft first (Aaron, Oct 30: by default it would act at once).
+    const claim = await callAgents('claim', 'POST', { cookie: owner.cookie, json: { code, post: 'draft' }, ip });
     if (claim.status !== 200) throw new Error(name + ' could not be claimed: ' + claim.status + ' ' + JSON.stringify(claim.json));
     const a = { name, kind: kinds[i], owner, agent: reg.json.agent_id, key: reg.json.key, ip, statuses: [] };
     // A first post as a draft, which the owner approves (the exact words, by their hash).

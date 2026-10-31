@@ -382,7 +382,7 @@ test('enforce: an agent\'s risky post waits for its human owner, and the agent c
     // A month-old owner: since 021 caps sign-in at level 1, a GitHub owner scores J02 = 10, and the account age keeps
     // this two-link post at medium, as an X business owner's did before.
     const owner = await member({ level: 2, name: 'Agent owner', ageDays: 30 });
-    const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Linky' } });
+    const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Linky', post: 'draft' } });
     assert.strictEqual(made.status, 201);
     assert.strictEqual((await agentsApi('POST', 'rules', { cookie: owner.cookie, json: { agent: made.json.agent_id, post: 'act', reply: 'draft', report: 'draft', daily_cap: 50 } })).status, 201);
     const p = await agentSay(made.json.key, 'Have a look: ' + links(2));
@@ -477,7 +477,7 @@ test('auto-hide: credible reports hide a post at once in enforce mode; Aaron can
 
 test('fail-safe: if scoring throws, a sensitive action is held and a post goes ahead, both recorded as errors (enforce); shadow holds nothing', async () => {
   const owner = await member({ level: 2, name: 'Unlucky' });
-  const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Keyed' } });
+  const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Keyed', post: 'draft' } });
   assert.strictEqual(made.status, 201);
   // Scoring breaks: the site can no longer read JEVs's signals.
   await q('revoke execute on function app.jevs_signals(text, uuid, text, text[], bigint) from dog_app');
@@ -515,7 +515,7 @@ test('sensitive actions at medium risk ask the owner to sign in again (the chall
     // so it goes ahead. (Four to nine score 25: low on their own.)
     const ids = [];
     for (let i = 0; i < 11; i++) {
-      const r = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Helper ' + i } });
+      const r = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Helper ' + i, post: 'draft' } });
       assert.strictEqual(r.status, 201, 'agent ' + i + ': ' + JSON.stringify(r.json));
       ids.push(r.json.agent_id);
     }
@@ -523,7 +523,7 @@ test('sensitive actions at medium risk ask the owner to sign in again (the chall
     assert.ok(confirmed.length >= 1 && confirmed.every((x) => x.status === 'confirmed'), 'a fresh sign-in answers the challenge');
     // With an hour-old session, the same step waits: a pending challenge, and a request to sign in again.
     await q(`update app.sessions set created_at = now() - interval '1 hour' where member_id = '${owner.id}'`);
-    const waiting = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Helper 11' } });
+    const waiting = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Helper 11', post: 'draft' } });
     assert.strictEqual(waiting.status, 403);
     assert.match(waiting.json.error, /sign in again/);
     assert.strictEqual(waiting.json.reauth, '/join?return_to=%2Fagents');

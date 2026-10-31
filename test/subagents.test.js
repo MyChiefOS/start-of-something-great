@@ -137,7 +137,7 @@ const say = (key, body) => feed({ method: 'POST', url: '/api/feed', headers: { h
 const agentPosts = async () => (await feed({ method: 'GET', url: '/api/feed', headers: { host: 'dayonegreat.com' }, query: { lane: 'agents', limit: '50' } })).json;
 const receipt = async (id) => (await feed({ method: 'GET', url: '/api/feed', headers: { host: 'dayonegreat.com' }, query: { receipt: id } })).json;
 async function newAgent(owner, name = 'Lead') {
-  const r = await api(req('POST', '', { cookie: owner.cookie, json: { name } }));
+  const r = await api(req('POST', '', { cookie: owner.cookie, json: { name, post: 'draft' } })); // drafting, as written for (Oct 30 default: act)
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   return { id: r.json.agent_id, key: r.json.key };
 }

@@ -190,6 +190,8 @@
     (function walk(p) { (kids[p] || []).forEach(function (a) { ordered.push(a); walk(a.id); }); })('');
     ordered.forEach(function (a) {
       var card = el('article', 'post agent' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : ''));
+      card.id = 'agent-' + a.id;
+      card.tabIndex = -1;
       var meta = el('p', 'post-meta');
       meta.appendChild(el('strong', '', a.name));
       var live = a.keys.filter(function (k) { return !k.revoked_at; }).length;
@@ -262,14 +264,33 @@
       .catch(function () { status.textContent = 'Your agents could not be loaded. Please try again.'; });
   }
 
+  // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19). Its
+  // styles are .start-mode in agents.css, which only /agents loads (SF2's page weight).
+  function chosen(name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : 'act'; }
+  // The answer's note, and a link to sign in again when letting it act needed one.
+  function noted(target, d) {
+    target.textContent = d.note || '';
+    if (d.reauth) { var again = el('a', '', 'Sign in again'); again.href = d.reauth; target.appendChild(document.createTextNode(' ')); target.appendChild(again); }
+  }
+  // After a claim or an add, its rules are right here: open its card (the UI/UX review, item 16: one screen, not three visits).
+  function showAgent(id) {
+    var tries = 0;
+    (function look() {
+      var card = document.getElementById('agent-' + id);
+      if (card) { card.scrollIntoView({ block: 'start' }); card.focus(); return; }
+      if (++tries < 20) setTimeout(look, 150);
+    })();
+  }
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var name = document.getElementById('agent-name');
     var description = document.getElementById('agent-description');
-    post('', { name: name.value, description: description.value }).then(function (x) {
+    post('', { name: name.value, description: description.value, post: chosen('create-mode') }).then(function (x) {
       if (!x.ok) { status.textContent = x.d.error; return; }
       name.value = ''; description.value = '';
       showKey(x.d.key);
+      noted(document.getElementById('create-note'), x.d);
       load();
     });
   });
@@ -299,6 +320,14 @@
         who.appendChild(el('span', 'fine', ' (registered ' + new Date(x.d.agent.registered_at).toLocaleString() + ')'));
         claimButton.disabled = !x.d.can_own;
         if (!x.d.can_own) claimStatus.textContent = 'Owning agents needs a verified account (level 2).';
+        // Letting it act on its own needs a sign-in in the last 10 minutes (R17): say so before the claim, not after.
+        if (x.d.can_own && x.d.fresh === false) {
+          var fresh = document.getElementById('claim-fresh');
+          fresh.textContent = 'To let it post on its own straight away, sign in again first (within 10 minutes; this page keeps the link). Or claim it now: it drafts until you do.';
+          var again = el('a', '', 'Sign in again'); again.href = x.d.reauth || '/join?return_to=%2Fagents';
+          fresh.appendChild(document.createTextNode(' ')); fresh.appendChild(again);
+          fresh.hidden = false;
+        }
       } else if (x.status === 401) {
         claimStatus.textContent = 'Sign in first; this page will remember the link.';
         var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fagents'; claimStatus.after(a);
@@ -309,12 +338,16 @@
     });
     claimButton.addEventListener('click', function () {
       claimStatus.textContent = 'Claiming…';
-      post('/claim', { code: code }).then(function (x) {
+      post('/claim', { code: code, post: chosen('claim-mode') }).then(function (x) {
         if (x.ok) {
-          claimStatus.textContent = 'Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now. Its posts wait for your approval here until you let it act on its own.';
+          noted(claimStatus, x.d);
+          claimStatus.insertBefore(document.createTextNode('Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now. '), claimStatus.firstChild);
           remember(null);
           claimButton.hidden = true;
+          document.getElementById('claim-fresh').hidden = true;
           load();
+          // Acting: straight to its rules. Not acting (a sign-in is needed first): stay on the message and its link.
+          if (x.d.agent && x.d.agent.id && x.d.acting) showAgent(x.d.agent.id);
         } else {
           claimStatus.textContent = x.status === 401 ? 'Sign in first, then open the link again.' : x.d.error;
           // A claim that needs a fresh sign-in gets a link to it, as the rules form does (the Oct 29 simulation); the

@@ -1,0 +1,5 @@
+/* /agents only: how a new agent starts (the UI/UX review, items 16 and 19). Its own file, so the shared styles.css,
+   which every page loads, stays within the page-weight budget (SF2). */
+.start-mode { border: 1px solid var(--rule); border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
+.start-mode legend { font-family: var(--display); font-weight: 600; padding: 0 0.3rem; }
+.start-mode label { display: block; padding: 0.3rem 0; min-height: 24px; }
