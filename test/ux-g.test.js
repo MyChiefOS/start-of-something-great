@@ -400,3 +400,11 @@ test('the database refuses a search outside 2 to 100 characters itself', async (
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.feed('people', null::uuid, 5::integer, null::uuid, '2026 ...'::text)`)).length, 0, 'nothing left to look for: nothing');
   await assert.rejects(run({ actor: 'anon' }, (t) => posts.feed(t, { q: 'two\nlines' })), /control characters/);
 });
+
+test('/team: JEVs\'s card says high risk is held for review, by Aaron or, for easy holds only, Second Look when on (034)', () => {
+  const read = (f) => require('fs').readFileSync(require('path').join(__dirname, '..', f), 'utf8');
+  const team = read('team.html');
+  assert.match(team, /high risk is held for review: by Aaron, or for easy holds only, by Second Look when it is on\./);
+  assert.ok(!/high risk waits for Aaron/.test(team));
+  assert.match(read('db/migrations/034_second_look_v1.sql'), /if v_decision <> 'clear' or s\.mode <> 'on' or s\.paused_reason is not null then/);
+});

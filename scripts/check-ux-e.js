@@ -102,7 +102,7 @@ async function main() {
         await p.waitForFunction(() => /loaded/.test(document.getElementById('posts-say').textContent));
         m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, value: document.getElementById('q').value,
           clear: document.getElementById('clear').checkVisibility(), focus: document.activeElement && document.activeElement.id }));
-        if (m.say !== '2 posts loaded.' || m.value !== '' || m.clear || m.focus !== 'q') fail(where, 'after Clear: ' + JSON.stringify(m));
+        if (m.say !== '2 posts from people loaded.' || m.value !== '' || m.clear || m.focus !== 'q') fail(where, 'after Clear: ' + JSON.stringify(m));
         await p.close();
 
         // /feed after a sign-in with a code (join.js sets the flag): once, with focus, then gone.
