@@ -175,7 +175,7 @@ const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 
 // factor f (each channel times f, at most 255), and the contrast of two.
 function luminance(css, f = 1) {
   let v = (css.match(/[\d.]+/g) || []).map(Number);
-  if (/^color\(srgb/.test(css)) v = v.slice(0, 3).map((x) => x * 255); else v = v.slice(0, 3);
+  if (css.startsWith('color(srgb')) v = v.slice(0, 3).map((x) => x * 255); else v = v.slice(0, 3);
   const lin = (c) => { c = Math.min(255, c * f) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
   return 0.2126 * lin(v[0]) + 0.7152 * lin(v[1]) + 0.0722 * lin(v[2]);
 }
