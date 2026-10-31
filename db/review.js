@@ -33,6 +33,9 @@ async function report(t, { post, reason, note = null }) {
 // public title. That decision is the latest one that held or hid the post, made no later than its open JEVs flag (the
 // two are written in the same transaction, 032). Only Aaron reads the queue, and only he can read the decisions and
 // pass_max (010's policies), so this adds nothing anyone else can see.
+// A decision records its scores but not the pass_max of its day, so the IDs are those above today's pass_max: if Aaron
+// changes it, older items name questions by the new line. Read without a cast that could fail: a value that isn't a
+// whole number (010's trigger allows none) counts as 10, the seeded value, and never stops the queue loading.
 async function queue(t, { limit = 50 } = {}) {
   const n = v.int('limit', limit, { min: 1, max: 100 });
   const rows = await t`
@@ -47,7 +50,8 @@ async function queue(t, { limit = 50 } = {}) {
                            order by d.created_at desc, d.id desc limit 1) h
                      cross join lateral jsonb_each(h.scores) e
                      where e.key ~ '^J[0-9]{2}$' and jsonb_typeof(e.value) = 'number'
-                       and (e.value)::numeric > (select s.value::integer from app.jevs_settings s where s.key = 'pass_max')), '{}') as questions
+                       and (e.value)::numeric > coalesce((select case when s.value ~ '^[0-9]{1,4}$' then s.value::integer end
+                                                          from app.jevs_settings s where s.key = 'pass_max'), 10)), '{}') as questions
     from (
       select post_id, min(created_at) as first_at,
              bool_or(source = 'first_posts') as first_posts,

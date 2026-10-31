@@ -50,6 +50,9 @@ const DEFINERS = {
   // 035: and two optional filters, a member's posts and words to search for; it also says whether each author is the
   // administrator (the one column of members it reads for that).
   'app.feed(text, uuid, integer, uuid, text)': 'dog_public',
+  // 035, after its security review: the trigger that keeps app.post_search (one row per live post, for search) in step
+  // with app.posts. Called by nobody directly; dog_public writes only that table, and only here.
+  'app.post_search_sync()': { owner: 'dog_public', callers: '' },
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',
   // PR 5: sign-in for agents (resolve a key, self-register, claim), in the sign-in role.

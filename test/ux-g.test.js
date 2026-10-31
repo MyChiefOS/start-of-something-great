@@ -49,7 +49,7 @@ test('the guides name the filters and what search won’t look for', () => {
   const llms = read('llms.txt');
   assert.match(llms, /author=<member ID> for one member's posts/);
   assert.match(llms, /q=<2 to 100 characters> for posts containing every word of the search/);
-  assert.match(llms, /a search that is an email address, a phone number or a key is refused \(400\), numbers on their own aren't searched/);
+  assert.match(llms, /a search that is an email address, a phone number or a key is refused \(400\), no word with a digit or an @ is searched/);
   assert.match(llms, /author\.role "administrator"/);
   const connect = read('connect.html');
   assert.match(connect, /<a href="\/api\/feed\?lane=people">\/api\/feed\?lane=people<\/a>/);
@@ -60,7 +60,7 @@ test('the guides name the filters and what search won’t look for', () => {
 test('/api/status and the home page say what Second Look may do: easy holds only; appeals and hard cases go to Aaron', () => {
   const { status } = fresh('_lib.js');
   const line = status.phase.live.find((x) => /automated checks/.test(x.text)).text;
-  assert.strictEqual(line, 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, and appeals and hard cases go to Aaron.');
+  assert.strictEqual(line, 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.');
   for (const f of ['api/_lib.js', 'index.html']) assert.ok(!read(f).includes('high risk waits for a person'), f + ' has no old line left');
   // True of the code: 034's gate refuses any post with a report, an appeal or a first-post flag open, or any question
   // other than the five easy ones above 0.
@@ -104,7 +104,7 @@ test('GET /api/feed: author and q are checked before anything is read', async ()
   for (const contact of ['jane@example.com', 'call +1 415 555 0100', 'ｊａｎｅ＠ｅｘａｍｐｌｅ．ｃｏｍ']) {
     assert.match((await get({ q: contact })).json.error, /^q can’t search for email addresses, phone numbers or keys/, contact);
   }
-  assert.match((await get({ q: '2026' })).json.error, /^q needs at least one word with a letter/);
+  assert.match((await get({ q: '2026' })).json.error, /^q needs at least one word of letters/);
 });
 
 test('MCP list_posts takes author and q, refuses the same searches, and stays read-only with the same ten tools', async () => {
@@ -123,9 +123,18 @@ test('MCP list_posts takes author and q, refuses the same searches, and stays re
 
 test('035 changes no sign-in, Second Look or infrastructure object, and uses no extension', () => {
   assert.doesNotMatch(migration(), /create extension|pg_trgm/i);
-  assert.doesNotMatch(migration().replace(/^--.*$/gm, ''), /app\.(sl_|sign_in|session|identity|code_|file_|agent_resolve|actor_|act_as)/, 'only the feed, its index, its words and one grant');
+  assert.doesNotMatch(migration().replace(/^--.*$/gm, ''), /app\.(sl_|sign_in|session|identity|code_|file_|agent_resolve|actor_|act_as)/, 'only the feed, its search table and words, and one column');
   assert.match(migration(), /^grant select \(is_admin\) on app\.members to dog_public;$/m);
-  assert.strictEqual((migration().match(/^grant /gm) || []).length, 3, 'the column, execute for the site, and create for the owner change');
+  // Every right it grants: the words function and the search table to dog_public, the one column, the feed to the site,
+  // and create on app only while ownership changes (taken back at once).
+  assert.deepStrictEqual(migration().match(/^grant .*$/gm), [
+    'grant execute on function app.post_search_text(text) to dog_public;',
+    'grant select, insert, update, delete on app.post_search to dog_public;',
+    'grant create on schema app to dog_public;',
+    'grant select (is_admin) on app.members to dog_public;',
+    'grant execute on function app.feed(text, uuid, integer, uuid, text) to dog_app;',
+    'grant create on schema app to dog_public;']);
+  assert.strictEqual((migration().match(/^revoke create on schema app from dog_public;$/gm) || []).length, 2);
 });
 
 // ---- Against a database ----
@@ -287,6 +296,31 @@ test('finding 12: the queue names the questions that flagged a held post, above 
   }
 });
 
+test('finding 3 of the review: the queue never fails on pass_max, and names questions by today’s line', async () => {
+  // The post the test above held is still waiting for Aaron.
+  const heldItem = async () => (await feed('GET', { cookie: aaron.cookie, query: { queue: '1' } })).json.items.find((i) => i.questions.length);
+  const before = await heldItem();
+  assert.ok(before && before.questions.length >= 2, 'a held item to read');
+  // Aaron raises the line: only questions above it are named now (the decision keeps scores, not the line of its day).
+  await asOwner(`update app.jevs_settings set value = '30' where key = 'pass_max'`);
+  try {
+    assert.deepStrictEqual((await heldItem()).questions, ['J07']);
+    // A value that isn't a whole number (010's trigger refuses one; a superuser forces it here) counts as 10, the seed,
+    // and the queue still loads.
+    await su.begin(async (t) => {
+      await t.unsafe('alter table app.jevs_settings disable trigger jevs_settings_check');
+      await t.unsafe(`update app.jevs_settings set value = 'ten' where key = 'pass_max'`);
+      await t.unsafe('alter table app.jevs_settings enable always trigger jevs_settings_check');
+    });
+    const r = await feed('GET', { cookie: aaron.cookie, query: { queue: '1' } });
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual(r.json.items.find((i) => i.id === before.id).questions, before.questions);
+  } finally {
+    await asOwner(`update app.jevs_settings set value = '10' where key = 'pass_max'`);
+  }
+  assert.ok(/coalesce\(\(select case when s\.value ~ '\^\[0-9\]\{1,4\}\$' then s\.value::integer end/.test(read('db/review.js')));
+});
+
 test('finding 13: author= lists one member’s live posts, newest first, a page at a time with the filter kept', async () => {
   const a = await member(2, 'Author A');
   const b = await member(2, 'Author B');
@@ -337,60 +371,133 @@ test('finding 13: q finds live posts with every word, any case, a page at a time
   assert.deepStrictEqual((await get({ q: tag + ' garden', author: m.id })).json.posts.map((p) => p.id), [both]);
 });
 
-test('finding 13: search never finds a post by what the feed hides, not even as a short page that says there is more', async () => {
-  const tag = word();
-  const m = await member(2, 'Careful');
-  const shown = await say(m, 'A ' + tag + ' crossing near the park.');
-  // Newer, and only in hidden text: an address in non-Latin letters (the parser reads "<tag>" out of it as a word), and
-  // a phone number.
-  const hiddenMail = await say(m, 'Write to ' + tag + '@exämple.com today.');
-  const hiddenPhone = await say(m, 'hello, call +1 415 555 0100');
-  const [{ found }] = await q(`select count(*)::int as found from app.posts where status = 'live' and to_tsvector('app.post_words'::regconfig, body) @@ plainto_tsquery('app.post_words'::regconfig, '${tag}')`);
-  assert.strictEqual(found, 2, 'the index alone would find the hidden address');
-  const page = await get({ q: tag, limit: '1' });
-  assert.deepStrictEqual(page.json.posts.map((p) => p.id), [shown], 'the match from hidden text is dropped, and the page still fills');
-  assert.ok(!JSON.stringify(page.json).includes(hiddenMail));
-  // Words and numbers together: the number must be shown, and here it is hidden.
-  assert.ok(!(await get({ q: 'hello 0100' })).json.posts.some((p) => p.id === hiddenPhone));
-  // Numbers and addresses aren't in the index at all.
-  const [{ words }] = await q(`select to_tsvector('app.post_words'::regconfig, body)::text as words from app.posts where id = '${hiddenPhone}'`);
-  assert.strictEqual(words, "'call':2 'hello':1");
-  const [{ mail }] = await q(`select to_tsvector('app.post_words'::regconfig, 'mail jane@example.com')::text as mail`);
-  assert.strictEqual(mail, "'mail':1");
+const wordsOf = async (postId) => (await q(`select words::text as w from app.post_search where post_id = '${postId}'`)).map((r) => r.w)[0];
+
+test('finding 13: app.post_search holds one row per live post, kept in step as posts go live, leave and come back', async () => {
+  const m = await member(2, 'Kept');
+  const id = await say(m, 'Kept in step ' + word());
+  assert.ok(await wordsOf(id), 'a live post has its row');
+  const admin = (sqlText) => su.begin(async (t) => { await t`select app.act_as('admin', ${aaron.id}::uuid, null, false, ${aaron.ctx.session}, null, null)`; await t.unsafe(sqlText); });
+  await admin(`update app.posts set status = 'removed' where id = '${id}'`);
+  assert.strictEqual(await wordsOf(id), undefined, 'a removed post has none');
+  await admin(`update app.posts set status = 'live' where id = '${id}'`);
+  const [r] = await q(`select s.published_at = p.published_at as same, s.lane, s.author_id from app.post_search s join app.posts p on p.id = s.post_id where s.post_id = '${id}'`);
+  assert.deepStrictEqual([r.same, r.lane, r.author_id], [true, 'people', m.id], 'back, with the time it went live again');
+  // Only dog_public writes it, and only through the trigger; the site's role can't read or write it at all.
+  await assert.rejects(run({ actor: 'anon' }, (t) => t`select post_id from app.post_search`), /permission denied/);
+  await assert.rejects(run(m.ctx, (t) => t`delete from app.post_search`), /permission denied/);
 });
 
-test('finding 13: at 20,000 posts each list uses its own index, so search stays one index lookup at any size', async () => {
-  // A plan on a near-empty table proves nothing, so 20,000 live posts are added, the table analysed and the plans read,
-  // all in one transaction that is rolled back. Tests only: the superuser switches the table's triggers off for it, on
-  // this throwaway database, as the backdate helpers elsewhere do.
-  const plans = await su.begin(async (t) => {
-    const [x] = await t`insert into app.members (display_name) values ('Bulk') returning id`;
-    const [y] = await t`insert into app.members (display_name) values ('Rare author') returning id`;
-    await t.unsafe('alter table app.posts disable trigger all');
-    await t.unsafe(`insert into app.posts (author_id, body, status, published_at, created_at)
-      select case when i % 100 = 0 then '${y.id}'::uuid else '${x.id}'::uuid end,
-             'post ' || i || ' about ' || (array['gardens', 'music', 'code', 'trust', 'food'])[1 + i % 5] || case when i % 5000 = 0 then ' rareword' else '' end,
-             'live', now() - make_interval(secs => i), now() - make_interval(secs => i)
-      from generate_series(1, 20000) i`);
-    await t.unsafe('analyze app.posts');
-    // The statements app.feed runs (035), with its values written in.
-    const cursor = `(p.published_at, p.id) < ('infinity'::timestamptz, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)`;
-    const explain = async (sqlText) => (await t.unsafe('explain ' + sqlText)).map((r) => r['QUERY PLAN']).join('\n');
-    const out = {
-      words: await explain(`select p.id from app.posts p where p.status = 'live' and p.lane = 'people'
-        and to_tsvector('app.post_words'::regconfig, p.body) @@ plainto_tsquery('app.post_words'::regconfig, 'rareword') and ${cursor}
-        order by p.published_at desc, p.id desc limit 20`),
-      author: await explain(`select p.id from app.posts p where p.status = 'live' and p.author_id = '${y.id}' and p.lane = 'people' and ${cursor}
-        order by p.published_at desc, p.id desc limit 20`)
-    };
-    throw Object.assign(new Error('rollback'), { out });
-  }).catch((e) => { if (!e.out) throw e; return e.out; });
-  assert.match(plans.words, /Bitmap Index Scan on posts_live_words/, plans.words);
-  assert.match(plans.author, /Index (Only )?Scan using posts_live_author/, plans.author);
-  assert.strictEqual(Number((await q(`select count(*)::int as n from app.posts where body like '%rareword%'`))[0].n), 0, 'rolled back');
-  // The function's search reads the words exactly as the index stores them.
-  assert.match(migration(), /to_tsvector\('app\.post_words'::regconfig, p\.body\) @@ words/);
-  assert.match(migration(), /using gin \(to_tsvector\('app\.post_words'::regconfig, body\)\) where status = 'live'/);
+test('finding 2 of the review: the index never holds hidden contact text, nor any part of it, in any script', async () => {
+  const m = await member(2, 'Hidden parts');
+  const cases = {
+    plus: 'Write jane+label@example.com today',
+    idn: 'Write to zebra@exämple.com today',
+    wide: 'Mail ｊａｎｅ＠ｅｘａｍｐｌｅ．ｃｏｍ today',
+    small: 'Mail jane﹫example.com today',
+    arabic: 'Call ٥٥٥١٢٣٤٥٦٧ today',
+    persian: 'Call ۵۵۵۱۲۳۴۵۶۷ today',
+    devanagari: 'Call ५५५१२३४५६७ today',
+    fullwidth: 'Call ５５５-１２３-４５６７ today',
+    ascii: 'Call +1 (415) 555-0100 today'
+  };
+  for (const [name, body] of Object.entries(cases)) {
+    const id = await say(m, body);
+    const w = await wordsOf(id);
+    assert.ok(/'today'/.test(w), name + ': the rest is searchable: ' + w);
+    assert.ok(!/jane|label|zebra|exämple|example|ｊａｎｅ|ｅｘａｍｐｌｅ|[\p{Nd}]/u.test(w), name + ': nothing of the address or number: ' + w);
+  }
+});
+
+test('finding 2 of the review: what the database strips is exactly what the masking reads as an at sign or a digit', async () => {
+  // Node's own Unicode tables, as api/_proposals.js's fold uses them: any decimal digit, and anything NFKC makes an at
+  // sign or a digit. The database must strip every one of them, and nothing else, in the first two planes.
+  const want = [];
+  for (let cp = 32; cp < 0x20000; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue;
+    const ch = String.fromCodePoint(cp);
+    if (/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) want.push(cp);
+  }
+  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
+    where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
+  assert.deepStrictEqual(have.map(Number), want);
+  // The site refuses the same searches the database would leave empty.
+  const { searchProblem } = require('../api/feed.js');
+  assert.match(searchProblem('gpt4 2026'), /^q needs at least one word of letters/);
+  assert.strictEqual(searchProblem('gpt4 release'), null);
+});
+
+test('finding 2 of the review: with 3 hidden-only matches newer than a visible one, the visible one is still found', async () => {
+  const tag = word();
+  const m = await member(2, 'Reachable');
+  const shown = await say(m, 'A ' + tag + ' crossing near the park.');
+  // Newer, with the word only inside hidden addresses (each would have been indexed before the review).
+  const hidden = [];
+  for (const body of [tag + '+label@example.com', 'Write to ' + tag + '@exämple.com', 'Mail ' + tag + '＠example.com']) hidden.push(await say(m, body));
+  const [{ found }] = await q(`select count(*)::int as found from app.post_search where words @@ plainto_tsquery('pg_catalog.simple'::regconfig, '${tag}')`);
+  assert.strictEqual(found, 1, 'only the visible one is in the index');
+  for (const limit of ['1', '2', '20']) {
+    const page = await get({ q: tag, limit });
+    assert.deepStrictEqual(page.json.posts.map((p) => p.id), [shown], 'limit ' + limit);
+    assert.ok(!hidden.some((h) => JSON.stringify(page.json).includes(h)));
+  }
+  // Words and numbers together: the number must be shown, and here it is hidden.
+  const phone = await say(m, 'hello, call +1 415 555 0100');
+  assert.ok(!(await get({ q: 'hello 0100' })).json.posts.some((p) => p.id === phone));
+  assert.strictEqual(await wordsOf(phone), "'call' 'hello'");
+});
+
+test('finding 1 of the review: at 100,000 posts, as dog_public, search uses post_search_words and a member’s posts use posts_live_author', async (t) => {
+  // The plans of app.feed's own statements, as it really runs them: as dog_public, under every policy, read with
+  // auto_explain (LOG lines sent to this client). Building 100,000 posts this fast and loading auto_explain need a
+  // superuser, so this skips on Supabase's image, where the tests aren't one; it runs on the postgres:17 job and locally.
+  const [{ rolsuper }] = await q(`select rolsuper from pg_roles where rolname = current_user`);
+  if (!rolsuper) return t.skip('needs a superuser (not on Supabase’s image)');
+  const logs = [];
+  const one = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: (n) => logs.push(n.message) });
+  try {
+    const out = await one.begin(async (x) => {
+      // Tests only, rolled back: the superuser adds the posts with the table's triggers off, and their search rows itself.
+      const [a] = await x`insert into app.members (display_name) values ('Bulk') returning id`;
+      const [b] = await x`insert into app.members (display_name) values ('Rare author') returning id`;
+      await x.unsafe('alter table app.posts disable trigger all');
+      await x.unsafe(`insert into app.posts (author_id, body, status, published_at, created_at)
+        select case when i % 100 = 0 then '${b.id}'::uuid else '${a.id}'::uuid end,
+               'post ' || i || ' about ' || (array['gardens', 'music', 'code', 'trust', 'food'])[1 + i % 5] || case when i % 5000 = 0 then ' rareword' else '' end,
+               'live', now() - make_interval(secs => i), now() - make_interval(secs => i)
+        from generate_series(1, 100000) i`);
+      await x.unsafe(`insert into app.post_search (post_id, lane, author_id, published_at, words)
+        select p.id, p.lane, p.author_id, p.published_at, strip(to_tsvector('pg_catalog.simple'::regconfig, app.post_search_text(p.body)))
+        from app.posts p where p.status = 'live' and not exists (select 1 from app.post_search s where s.post_id = p.id)`);
+      await x.unsafe('alter table app.posts enable trigger all');
+      await x.unsafe('analyze app.posts; analyze app.post_search; analyze app.members');
+      await x.unsafe(`load 'auto_explain'; set local auto_explain.log_min_duration = 0; set local auto_explain.log_nested_statements = on;
+        set local auto_explain.log_analyze = on; set local client_min_messages = log; set local role dog_public`);
+      const timed = async (call) => { logs.length = 0; const t0 = process.hrtime.bigint(); const rows = await x.unsafe(call);
+        return { rows: rows.length, ms: Number(process.hrtime.bigint() - t0) / 1e6, plan: logs.join('\n') }; };
+      const r = {
+        search: await timed(`select * from app.feed('people', null, 20, null, 'rareword')`),
+        common: await timed(`select * from app.feed('people', null, 20, null, 'gardens')`),
+        author: await timed(`select * from app.feed('people', null, 20, '${b.id}', null)`)
+      };
+      throw Object.assign(new Error('rollback'), { r });
+    }).catch((e) => { if (!e.r) throw e; return e.r; });
+    const words = out.search.plan.split('Query Text:').find((p) => /post_search s/.test(p)) || '';
+    assert.match(words, /Bitmap Index Scan on post_search_words/, out.search.plan);
+    assert.strictEqual(out.search.rows, 20);
+    assert.match(out.author.plan, /Index (Only )?Scan using posts_live_author/, out.author.plan);
+    assert.strictEqual(out.author.rows, 20);
+    assert.strictEqual(out.common.rows, 20);
+    t.diagnostic(`as dog_public at 100,000 posts: rare word ${out.search.ms.toFixed(1)} ms, common word ${out.common.ms.toFixed(1)} ms, author ${out.author.ms.toFixed(1)} ms (with auto_explain's timing on)`);
+    assert.ok(out.search.ms < 1000 && out.author.ms < 1000, 'well under the second a search took before');
+  } finally {
+    await one.end({ timeout: 5 });
+  }
+  assert.strictEqual((await q(`select count(*)::int as n from app.posts where body like '%rareword%'`))[0].n, 0, 'rolled back');
+  // The function's search is the statement marked in the migration, through the side table's index.
+  assert.match(migration(), /-- search:begin[\s\S]*from app\.post_search s\s+where s\.words @@ v_words[\s\S]*-- search:end/);
+  assert.match(migration(), /create index post_search_words on app\.post_search using gin \(words\);/);
+  assert.doesNotMatch(migration().replace(/^\s*--.*$/gm, ''), /posts_live_words|to_tsvector\([^)]*p\.body\) @@/, 'no search on app.posts left');
 });
 
 test('the database refuses a search outside 2 to 100 characters itself', async () => {
