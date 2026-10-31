@@ -583,3 +583,55 @@ test('/team: JEVs\'s card says high risk is held for review, by Aaron or, for ea
   assert.ok(!/high risk waits for Aaron/.test(team));
   assert.match(read('db/migrations/034_second_look_v1.sql'), /if v_decision <> 'clear' or s\.mode <> 'on' or s\.paused_reason is not null then/);
 });
+
+test('the review of e87b924: an unban racing a post going live again leaves the post in search (both triggers share a per-author lock)', async () => {
+  const tag = word();
+  const author = await member(2, 'Racer');
+  const id = await say(author, 'Racing ' + tag);
+  const asAdmin = (t) => t`select app.act_as('admin', ${aaron.id}::uuid, null, false, ${aaron.ctx.session}, null, null)`;
+  // Removed, then banned: no row. (Restoring a removed post is how a post goes live again from Aaron's queue.)
+  await su.begin(async (t) => { await asAdmin(t); await t.unsafe(`update app.posts set status = 'removed' where id = '${id}'`); });
+  assert.strictEqual((await feed('POST', { cookie: aaron.cookie, json: { ban: author.id, note: 'test' } })).status, 200);
+  assert.strictEqual(await wordsOf(id), undefined);
+  // Session A unbans and holds its transaction open; session B makes the post live meanwhile, then A commits.
+  const other = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: () => {} });
+  try {
+    let bDone = false;
+    const a = su.begin(async (t) => {
+      await asAdmin(t);
+      await t.unsafe(`update app.members set status = 'active' where id = '${author.id}'`);
+      await new Promise((r) => setTimeout(r, 400));
+      assert.strictEqual(bDone, false, 'B waited for A');
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const b = other.begin(async (t) => {
+      await t`select app.act_as('admin', ${aaron.id}::uuid, null, false, ${aaron.ctx.session}, null, null)`;
+      await t.unsafe(`update app.posts set status = 'live' where id = '${id}'`);
+    }).then(() => { bDone = true; });
+    await Promise.all([a, b]);
+  } finally {
+    await other.end();
+  }
+  assert.ok(await wordsOf(id), 'the live post of an active member is in search');
+  assert.deepStrictEqual((await get({ q: tag })).json.posts.map((p) => p.id), [id]);
+});
+
+test('the review of e87b924: the member trigger runs only when status changes', () => {
+  assert.match(migration(), /create trigger post_search_member after update of status on app\.members for each row\n\s+when \(old\.status is distinct from new\.status\) execute function app\.post_search_member\(\);/);
+  assert.strictEqual((migration().match(/perform pg_advisory_xact_lock\(hashtextextended\('post_search:' \|\| new\.(author_id|id)::text, 0\)\);/g) || []).length, 2);
+});
+
+test('the review of e87b924: what the database counts as a space between words is exactly what the site splits on, whatever the locale', async () => {
+  // Every character either side might call a space, across the first plane (production's ICU locale adds U+001C to
+  // U+001F and U+0085 to [[:space:]]; the word filter no longer uses that class).
+  const js = (ch) => /\s/u.test(ch);
+  const rows = await q(`select c, app.post_search_text('ab' || chr(c) || 'x@y') as t from generate_series(1, 65535) c
+                        where (c < 55296 or c > 57343) and (chr(c) ~ '[[:space:]]' or c in (133, 160, 5760, 8192, 8203, 8232, 8233, 8239, 8287, 12288, 65279))`);
+  const wrong = rows.filter((r) => {
+    const ch = String.fromCodePoint(r.c);
+    // Split there: "ab" survives and the address run goes. Not split: the whole run, "ab" with it, goes.
+    return js(ch) ? !r.t.startsWith('ab') : r.t.includes('ab');
+  }).map((r) => r.c.toString(16));
+  assert.deepStrictEqual(wrong, []);
+  assert.ok(!migration().split('\n').filter((l) => !/^\s*--/.test(l)).some((l) => l.includes('[[:space:]]')), 'no locale-dependent space class in 035\'s code');
+});
