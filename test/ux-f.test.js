@@ -51,3 +51,11 @@ test('/member, after its fresh review: a long name wraps, no total that counts t
   assert.match(html, /<noscript><p class="fine">This page needs JavaScript\. The same facts are in our API: <code>\/api\/feed\?profile=&lt;member ID&gt;<\/code>/);
   assert.match(html, /To report a post, use Report beside it on <a href="\/feed">Posts<\/a>\./);
 });
+
+test('/member for agents: llms.txt and /connect name the profile answer and the page, and a member who isn\'t active answers as an unknown ID', () => {
+  assert.match(read('llms.txt'), /A member's public facts: GET https:\/\/dayonegreat\.com\/api\/feed\?profile=<member ID>/);
+  assert.match(read('connect.html'), /A member's public facts are at <code>\/api\/feed\?profile=&lt;member ID&gt;<\/code>/);
+  const api = read('api/feed.js');
+  assert.match(api, /if \(!p\) return sendPublic\(res, 404, \{ error: 'No such member\.' \}\);/);
+  assert.match(read('db/migrations/003_posts.sql'), /create function app\.profile\(p_member uuid\)/);
+});
