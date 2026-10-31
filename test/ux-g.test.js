@@ -409,29 +409,29 @@ test('finding 2 of the review: the index never holds hidden contact text, nor an
   }
 });
 
-test('finding 2 of the review: what the database strips is exactly what the masking reads as an at sign or a digit', async () => {
-  // Node's own Unicode tables, as api/_proposals.js's fold uses them: any decimal digit, and anything NFKC makes an at
-  // sign or a digit. The database must strip every one of them in the first two planes (the direction that keeps
-  // hidden text out of the index). Its list is written for a newer Unicode than some Node builds know (CI's Node 22
-  // lacked U+11DE0 to U+11DE9, Oct 31), so it may strip a few more: that only keeps more out of the index (RK101).
-  // Nothing ordinary is stripped: no Latin, Greek or Cyrillic letter.
+test('finding 2 of the review: what the database strips is exactly the written-out list, and no runtime knows a digit it lacks', async () => {
+  // db/at-or-digit.js (Unicode 17) is the one list: the site splits search words on it and 035 strips it. Exact, so it
+  // can't drift with a runtime's Unicode tables (CI's Node knew U+11DE0 to U+11DE9 when the database didn't, Oct 31).
+  const { RANGES, isAtOrDigitCode } = require('../db/at-or-digit');
   const want = [];
+  for (const [lo, hi] of RANGES) for (let cp = lo; cp <= hi; cp++) want.push(cp);
+  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
+    where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
+  assert.deepStrictEqual(have.map(Number), want, 'the database strips exactly the list');
+  // This runtime's own tables, as the masking reads them (api/_proposals.js): nothing it reads as an at sign or a digit
+  // may be missing from the list. If a newer runtime knows more, this fails: extend the list and 035 together.
+  const unknown = [];
   for (let cp = 32; cp < 0x20000; cp++) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue;
     const ch = String.fromCodePoint(cp);
-    if (/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) want.push(cp);
+    if ((/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) && !isAtOrDigitCode(cp)) unknown.push(cp.toString(16));
   }
-  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
-    where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
-  const stripped = new Set(have.map(Number));
-  assert.deepStrictEqual(want.filter((cp) => !stripped.has(cp)).map((cp) => cp.toString(16)), [], 'every at sign or digit the site masks is kept out of the index');
-  const extra = [...stripped].filter((cp) => !want.includes(cp));
-  assert.ok(extra.every((cp) => !/[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}]/u.test(String.fromCodePoint(cp)) || /\p{N}/u.test(String.fromCodePoint(cp))), 'no ordinary letter is stripped: ' + extra.map((cp) => cp.toString(16)));
-  assert.ok(extra.length <= 64, 'only a few newer digits beyond what this Node knows: ' + extra.length);
+  assert.deepStrictEqual(unknown, [], 'this runtime (Unicode ' + process.versions.unicode + ') knows digits the list lacks');
   // The site refuses the same searches the database would leave empty.
   const { searchProblem } = require('../api/feed.js');
   assert.match(searchProblem('gpt4 2026'), /^q needs at least one word of letters/);
   assert.strictEqual(searchProblem('gpt4 release'), null);
+  assert.strictEqual(searchProblem('zebra \u{11DE3}\u{11DE4}'), null, 'a word in the newest digits is left out, as the database leaves it');
 });
 
 test('finding 2 of the review: with 3 hidden-only matches newer than a visible one, the visible one is still found', async () => {
