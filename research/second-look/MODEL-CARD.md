@@ -3,6 +3,22 @@
 **Version:** v0 (Oct 31, 2026). **Status:** in testing; it records suggestions, blind, and decides nothing. **Code:** `secondlook/` (scoring and
 training), `db/migrations/033_second_look.sql` (the record). **Principle:** research/second-look/README.md.
 
+## v1 (Oct 31, 2026): Kimi 3's plan, on our hosting
+v1 replaces v0's classifier as the decision maker (v0 still records its blind suggestion beside each held post). It
+has three layers:
+1. Fixed checks in code.
+2. **Ministral 3B** (Mistral, Apache-2.0, through Vercel's AI Gateway) answering nine set questions.
+3. A decision made by code.
+
+It starts in shadow mode and publishes easy held posts only after Aaron has agreed with its last 80, at most 10 a day.
+It pauses itself on his removals above 1 in 80, and it never removes anything. Nothing is trained: the model is only
+asked questions, so Claude's outputs are never its training data.
+
+**How well Ministral 3B does on our posts is unknown until shadow mode measures it.** The full mapping from Kimi's
+plan, and what was changed, is in research/second-look/V1.md.
+
+The rest of this card describes v0.
+
 ## What it does
 Second Look reads each post on the site that JEVs, the fixed-rule checker, holds for Aaron. For each one it:
 - decides whether the hold could ever be Second Look's to clear;

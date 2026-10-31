@@ -96,6 +96,11 @@ test.before(async () => {
     await t.unsafe(`insert into app.review_flags (post_id, source, classifier, score) values ('${p.id}', 'classifier', 'jevs', 0.9)`);
     await t.unsafe('set local role dog_jevs');
     await t.unsafe(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${p.id}', 'v0', true, 0.9, 'clear', 'held for links')`);
+    // Second Look v1 (034): the post handed to the model, its decision, and its publication.
+    await t.unsafe(`insert into app.sl_claims (post_id) values ('${p.id}')`);
+    const [d] = await t.unsafe(`insert into app.sl_decisions (post_id, version, model, mode, decision, answers, risk, reason, fail_closed, latency_ms)
+      values ('${p.id}', 'v1', 'mistral/ministral-3b', 'shadow', 'leave', null, 25, 'no usable answer from the model (timeout)', true, 3000) returning id`);
+    await t.unsafe(`insert into app.sl_releases (post_id, decision_id) values ('${p.id}', '${d.id}')`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.

@@ -19,6 +19,9 @@
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
 //   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
 //                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
+//   POST {"second_look": "mode", "mode": "off" | "shadow" | "on"}   switch Second Look (Aaron only; 034)
+//   POST {"second_look": "ask", "question": "...", "context": "..."}  ask Second Look a security question; it advises
+//                                                     only (Aaron only; Kimi's second capability, 034)
 // Public answers are cached at the edge for at most a minute in all (G2), so a removed post is gone everywhere
 // within a minute (F7). Text written by members is masked (P4) and marked as untrusted for agents (S9).
 // JEVs (PR 12) scores every post, draft and report in the same transaction (db/jevs.js); in enforce mode it holds or
@@ -401,7 +404,24 @@ async function control(req, res, run, who, body) {
   }
 }
 
-async function handle(req, res, run) {
+// Second Look (034), Aaron only: switch its mode, or ask it a security question (advice only; the question goes to
+// Vercel's AI Gateway with the site's identity token, which this request carried).
+async function secondLook(req, res, run, who, body, oidc) {
+  if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can use Second Look here.' }); }
+  if (body.second_look === 'mode') {
+    if (!['off', 'shadow', 'on'].includes(body.mode)) return reply(res, 400, { error: 'Send {"second_look": "mode", "mode": "off" | "shadow" | "on"}.' });
+    const [r] = await run(session.actorFor(who), (t) => t`select app.sl_set_mode(${body.mode}) as mode`);
+    return reply(res, 200, { mode: r.mode, message: 'Second Look is now in ' + r.mode + ' mode.' });
+  }
+  if (body.second_look === 'ask') {
+    const out = await require('../secondlook/v1').askQuestion({ question: body.question, context: body.context || '', token: oidc });
+    if (out.error) return reply(res, out.error.startsWith('a question') || out.error.startsWith('context') ? 400 : 502, { error: 'Second Look couldn\u2019t answer: ' + out.error + '.' });
+    return reply(res, 200, { answer: out.answer, model: out.model, note: 'Advice from an automated model: check it before acting on it.' });
+  }
+  return reply(res, 400, { error: 'Send {"second_look": "mode", ...} or {"second_look": "ask", ...}.' });
+}
+
+async function handle(req, res, run, { oidc = null } = {}) {
   const q = req.query || {};
   if (req.method === 'OPTIONS') {
     res.statusCode = 204;
@@ -428,6 +448,7 @@ async function handle(req, res, run) {
     if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
     if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    if (Object.hasOwn(body, 'second_look')) return secondLook(req, res, run, who, body, oidc);
     try {
       const f = jevs.facts(req, config.load().ipKey);
       const p = await run(session.actorFor(who), async (t) => {
@@ -486,8 +507,10 @@ async function handle(req, res, run) {
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can see the owner controls.' }); }
     const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
-      deletion_reviews: await controls.deletionReviews(t) }));
-    return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs,
+      deletion_reviews: await controls.deletionReviews(t),
+      // Second Look's report (034): counts only. Best effort, so the controls still load before 034 is applied.
+      second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null) }));
+    return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs, second_look: d.second_look,
       deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
@@ -576,8 +599,11 @@ async function handle(req, res, run) {
 
 module.exports = async (req, res) => {
   try {
+    // The identity token, for Second Look's questions, before sitekeys takes it off the request (M3).
+    const h = req && req.headers && req.headers['x-vercel-oidc-token'];
+    const oidc = typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
-    await handle(req, res, db.configured() ? db.run : null);
+    await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {
     if (!res.headersSent) reply(res, 500, { error: 'Something went wrong. Please try again.' });
   }

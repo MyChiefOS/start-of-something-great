@@ -64,12 +64,15 @@ test('v0 learned only from public data people labelled, never from Claude or mem
 });
 
 test('it is described honestly where people read about it: /team, /privacy, llms.txt', () => {
-  assert.match(read('team.html'), /A narrow AI · in testing: decides nothing yet/);
+  assert.match(read('team.html'), /A narrow AI · in shadow mode: changes nothing yet/);
   const p = read('privacy.html');
-  assert.match(p, /is also read by Second Look, a small automated model in testing/);
-  assert.match(p, /It never decides: a person still decides every held post\./);
+  assert.match(p, /is also read by Second Look, our narrow automated reviewer/);
+  assert.match(p, /In shadow mode it changes nothing, and a person decides every held post\./);
+  assert.match(p, /It never removes or hides anything\./);
+  assert.match(p, /Vercel and the company that runs the model process the text to answer/);
   assert.match(p, /never from posts on GitHub/);
-  assert.match(read('llms.txt'), /It only suggests: Aaron decides every held post\./);
+  assert.match(read('llms.txt'), /it never removes anything\)\. In shadow mode it only logs\./);
+  assert.match(read('terms.html'), /Second Look, our automated reviewer, may publish an easy held post itself/);
 });
 
 // ---- Against a database ----

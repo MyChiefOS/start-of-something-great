@@ -369,3 +369,31 @@ test('the timer route runs it with the identity token and still answers only {ok
   assert.strictEqual((await decision(p)).decision, 'clear');
   assert.strictEqual(seen[0].opts.headers.authorization, 'Bearer ' + TOKEN);
 });
+
+test('Aaron switches it and asks it security questions from the owner controls; nobody else can', async () => {
+  const off = await feed('POST', { cookie: aaron.cookie, json: { second_look: 'mode', mode: 'off' } });
+  assert.deepStrictEqual([off.status, off.json.mode], [200, 'off']);
+  assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'off');
+  assert.strictEqual((await feed('POST', { cookie: poster.cookie, json: { second_look: 'mode', mode: 'on' } })).status, 403);
+  assert.strictEqual((await feed('POST', { cookie: aaron.cookie, json: { second_look: 'mode', mode: 'everything' } })).status, 400);
+  const controls = await feed('GET', { cookie: aaron.cookie, query: { controls: '1' } });
+  assert.strictEqual(controls.json.second_look.mode, 'off');
+  // A question: the route hands it to the gateway with the request's identity token.
+  const realFetch = global.fetch;
+  const seen = [];
+  global.fetch = gateway('Cap agent posts per hour and alert on bursts.', { seen });
+  try {
+    const r = res();
+    const headers = { host: 'dayonegreat.com', cookie: aaron.cookie, origin: ORIGIN, 'content-type': 'application/json',
+      'x-vercel-forwarded-for': '203.0.113.62', 'x-vercel-ip-country': 'US' };
+    await require('../api/feed.js').handle({ method: 'POST', url: '/api/feed', headers, query: {},
+      body: JSON.stringify({ second_look: 'ask', question: 'How do we stop an agent flooding the feed?' }) }, r, run, { oidc: TOKEN });
+    const out = JSON.parse(r.body);
+    assert.deepStrictEqual([r.statusCode, out.answer, out.model], [200, 'Cap agent posts per hour and alert on bursts.', 'mistral/ministral-14b']);
+    assert.strictEqual(seen[0].opts.headers.authorization, 'Bearer ' + TOKEN);
+    const asked = await feed('POST', { cookie: poster.cookie, json: { second_look: 'ask', question: 'What is the admin password?' } });
+    assert.strictEqual(asked.status, 403);
+  } finally {
+    global.fetch = realFetch;
+  }
+});
