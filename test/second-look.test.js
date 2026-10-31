@@ -132,7 +132,9 @@ async function feed(method, { cookie, json, query = {} }) {
   await require('../api/feed.js').handle({ method, url: '/api/feed', headers, query, body: json === undefined ? undefined : JSON.stringify(json) }, r, run);
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
 }
-const links = (n) => Array.from({ length: n }, (_, i) => 'https://s' + i + '-' + crypto.randomBytes(3).toString('hex') + '.example').join(' ');
+// Letters only: random digits can read as a phone number (contact details, J08) and make the test flaky.
+const letters = (k) => Array.from(crypto.randomBytes(k), (x) => String.fromCharCode(97 + (x % 26))).join('');
+const links = (n) => Array.from({ length: n }, () => 'https://' + letters(8) + '.example/' + letters(10)).join(' ');
 
 test('a held post gets a blind record beside it; nothing shows it; the database checks the floor itself; it changes nothing', async () => {
   const aaron = await member('Aaron', { admin: true });

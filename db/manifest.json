@@ -131,6 +131,10 @@
     {
       "version": "033_second_look",
       "sha256": "3aa7da07c9680cc1335e309f51dafa6d945ec7f304321e813fed7dcee1d530c6"
+    },
+    {
+      "version": "034_second_look_v1",
+      "sha256": "57291785ece907d3284ba95c8bdbca369eb7a45c607dafef9e926f4291e67432"
     }
   ]
 }

@@ -126,6 +126,20 @@ const DEFINERS = {
   'app.invariants_check()': 'dog_jevs',
   // 033: Second Look's suggestion for a post JEVs is holding, recorded only while that hold is open; it changes no post.
   'app.sl_record(uuid, text, boolean, real, text, text)': 'dog_jevs',
+  // 034 (Aaron, Oct 31: Kimi's plan, on our hosting): Second Look v1. The gate; the next eligible posts and a decision
+  // on one of them, for the site's role, each checking everything itself; the report; an administrator's mode switch;
+  // the unlock, the weekly report and the two triggers (the stop, and a report on a post it published), called by
+  // nobody directly.
+  'app.sl_eligible(uuid)': { owner: 'dog_jevs', callers: '' },
+  'app.sl_claim(integer)': 'dog_jevs',
+  'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': 'dog_jevs',
+  'app.sl_report()': 'dog_jevs',
+  'app.sl_report_core()': { owner: 'dog_jevs', callers: '' },
+  'app.sl_set_mode(text)': 'dog_jevs',
+  'app.sl_try_unlock()': { owner: 'dog_jevs', callers: '' },
+  'app.sl_weekly_report()': { owner: 'dog_jevs', callers: '' },
+  'app.sl_after_post_change()': { owner: 'dog_jevs', callers: '' },
+  'app.sl_after_report()': { owner: 'dog_jevs', callers: '' },
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',
