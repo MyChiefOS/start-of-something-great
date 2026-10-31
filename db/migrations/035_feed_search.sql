@@ -35,11 +35,15 @@ set local role dog_owner;
 -- ---- What search may read of a post ----
 -- The text with each space-separated run that holds an at sign or a digit replaced by a space. Immutable: the same text
 -- always gives the same words.
+-- "Space" here is exactly JavaScript's \s, the set the site splits on (api/feed.js searchable), written out rather
+-- than [[:space:]], whose meaning follows the database's locale: production (ICU, en_US.UTF-8) also counts U+001C to
+-- U+001F and U+0085 as spaces, which JavaScript doesn't, so a run the site drops whole could have been indexed in part
+-- (the review of e87b924; production's list read Oct 31, read-only).
 create function app.post_search_text(p_text text)
 returns text
 language sql immutable parallel safe
 as $$
-  select pg_catalog.regexp_replace(p_text, '[^[:space:]]*[0-9@'
+  select pg_catalog.regexp_replace(p_text, '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*[0-9@'
     || '\u00b2-\u00b3\u00b9\u00bc-\u00be\u0660-\u0669\u06f0-\u06f9\u07c0-\u07c9\u0966-\u096f\u09e6-\u09ef'
     || '\u0a66-\u0a6f\u0ae6-\u0aef\u0b66-\u0b6f\u0be6-\u0bef\u0c66-\u0c6f\u0ce6-\u0cef\u0d66-\u0d6f\u0de6-\u0def'
     || '\u0e50-\u0e59\u0ed0-\u0ed9\u0f20-\u0f29\u1040-\u1049\u1090-\u1099\u17e0-\u17e9\u1810-\u1819\u1946-\u194f'
@@ -56,7 +60,7 @@ as $$
     || '\U00016d70-\U00016d79\U0001ccf0-\U0001ccf9\U0001d7ce-\U0001d7ff\U0001e140-\U0001e149'
     || '\U0001e2f0-\U0001e2f9\U0001e4f0-\U0001e4f9\U0001e5f1-\U0001e5fa\U0001e950-\U0001e959'
     || '\U0001f100-\U0001f10a\U0001fbf0-\U0001fbf9'
-    || '＠﹫][^[:space:]]*', ' ', 'g')
+    || '＠﹫][^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*', ' ', 'g')
 $$;
 revoke execute on function app.post_search_text(text) from public;
 grant execute on function app.post_search_text(text) to dog_public;
@@ -83,10 +87,15 @@ create index post_search_author on app.post_search (author_id);
 -- Kept in step with app.posts: a post the feed can show has its row, with its current words, lane, author and time; any
 -- other post has none. Read as dog_public, so "can show" is the feed's own rule: the members and agents policies decide
 -- whether the author and the agent are visible. A deleted post's row goes with it (the foreign key).
+-- Both triggers take the same per-author lock first (to the end of their transaction), so a post going live and its
+-- author's unban or ban never decide at once: whichever comes second waits, then reads the other's committed change
+-- (read committed: each statement sees what is committed when it starts). Without it, an unban racing a post going
+-- live left that post out of search for good (the review of e87b924, probed with two sessions).
 create function app.post_search_sync() returns trigger
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
+  perform pg_advisory_xact_lock(hashtextextended('post_search:' || new.author_id::text, 0));
   if new.status = 'live' and exists (select 1 from app.members m where m.id = new.author_id)
      and (new.agent_id is null or exists (select 1 from app.agents a where a.id = new.agent_id)) then
     insert into app.post_search (post_id, lane, author_id, published_at, words)
@@ -110,6 +119,7 @@ create function app.post_search_member() returns trigger
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
+  perform pg_advisory_xact_lock(hashtextextended('post_search:' || new.id::text, 0));
   if old.status = 'active' and new.status <> 'active' then
     delete from app.post_search s where s.author_id = new.id;
   elsif old.status <> 'active' and new.status = 'active' then
@@ -124,7 +134,8 @@ begin
 end
 $$;
 revoke execute on function app.post_search_member() from public;
-create trigger post_search_member after update on app.members for each row execute function app.post_search_member();
+create trigger post_search_member after update of status on app.members for each row
+  when (old.status is distinct from new.status) execute function app.post_search_member();
 alter table app.members enable always trigger post_search_member;
 grant create on schema app to dog_public;
 alter function app.post_search_sync() owner to dog_public;
@@ -186,7 +197,8 @@ begin
     -- search:begin (test/ux-g.test.js reads the plan of this statement as dog_public)
     -- The matches come from the index newest first; each is checked against app.posts only until the page is full, so a
     -- common word costs one sort of its matches, not one check of each. The table holds only posts the feed can show,
-    -- so the checks rarely drop one (a ban racing a post going live can leave a row until the next change).
+    -- so the checks rarely drop one (the triggers share a per-author lock, so a ban or an unban and a post going live
+    -- can't leave the table wrong; the checks stay as the backstop).
     ids := '{}';
     for v_post in select s.post_id from app.post_search s
                  where s.words @@ v_words and s.lane = p_lane
