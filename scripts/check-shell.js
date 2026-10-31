@@ -36,11 +36,15 @@ function addresses() {
   return top.concat(research, ['/no-such-page']);
 }
 
-// The security policy Vercel sends for an address: the last matching rule in vercel.json that sets one.
+// The security policy Vercel sends for a page: /talk, /join and /account have their own rule in vercel.json, and every
+// other page the default one. A missing rule stops the check rather than serving a page with no policy.
+const OWN_POLICY = ['/talk', '/join', '/account'];
+const DEFAULT_POLICY = '/((?!talk/?$|join/?$|account/?$|auth/).*)';
 function policyFor(url, rules) {
-  let csp = null;
-  for (const r of rules) if (new RegExp('^' + r.source + '$').test(url) && r.csp) csp = r.csp;
-  return csp && csp.replace(/;\s*upgrade-insecure-requests/, ''); // the local copy is plain http
+  const source = OWN_POLICY.includes(url) ? url : DEFAULT_POLICY;
+  const rule = rules.find((r) => r.source === source && r.csp);
+  if (!rule) throw new Error('vercel.json has no security policy for ' + source);
+  return rule.csp.replace(/;\s*upgrade-insecure-requests/, ''); // the local copy is plain http
 }
 
 function serve() {

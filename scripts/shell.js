@@ -95,12 +95,12 @@ function footer() {
 
 // The page with its header and footer replaced, each at the indentation the page already uses.
 function render(page, html) {
-  const put = (src, tag, lines) => {
-    const re = new RegExp('^([ \\t]*)<' + tag + ' class="site-' + tag + '">[\\s\\S]*?</' + tag + '>', 'm');
-    if (!re.test(src)) throw new Error(page + ' has no <' + tag + ' class="site-' + tag + '">');
-    return src.replace(re, (m, indent) => lines.map((l) => indent + l).join('\n'));
-  };
-  return put(put(html, 'header', header(page)), 'footer', footer());
+  let found = 0;
+  const put = (lines) => (m, indent) => { found++; return lines.map((l) => indent + l).join('\n'); };
+  const out = html.replace(/^([ \t]*)<header class="site-header">[\s\S]*?<\/header>/m, put(header(page)))
+    .replace(/^([ \t]*)<footer class="site-footer">[\s\S]*?<\/footer>/m, put(footer()));
+  if (found !== 2) throw new Error(page + ' needs one <header class="site-header"> and one <footer class="site-footer">');
+  return out;
 }
 
 if (require.main === module) {
