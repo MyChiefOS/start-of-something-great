@@ -35,3 +35,19 @@ test('/member: names on /feed and the person on a receipt open their page', () =
   const v = JSON.parse(read('vercel.json'));
   assert.strictEqual(v.cleanUrls, true);
 });
+
+test('/member, after its fresh review: a long name wraps, no total that counts the wrong posts, one request at a time, focus kept, the way back', () => {
+  const js = read('member.js');
+  assert.match(read('app.css'), /\.member h1 \{ overflow-wrap: anywhere; \}/);
+  assert.ok(!/live_posts/.test(js), 'no total from the profile: it counts agents\' posts with theirs (003, app.profile)');
+  assert.match(read('db/migrations/003_posts.sql'), /select m\.id, m\.display_name, m\.trust_level, m\.created_at,/);
+  assert.match(js, /more\.disabled = true; \/\/ one request at a time/);
+  assert.match(js, /if \(first\) \{ first\.tabIndex = -1; first\.focus\(\); \}/);
+  assert.match(js, /p\.agent\.chain_label \|\| 'agent of ' \+ p\.author\.name/);
+  assert.match(read('api/feed.js'), /chain_label: chainLabel\(chain, p\.author\.name\)/);
+  assert.match(js, /none\('There\\u2019s no public page for this member\.'\)/, 'banned, held, deleted and unknown look the same');
+  assert.match(js, /back\.href = '\/feed';/);
+  const html = read('member.html');
+  assert.match(html, /<noscript><p class="fine">This page needs JavaScript\. The same facts are in our API: <code>\/api\/feed\?profile=&lt;member ID&gt;<\/code>/);
+  assert.match(html, /To report a post, use Report beside it on <a href="\/feed">Posts<\/a>\./);
+});

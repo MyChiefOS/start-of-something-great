@@ -169,12 +169,14 @@ async function main() {
         await p.close();
         // /member (UX PR F, finding 13): the profile, their posts and their agents' posts, from public answers only.
         await ctx.route(base + '/api/feed?profile=*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
-          body: JSON.stringify({ profile: { id: ADA, name: 'Ada <b>Lovelace</b>', level: 2, joined: '2026-10-20T10:00:00Z', live_posts: 2 } }) }));
+          body: JSON.stringify({ profile: { id: ADA, name: 'ChristopherMontgomeryAdaLovelace <b>x</b>', level: 2, joined: '2026-10-20T10:00:00Z', live_posts: 3 } }) }));
         p = await open(ctx, base, '/member?id=' + ADA, tag + ' /member', fail);
         where = tag + ' /member';
         await p.waitForTimeout(250);
         m = await p.evaluate(() => ({
           h1: document.querySelector('h1').textContent, bold: !!document.querySelector('main h1 b'), title: document.title,
+          h1Fits: (() => { const h = document.querySelector('h1'); const r = document.createRange(); r.selectNodeContents(h); return r.getBoundingClientRect().right <= h.getBoundingClientRect().right + 1 && h.scrollWidth <= h.clientWidth + 1; })(),
+          summary: document.getElementById('summary').textContent,
           facts: [...document.querySelectorAll('#facts dt')].map((x) => x.textContent),
           level: (document.querySelector('#facts dd') || {}).textContent,
           parts: ['people-part', 'agents-part'].map((x) => document.getElementById(x).checkVisibility()),
@@ -182,11 +184,13 @@ async function main() {
           say: document.getElementById('people-say').textContent,
           sideways: document.documentElement.scrollWidth > innerWidth }));
         views++;
-        if (m.h1 !== 'Ada <b>Lovelace</b>' || m.bold) fail(where, 'the name is not shown as text: ' + m.h1);
-        if (m.title !== 'Ada <b>Lovelace</b> · Day One Great') fail(where, 'title ' + m.title);
+        if (m.h1 !== 'ChristopherMontgomeryAdaLovelace <b>x</b>' || m.bold) fail(where, 'the name is not shown as text: ' + m.h1);
+        if (!m.h1Fits) fail(where, 'a long name is cut off instead of wrapping');
+        if (m.title !== 'ChristopherMontgomeryAdaLovelace <b>x</b> · Day One Great') fail(where, 'title ' + m.title);
+        if (m.summary !== 'Showing 2 posts of theirs and 2 posts by their agents.') fail(where, 'summary ' + m.summary);
         if (JSON.stringify(m.facts) !== JSON.stringify(['Level', 'Joined'])) fail(where, 'facts ' + m.facts);
         if (!/^Verified \(level 2\) · What the levels mean$/.test(m.level || '')) fail(where, 'level ' + m.level);
-        if (JSON.stringify(m.parts) !== '[true,true]' || m.posts !== 2 || m.say !== '2 posts loaded.') fail(where, 'lists: ' + JSON.stringify(m));
+        if (JSON.stringify(m.parts) !== '[true,true]' || m.posts !== 2 || m.say !== '') fail(where, 'lists: ' + JSON.stringify(m));
         if (m.sideways) fail(where, 'the page scrolls sideways');
         await p.close();
         // A name on /feed opens that member's page.
@@ -196,7 +200,7 @@ async function main() {
         await p.close();
         // A bad address says so and asks nothing.
         p = await open(ctx, base, '/member?id=nope', tag + ' /member bad', fail);
-        if (await p.evaluate(() => document.getElementById('summary').textContent) !== 'This address doesn’t name a member.') fail(tag + ' /member bad', 'no message');
+        if (await p.evaluate(() => document.getElementById('summary').textContent) !== 'This address doesn’t name a member. Back to Posts') fail(tag + ' /member bad', 'no message');
         await p.close();
 
         await ctx.close();
