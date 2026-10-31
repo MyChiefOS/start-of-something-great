@@ -411,7 +411,10 @@ test('finding 2 of the review: the index never holds hidden contact text, nor an
 
 test('finding 2 of the review: what the database strips is exactly what the masking reads as an at sign or a digit', async () => {
   // Node's own Unicode tables, as api/_proposals.js's fold uses them: any decimal digit, and anything NFKC makes an at
-  // sign or a digit. The database must strip every one of them, and nothing else, in the first two planes.
+  // sign or a digit. The database must strip every one of them in the first two planes (the direction that keeps
+  // hidden text out of the index). Its list is written for a newer Unicode than some Node builds know (CI's Node 22
+  // lacked U+11DE0 to U+11DE9, Oct 31), so it may strip a few more: that only keeps more out of the index (RK101).
+  // Nothing ordinary is stripped: no Latin, Greek or Cyrillic letter.
   const want = [];
   for (let cp = 32; cp < 0x20000; cp++) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue;
@@ -420,7 +423,11 @@ test('finding 2 of the review: what the database strips is exactly what the mask
   }
   const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
     where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
-  assert.deepStrictEqual(have.map(Number), want);
+  const stripped = new Set(have.map(Number));
+  assert.deepStrictEqual(want.filter((cp) => !stripped.has(cp)).map((cp) => cp.toString(16)), [], 'every at sign or digit the site masks is kept out of the index');
+  const extra = [...stripped].filter((cp) => !want.includes(cp));
+  assert.ok(extra.every((cp) => !/[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}]/u.test(String.fromCodePoint(cp)) || /\p{N}/u.test(String.fromCodePoint(cp))), 'no ordinary letter is stripped: ' + extra.map((cp) => cp.toString(16)));
+  assert.ok(extra.length <= 64, 'only a few newer digits beyond what this Node knows: ' + extra.length);
   // The site refuses the same searches the database would leave empty.
   const { searchProblem } = require('../api/feed.js');
   assert.match(searchProblem('gpt4 2026'), /^q needs at least one word of letters/);
