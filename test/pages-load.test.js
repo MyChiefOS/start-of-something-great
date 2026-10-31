@@ -131,15 +131,16 @@ test('the menu\'s styles: one row, Join a 44 px amber pill on phones, Menu a 44 
   // Light scheme: hover darkens the pill (amber mixed with the site's own dark text colour; 6.2:1 with white), where a
   // brighter pill fell to 4.4:1 (the design review). The dark scheme brightens (10.3:1 with its dark text).
   assert.match(css, /@media \(prefers-color-scheme: light\) \{ \.site-nav a\.nav-join, \.site-nav a\.nav-join:hover \{ color: #ffffff; \} \.site-nav a\.nav-join:hover \{ filter: none; background: color-mix\(in srgb, var\(--amber\) 85%, #15110a\); \} \}/);
-  // Narrow phones: a tighter row, so Account (n) fits beside Menu at 320 and 360 px (scripts/check-shell.js measures it).
-  assert.match(css, /@media \(max-width: 24rem\) \{ \.site-header, \.site-nav \{ column-gap: 0\.25rem; \} \.site-nav a\.nav-join \{ padding: 0 0\.5rem; font-size: 0\.875rem; \} \.menu > summary \{ gap: 0\.25rem; padding: 0; \} \}/);
+  // Narrow phones, signed in: a tighter row, so Account (n) fits beside Menu at 320 and 360 px (scripts/check-shell.js
+  // measures it). Signed out, Join keeps its pill shape and spacing: there is room.
+  assert.match(css, /@media \(max-width: 24rem\) \{ \.site-header, \.site-nav:has\(\[href\^="\/account"\]\) \{ column-gap: 0\.25rem; \} \.site-nav a\.nav-join\[href\^="\/account"\] \{ padding: 0 0\.5rem; font-size: 0\.875rem; \} \.site-nav:has\(\[href\^="\/account"\]\) \.menu > summary \{ gap: 0\.25rem; padding: 0; \} \}/);
   assert.ok(css.indexOf('@media (max-width: 24rem) { .site-header') > css.indexOf('.menu > summary {'), 'after the rules it narrows');
   // Wide screens: "on this site" and "on GitHub" show to sighted people too, as a small second line (no longer clipped
   // for screen readers only), clear of the next note (scripts/check-shell.js measures it).
   const wide = css.slice(css.indexOf('@supports selector(::details-content)'), css.indexOf('/* Hero'));
   assert.match(wide, /\.nav-sub \{ position: absolute; left: 0; top: 100%; margin: 0; font-size: 0\.72rem; line-height: 1; white-space: nowrap; \}/);
   // Only a noted link followed by another (Post, then Talk) is widened, so the signed-in row still fits at 1280 px.
-  assert.match(wide, /\.site-nav \.menu-panel a:has\(\.nav-sub\):has\(\+ a \.nav-sub\) \{ min-width: 3\.2rem; \}/);
+  assert.match(wide, /\.site-nav \.menu-panel a:has\(\.nav-sub\):has\(\+ a \.nav-sub\) \{ min-width: 3\.75rem; \}/);
   assert.ok(!/clip-path/.test(wide), 'not hidden from sight');
   assert.match(css, /\.menu > summary \{[^}]*min-height: 44px;/);
   assert.match(css, /\.menu > summary:focus-visible \{ outline: 2px solid var\(--amber\);/, 'Menu shows focus');

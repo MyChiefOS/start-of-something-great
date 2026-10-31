@@ -10,7 +10,7 @@
 //   - at 320, 360 and 390 px wide: the header is one row, at most 72 px tall with the menu closed, nothing scrolls
 //     sideways, and the screen order is the Tab order (the wordmark, Menu, then Join or Account);
 //   - at 1280 by 800 px: the header's links sit in one row, and "on this site" and "on GitHub" show as a second line
-//     inside the header, overlapping nothing;
+//     inside the header, overlapping nothing and at least 8 px apart;
 //   - the Menu opens and closes by keyboard (Enter and Space; Escape too where nav.js runs), and every control in the
 //     header shows a visible focus ring (at 390 and 1280);
 //   - where nav.js runs, a tap outside the open Menu closes it and a tap inside keeps it open (390);
@@ -171,14 +171,15 @@ const notes = (p) => p.evaluate(() => {
 });
 const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
 
-// WCAG relative luminance of a computed colour (rgb() or color(srgb ...)), and the contrast of two.
-function luminance(css) {
+// WCAG relative luminance of a computed colour (rgb() or color(srgb ...)) as painted under a brightness() filter of
+// factor f (each channel times f, at most 255), and the contrast of two.
+function luminance(css, f = 1) {
   let v = (css.match(/[\d.]+/g) || []).map(Number);
   if (/^color\(srgb/.test(css)) v = v.slice(0, 3).map((x) => x * 255); else v = v.slice(0, 3);
-  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const lin = (c) => { c = Math.min(255, c * f) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
   return 0.2126 * lin(v[0]) + 0.7152 * lin(v[1]) + 0.0722 * lin(v[2]);
 }
-const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+const contrast = (a, b, f = 1) => { const [x, y] = [luminance(a, f), luminance(b, f)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
 
 async function main() {
   const { chromium } = require('playwright');
@@ -276,6 +277,8 @@ async function main() {
             if (s.t < n.header.t || s.b > n.header.b) fail('1280 ' + who, '"' + s.text + '" falls outside the header');
             for (const o of n.labels.concat(n.subs)) if (o !== s && overlap(s, o)) fail('1280 ' + who, '"' + s.text + '" overlaps "' + o.text + '"');
           }
+          // Far enough apart to read as two notes, not one phrase ("on this site on GitHub").
+          if (n.subs.length === 2 && n.subs[1].l - n.subs[0].r < 8) fail('1280 ' + who, 'the notes are ' + Math.round(n.subs[1].l - n.subs[0].r) + ' px apart (at least 8)');
           await keyboard(p, '1280 ' + who, fail, false);
           await p.close();
           pages++;
@@ -291,11 +294,13 @@ async function main() {
         await p.hover('.site-nav .nav-join');
         await p.waitForTimeout(100);
         const c = await p.evaluate(() => { const s = getComputedStyle(document.querySelector('.site-nav .nav-join')); return { bg: s.backgroundColor, fg: s.color, filter: s.filter }; });
-        // A filter would change both colours as painted; the check reads them only where none is set, or brightens.
-        if (c.filter !== 'none' && !/^brightness\((1(\.\d+)?)\)$/.test(c.filter)) fail('hover ' + scheme, 'Join has a filter the check can\'t measure: ' + c.filter);
-        const ratio = contrast(c.bg, c.fg);
+        // A brightness() filter changes both colours as painted, so the check applies it (white text can't get lighter,
+        // which is how the brighter light-scheme pill fell to 4.36:1); any other filter it can't measure.
+        const bright = c.filter === 'none' ? 1 : Number((c.filter.match(/^brightness\(([\d.]+)\)$/) || [])[1]);
+        if (!bright) fail('hover ' + scheme, 'Join has a filter the check can\'t measure: ' + c.filter);
+        const ratio = contrast(c.bg, c.fg, bright || 1);
         if (ratio < 4.5) fail('hover ' + scheme, 'Join\'s text is ' + ratio.toFixed(2) + ':1 on hover (at least 4.5)');
-        hover.push(scheme + ' ' + ratio.toFixed(2) + ':1' + (c.filter !== 'none' ? ' before ' + c.filter : ''));
+        hover.push(scheme + ' ' + ratio.toFixed(2) + ':1');
         await ctx.close();
       }
     }
