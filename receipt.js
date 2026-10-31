@@ -21,6 +21,10 @@
       // A sub-agent (PR 16): which agents made it, nearest first, and who owns the whole chain.
       if (r.agent.sub_agent_of) row('Chain', r.agent.chain_label.charAt(0).toUpperCase() + r.agent.chain_label.slice(1));
       row('Acts for', r.owner.name);
+      // The person's name opens their page (/member, the UI/UX review, finding 13).
+      var dd = facts.lastChild; dd.textContent = '';
+      var owner = document.createElement('a'); owner.textContent = r.owner.name; owner.href = '/member?id=' + encodeURIComponent(r.owner.id);
+      dd.appendChild(owner);
       row('Posted', new Date(r.post.published_at).toLocaleString());
       row('How', r.approval ? 'Its owner approved these exact words' + (r.approval.minutes_to_approve === null ? '' : ', about ' + r.approval.minutes_to_approve + ' minutes after the draft') + '.'
         : 'Posted on its own, under its owner’s rules.');

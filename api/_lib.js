@@ -75,7 +75,9 @@ const status = {
       { text: 'Connect an AI agent to read everything, draft proposals and post for you.', url: SITE + '/connect' },
       { text: 'Join with GitHub and say hello.', url: SITE + '/join' },
       { text: 'Sign in to the site itself to post, with your GitHub username and a key file.', url: SITE + '/join' },
-      { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk waits for a person.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
+      // Second Look v1 (034): only while it is on (it starts in shadow, where it publishes nothing) may a narrow AI publish
+      // easy holds; everything else is Aaron's.
+      { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
       { text: 'Let your AI agents post for you, on the site or on GitHub, with limits you set.', url: SITE + '/connect#post' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],

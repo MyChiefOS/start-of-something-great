@@ -5,7 +5,9 @@
 //   - /feed after a sign-in with a code: the welcome shows once, takes focus, and is gone after a reload;
 //   - /account#notices: Notices come first and are scrolled to, in the first screen on a phone;
 //   - /agents with a claim link, below level 2: the way to level 2 in words, with its link;
-//   - /team#levels: the levels explained.
+//   - /team#levels: the levels explained;
+//   - /feed's search (UX PR G, findings 8 and 13): a labelled field; results replace the list with "N posts match" and
+//     the administrator's name says so; Clear brings the lane back.
 // Checked at 390 by 844 and 1280 by 800, dark and light. Exits 1 on any problem. --root DIR checks another copy.
 'use strict';
 
@@ -14,6 +16,8 @@ const { serve, context, open, ROOT } = require('./check-signed-out');
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 800 }];
 const SCHEMES = ['dark', 'light'];
 const CODE = 'A'.repeat(43);
+const ADA = '0190a000-0000-7000-8000-0000000000a1';
+const GRACE = '0190a000-0000-7000-8000-0000000000a2';
 
 async function main() {
   const { chromium } = require('playwright');
@@ -71,6 +75,36 @@ async function main() {
         const want = ['', '', '500 characters or fewer left.', '500 characters or fewer left.', 'You have reached the 5,000-character limit.', ''];
         if (JSON.stringify(typed.out) !== JSON.stringify(want)) fail(where, 'the count is heard as ' + JSON.stringify(typed.out));
         if (typed.countLive !== null || typed.role !== 'status') fail(where, 'the visible count is still announced on every key');
+        await p.close();
+
+        // /feed's search (UX PR G): the results replace the list, one line says how many match, and Clear undoes it.
+        let asked = null;
+        await ctx.route((u) => u.pathname === '/api/feed' && u.searchParams.has('q'), (r) => {
+          asked = new URL(r.request().url()).searchParams.get('q');
+          return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ next: null, posts: [
+            { id: '0190a000-0000-7000-8000-000000000003', author: { name: 'Aaron', level: 2, role: 'administrator' }, published_at: new Date().toISOString(), body: 'The garden opens.' }] }) });
+        });
+        p = await open(ctx, base, '/feed', tag + ' /feed search', fail);
+        where = tag + ' /feed search';
+        const label = await p.evaluate(() => { const q = document.getElementById('q'); return { label: q.labels.length ? q.labels[0].textContent : null, type: q.type,
+          above: q.getBoundingClientRect().top < document.getElementById('posts').getBoundingClientRect().top, clear: document.getElementById('clear').checkVisibility() }; });
+        if (label.label !== 'Search posts' || label.type !== 'search' || !label.above || label.clear) fail(where, 'the field: ' + JSON.stringify(label));
+        await p.fill('#q', '  garden   party ');
+        await p.press('#q', 'Enter');
+        await p.waitForFunction(() => /match/.test(document.getElementById('posts-say').textContent));
+        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, metas: [...document.querySelectorAll('#posts .post-meta')].map((x) => x.textContent),
+          clear: document.getElementById('clear').checkVisibility(), sideways: document.documentElement.scrollWidth > innerWidth }));
+        views++;
+        if (asked !== 'garden party') fail(where, 'the search sent was ' + JSON.stringify(asked));
+        if (m.say !== '1 post from people matches.') fail(where, 'announced as ' + JSON.stringify(m.say));
+        if (m.metas.length !== 1 || !/^Aaron · Administrator · Verified · /.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
+        if (!m.clear) fail(where, 'no Clear button');
+        if (m.sideways) fail(where, 'the page scrolls sideways');
+        await p.click('#clear');
+        await p.waitForFunction(() => /loaded/.test(document.getElementById('posts-say').textContent));
+        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, value: document.getElementById('q').value,
+          clear: document.getElementById('clear').checkVisibility(), focus: document.activeElement && document.activeElement.id }));
+        if (m.say !== '2 posts from people loaded.' || m.value !== '' || m.clear || m.focus !== 'q') fail(where, 'after Clear: ' + JSON.stringify(m));
         await p.close();
 
         // /feed after a sign-in with a code (join.js sets the flag): once, with focus, then gone.
@@ -133,6 +167,42 @@ async function main() {
         if (m.top < 0 || m.top > height / 2) fail(tag + ' /team#levels', 'not scrolled to');
         if (JSON.stringify(m.items) !== JSON.stringify(['GitHub member', 'Verified', 'Email only'])) fail(tag + ' /team#levels', 'levels: ' + m.items);
         await p.close();
+        // /member (UX PR F, finding 13): the profile, their posts and their agents' posts, from public answers only.
+        await ctx.route(base + '/api/feed?profile=*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ profile: { id: ADA, name: 'ChristopherMontgomeryAdaLovelace <b>x</b>', level: 2, joined: '2026-10-20T10:00:00Z', live_posts: 3 } }) }));
+        p = await open(ctx, base, '/member?id=' + ADA, tag + ' /member', fail);
+        where = tag + ' /member';
+        await p.waitForTimeout(250);
+        m = await p.evaluate(() => ({
+          h1: document.querySelector('h1').textContent, bold: !!document.querySelector('main h1 b'), title: document.title,
+          h1Fits: (() => { const h = document.querySelector('h1'); const r = document.createRange(); r.selectNodeContents(h); return r.getBoundingClientRect().right <= h.getBoundingClientRect().right + 1 && h.scrollWidth <= h.clientWidth + 1; })(),
+          summary: document.getElementById('summary').textContent,
+          facts: [...document.querySelectorAll('#facts dt')].map((x) => x.textContent),
+          level: (document.querySelector('#facts dd') || {}).textContent,
+          parts: ['people-part', 'agents-part'].map((x) => document.getElementById(x).checkVisibility()),
+          posts: document.querySelectorAll('#people-list article').length,
+          say: document.getElementById('people-say').textContent,
+          sideways: document.documentElement.scrollWidth > innerWidth }));
+        views++;
+        if (m.h1 !== 'ChristopherMontgomeryAdaLovelace <b>x</b>' || m.bold) fail(where, 'the name is not shown as text: ' + m.h1);
+        if (!m.h1Fits) fail(where, 'a long name is cut off instead of wrapping');
+        if (m.title !== 'ChristopherMontgomeryAdaLovelace <b>x</b> · Day One Great') fail(where, 'title ' + m.title);
+        if (m.summary !== 'Showing 2 posts of theirs and 2 posts by their agents.') fail(where, 'summary ' + m.summary);
+        if (JSON.stringify(m.facts) !== JSON.stringify(['Level', 'Joined'])) fail(where, 'facts ' + m.facts);
+        if (!/^Verified \(level 2\) · What the levels mean$/.test(m.level || '')) fail(where, 'level ' + m.level);
+        if (JSON.stringify(m.parts) !== '[true,true]' || m.posts !== 2 || m.say !== '') fail(where, 'lists: ' + JSON.stringify(m));
+        if (m.sideways) fail(where, 'the page scrolls sideways');
+        await p.close();
+        // A name on /feed opens that member's page.
+        p = await open(ctx, base, '/feed', tag + ' /feed names', fail);
+        const hrefs = await p.evaluate(() => [...document.querySelectorAll('#posts .post-meta strong a')].map((a) => a.getAttribute('href')));
+        if (JSON.stringify(hrefs) !== JSON.stringify(['/member?id=' + ADA, '/member?id=' + GRACE])) fail(tag + ' /feed names', 'name links: ' + hrefs);
+        await p.close();
+        // A bad address says so and asks nothing.
+        p = await open(ctx, base, '/member?id=nope', tag + ' /member bad', fail);
+        if (await p.evaluate(() => document.getElementById('summary').textContent) !== 'This address doesn’t name a member. Back to Posts') fail(tag + ' /member bad', 'no message');
+        await p.close();
+
         await ctx.close();
       }
     }
@@ -144,7 +214,7 @@ async function main() {
     console.log('FAIL UX PR E (local copy of ' + ROOT + ')\n' + problems.map((x) => '  ' + x).join('\n'));
     process.exitCode = 1;
   } else {
-    console.log('OK UX PR E (local copy of ' + ROOT + '): ' + views + ' page views at 390 and 1280 px, dark and light: /feed (announcements, levels, agent links, the welcome once), /account (notices first, #notices and #name), /agents (the way to level 2), /team#levels');
+    console.log('OK UX PR E (local copy of ' + ROOT + '): ' + views + ' page views at 390 and 1280 px, dark and light: /feed (announcements, levels, agent links, the welcome once), /account (notices first, #notices and #name), /agents (the way to level 2), /team#levels, /member and the name links, /feed search (UX PR G)');
   }
 }
 
