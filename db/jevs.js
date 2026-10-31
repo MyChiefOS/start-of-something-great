@@ -23,6 +23,7 @@ const region = require('../signin/region');
 const { netKey, cookies } = require('../signin/http');
 const { sessionHash } = require('../signin/session');
 const { maskContacts } = require('../api/_proposals');
+const { maskSecrets } = require('../api/_secrets');
 
 const sha256hex = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -120,8 +121,18 @@ const QUESTIONS = [
   // PR 16. The depth limit and the hourly rates in the database already stop a runaway tree; this says how unusual it is.
   { id: 'J15', title: 'Sub-agent spawning', description: 'For an agent making a sub-agent: one that would sit at the deepest level allowed scores 20; sub-agents its tree made in the last hour, 20 or more 25, 50 or more 45, 150 or more 70. The higher counts. Never more than 70: the depth limit and the hourly rates already stop a runaway tree, so this alone never holds one.',
     score: (s) => Math.max(num(s.subagent_max_depth) > 0 && num(s.subagent_depth) >= num(s.subagent_max_depth) ? 20 : 0,
-      band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]])) }
+      band(num(s.tree_subagents_1h), [[150, 70], [50, 45], [20, 25]])) },
+  // Guardrails round 1 (032; Aaron, Oct 30). J16 and J17 are the GitHub gate's (supabase/functions/jevs/core.mjs).
+  // J18 and J19 ask only: they are left out of the total, and on their own they can ask the owner to confirm but never
+  // hold a post for Aaron, whatever the other scores (app.jevs_decide, 032). Both only for an agent posting on its own
+  // under its owner's rules: a member's own post has no one else to ask, and its keys are already hidden.
+  { id: 'J18', title: 'Keys and passwords', description: 'For an agent posting on its own: keys and passwords in a published format (an agent key, GitHub, AWS, Anthropic, OpenAI, Stripe, Slack, Google, Supabase, npm, SendGrid, a signed token, a private key, or the password in a database address). They are hidden before the post is saved, whoever posts; for an agent, one scores 40, two or more 60. Asks its owner to confirm, never more.',
+    score: (s) => (s.by_agent ? band(num(s.secret_hits), [[2, 60], [1, 40]]) : 0) },
+  { id: 'J19', title: 'Repeats of its own post', description: 'For an agent posting on its own: posts and drafts it already sent in the last 24 hours with the same words (ignoring case, spaces and punctuation). One earlier scores 20, two or three 45, four or more 60. Asks its owner to confirm, never more: a stuck agent is its owner\u2019s to fix.',
+    score: (s) => (s.by_agent ? band(num(s.own_repeats_24h), [[4, 60], [2, 45], [1, 20]]) : 0) }
 ];
+// Questions that ask only (032): never part of the total or the top score.
+const ASK_ONLY = ['J18', 'J19'];
 const BY_ID = Object.fromEntries(QUESTIONS.map((q) => [q.id, q]));
 
 // Which questions each action asks. The account questions are the "standard questions" for automatic level 2.
@@ -130,7 +141,8 @@ const POST = [...ACCOUNT, 'J07', 'J08', 'J09', 'J12'];
 const ASKS = {
   'signup': ACCOUNT,
   'account.check': ACCOUNT,
-  'post.create': POST,
+  'post.create': [...POST, 'J18', 'J19'],
+  // Not J18 or J19: an approved draft's keys were hidden when it was saved, and its owner confirmed these exact words.
   'post.approved': POST,
   'draft.create': POST,
   // A report re-scores the post's own questions only, never its author's whole account (the JEVs review, F1).
@@ -204,7 +216,7 @@ const hamming = (a, b) => { let x = BigInt.asUintN(64, BigInt(a) ^ BigInt(b)), n
 function analyze(body) {
   const hosts = [...new Set(links(body))];
   return { links: links(body).length, domains: hosts, domainHashes: hosts.slice(0, 50).map((h) => sha256hex('domain:' + h)),
-    maskHits: maskHits(body), simhash: simhash(body) };
+    maskHits: maskHits(body), secretHits: maskSecrets(String(body).slice(0, 70000)).hits, simhash: simhash(body) };
 }
 
 // ---- From the request ----
@@ -273,7 +285,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     text = body === null || body === undefined ? null : analyze(body);
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
-    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0 }, { country, confirmed });
+    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0, secret_hits: text ? text.secretHits : 0 },
+      { country, confirmed });
   } catch (e) {
     error = true;
     scores = {};
@@ -396,5 +409,5 @@ async function summary(t) {
 // The public list: what each question looks at, without any threshold.
 const publicQuestions = () => QUESTIONS.map((q) => ({ id: q.id, title: q.title, description: q.description }));
 
-module.exports = { RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, emailDomain, emailMarks,
+module.exports = { ASK_ONLY, RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, emailDomain, emailMarks,
   onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, postReasons, regionDecline, summary, publicQuestions };

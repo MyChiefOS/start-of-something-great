@@ -30,8 +30,10 @@ const MIGRATION = fs.readFileSync(path.join(root, 'db', 'migrations', '010_jevs.
 
 // ---- Without a database: the questions, the lists, the text checks, the regional list ----
 
-test('JEVs questions: stable IDs J01 to J15, each with a public title and description, scoring 0 to 100', () => {
-  assert.deepStrictEqual(jevs.QUESTIONS.map((q) => q.id), Array.from({ length: 15 }, (_, i) => 'J' + String(i + 1).padStart(2, '0')));
+test('JEVs questions: stable IDs J01 to J15, J18 and J19 (J16 and J17 are the GitHub gate\'s), each with a public title and description, scoring 0 to 100', () => {
+  assert.deepStrictEqual(jevs.QUESTIONS.map((q) => q.id), [...Array.from({ length: 15 }, (_, i) => 'J' + String(i + 1).padStart(2, '0')), 'J18', 'J19']);
+  assert.deepStrictEqual(jevs.ASK_ONLY, ['J18', 'J19'], 'the ask-only questions, as app.jevs_decide (032) names them');
+  assert.match(fs.readFileSync(path.join(root, 'db', 'migrations', '032_guardrails.sql'), 'utf8'), /where e\.key not in \('J18', 'J19'\)/);
   for (const q of jevs.QUESTIONS) {
     assert.ok(q.title.length >= 4 && q.title.length <= 60, q.id + ' title');
     assert.ok(q.description.length >= 40, q.id + ' needs a plain description');
@@ -65,7 +67,7 @@ test('JEVs scoring is deterministic: the same signals give the same scores, alwa
   }
   // A few fixed points, so a change to a question's scoring is a visible change to this test.
   const s = (o) => jevs.score('post.create', { account: true, age_hours: 500, best_identity: 2, ...o }, { country: 'US' });
-  assert.deepStrictEqual(s({}), { J01: 0, J02: 0, J03: 0, J04: 0, J05: 0, J06: 0, J10: 0, J13: 0, J07: 0, J08: 0, J09: 0, J12: 0 });
+  assert.deepStrictEqual(s({}), { J01: 0, J02: 0, J03: 0, J04: 0, J05: 0, J06: 0, J10: 0, J13: 0, J07: 0, J08: 0, J09: 0, J12: 0, J18: 0, J19: 0 });
   assert.strictEqual(s({ age_hours: 0 }).J01, 25);
   assert.strictEqual(s({ new_domains: 4, links: 4 }).J07, 100);
   assert.strictEqual(s({ mask_hits: 3 }).J08, 80);

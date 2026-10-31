@@ -3,6 +3,7 @@
 
 // Bounded and anchored by a lookbehind so hostile input can't make it slow (ReDoS): ~1 ms on 65k chars.
 // Letters from any script count, so josé@example.com and jane@bücher.de are caught too (PR 3 review).
+const { maskSecrets } = require('./_secrets');
 const EMAIL = /(?<![\p{L}\p{M}\p{N}._%+-])[\p{L}\p{M}\p{N}._%+-]{1,64}@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63}){0,8}\.[\p{L}\p{M}]{2,24}/gu;
 const STATUS_ORDER = [
   ['status: shipped', 'shipped'],
@@ -65,9 +66,11 @@ function maskEmails(text) {
   return hasEmail(t) ? t.replace(EMAIL, '[email hidden]') : raw;
 }
 
-// P4: hide email addresses and phone numbers in public text.
+// P4: hide email addresses and phone numbers in public text; and, first, keys and passwords (api/_secrets.js, which
+// must run before contact masking or it can't find some of them). New posts and drafts are stored with keys already
+// hidden; this hides them in anything older or from elsewhere.
 function maskContacts(text) {
-  const raw = String(text == null ? '' : text);
+  const raw = maskSecrets(text).text;
   const t = fold(raw);
   if (!hasEmail(t) && !hasPhone(t)) return raw;
   return t.replace(EMAIL, '[email hidden]').replace(PHONE, (m) => (isPhone(m) ? '[number hidden]' : m));

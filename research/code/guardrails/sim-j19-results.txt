@@ -1,0 +1,8 @@
+loop every |  today: live/owner/Aaron |   J19 ask-only |   J19 in total   (worst case: owner < 1 day old, region unknown)
+       10s |                  6/14/ 0 |        2/18/ 0 |        2/ 4/14
+       60s |                  6/14/ 0 |        2/18/ 0 |        2/ 4/14
+      300s |                  6/14/ 0 |        2/18/ 0 |        2/ 4/14
+      900s |                 20/ 0/ 0 |        2/18/ 0 |        2/18/ 0
+     3600s |                 20/ 0/ 0 |        2/18/ 0 |        2/18/ 0
+    14400s |                  6/ 0/ 0 |        2/ 4/ 0 |        2/ 4/ 0
+most held for Aaron in a day by one loop: {'with J19, ask-only': 0, 'with J19 in the total (rejected)': 14}

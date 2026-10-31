@@ -38,10 +38,11 @@ let A, B, BAgent, tables;
 // jevs_settings: everyone sees the one public row, JEVs's mode (shadow or enforce); never a threshold (PR 12).
 // subagent_settings: anyone signed in sees the one row of limits sub-agents are made within (PR 16; public in 013).
 // timer_slot (027): its one row, the heartbeat, which anyone may read (only when the timers last finished).
+// invariant_slot (032): the same for the hourly never-break checks (only when they last finished).
 const MAY_SEE = {
-  anon: { jevs_settings: 1, timer_slot: 1 },
-  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1 },
-  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1 }
+  anon: { jevs_settings: 1, timer_slot: 1, invariant_slot: 1 },
+  B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1, invariant_slot: 1 },
+  BAgent: { members: 1, agents: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1, invariant_slot: 1 }
 };
 
 async function signIn(level, name, fp = c.sha256hex(crypto.randomUUID())) {

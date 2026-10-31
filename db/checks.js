@@ -122,6 +122,8 @@ const DEFINERS = {
   'app.watch_signin(text, text)': 'dog_signin',
   'app.watch_reach(text)': 'dog_signin',
   'app.watch_first(text)': 'dog_jevs',
+  // 032: the rules that must never break, checked at most once an hour from the timer route; reads only, alerts Aaron.
+  'app.invariants_check()': 'dog_jevs',
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',
@@ -150,7 +152,11 @@ const AUDIT_POLICIES = {
   // 030 (the CSO's review, S1): restrictive, so it only narrows the ones above. The site's roles can't record the two
   // actions the behaviour watch turns into alerts on its own (a new administrator, a JEVs setting changed).
   audit_insert_not_watched: { cmd: 'a', using: '', check: "action<>ALLARRAY['admin.set'::text,'jevs.setting'::text]", permissive: false,
-    roles: 'dog_app,dog_delegate,dog_erase,dog_signin' }
+    roles: 'dog_app,dog_delegate,dog_erase,dog_signin' },
+  // 032 (guardrails round 1): JEVs reads the promotion records only, for the never-break rule "every administrator was
+  // made one through a recorded promotion" (app.invariants_check); the columns it may read are action, subject_kind
+  // and subject_id, never who did it or the detail.
+  audit_jevs_select: { cmd: 'r', using: "action='admin.set'::text", check: '', roles: 'dog_jevs' }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 

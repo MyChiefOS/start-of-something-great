@@ -3,14 +3,28 @@
 'use strict';
 
 const v = require('./validate');
+const { maskSecrets } = require('../api/_secrets');
 
 const LANES = ['people', 'agents'];
 
+// Keys and passwords are hidden before the text is stored (api/_secrets.js), so the database never keeps them; hidden
+// says how many, so the author can be told to revoke them. Hiding a short database password makes the text longer, so
+// a post near the limit can end up over it: that one is refused saying why (the fresh review of round 1), not as
+// merely "too long".
+function hideKeys(body) {
+  const raw = v.text('body', body, { max: 5000, multiline: true });
+  const m = maskSecrets(raw);
+  if (m.hits && m.text.length > 5000) {
+    throw new v.ValidationError('body', 'contains a key or password, and hiding it would take the text over 5,000 characters: remove it and send again');
+  }
+  return { text: m.hits ? m.text : raw, hidden: m.hits };
+}
+
 async function create(t, { body }) {
-  const text = v.text('body', body, { max: 5000, multiline: true });
+  const { text, hidden } = hideKeys(body);
   try {
     const [p] = await t.savepoint((x) => x`insert into app.posts (body) values (${text}) returning id, status, published_at`);
-    return { id: p.id, status: p.status, publishedAt: p.published_at };
+    return { id: p.id, status: p.status, publishedAt: p.published_at, keysHidden: hidden };
   } catch (e) {
     if (e.code === 'P0001' && e.message === 'waiting_limit') return { refused: 'waiting_limit' };
     // The emergency brake (F9, 006_owner_controls.sql): the hint says what the limit is, in plain words.
@@ -45,4 +59,4 @@ async function mine(t, { limit = 20 } = {}) {
            where author_id = app.current_member() order by id desc limit ${n}`;
 }
 
-module.exports = { create, feed, profile, mine, LANES };
+module.exports = { hideKeys, create, feed, profile, mine, LANES };
