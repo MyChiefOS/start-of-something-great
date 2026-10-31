@@ -2,11 +2,20 @@
 // the deletion reviews: account deletions JEVs flagged as high risk, for Aaron to delete, keep disabled or restore.
 // Everything members wrote is shown with textContent, never as HTML. The biggest steps, banning someone and braking
 // everyone, take a second tap on the same button; nothing uses a browser dialog.
+// UX PR D (the UI/UX review of Oct 31, finding 5): nothing of the controls shows until GET /api/feed?controls=1
+// answers 200; signed out, the page shows only the sign-in panel. Hiding them is presentation only: the server decides
+// who may act (signin/session.js, canControl). Second Look's mode is a group of three with the current one marked
+// (aria-pressed), and "On" takes a second tap, as braking everyone does.
 (function () {
   var summary = document.getElementById('summary');
   var scope = document.getElementById('brake-scope');
   var go = document.getElementById('brake-go');
   var result = document.getElementById('brake-result');
+  var admin = document.getElementById('admin');
+  var signedOut = document.getElementById('signed-out');
+  var modes = document.getElementById('sl-modes');
+  var modeOut = document.getElementById('sl-mode-result');
+  var current = null; // Second Look's mode, as the last answer gave it
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -197,10 +206,15 @@
     // Second Look (034): its mode and its record. Numbers only.
     var sl = clear('second-look');
     var s = d.second_look;
+    current = s ? s.mode : null;
+    modes.hidden = !s;
+    Array.prototype.forEach.call(modes.querySelectorAll('button[data-mode]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === current));
+    });
     if (!s) sl.appendChild(el('p', 'fine', 'Second Look isn\u2019t set up in the database yet.'));
     else {
-      sl.appendChild(el('p', '', 'Mode: ' + s.mode + (s.paused ? ' (paused itself after a removal)' : '')
-        + (s.mode === 'shadow' ? ' (logging only)' : s.mode === 'on' ? ' (publishing easy held posts)' : ' (not running)')));
+      // A pause puts it back in shadow until you switch it yourself (034, app.sl_after_post_change and app.sl_try_unlock).
+      if (s.paused) sl.appendChild(el('p', '', 'It paused itself after your removals, so it stays in shadow until you switch it.'));
       stat(sl, 'decisions in 7 days', s.decisions_7d);
       stat(sl, 'clears in 7 days', s.clears_7d);
       stat(sl, 'rejects in 7 days (flags only)', s.rejects_7d);
@@ -257,29 +271,51 @@
     sendBrake();
   });
 
+  // Shows the controls only on a 200 with the numbers; a 401 shows only the sign-in panel; anything else, one line.
+  function show(part) {
+    admin.hidden = part !== 'admin';
+    signedOut.hidden = part !== 'signed-out';
+    summary.hidden = part === 'signed-out';
+  }
   function load() {
     summary.textContent = 'Loading the numbers…';
     fetch('/api/feed?controls=1', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
       .then(function (x) {
-        if (x.ok && x.d.totals) return render(x.d);
-        if (x.ok) { summary.textContent = 'The site\u2019s own database isn\u2019t switched on yet.'; return; }
-        summary.textContent = x.status === 401 ? 'Sign in to see the owner controls.' : (x.d.error || 'The controls could not be loaded.');
-        if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fcontrols'; clear('totals').appendChild(a); }
+        if (x.ok && x.d.totals) { show('admin'); return render(x.d); }
+        if (x.status === 401) return show('signed-out');
+        show(null);
+        summary.textContent = x.ok ? 'The site\u2019s own database isn\u2019t switched on yet.' : (x.d.error || 'The controls could not be loaded.');
       })
       .catch(function () { summary.textContent = 'The controls could not be loaded. Please try again.'; });
   }
 
-  // Second Look's mode switch and its security questions (Aaron only; the server checks).
-  Array.prototype.forEach.call(document.querySelectorAll('.sl-modes button'), function (b) {
-    b.addEventListener('click', function () {
-      var out = document.getElementById('sl-mode-result');
-      out.textContent = 'Switching…';
-      post({ second_look: 'mode', mode: b.getAttribute('data-mode') }).then(function (x) {
-        out.textContent = x.d.message || x.d.error || '';
-        if (x.ok) load();
-      }).catch(function () { out.textContent = 'That didn’t go through. Please try again.'; });
-    });
+  // Second Look's mode switch and its security questions (Aaron only; the server checks). Tapping the mode it is
+  // already in sends nothing: switching restarts its count of 80 (034, app.sl_set_mode), so a stray tap mustn't.
+  // "On" lets it publish easy held posts itself, so it takes a second tap within 5 seconds.
+  function switchTo(mode) {
+    modeOut.textContent = 'Switching…';
+    post({ second_look: 'mode', mode: mode }).then(function (x) {
+      modeOut.textContent = x.d.message || x.d.error || '';
+      if (x.ok) load();
+    }).catch(function () { modeOut.textContent = 'That didn’t go through. Please try again.'; });
+  }
+  Array.prototype.forEach.call(modes.querySelectorAll('button[data-mode]'), function (b) {
+    var mode = b.getAttribute('data-mode');
+    var act = function () {
+      if (mode === current) { modeOut.textContent = 'Second Look is already in ' + mode + ' mode.'; return; }
+      switchTo(mode);
+    };
+    if (mode === 'on') {
+      // Already on: say so at once, without arming (this listener runs before the two-tap one).
+      b.addEventListener('click', function (ev) { if (current === 'on') { ev.stopImmediatePropagation(); act(); } });
+      var warning = 'Tap again to let Second Look publish easy held posts';
+      twoTap(b, warning, act);
+      // Said in the status line too, since a screen reader may not read out a focused button's new label.
+      b.addEventListener('click', function () { if (b.textContent === warning) modeOut.textContent = 'Tap On again within 5 seconds to switch it on.'; });
+      return;
+    }
+    b.addEventListener('click', act);
   });
   document.getElementById('sl-ask').addEventListener('submit', function (ev) {
     ev.preventDefault();

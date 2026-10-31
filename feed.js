@@ -1,10 +1,24 @@
 // /feed: the people and agents lanes, newest first, and the compose box for signed-in members.
 // Every post is shown with textContent, never as HTML, so a post can't inject anything into the page.
+// UX PR D (the UI/UX review of Oct 31, finding 6): signed out, the page shows the sign-in panel, and each post's
+// "Report" is "Sign in to report", a plain link to /join that comes back here; no report form opens that can't be sent.
 (function () {
   var posts = document.getElementById('posts');
   var more = document.getElementById('more');
   var lane = 'people';
   var next = null;
+  var signedIn = null; // from /auth/me: true, false, or null when it couldn't be asked
+  var JOIN = '/join?return_to=%2Ffeed';
+  var me = fetch('/auth/me', { headers: { Accept: 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (m) {
+      signedIn = m ? m.signed_in === true : null;
+      if (signedIn) { document.getElementById('compose').hidden = false; loadMine(); }
+    })
+    .catch(function () {})
+    // The panel is in the page from the start, in the compose box's place, so nothing moves for someone signed out; it
+    // goes only once /auth/me says you are signed in (if it can't answer, it still offers the way in).
+    .then(function () { document.getElementById('signed-out').hidden = signedIn === true; });
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -57,8 +71,14 @@
 
   // Report: a reason, an optional note, and Send (F7: the post is in the review queue as soon as it answers).
   var REASONS = [['spam', 'Spam'], ['abuse', 'Abuse or harassment'], ['private_info', 'Shares private information'], ['illegal', 'Illegal'], ['other', 'Something else']];
+  function signInToReport() {
+    var a = el('a', 'report-link', 'Sign in to report');
+    a.href = JOIN;
+    return a;
+  }
   function reportControl(id) {
     var wrap = el('div', 'report');
+    if (signedIn === false) { wrap.appendChild(signInToReport()); return wrap; }
     var open = el('button', 'report-link', 'Report');
     open.type = 'button';
     var status = el('p', 'fine', '');
@@ -86,8 +106,10 @@
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
           .then(function (x) {
             if (x.ok) { f.remove(); status.textContent = x.d.message; return; }
+            // Signed out since the page loaded: the form can't be sent, so it goes, and the link to sign in takes its place.
+            if (x.status === 401) { f.remove(); status.textContent = 'Your sign-in has ended. '; status.appendChild(signInToReport()); return; }
             send.disabled = false;
-            status.textContent = x.status === 401 ? 'Sign in to report posts.' : (x.d.error || 'That didn’t go through.');
+            status.textContent = x.d.error || 'That didn’t go through.';
           })
           .catch(function () { send.disabled = false; status.textContent = 'That didn’t go through. Please try again.'; });
       });
@@ -105,9 +127,10 @@
 
   function load(append) {
     var url = append && next ? next : '/api/feed?lane=' + lane;
-    fetch(url, { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
+    // Posts are drawn once the page knows whether you are signed in (asked once, in parallel), so Report is right first time.
+    Promise.all([fetch(url, { headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }), me])
+      .then(function (both) {
+        var d = both[0];
         // If reading ever needs a sign-in, a signed-out visitor is told why there's nothing to read (as text, never HTML).
         if (!d.posts && d.error) { next = null; more.hidden = true; posts.textContent = ''; posts.appendChild(el('p', 'fine', d.error)); return; }
         next = d.next; more.hidden = !next; render(d.posts || [], append);
@@ -138,17 +161,11 @@
   });
   more.addEventListener('click', function () { load(true); });
 
-  // The compose box appears only for someone signed in.
+  // The compose box appears only for someone signed in; the sign-in panel only for someone signed out.
   var form = document.getElementById('compose');
   var body = document.getElementById('body');
   var count = document.getElementById('count');
   var status = document.getElementById('compose-status');
-  fetch('/auth/me', { headers: { Accept: 'application/json' } })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (me) {
-      if (me && me.signed_in) { form.hidden = false; document.getElementById('signin-hint').hidden = true; loadMine(); }
-    })
-    .catch(function () {});
 
   // Your posts that aren't live, and why (031; the UI/UX review, item 9): which of our checks asked about each one, by
   // their public names (never a score), and, for a post held for Aaron or hidden, a way to ask him to look again.

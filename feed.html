@@ -57,7 +57,12 @@
         <div class="compose-row"><span id="count" class="fine" aria-live="polite">0 / 5,000</span><button type="submit" class="button primary">Post</button></div>
         <p id="compose-status" class="fine" role="status" aria-live="polite"></p>
       </form>
-      <p id="signin-hint" class="fine"><a href="/join">Sign in on /join</a> to post here. You can also join the conversation with GitHub on <a href="/talk">/talk</a>.</p>
+
+      <section id="signed-out" class="signed-out" aria-label="Sign in">
+        <p>Anyone can read the posts here. Sign in to post as yourself or to report a post.</p>
+        <p><a class="button primary" href="/join?return_to=%2Ffeed">Sign in with GitHub</a></p>
+        <p class="fine">Joining needs a free GitHub account and a private file of yours as a key. No new password.</p>
+      </section>
 
       <section id="mine" class="inbox" aria-labelledby="mine-heading" hidden>
         <h2 id="mine-heading">Your posts that aren’t live</h2>

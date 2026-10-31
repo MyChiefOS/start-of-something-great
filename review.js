@@ -1,5 +1,8 @@
 // /review: Aaron's review queue, built for a phone (SF5): each post shows why it is here and one button per
 // decision. Everything members wrote is shown with textContent, never as HTML.
+// UX PR D (the UI/UX review of Oct 31, findings 6 and 12's front-end part): signed out, only the sign-in panel; an
+// empty queue says what happens when nothing is waiting; each item says when it joined the queue and lists its reasons
+// in the order they can arise (see why()). The one-tap buttons and Undo are unchanged.
 (function () {
   var queue = document.getElementById('queue');
   var summary = document.getElementById('summary');
@@ -15,9 +18,17 @@
     return e;
   }
   function count() {
-    summary.textContent = open === 0 ? 'Nothing waiting. The queue is clear.' : open + (open === 1 ? ' post needs' : ' posts need') + ' a decision, oldest first.';
+    summary.textContent = open === 0 ? 'Nothing is waiting.' : open + (open === 1 ? ' post needs' : ' posts need') + ' a decision, oldest first.';
   }
+  // What happens while nothing is waiting: every site post is checked by JEVs (032, post.create and post.approved), and
+  // agents' drafts wait for their own owners (/agents), not here.
+  var EMPTY = 'JEVs checks every post, and owners approve their own agents\u2019 drafts. Anything held, hidden, reported or appealed comes here.';
 
+  // The reasons, oldest first. The queue sends one time per item (flagged_at, its oldest open flag), not one per reason,
+  // so the order comes from the database's rules (inferred from the code, not measured): a first-post flag is made with
+  // the post (004); a report needs a live post (app.reportable), and JEVs's hold at posting takes the post off live in
+  // the same step (032), so an open JEVs flag beside open reports came from a report (post.reported); an appeal needs
+  // that hold first (app.jevs_appealable). Exact per-reason times would need the queue to send them (backend).
   function why(i) {
     var parts = [];
     if (i.first_posts) parts.push('one of a new member’s first 3 posts');
@@ -60,6 +71,7 @@
     queue.textContent = '';
     open = d.open;
     count();
+    if (!d.items.length) queue.appendChild(el('p', 'empty', EMPTY));
     d.items.forEach(function (i) {
       var card = el('article', 'post review-item');
       var meta = el('p', 'post-meta');
@@ -68,7 +80,8 @@
         + (i.author.status === 'banned' ? ' · banned' : '') + ' · ' + (i.status === 'waiting' ? 'waiting' : i.status)));
       card.appendChild(meta);
       i.body.split(/\n{2,}/).forEach(function (para) { card.appendChild(el('p', '', para)); });
-      card.appendChild(el('p', 'fine', why(i)));
+      card.appendChild(el('p', 'fine why', why(i)));
+      if (i.flagged_at) card.appendChild(el('p', 'fine', 'In the queue since ' + new Date(i.flagged_at).toLocaleString() + '.'));
       i.notes.forEach(function (n) { card.appendChild(el('p', 'fine note', 'Reporter: ' + n)); });
       var row = el('div', 'review-actions');
       var result = el('p', 'fine', '');
@@ -91,12 +104,21 @@
     fetch('/api/feed?queue=1', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
       .then(function (x) {
+        var out = x.status === 401;
+        // Everything under the summary appears with the answer, so nothing on screen moves when it arrives.
+        document.getElementById('signed-out').hidden = !out;
+        summary.hidden = out;
+        document.getElementById('refresh-row').hidden = out;
+        document.getElementById('review-note').hidden = false;
         if (x.ok) return render(x.d);
         queue.textContent = '';
-        summary.textContent = x.status === 401 ? 'Sign in to review.' : (x.d.error || 'The queue could not be loaded.');
-        if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Freview'; queue.appendChild(a); }
+        summary.textContent = x.d.error || 'The queue could not be loaded.';
       })
-      .catch(function () { summary.textContent = 'The queue could not be loaded. Please try again.'; });
+      .catch(function () {
+        summary.textContent = 'The queue could not be loaded. Please try again.';
+        document.getElementById('refresh-row').hidden = false;
+        document.getElementById('review-note').hidden = false;
+      });
   }
 
   // PR 13: paused owners and their appeals. Lift ends a pause now; Keep lets it end on time. Nothing here needs Aaron

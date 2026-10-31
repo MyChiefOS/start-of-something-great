@@ -42,6 +42,14 @@
     <main id="main" class="story feed review controls">
       <h1>Owner controls</h1>
       <p id="summary" class="dek" role="status" aria-live="polite">Loading the numbers…</p>
+
+      <section id="signed-out" class="signed-out" aria-label="Sign in" hidden>
+        <p>The owner controls hold the site’s numbers, the emergency brake, bans and Second Look. Only the administrator can use them.</p>
+        <p><a class="button primary" href="/join?return_to=%2Fcontrols">Sign in with GitHub</a></p>
+        <p class="fine">Joining needs a free GitHub account and a private file of yours as a key. No new password.</p>
+      </section>
+
+      <div id="admin" hidden>
       <div id="totals"></div>
 
       <h2>Deletion reviews</h2>
@@ -72,11 +80,20 @@
       <p class="fine">What JEVs decided in the last 24 hours, and the latest high-risk decisions and scoring errors from the last 7 days. In shadow mode it only records what it would have done. Thresholds are changed by a migration pull request, never here.</p>
       <div id="jevs"></div>
 
-      <h2>Second Look, the narrow AI</h2>
-      <p class="fine">What Second Look decided about easy held posts, and its record against your decisions. In shadow mode it only logs what it would do; in on mode it publishes easy held posts itself, at most its daily cap, and pauses itself if you remove one. It never removes anything.</p>
+      <h2 id="second-look-heading">Second Look, the narrow AI</h2>
+      <p class="fine">It takes a second look at posts JEVs holds, and may clear only the easy ones. It never removes anything.</p>
+      <div id="sl-modes" class="sl-modes" role="group" aria-labelledby="sl-modes-label" hidden>
+        <p id="sl-modes-label" class="sl-modes-label">Mode</p>
+        <div class="sl-mode"><button type="button" class="button" data-mode="off" aria-pressed="false" aria-describedby="sl-off-what">Off</button>
+          <p id="sl-off-what" class="fine">Nothing runs.</p></div>
+        <div class="sl-mode"><button type="button" class="button" data-mode="shadow" aria-pressed="false" aria-describedby="sl-shadow-what">Shadow</button>
+          <p id="sl-shadow-what" class="fine">It logs what it would do; nothing changes. Once you have approved all of the last 80 posts it would have published, it switches itself on.</p></div>
+        <div class="sl-mode"><button type="button" class="button" data-mode="on" aria-pressed="false" aria-describedby="sl-on-what">On</button>
+          <p id="sl-on-what" class="fine">It publishes easy held posts itself, at most 10 a day. If you remove more than 1 in 80 of them, it pauses itself back to shadow.</p></div>
+        <p class="fine">Switching here starts its count of 80 again. On takes a second tap.</p>
+        <p class="fine" id="sl-mode-result" role="status" aria-live="polite"></p>
+      </div>
       <div id="second-look"></div>
-      <p class="sl-modes"><button type="button" class="button" data-mode="off">Off</button> <button type="button" class="button" data-mode="shadow">Shadow</button> <button type="button" class="button" data-mode="on">On</button></p>
-      <p class="fine" id="sl-mode-result" aria-live="polite"></p>
       <form id="sl-ask">
         <label for="sl-question">Ask Second Look a security question</label>
         <textarea id="sl-question" maxlength="2000" rows="3"></textarea>
@@ -90,6 +107,7 @@
 
       <p><button type="button" id="refresh" class="button">Refresh</button></p>
       <p class="fine">Every brake, ban and unban is recorded in the audit log with who did it, when, and your note. Banning ends the owner's sessions, revokes every agent key and hides their posts; it asks for a second tap.</p>
+      </div>
     </main>
     <footer class="site-footer">
       <div class="footer-cols">

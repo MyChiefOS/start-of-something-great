@@ -39,11 +39,10 @@
   fetch('/auth/account', { headers: { Accept: 'application/json' } })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (x) {
+      // Signed out (UX PR D, the UI/UX review of Oct 31, finding 6): the sign-in panel, and nothing else.
       if (!x.ok || !x.d.signed_in) {
-        msg.textContent = 'Sign in to see your account.';
-        var a = el('a', '', 'Sign in');
-        a.href = '/join?return_to=%2Faccount';
-        msg.after(a);
+        msg.hidden = true;
+        document.getElementById('signed-out').hidden = false;
         return;
       }
       var d = x.d;
