@@ -101,6 +101,8 @@ test.before(async () => {
     const [d] = await t.unsafe(`insert into app.sl_decisions (post_id, version, model, mode, decision, answers, risk, reason, fail_closed, latency_ms)
       values ('${p.id}', 'v1', 'mistral/ministral-3b', 'shadow', 'leave', null, 25, 'no usable answer from the model (timeout)', true, 3000) returning id`);
     await t.unsafe(`insert into app.sl_releases (post_id, decision_id) values ('${p.id}', '${d.id}')`);
+    // Aaron's decision on a shadow clear, kept as an outcome (it names no post or person; nobody but him reads it).
+    await t.unsafe(`insert into app.sl_outcomes (approved) values (true)`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
