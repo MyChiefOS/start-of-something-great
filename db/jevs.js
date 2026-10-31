@@ -24,6 +24,7 @@ const { netKey, cookies } = require('../signin/http');
 const { sessionHash } = require('../signin/session');
 const { maskContacts } = require('../api/_proposals');
 const { maskSecrets } = require('../api/_secrets');
+const secondLook = require('../secondlook');
 
 const sha256hex = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -299,6 +300,14 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     // only, in its own savepoint, so a failure here never changes the decision.
     if (WATCH_FIRST.includes(action)) {
       try { await t.savepoint((x) => x`select app.watch_first(${action})`); } catch (e) { logFailure('behaviour watch', e); }
+    }
+    // Second Look (033): a post JEVs is holding for Aaron gets its suggestion recorded beside it, for his queue. It only
+    // suggests; in its own savepoint, so a failure here never changes the decision or the post.
+    if (d.effect === 'hold' && d.applied && (action === 'post.create' || action === 'post.approved') && sub) {
+      try {
+        const r = secondLook.review({ text: body, scores, error });
+        await t.savepoint((x) => x`select app.sl_record(${sub}::uuid, ${secondLook.VERSION}, ${r.eligible}, ${r.score}, ${r.suggestion}, ${x.array(r.reasons)}::text[])`);
+      } catch (e) { logFailure('second look', e); }
     }
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,
       challengeStatus: d.challenge_status, scores, error };

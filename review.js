@@ -69,6 +69,12 @@
       card.appendChild(meta);
       i.body.split(/\n{2,}/).forEach(function (para) { card.appendChild(el('p', '', para)); });
       card.appendChild(el('p', 'fine', why(i)));
+      // Second Look (033): an automated model in testing; it suggests, Aaron decides.
+      if (i.second_look) {
+        var sl = i.second_look;
+        card.appendChild(el('p', 'fine second-look', 'Second Look (automated, in testing, ' + sl.model + ') suggests: '
+          + (sl.suggestion === 'clear' ? 'clear' : 'leave for you') + ' (' + sl.reasons.join('; ') + '). The decision is yours.'));
+      }
       i.notes.forEach(function (n) { card.appendChild(el('p', 'fine note', 'Reporter: ' + n)); });
       var row = el('div', 'review-actions');
       var result = el('p', 'fine', '');

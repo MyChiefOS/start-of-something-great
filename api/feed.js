@@ -252,6 +252,10 @@ function shapeQueued(i) {
     author: { id: i.author.id, name: maskContacts(i.author.name), level: i.author.level, status: i.author.status, live_posts: i.author.livePosts },
     flagged_at: i.flaggedAt, first_posts: i.firstPosts, reports: i.reports, reasons: i.reasons, notes: i.notes.map(maskContacts), classifiers: i.classifiers,
     appealed: i.appeals > 0,
+    // Second Look's suggestion (033): it only suggests; the decision is Aaron's. Never its score, which would let anyone
+    // who saw the queue learn where its line is.
+    second_look: i.secondLook ? { model: i.secondLook.model, eligible: i.secondLook.eligible, suggestion: i.secondLook.suggestion,
+      reasons: i.secondLook.reasons } : null,
     // The one-tap choices for this item (SF5).
     // A removed post is here only if a report arrived as it was removed: Remove closes the leftover flags.
     actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'] };

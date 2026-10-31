@@ -124,6 +124,8 @@ const DEFINERS = {
   'app.watch_first(text)': 'dog_jevs',
   // 032: the rules that must never break, checked at most once an hour from the timer route; reads only, alerts Aaron.
   'app.invariants_check()': 'dog_jevs',
+  // 033: Second Look's suggestion for a post JEVs is holding, recorded only while that hold is open; it changes no post.
+  'app.sl_record(uuid, text, boolean, real, text, text[])': 'dog_jevs',
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',
