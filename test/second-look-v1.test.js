@@ -216,14 +216,18 @@ async function feed(method, { cookie, json, query = {} }) {
 // Letters only: random digits can read as a phone number (contact details, J08).
 const letters = (k) => Array.from(crypto.randomBytes(k), (x) => String.fromCharCode(97 + (x % 26))).join('');
 const links = (n) => Array.from({ length: n }, () => 'https://' + letters(8) + '.example/' + letters(10)).join(' ');
-// Words unlike any other post's, for the same reason.
-const WORDS = ('apple river quartz lantern meadow copper violin harbor pepper glacier saddle orchid ember timber falcon'
-  + ' velvet canyon thistle marble beacon willow cobalt prairie lemon anchor').split(' ');
-const unique = () => Array.from({ length: 10 }, () => WORDS[crypto.randomInt(WORDS.length)]).join(' ') + ' ' + letters(12);
+// Words unlike any other post's, for the same reason. Ten words from a list of 25 put two posts within 10 bits of each
+// other's word print about 1 time in 24 (measured on 50,000 pairs, Oct 31), so a post now and then read as a copy of
+// an earlier live one (J09), fell outside the gate, and a test failed at random (#92's checks). Forty random words make
+// that about 1 in 7,000 per pair; and a post J09 scored anyway is written again with new words, so no test rests on luck.
+const unique = () => Array.from({ length: 40 }, () => letters(7)).join(' ');
+const j09 = async (id) => Number(((await q(`select d.scores from app.jevs_decisions d where d.subject_id = '${id}' order by d.created_at desc limit 1`))[0] || {}).scores?.J09 || 0);
 const held = async (poster, words = 'Notes from the meetup are on these pages') => {
-  const r = await feed('POST', { cookie: poster.cookie, json: { body: words + ', ' + unique() + ' ' + links(4) } });
-  assert.strictEqual(r.status, 202, JSON.stringify(r.json));
-  return r.json.id;
+  for (let tries = 0; ; tries++) {
+    const r = await feed('POST', { cookie: poster.cookie, json: { body: words + ', ' + unique() + ' ' + links(4) } });
+    assert.strictEqual(r.status, 202, JSON.stringify(r.json));
+    if ((await j09(r.json.id)) === 0 || tries === 2) return r.json.id;
+  }
 };
 const status = async (id) => (await q(`select status from app.posts where id = '${id}'`))[0].status;
 const decision = async (id) => (await q(`select * from app.sl_decisions where post_id = '${id}'`))[0];
@@ -395,7 +399,7 @@ test('the timer route runs it with the identity token and still answers only {ok
   // A fresh account (the first poster now has a record) and words unlike the other posts (or copies, J09, would hold it).
   const gardener = await member('Cron poster');
   const sites = links(4);
-  const g = await feed('POST', { cookie: gardener.cookie, json: { body: 'Quarterly gardening club schedule: tomato seedlings, compost and rain barrels ' + letters(12) + ' ' + sites } });
+  const g = await feed('POST', { cookie: gardener.cookie, json: { body: 'Quarterly gardening club schedule: tomato seedlings, compost and rain barrels ' + unique() + ' ' + sites } });
   assert.strictEqual(g.status, 202, JSON.stringify(g.json));
   const p = g.json.id;
   const cron = require('../api/cron.js');

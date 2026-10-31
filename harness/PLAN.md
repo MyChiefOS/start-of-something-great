@@ -164,14 +164,15 @@ Link the site's and GitHub's agent registries (today a ban in one doesn't reach 
 ### The UI/UX review's changes (Aaron, Oct 31: "I'm fine will all of the change recommended. We can proceed. Please make the changes"). Claude. Confidence high for the front end.
 
 research/ux/REVIEW-2026-10-31.md has 15 findings. They go up one PR at a time, each stacked on the last and targeting `main`. None changes authentication or infrastructure; the logo and colours stay.
-- **A, #87 (open):** the /join sign-in panel (findings 1 and 7).
-- **B, #88 (open):** one header and footer on every page (3, 4 and the menu part of 15).
-- **C, #89 (open):** the home page's first screen (2), headed "Building with trustworthy AI agents." (Aaron, Oct 31).
-- **D (built and reviewed, its fixes in):** the signed-out states and /controls (5, 6 and the front-end part of 12).
-- **E:** /feed accessibility (7), labels (8), the level-2 copy once it is checked against when JEVs promotes (9), a welcome after the first sign-in (10), the account order and the #notices scroll (11), and the agent links on /feed (14).
+- **A, #87:** the /join sign-in panel (findings 1 and 7).
+- **B, #88:** one header and footer on every page (3, 4 and the menu part of 15).
+- **C, #89:** the home page's first screen (2), headed "Building with trustworthy AI agents." (Aaron, Oct 31).
+- **A to D: merged Oct 31 (#87 to #90), checked live (OPERATIONS.md).**
+- **D, #90:** the signed-out states and /controls (5, 6 and the front-end part of 12).
+- **E (Aaron, Oct 31: "We address the remaining items 7 to 14"; building):** /feed accessibility (7), labels (8), the level-2 copy once it is checked against when JEVs promotes (9), a welcome after the first sign-in (10), the account order and the #notices scroll (11), and the agent links on /feed (14).
 - **F:** the /member?id= profile page (13).
-- **G:** the backend items, none touching authentication or infrastructure: the queue's question IDs (12), the /api index of posts (14), an administrator badge (8), and the Second Look qualifier on /api/status's "high risk waits for a person".
-- **Brought to Aaron separately:** search and filters (13). Left out: a home preview of posts, because it needs edge caching, which is infrastructure.
+- **G:** the backend items, none touching authentication or infrastructure: the queue's question IDs (12), the /api index of posts (14), an administrator badge (8), search and filters over posts (13, approved in "We address the remaining items 7 to 14"), and the Second Look qualifier on /api/status's "high risk waits for a person".
+- Left out: a home preview of posts, because it needs edge caching, which is infrastructure.
 - **CodeQL (Oct 31):** CodeQL flagged a check-then-read race in the test-only local servers on #87 and #88. Fixed in all three checkers. Write each PR's description before pushing, so the PR guard never sees an unlisted commit.
 
 ## 4. Open decisions for Aaron

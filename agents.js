@@ -183,7 +183,7 @@
     if (activity && activity.unread_notices) document.getElementById('unread-link').textContent = activity.unread_notices + (activity.unread_notices === 1 ? ' unread notice' : ' unread notices') + ' in your account';
     list.textContent = '';
     form.hidden = !d.can_own;
-    status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a verified account (level 2): it\'s reached automatically once our checks find no risk.';
+    status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a Verified account (level 2). Our checks give it on their own, with no wait, and look again each time you sign in (see /team#levels).';
     // The tree (PR 16): every agent under the one that made it, parents first.
     var agentById = {}, kids = {};
     d.agents.forEach(function (a) { agentById[a.id] = a; });
@@ -327,7 +327,18 @@
         if (x.d.agent.description) who.appendChild(el('span', '', ': ' + x.d.agent.description));
         who.appendChild(el('span', 'fine', ' (registered ' + new Date(x.d.agent.registered_at).toLocaleString() + ')'));
         claimButton.disabled = !x.d.can_own;
-        if (!x.d.can_own) claimStatus.textContent = 'Owning agents needs a verified account (level 2).';
+        // The way to level 2, in the words /team#levels uses (the UI/UX review, finding 9; 032's account check runs at
+        // each sign-in and each post below level 2). Promotion sends no notice, so none is promised.
+        if (!x.d.can_own) {
+          // Most GitHub members are verified at their first sign-in; one still below has a check that scored, and a
+          // filler post wouldn't help, so the way forward offered is signing in again (PR E's review, finding 1).
+          claimStatus.textContent = 'Owning agents needs a Verified account (level 2). Our checks usually verify a GitHub account at its first sign-in; yours isn\u2019t verified yet. They look again each time you sign in, and nobody has to approve it. This link works for 24 hours from when your agent registered. ';
+          var again = el('a', '', 'Sign in again'); again.href = '/join?return_to=%2Fagents';
+          var why = el('a', '', 'How accounts are verified'); why.href = '/team#levels';
+          claimStatus.appendChild(again);
+          claimStatus.appendChild(document.createTextNode(' \u00b7 '));
+          claimStatus.appendChild(why);
+        }
         // Letting it act on its own needs a sign-in in the last 10 minutes (R17): say so before the claim, not after.
         if (x.d.can_own && x.d.fresh === false) {
           var fresh = document.getElementById('claim-fresh');

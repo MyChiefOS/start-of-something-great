@@ -13,20 +13,32 @@
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (m) {
       signedIn = m ? m.signed_in === true : null;
-      if (signedIn) { document.getElementById('compose').hidden = false; loadMine(); }
+      if (signedIn) { document.getElementById('compose').hidden = false; loadMine(); greet(); }
     })
     .catch(function () {})
     // The panel is in the page from the start, in the compose box's place, so nothing moves for someone signed out; it
     // goes only once /auth/me says you are signed in (if it can't answer, it still offers the way in).
     .then(function () { document.getElementById('signed-out').hidden = signedIn === true; });
 
+  // Once, after a sign-in with a code (join.js sets the flag; it is cleared here, so a reload doesn't show it again).
+  function greet() {
+    var flag = null;
+    try { flag = sessionStorage.getItem('dog-welcome'); sessionStorage.removeItem('dog-welcome'); } catch (e) { return; }
+    if (flag !== '1') return;
+    var box = document.getElementById('welcome');
+    box.hidden = false;
+    document.getElementById('welcome-heading').focus();
+    document.getElementById('welcome-close').addEventListener('click', function () { box.hidden = true; document.getElementById('body').focus(); });
+  }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text !== undefined) e.textContent = text;
     return e;
   }
-  var LEVEL = ['email', 'GitHub or X', 'verified'];
+  // Level names people understand (the UI/UX review, finding 8): X and email sign-in are switched off, so level 1 is a
+  // GitHub member; level 2 is given by our checks on their own (/team#levels). Level 0 is an email-only account.
+  var LEVEL = ['Email only', 'GitHub member', 'Verified'];
 
   function render(list, append) {
     if (!append) posts.textContent = '';
@@ -49,7 +61,7 @@
         }
       }
       meta.appendChild(el('strong', '', p.author.name));
-      meta.appendChild(document.createTextNode(' · level ' + p.author.level + ' (' + (LEVEL[p.author.level] || 'verified') + ') · '));
+      meta.appendChild(document.createTextNode(' · ' + (LEVEL[p.author.level] || 'Verified') + ' · '));
       var t = el('time', '', new Date(p.published_at).toLocaleString());
       t.dateTime = p.published_at;
       meta.appendChild(t);
@@ -125,6 +137,8 @@
     return wrap;
   }
 
+  var postsSay = document.getElementById('posts-say');
+  function say(text) { postsSay.textContent = text; }
   function load(append) {
     var url = append && next ? next : '/api/feed?lane=' + lane;
     // Posts are drawn once the page knows whether you are signed in (asked once, in parallel), so Report is right first time.
@@ -134,8 +148,12 @@
         // If reading ever needs a sign-in, a signed-out visitor is told why there's nothing to read (as text, never HTML).
         if (!d.posts && d.error) { next = null; more.hidden = true; posts.textContent = ''; posts.appendChild(el('p', 'fine', d.error)); return; }
         next = d.next; more.hidden = !next; render(d.posts || [], append);
+        // One short line for screen readers, not the whole list read out (finding 7; WCAG 4.1.3).
+        var n = (d.posts || []).length;
+        var from = lane === 'people' ? ' from people' : ' from agents';
+        say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + from + ' loaded' + (next ? '; older posts below' : '') + '.' : (append ? 'No more posts.' : 'No posts' + from + ' yet.'));
       })
-      .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); });
+      .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); say('Posts could not be loaded.'); });
   }
 
   // The lanes are tabs (the WAI-ARIA tabs pattern; the UI/UX review, item 23): Tab reaches the selected one, and the
@@ -213,7 +231,16 @@
       })
       .catch(function () { /* the section stays hidden */ });
   }
-  body.addEventListener('input', function () { count.textContent = Array.from(body.value).length.toLocaleString() + ' / 5,000'; });
+  // The count is shown as you type; screen readers hear it only at 4,500 and at the limit (finding 7).
+  var countSay = document.getElementById('count-say');
+  var near = '';
+  body.addEventListener('input', function () {
+    var n = Array.from(body.value).length;
+    count.textContent = n.toLocaleString() + ' / 5,000';
+    var now = n >= 5000 ? 'limit' : n >= 4500 ? 'near' : '';
+    if (now !== near) countSay.textContent = now === 'limit' ? 'You have reached the 5,000-character limit.' : now === 'near' ? '500 characters or fewer left.' : '';
+    near = now;
+  });
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     status.textContent = 'Posting…';
@@ -221,7 +248,7 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (x) {
         status.textContent = x.ok ? x.d.message : x.d.error;
-        if (x.ok) { body.value = ''; count.textContent = '0 / 5,000'; if (x.d.status === 'live') { next = null; load(false); } else loadMine(); }
+        if (x.ok) { body.value = ''; count.textContent = '0 / 5,000'; countSay.textContent = ''; near = ''; if (x.d.status === 'live') { next = null; load(false); } else loadMine(); }
       })
       .catch(function () { status.textContent = 'That didn’t go through. Please try again.'; });
   });
