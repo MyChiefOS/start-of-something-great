@@ -372,9 +372,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 /* Proposals page */
 .story ol.steps { max-width: var(--measure); padding-left: 1.4rem; }
 .story ol.steps li { margin-bottom: 0.4rem; }
-/* /join's two ways to take part, and its folded details (the UI/UX review, Oct 29). */
-.story ol.choices { max-width: var(--measure); padding-left: 1.4rem; }
-.story ol.choices li { margin-bottom: 0.6rem; }
+/* Folded details (the UI/UX review, Oct 29). */
 .story details { max-width: var(--measure); margin: 1rem 0; }
 .story details summary { cursor: pointer; font-family: var(--display); min-height: 24px; }
 .proposal-list { display: flex; flex-direction: column; gap: 1rem; max-width: calc(var(--measure) + 3rem); margin-top: 1rem; }
@@ -461,6 +459,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 }
 .email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }
+
 
 /* Posts (/feed) */
 .lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }

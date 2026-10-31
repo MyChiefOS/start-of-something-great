@@ -54,10 +54,11 @@ test('/join loads join.js, which is what shows the site sign-in, and the page ke
   const html = read('join.html');
   assert.match(html, /<script src="\/join\.js" defer><\/script>/);
   assert.ok(!/src="\/shipped\.js"/.test(html), 'not the shipped list’s script, which does nothing here');
-  for (const id of ['message', 'code-signin', 'code-status', 'code-show', 'code-value', 'code-region', 'code-region-text', 'code-region-yes', 'code-get', 'key-signin', 'code-copy', 'code-login', 'code-file']) {
+  for (const id of ['message', 'code-signin', 'code-status', 'code-show', 'code-value', 'code-region', 'code-region-text', 'code-region-yes', 'code-get', 'key-signin', 'code-copy', 'code-login', 'code-file',
+    'path-new', 'path-back', 'signin-fields', 'code-new', 'code-again', 'back-help', 'hello-head', 'code-wait', 'code-time']) {
     assert.ok(html.includes('id="' + id + '"'), '/join has #' + id);
   }
-  assert.match(html, /<section id="code-signin" hidden>/, 'shown only once /auth/me answers');
+  assert.match(html, /<section id="code-signin" class="join-panel" aria-labelledby="signin-title" hidden>/, 'shown only once /auth/me answers');
   assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false;/, 'shown only to someone signed out');
   assert.match(read('join.js'), /Object\.prototype\.hasOwnProperty\.call\(text, key\)/, 'no built-in names as messages');
   // The /join security policy lets our own scripts run there.
@@ -110,14 +111,51 @@ test('"The name" and GitHub are still reachable: every page with a menu has foot
   }
 });
 
-test('/join leads with the two ways to take part, numbered sign-in steps and the code warning, details folded below', () => {
+test('/join leads with one compact sign-in panel, the comment box under the code, and the long reading below (UX PR A)', () => {
   const html = read('join.html');
-  assert.match(html, /<ol class="choices">[\s\S]*href="#code-signin"[\s\S]*href="#say-hello"[\s\S]*<\/ol>/, 'in the order the page shows them');
-  const section = html.match(/<section id="code-signin" hidden>[\s\S]*?<\/section>/)[0];
-  assert.ok(section.indexOf('<ol class="steps">') < section.indexOf('id="code-login"'), 'steps come before the fields');
-  assert.ok(section.indexOf('id="code-login"') < section.indexOf('<details>'), 'the details are folded below the fields');
-  const steps = section.match(/<ol class="steps">[\s\S]*?<\/ol>/)[0];
-  assert.match(steps, /Only post a code this page showed you/, 'the takeover warning is never folded away');
+  const main = html.match(/<main[\s\S]*?<\/main>/)[0];
+  // Near the top: the second way in (Say hello) is one link away, and the terms are agreed before anything else.
+  assert.ok(main.indexOf('href="#say-hello"') < main.indexOf('id="code-signin"'), 'Say hello with GitHub is linked above the panel');
+  assert.match(main, /<a href="#say-hello"><strong>Say hello with GitHub<\/strong><\/a>/);
+  const panel = html.match(/<section id="code-signin"[\s\S]*?<\/section>/)[0];
+  // 1. The choice of path, as two toggle buttons (not form fields).
+  assert.match(panel, /<div class="paths" role="group" aria-label="Which is you\?">/);
+  assert.match(panel, /<button type="button" id="path-new" class="path-choice" aria-pressed="false"[^>]*>First time here, or a new key file<\/button>/);
+  assert.match(panel, /<button type="button" id="path-back" class="path-choice" aria-pressed="false"[^>]*>I have a key file<\/button>/);
+  // 2 and 3. The fields, each with its label above it and a one-line help, styled (class "field").
+  const fields = panel.match(/<div id="signin-fields" hidden>[\s\S]*?<\/details>\s*<\/div>\s*<\/div>/)[0];
+  // Once a code shows, the fields fold to one line: the username and "Change" (the design review of PR A, fix 1).
+  assert.match(fields, /^<div id="signin-fields" hidden>\s*<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"><\/span> <button type="button" id="code-change" class="button">Change<\/button><\/p>\s*<div id="field-set">/);
+  assert.ok(fields.indexOf('<label for="code-login">') < fields.indexOf('id="code-login"'), 'the username label comes first');
+  assert.match(fields, /<input id="code-login" class="field"[^>]*aria-describedby="code-login-help">/);
+  assert.match(fields, /id="code-login-help" class="help">As in github\.com\/your-username, not your name or email\./, 'the name-or-email help stays');
+  assert.match(fields, /<input id="code-file" class="field" name="file" type="file" aria-describedby="code-file-help">/);
+  assert.ok(fields.indexOf('id="code-file"') < fields.indexOf('<details>'), 'the key file details are folded below the field');
+  for (const id of ['code-get', 'key-signin']) assert.match(fields, new RegExp('id="' + id + '" class="button primary"'), id + ' is a primary button');
+  // 4. The code, large, with Copy styled as a button, the time left out of the live region and the takeover warning beside it.
+  const step = panel.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
+  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
+  assert.match(step, /<span id="code-time" aria-hidden="true"><\/span>/);
+  assert.match(step, /Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account\./, 'the takeover warning sits beside the code, never folded away');
+  assert.match(step, /for 10 minutes/, 'the same 10 minutes the server gives (signin/flow.js CODE_MINUTES)');
+  assert.match(panel, /<p class="act" id="code-again" hidden><button type="button" id="code-new" class="button primary">Get a new code<\/button><\/p>/);
+  // 5. The waiting line: states in the live region, seconds beside it where screen readers don't go.
+  assert.match(panel, /<p class="wait-line"><span id="code-status" role="status" aria-live="polite"><\/span> <span id="code-wait" aria-hidden="true"><\/span><\/p>/);
+  // The comment box comes straight after the panel, and the long reading after the box.
+  const after = html.slice(html.indexOf('</section>', html.indexOf('id="code-signin"')));
+  assert.match(after, /^<\/section>\s*<section id="say-hello" class="hello" aria-labelledby="hello-title">\s*<div id="hello-head">/);
+  for (const h of ['What we keep', 'AI agents', 'Where we are open']) {
+    assert.ok(html.indexOf('<h2>' + h + '</h2>') > html.indexOf('giscus.app/client.js'), h + ' comes below the comment box');
+  }
+  // The panel's styles: at least 44 px for every control, colours only from the tokens.
+  // In join.css, which only /join loads, so the shared styles.css stays within the page-weight budget (SF2).
+  assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/join\.css">/);
+  const css = read('join.css');
+  assert.match(css, /\.path-choice, \.join-panel \.field \{ min-height: 44px;/);
+  assert.match(css, /\.join-panel \.button, \.story \.join-panel summary \{ min-height: 44px; \}/);
+  assert.deepStrictEqual([...new Set(css.match(/#[0-9a-fA-F]{3,6}\b/g))].sort(), ['#15110a', '#ffffff'], 'only the colours .button.primary already uses');
+  assert.ok(!/--[a-z]+\s*:/.test(css), 'no new colour tokens: only the ones in styles.css');
+  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'join.html')) assert.ok(!read(f).includes('/join.css'), f + ' does not load join.css');
 });
 
 // nav.js run for real, in a stand-in page: what a visitor and a member see, and that it asks once a minute at most.
@@ -186,8 +224,8 @@ test('/auth/me tells a member how many notices are unread, as a count only', () 
   assert.match(flow, /trust_level: who\.trustLevel, unread \}/);
 });
 
-test('/join shows "Sign in to the site" as a choice only when the sign-in itself shows', () => {
-  assert.match(read('join.html'), /<li id="choice-signin" hidden>/);
+test('/join shows the sign-in panel only when the sign-in itself is on and the visitor is signed out', () => {
+  assert.match(read('join.html'), /<section id="code-signin" class="join-panel"[^>]*hidden>/);
   // resume(): a code this tab was waiting for before the comment box's GitHub round trip (test/join-page.test.js).
-  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; if \(choice\) choice\.hidden = false; resume\(\); return; \}/);
+  assert.match(read('join.js'), /if \(d\.signed_in === false\) \{ box\.hidden = false; restore\(\); resume\(\); return; \}/);
 });

@@ -1,0 +1,53 @@
+/* /join only: the sign-in panel (the UI/UX review of Oct 31, findings 1, 7 and 15): one compact panel near the top,
+   every control at least 44 px tall, the code large, and the comment box right under it. Colours from the tokens in
+   styles.css only. Its own file, so the shared styles.css, which every page loads, stays within the page-weight budget
+   (SF2), as agents.css does for /agents. */
+.signin.story { padding-top: 1.5rem; }
+.signin.story h1 { font-size: clamp(2rem, 7vw, 3.25rem); max-width: none; }
+.signin.story .dek { font-size: 1rem; margin: 0.5rem 0 0.6rem; }
+.signin .jump { margin: 0 0 0.75rem; }
+.story section.join-panel { max-width: calc(var(--measure) + 3rem); margin: 0 0 1rem; padding: 1rem 1.1rem 0.5rem; border: 1px solid var(--rule); border-top: 2px solid var(--amber); border-radius: 10px; }
+.story .join-panel h2 { font-size: 1.35rem; margin: 0; }
+.story .join-panel .fine { margin: 0.2rem 0 0; }
+.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+/* Borders in the existing --muted token (the rule token measured 1.27:1 against the page, too faint to find the
+   controls; WCAG 2.2, 1.4.11 needs 3:1; the design review of PR A, fix 6). The panel's plain buttons (Copy, Change) too. */
+.path-choice, .join-panel .field { min-height: 44px; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--muted); border-radius: 0.6rem; }
+.join-panel .button:not(.primary) { border-color: var(--muted); }
+.path-choice { font-family: var(--display); font-weight: 600; font-size: 0.98rem; line-height: 1.25; padding: 0.5rem 0.75rem; text-align: left; cursor: pointer; }
+.path-choice:hover { border-color: var(--amber); }
+.path-choice[aria-pressed="true"] { border-color: var(--amber); background: var(--glow); box-shadow: inset 0 0 0 1px var(--amber); }
+.join-panel label { display: block; font-family: var(--display); font-weight: 600; margin: 0.6rem 0 0.2rem; }
+.join-panel .field { display: block; width: 100%; padding: 0.5rem 0.75rem; }
+.join-panel .field[type="file"] { padding: 0.25rem; font-size: 0.95rem; }
+.join-panel .field::file-selector-button { min-height: 36px; margin-right: 0.75rem; padding: 0.3rem 1rem; font: inherit; font-family: var(--display); font-weight: 600; color: var(--text); background: transparent; border: 1px solid var(--amber); border-radius: 999px; cursor: pointer; }
+.path-choice:focus-visible, .join-panel .field:focus-visible, .join-panel button:focus-visible, .join-panel summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.story .join-panel .help { color: var(--muted); font-size: 0.88rem; line-height: 1.4; margin: 0.25rem 0 0; }
+.story .join-panel .act { margin: 0.75rem 0 0; }
+.join-panel .button, .story .join-panel summary { min-height: 44px; }
+.signin .join-panel button.button.primary { background: var(--amber); border-color: var(--amber); color: #15110a; }
+.story .join-panel details { margin: 0.5rem 0 0; }
+.story .join-panel summary { display: list-item; padding: 0.55rem 0; line-height: 1.4; font-size: 0.95rem; }
+.story .join-panel .wait-line { margin: 0.6rem 0 0; scroll-margin-top: 0.5rem; }
+#code-status { font-family: var(--display); font-weight: 600; }
+.wait-line #code-wait, .code-meta { color: var(--muted); }
+.wait-line #code-wait { display: block; font-size: 0.9rem; }
+.story .code-step p, .story .code-step ul { margin: 0.5rem 0 0; }
+.story .join-panel .code-step h3 { font-size: 1.15rem; margin: 0.9rem 0 0; scroll-margin-top: 0.5rem; }
+.code-step h3:focus { outline: none; }
+.code-step h3:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.story .code-step .code-hints { padding-left: 1.1rem; font-size: 0.95rem; line-height: 1.45; }
+.story .code-step .code-hints li { margin: 0.2rem 0 0; }
+.signin-as { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0.6rem 0 0; scroll-margin-top: 0.5rem; }
+#signin-as-text { font-family: var(--display); font-weight: 600; overflow-wrap: anywhere; }
+.story .code-step .code-copied { font-family: var(--display); font-weight: 600; margin: 0.35rem 0 0; }
+.story .code-step .code-copied:empty { margin: 0; }
+.code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.code-row code { font-size: clamp(1.35rem, 5.6vw, 1.9rem); font-weight: 700; letter-spacing: 0.04em; padding: 0.2rem 0.6rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: normal; user-select: all; }
+.story .code-step .code-meta { font-size: 0.9rem; line-height: 1.45; }
+#code-time { font-family: var(--display); font-weight: 700; color: var(--text); font-size: 0.95rem; }
+.story section.hello { padding: 0; }
+.story .hello h2 { margin-top: 1.75rem; }
+.story .hello h2.post-here { font-size: 1.25rem; margin: 0.9rem 0 0; }
+.hello .talk-replies { margin-top: 0.75rem; }
+@media (prefers-color-scheme: light) { .signin .join-panel button.button.primary { color: #ffffff; } }

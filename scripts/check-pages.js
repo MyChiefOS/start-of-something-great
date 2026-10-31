@@ -13,7 +13,9 @@ const base = (process.argv[2] || 'https://dayonegreat.com').replace(/\/+$/, '');
 
 // What a signed-out visitor must and mustn't see on each page.
 const PAGES = [
-  { path: '/join', visible: ['#code-signin', '#code-get', '#key-signin'], hidden: ['#code-show'] },
+  // The sign-in panel's two paths (UX PR A): the fields and buttons show once one is chosen (scripts/check-join-panel.js).
+  // The parts that belong to a code (its step, the folded username line, "Post your code here") stay hidden until one shows.
+  { path: '/join', visible: ['#code-signin', '#path-new', '#path-back', '#hello-title'], hidden: ['#code-show', '#signin-as', '#post-here'] },
   { path: '/feed', visible: [], hidden: ['#compose'] },
   { path: '/agents', visible: [], hidden: ['#create'] },
   { path: '/account', visible: [], hidden: ['#details'] }
