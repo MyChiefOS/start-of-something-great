@@ -10,7 +10,7 @@ The full audit is the doc "Day One Great: system audit" (https://claude.ai/artif
 
 - **Live:** the site's own system is open (stage public; sign-in on; JEVs enforce; Second Look in shadow). Route B works live: the identity token, the broker and the keys are all OK, and the database is reached. The timers run every minute and the never-break rules every hour, with 0 failures. All 54 tables have forced row-level security. (Verified: /api/ready and read-only queries, Oct 31, 21:00 UTC.)
 - **Proven in tests:** 679 tests, 678 pass, 0 fail, 1 skipped (only runs on Supabase's image). Semgrep 0 findings, gitleaks none, npm audit 0. (Verified on main fa67896.)
-- **Open PRs:** #93 (search, the administrator badge, question IDs in the review queue, the people feed in /api) and #94 (member pages), both green on GitHub and waiting for Aaron's merge, in order. Neither changes the D1 to D8 ratings below.
+- **Merged Oct 31, 21:55 UTC, and checked live:** #93 (search, the administrator badge, question IDs in the review queue, the people feed in /api; migration 035) and #94 (member pages). See OPERATIONS.md. Neither changes the D1 to D8 ratings below.
 - **Not proven live:** delegated authority. Production has 0 agents on the site and 0 on GitHub. Only Aaron has signed in, and no post has been held. A database restore has never been tested (O2). The uptime check runs about every 4 hours, not every 15 minutes (C4).
 
 ## Bottom line (Oct 26, kept as history)
