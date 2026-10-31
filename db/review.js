@@ -34,8 +34,7 @@ async function queue(t, { limit = 50 } = {}) {
     select p.id, p.lane, p.body, p.status, p.created_at, p.published_at,
            m.id as author_id, m.display_name as author_name, m.trust_level as author_level, m.status as author_status,
            (select count(*) from app.posts x where x.author_id = p.author_id and x.status = 'live') as author_live_posts,
-           f.first_at, f.first_posts, f.reports, f.reasons, f.notes, f.classifiers, f.appeals,
-           sl.model as sl_model, sl.eligible as sl_eligible, sl.suggestion as sl_suggestion, sl.reasons as sl_reasons
+           f.first_at, f.first_posts, f.reports, f.reasons, f.notes, f.classifiers, f.appeals
     from (
       select post_id, min(created_at) as first_at,
              bool_or(source = 'first_posts') as first_posts,
@@ -48,9 +47,6 @@ async function queue(t, { limit = 50 } = {}) {
     ) f
     join app.posts p on p.id = f.post_id
     join app.members m on m.id = p.author_id
-    -- Second Look's latest suggestion, if it made one (033); Aaron reads it, and only he.
-    left join lateral (select r.model, r.eligible, r.suggestion, r.reasons from app.sl_reviews r where r.post_id = p.id
-                       order by r.created_at desc, r.id desc limit 1) sl on true
     order by f.first_at, p.id
     limit ${n}`;
   const [{ open }] = await t`select count(distinct post_id) as open from app.review_flags where resolved_at is null`;
@@ -60,8 +56,7 @@ async function queue(t, { limit = 50 } = {}) {
       id: r.id, lane: r.lane, body: r.body, status: r.status, createdAt: r.created_at, publishedAt: r.published_at,
       author: { id: r.author_id, name: r.author_name, level: r.author_level, status: r.author_status, livePosts: Number(r.author_live_posts) },
       flaggedAt: r.first_at, firstPosts: r.first_posts, reports: Number(r.reports), reasons: r.reasons, notes: r.notes, classifiers: r.classifiers,
-      appeals: Number(r.appeals),
-      secondLook: r.sl_model ? { model: r.sl_model, eligible: r.sl_eligible, suggestion: r.sl_suggestion, reasons: r.sl_reasons.split('; ') } : null
+      appeals: Number(r.appeals)
     }))
   };
 }

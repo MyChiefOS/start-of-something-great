@@ -1,8 +1,9 @@
 // Second Look v0 (Aaron, Oct 30, 2026: "lets build second look"). A very small, narrow model that takes a second look at
-// a post JEVs held for Aaron and SUGGESTS: "clear" or "leave for Aaron", with reasons. In v0 it only suggests: Aaron
-// decides every held post, his decisions are recorded next to its suggestions, and that record is what will show
-// whether it may one day clear posts on its own (at most 1 wrong clear in 80, proven on real held posts; nothing in
-// this version can clear anything).
+// a post JEVs held for Aaron and records what it would suggest: "clear" or "leave for Aaron", with reasons. In v0 it
+// only records, blind: its suggestions are not shown to Aaron while it is being tested, so his decisions stay his own
+// and are a fair test of it. His decisions sit next to its suggestions, and that record is what will show whether it
+// may one day clear posts on its own (at most 1 wrong clear in 80, proven on real held posts; nothing in this version
+// can clear anything).
 //
 // The principle it is built under (research/second-look/README.md, Aaron's words): the builder's choices become its
 // character. So: trustworthy before capable; no shortcuts; honest about its limits; people first.
@@ -14,8 +15,10 @@
 //
 // How it decides, in order:
 //   1. The never-clear floor (people first): a hold that involves anyone other than the poster is never "clear",
-//      whatever the model says. Eligible only if every question that asked about the post (score 25 or more) is one of
-//      account age (J01), sign-in strength (J02), activity rate (J04), links (J07) or region (J13).
+//      whatever the model says. Eligible only if no other question scored the post at all (any score above 0 counts,
+//      since small scores add up to a hold), and at least one of account age (J01), sign-in strength (J02), activity
+//      rate (J04), links (J07) or region (J13) asked about it (score 25 or more). The database checks the same rule
+//      against JEVs's own record of the decision (app.sl_record, 033).
 //   2. The model: the probability, from the words alone, that the post is an ordinary one. "clear" only above the
 //      threshold set on held-out public data so that at most 1 in 80 of its clears there were spam.
 'use strict';
@@ -72,14 +75,16 @@ const FLOOR = { // why a hold is never Second Look's to clear, by question
 const REASON = { J01: 'a new account', J02: 'the sign-in method', J04: 'a burst of activity', J07: 'links', J13: 'the region' };
 
 // One held post: { eligible, score, suggestion: 'clear' | 'leave', reasons: [...] }. scores: JEVs's scores for it.
-// error: JEVs's scoring failed (never eligible). The reasons are plain words for Aaron's queue; never a threshold.
+// error: JEVs's scoring failed (never eligible). The reasons are plain words; never a score or a threshold.
 function review({ text, scores, error = false }) {
   const s = scores && typeof scores === 'object' ? scores : {};
-  const asked = Object.keys(s).filter((k) => /^J\d{2}$/.test(k) && Number(s[k]) >= ASKED).sort();
-  const blocked = asked.filter((k) => !ELIGIBLE.includes(k));
+  const keys = Object.keys(s).filter((k) => /^J\d{2}$/.test(k)).sort();
+  const asked = keys.filter((k) => Number(s[k]) >= ASKED);
+  // Any score above 0 on a question outside the eligible five blocks it: a hold can come from small scores adding up.
+  const blocked = keys.filter((k) => !ELIGIBLE.includes(k) && !(Number(s[k]) <= 0)); // a score that isn't a number blocks too
   const score = Math.round(ordinary(text) * 1e4) / 1e4;
   if (error || !asked.length || blocked.length) {
-    const why = error ? ['the checks failed to score it'] : !asked.length ? ['no single check explains the hold'] : blocked.map((k) => FLOOR[k] || k);
+    const why = error ? ['the checks failed to score it'] : blocked.length ? blocked.map((k) => FLOOR[k] || k) : ['no single check explains the hold'];
     return { eligible: false, score, suggestion: 'leave', reasons: why.map((w) => 'never Second Look\u2019s to clear: ' + w) };
   }
   const held = 'held for ' + asked.map((k) => REASON[k]).join(', ');

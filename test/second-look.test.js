@@ -1,5 +1,6 @@
-// Second Look v0 (033; Aaron, Oct 30: "lets build second look"): it suggests for each post JEVs holds for Aaron, never
-// clears one, never clears past the floor, learned only from public human-labelled data, and only Aaron sees it.
+// Second Look v0 (033; Aaron, Oct 30: "lets build second look"): it records, blind, what it would suggest for each post
+// JEVs holds for Aaron; it never clears one, never past the floor (checked again by the database), learned only from
+// public human-labelled data, and nothing shows its record while it is tested.
 'use strict';
 
 const test = require('node:test');
@@ -29,6 +30,10 @@ test('the floor: a hold that involves anyone but the poster is never "clear", wh
   }
   assert.deepStrictEqual(sl.review({ text: ordinaryWords, scores: {}, error: true }).suggestion, 'leave', 'a scoring error is never eligible');
   assert.strictEqual(sl.review({ text: ordinaryWords, scores: { J02: 10 } }).eligible, false, 'no single question explains the hold');
+  // A small score on a floor question blocks too: a hold can come from small scores adding up (the fresh review's probe).
+  const small = sl.review({ text: ordinaryWords, scores: { J05: 20, J07: 25, J01: 10 } });
+  assert.deepStrictEqual([small.eligible, small.suggestion, small.reasons], [false, 'leave', ['never Second Look’s to clear: a cluster of new accounts']]);
+  assert.strictEqual(sl.review({ text: ordinaryWords, scores: { J07: 50, J09: 'x' } }).eligible, false, 'a score that is not a number blocks');
   assert.deepStrictEqual(sl.ELIGIBLE, ['J01', 'J02', 'J04', 'J07', 'J13']);
   // Within the floor, the words decide.
   assert.strictEqual(sl.review({ text: ordinaryWords, scores: { J01: 25, J07: 50 } }).suggestion, 'clear');
@@ -59,7 +64,7 @@ test('v0 learned only from public data people labelled, never from Claude or mem
 });
 
 test('it is described honestly where people read about it: /team, /privacy, llms.txt', () => {
-  assert.match(read('team.html'), /A narrow AI · in testing: suggests only/);
+  assert.match(read('team.html'), /A narrow AI · in testing: decides nothing yet/);
   const p = read('privacy.html');
   assert.match(p, /is also read by Second Look, a small automated model in testing/);
   assert.match(p, /It never decides: a person still decides every held post\./);
@@ -129,7 +134,7 @@ async function feed(method, { cookie, json, query = {} }) {
 }
 const links = (n) => Array.from({ length: n }, (_, i) => 'https://s' + i + '-' + crypto.randomBytes(3).toString('hex') + '.example').join(' ');
 
-test('a held post gets a suggestion beside it; only Aaron sees it, without its score; it changes nothing; it goes with the post', async () => {
+test('a held post gets a blind record beside it; nothing shows it; the database checks the floor itself; it changes nothing', async () => {
   const aaron = await member('Aaron', { admin: true });
   const poster = await member('Poster');
   // Held for links only (eligible): four new sites score J07 at 100, high.
@@ -146,10 +151,12 @@ test('a held post gets a suggestion beside it; only Aaron sees it, without its s
   assert.match(rows[1].reasons, /never Second Look’s to clear: contact details/);
   // It changed nothing: both posts still wait for Aaron.
   assert.deepStrictEqual((await q(`select status from app.posts where id in ('${a.json.id}', '${b.json.id}')`)).map((r) => r.status), ['waiting', 'waiting']);
-  // Aaron's queue shows the suggestion, never the score.
+  // Blind while it is tested: Aaron's queue doesn't show it, so his decisions stay his own.
   const queue = await feed('GET', { cookie: aaron.cookie, query: { queue: '1' } });
   const item = queue.json.items.find((i) => i.id === b.json.id);
-  assert.deepStrictEqual(Object.keys(item.second_look).sort(), ['eligible', 'model', 'reasons', 'suggestion']);
+  assert.ok(item, 'the held post is in the queue');
+  assert.strictEqual(item.second_look, undefined);
+  assert.doesNotMatch(read('review.js'), /second.?look/i);
   // Nobody else reads the record, not even the poster.
   const asPoster = await run(poster.ctx, (t) => t`select count(*)::int as n from app.sl_reviews`);
   assert.strictEqual(asPoster[0].n, 0);
@@ -159,6 +166,12 @@ test('a held post gets a suggestion beside it; only Aaron sees it, without its s
     (t) => t`select app.sl_record(${post}::uuid, 'v0', ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
   assert.strictEqual(await record(live.json.id), false, 'not held');
   assert.strictEqual(await record(a.json.id), false, 'already recorded by this model');
+  // The database works out eligibility from JEVs's own record and refuses a caller who claims otherwise.
+  const recordAs = (post, model, eligible, suggestion) => run(poster.ctx,
+    (t) => t`select app.sl_record(${post}::uuid, ${model}, ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
+  await assert.rejects(recordAs(b.json.id, 'v1', true, 'clear'), /disagree on eligibility/, 'held for contact details: never eligible');
+  await assert.rejects(recordAs(a.json.id, 'v1', false, 'leave'), /disagree on eligibility/, 'held for links only: eligible');
+  assert.strictEqual(await recordAs(b.json.id, 'v1', false, 'leave'), true);
   // The floor holds in the database too: an ineligible "clear" is refused.
   await assert.rejects(q(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${a.json.id}', 'v1', false, 0.9, 'clear', 'x')`), /check/);
   // Deleting the post deletes its record (account deletion deletes posts).
