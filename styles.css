@@ -155,15 +155,11 @@ a:focus-visible, .button:focus-visible {
   padding: 0 1.25rem;
 }
 
-/* Header */
-.site-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
-}
+/* Header, written into every page by scripts/shell.js: one row, 320 px up. On phones, the wordmark, Menu, whose panel
+   drops below, and Join (Account once signed in), in the Tab order; on wide screens the panel's links sit in the row,
+   "on this site" and "on GitHub" as a small second line, and Menu goes. The menu is a <details>, so it works on the
+   pages that run no script. */
+.site-header { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; padding: 0.75rem 0; }
 .wordmark {
   font-family: var(--display);
   font-weight: 700;
@@ -179,13 +175,43 @@ a:focus-visible, .button:focus-visible {
   line-height: 0;
   margin-left: 0.08em;
 }
-.site-nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; font-family: var(--display); font-size: 0.95rem; }
-.site-nav a { text-decoration: none; color: var(--muted); }
-.site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--text); }
-.site-nav a[aria-current="page"] { text-decoration: underline; text-decoration-color: var(--amber); }
-/* Join (Account once signed in): the one call to action in the menu, at least 24 px tall (WCAG 2.5.8). */
-.site-nav a.nav-join { color: var(--amber); font-weight: 700; display: inline-block; min-height: 24px; line-height: 24px; }
-.site-nav a.nav-join:hover { color: var(--text); }
+.site-nav { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; font-family: var(--display); font-size: 0.95rem; }
+.site-nav a { text-decoration: none; color: var(--text); }
+.site-nav a:hover { color: var(--amber); }
+.site-nav a[aria-current] { text-decoration: underline; text-decoration-color: var(--amber); }
+/* Join (Account once signed in): the menu's one call to action, a pill in the amber, 44 px on phones (finding 15).
+   Hover darkens it in the light scheme (6.2:1; a brighter pill fell to 4.4:1). */
+.site-nav a.nav-join { display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.8rem; border-radius: 999px; background: var(--amber); color: #15110a; font-weight: 700; white-space: nowrap; }
+.site-nav a.nav-join:hover { color: #15110a; filter: brightness(1.08); }
+.site-nav a.nav-join[aria-current] { text-decoration-color: currentColor; }
+@media (prefers-color-scheme: light) { .site-nav a.nav-join, .site-nav a.nav-join:hover { color: #ffffff; } .site-nav a.nav-join:hover { filter: none; background: color-mix(in srgb, var(--amber) 85%, #15110a); } }
+.menu > summary { display: flex; align-items: center; gap: 0.45rem; min-height: 44px; padding: 0 0.4rem; border-radius: 999px; cursor: pointer; list-style: none; font-weight: 600; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary::after { content: ""; width: 0.4em; height: 0.4em; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-25%) rotate(45deg); }
+.menu[open] > summary::after { transform: translateY(20%) rotate(-135deg); }
+.menu > summary:hover { color: var(--amber); }
+.menu > summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.menu-panel { position: absolute; z-index: 20; top: 100%; left: -1.25rem; right: -1.25rem; padding: 0 1.25rem 1rem; background: var(--ink); border-block: 1px solid var(--rule); }
+.menu-panel a { display: block; min-height: 44px; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); font-size: 1.05rem; }
+.site-nav .menu-panel a.nav-about { display: none; }
+.nav-sub { display: inline-block; margin-left: 0.45rem; color: var(--muted); font-size: 0.85em; }
+.nav-group { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.25rem; }
+.nav-group span { grid-column: 1 / -1; padding-top: 1rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
+@media (max-width: 24rem) { .site-header, .site-nav:has([href^="/account"]) { column-gap: 0.25rem; } .site-nav a.nav-join[href^="/account"] { padding: 0 0.5rem; font-size: 0.875rem; } .site-nav:has([href^="/account"]) .menu > summary { gap: 0.25rem; padding: 0; } }
+@supports selector(::details-content) {
+  @media (min-width: 48rem) {
+    .site-nav { gap: 0.7rem; }
+    .site-nav a.nav-join { min-height: 36px; }
+    .menu > summary, .nav-group { display: none; }
+    .menu::details-content { content-visibility: visible; }
+    .menu-panel { position: static; display: flex; align-items: center; gap: 0.7rem; padding: 0; background: none; border: 0; }
+    .site-nav .menu-panel a { position: relative; display: inline-block; min-height: 24px; padding: 2px 0; border: 0; font-size: inherit; color: var(--muted); }
+    .site-nav .menu-panel a:hover, .site-nav .menu-panel a[aria-current] { color: var(--text); }
+    .site-nav .menu-panel a.nav-about { display: inline-block; }
+    .site-nav .menu-panel a:has(.nav-sub):has(+ a .nav-sub) { min-width: 3.75rem; }
+    .nav-sub { position: absolute; left: 0; top: 100%; margin: 0; font-size: 0.72rem; line-height: 1; white-space: nowrap; }
+  }
+}
 
 /* Hero: the horizon */
 .hero {
@@ -340,26 +366,23 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 .talk-replies { max-width: calc(var(--measure) + 3rem); margin-top: 1.5rem; min-height: 12rem; }
 @media (max-width: 560px) { .post { padding: 1.25rem 1rem 0.25rem; } }
 
-/* Footer */
-.site-footer {
-  margin-top: 5rem;
-  padding: 2rem 0 3rem;
-  border-top: 1px solid var(--rule);
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-.site-footer p { margin: 0 0 0.5rem; }
+/* Footer, the same on every page (scripts/shell.js): About, Take part, Agents, then Legal and contact. */
+.site-footer { margin-top: 5rem; padding: 2rem 0 3rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.95rem; }
+.site-footer p { margin: 0 0 0.5rem; line-height: 1.7; }
 .site-footer a { color: var(--muted); }
 .site-footer a:hover { color: var(--amber); }
-.footer-links { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin-top: 0.75rem; }
+.footer-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1.5rem 2rem; margin-bottom: 1.5rem; }
+.footer-cols > div > a { display: block; width: fit-content; min-height: 24px; padding: 2px 0; }
+.site-footer h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.5rem; }
+.footer-legal { grid-column: 1 / -1; }
+.footer-legal p { margin: 0.25rem 0; }
+@media (min-width: 48rem) { .footer-cols { grid-template-columns: 1fr 1fr 1fr 2fr; } .footer-legal { grid-column: auto; } }
 
 @media (max-width: 34rem) {
   body { font-size: 1.0625rem; }
-  .site-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .hero { padding-top: 3rem; padding-bottom: 3rem; }
   .lede { font-size: 1.15rem; }
 }
-.site-footer .contact { line-height: 1.7; }
 
 .snippet { max-width: var(--measure); margin: 0.5rem 0 1.25rem; padding: 0.85rem 1rem; border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; line-height: 1.45; }
 .snippet code { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -460,81 +483,6 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }
 
-
-/* Posts (/feed) */
-.lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }
-.lanes [role="tab"] { font: inherit; font-family: var(--display); font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.45rem 1rem; cursor: pointer; }
-.lanes [role="tab"][aria-selected="true"] { color: var(--text); border-color: var(--amber); }
-.lanes [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.compose { display: grid; gap: 0.6rem; margin-bottom: 2rem; }
-.compose label { font-family: var(--display); font-weight: 600; }
-.compose textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.7rem 0.8rem; resize: vertical; }
-.compose textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.compose-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.compose button.button { cursor: pointer; }
-.feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
-.feed .post p { margin: 0.4rem 0; white-space: pre-line; }
-
-/* Reports (/feed) and the review queue (/review): big targets for thumbs (SF5) */
-.feed button.button { cursor: pointer; font-family: var(--display); font-weight: 600; font-size: 1rem; }
-.feed button.button:not(.primary) { background: transparent; }
-.feed button.button:not(.primary):not(.danger) { color: var(--text); }
-.feed button.button:disabled { opacity: 0.6; cursor: default; }
-.report-link { font: inherit; font-size: 0.9rem; color: var(--muted); background: none; border: 0; padding: 0.25rem 0; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule); }
-.report-link:hover { color: var(--amber); }
-.report-form { display: grid; gap: 0.5rem; margin: 0.5rem 0 0.25rem; max-width: 30rem; }
-.report-form select, .report-form input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
-.report-form select:focus-visible, .report-form input:focus-visible, .report-link:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0 0.25rem; }
-.review-actions .button { min-height: 3rem; justify-content: center; text-align: center; }
-.feed .button.danger { border-color: #c2413b; color: #f1857f; }
-.feed .button.danger:hover { border-color: #e0574f; color: #ffb0ab; }
-@media (prefers-color-scheme: light) { .feed .button.danger { color: #a3302a; } .feed .button.danger:hover { color: #7d211c; } }
-.review-item.decided > :not(.fine):not(.button) { opacity: 0.55; }
-.review .note { font-style: italic; }
-
-/* Agents (/agents) */
-.agents input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.6rem 0.75rem; }
-.agents input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
-.key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
-.agent-of { color: var(--muted); }
-/* Sub-agents (PR 16): each sits under its parent on /agents, a step further in per level (three steps at most, so a
-   deep tree still fits a phone at 390 px). */
-.agent.sub-agent { border-left: 2px solid var(--rule); padding-left: 0.75rem; }
-.agent.depth-1 { margin-left: 0.75rem; }
-.agent.depth-2 { margin-left: 1.5rem; }
-.agent.depth-3, .agent.depth-deep { margin-left: 2.25rem; }
-.claim-agent { font-size: 1.1rem; }
-
-/* Owner controls (/controls, PR 6): the numbers in a grid, the brake form one field per row on a phone */
-.controls #totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin: 1rem 0; }
-.controls .stat { margin: 0; padding: 0.75rem; border: 1px solid var(--rule); border-radius: 6px; }
-.controls .stat strong { display: block; font-size: 1.5rem; }
-.brake-form { display: grid; gap: 0.6rem; max-width: var(--measure); }
-.brake-form label { display: grid; gap: 0.25rem; }
-.brake-form input, .brake-form select { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
-.brake-form input:focus-visible, .brake-form select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-
-/* Your account (/account, PR 8) */
-.account-form { display: grid; gap: 0.6rem; max-width: 30rem; }
-.account-form label { display: grid; gap: 0.25rem; }
-.account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
-.account-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.inline-form { display: inline; }
-
-/* Agents acting for their owners (PR 7): the inbox, rules and receipts */
-.feed .post p.draft-body { white-space: pre-wrap; border-left: 2px solid var(--amber); padding-left: 0.75rem; }
-/* One tap on a notice (PR 13): the exact words being answered, kept as written (what is shown is what is hashed). */
-.inbox .draft-words { white-space: pre-wrap; font-style: normal; border-left: 2px solid var(--amber); padding: 0.1rem 0 0.1rem 0.75rem; margin: 0.5rem 0; }
-.inbox .one-tap { margin: 0.5rem 0; }
-.rules-form { display: grid; gap: 0.5rem; max-width: 30rem; margin: 0.75rem 0; }
-.rules-form label { display: grid; gap: 0.25rem; }
-.rules-form select, .rules-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
-.delegation { margin: 0.25rem 0; }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
-.facts dt { color: var(--muted); }
-.facts dd { margin: 0; }
 
 /* Skip to content (WCAG 2.4.1; the UI/UX review, item 22): the first thing a keyboard reaches on every page, shown
    only while it has focus. */

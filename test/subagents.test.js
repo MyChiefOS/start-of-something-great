@@ -39,7 +39,7 @@ test('SA10 (pages): /agents shows the tree, and the feed and receipts show the c
   assert.match(agentsJs, /sub-agent of/i);
   assert.match(fs.readFileSync(path.join(root, 'feed.js'), 'utf8'), /sub_agent_of/);
   assert.match(fs.readFileSync(path.join(root, 'receipt.js'), 'utf8'), /chain_label/);
-  assert.match(fs.readFileSync(path.join(root, 'styles.css'), 'utf8'), /\.agent\.sub-agent/);
+  assert.match(fs.readFileSync(path.join(root, 'app.css'), 'utf8'), /\.agent\.sub-agent/, 'in app.css, the app pages\u2019 styles (UX PR B)');
 });
 
 test('SA11 (code): J15 scores where a sub-agent would sit and how fast its tree grows, never above 70; J11 counts it as a new agent', () => {

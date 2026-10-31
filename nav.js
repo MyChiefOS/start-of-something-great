@@ -1,4 +1,4 @@
-// The menu's last link: "Join" for visitors, "Account" (with unread notices) once signed in. The UI/UX review (Oct 29,
+// The menu's pill: "Join" for visitors, "Account" (with unread notices) once signed in. The UI/UX review (Oct 29,
 // 2026): there was no Join in the menu and no way to reach your account or notices. Text only (textContent), our own
 // paths only; if /auth/me can't be reached the link simply stays "Join".
 //
@@ -7,24 +7,43 @@
 // review, finding 1). Only the yes/no and the count are kept, never an ID or a name.
 (function () {
   'use strict';
+  // The Menu (a <details>, which opens and closes with Enter or Space on its own): Escape also closes it and puts focus
+  // back on Menu, and a tap or click anywhere outside it closes it (UX PR B). The pages that run no script keep Enter,
+  // Space and Menu itself.
+  var menu = document.querySelector('.site-header details');
+  if (menu && menu.addEventListener) {
+    menu.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !menu.open) return;
+      menu.open = false;
+      var summary = menu.querySelector('summary');
+      if (summary) summary.focus();
+    });
+    document.addEventListener('click', function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
+  }
   var link = document.querySelector('.site-nav a[data-nav="account"]');
   if (!link || !window.fetch) return;
   var KEY = 'dog-nav', TTL_MS = 60000;
 
   function show(state) {
     if (!state || state.signed_in !== true) return;
-    // Your agents, beside Account, once signed in: where an owner claims agents and approves their drafts (the UI/UX
-    // review, item 7: "Agents" in the menu led to the setup guide, so owners couldn't find their drafts).
+    // Your agents, after For agents, once signed in: where an owner claims agents and approves their drafts (the UI/UX
+    // review, item 7: "Agents" in the menu led to the setup guide, so owners couldn't find their drafts). It sits in the
+    // Menu's panel, so on a phone the row stays the wordmark, Account and Menu (UX PR B).
     if (!document.querySelector('.site-nav a[data-nav="agents"]')) {
       var mine = document.createElement('a');
       mine.textContent = 'Your agents';
       mine.setAttribute('href', '/agents');
       mine.setAttribute('data-nav', 'agents');
       if (location.pathname === '/agents') mine.setAttribute('aria-current', 'page');
-      link.parentNode.insertBefore(mine, link);
+      var guide = document.querySelector('.site-nav a[href="/connect"]');
+      if (guide) guide.parentNode.insertBefore(mine, guide.nextSibling);
+      else link.parentNode.insertBefore(mine, link);
     }
+    // Account opens on your notices, the inbox for everything that needs you (the UI/UX review, finding 11).
     link.textContent = 'Account';
-    link.setAttribute('href', '/account');
+    link.setAttribute('href', '/account#notices');
     if (location.pathname === '/account') link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
     var count = Number.isInteger(state.unread) && state.unread > 0 ? state.unread : 0;
