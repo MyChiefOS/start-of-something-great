@@ -51,11 +51,14 @@ function serve() {
     const url = decodeURIComponent(req.url.split('?')[0]);
     let file = url === '/' ? 'index.html' : url.slice(1);
     if (!path.extname(file)) file += '.html';
-    const full = path.join(ROOT, file);
-    if (!full.startsWith(ROOT + path.sep) || !fs.existsSync(full) || !fs.statSync(full).isFile()) { res.statusCode = 404; return res.end('not found'); }
+    // Resolved, kept inside ROOT, then read in one step: no check-then-read gap (CodeQL on #87, Oct 31).
+    const full = path.resolve(ROOT, file);
+    if (!full.startsWith(ROOT + path.sep)) { res.statusCode = 404; return res.end('not found'); }
+    let body;
+    try { body = fs.readFileSync(full); } catch { res.statusCode = 404; return res.end('not found'); } // missing, or a folder
     res.setHeader('Content-Type', TYPES[path.extname(full)] || 'application/octet-stream');
     if (url === '/join') res.setHeader('Content-Security-Policy', csp);
-    res.end(fs.readFileSync(full));
+    res.end(body);
   });
 }
 
