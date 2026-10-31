@@ -51,19 +51,20 @@
 }
 .hero .lede { margin-top: 1.25rem; }
 .hero .actions { margin-top: 1.75rem; }
-.also { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; margin: 1.1rem 0 0; font-family: var(--display); font-size: 1rem; }
+.also { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 1.25rem; margin: 1rem 0 0; font-family: var(--display); font-size: 0.95rem; }
+.also span { flex-basis: 100%; color: var(--muted); }
 /* At least 24 by 24 CSS px to tap (WCAG 2.5.8): these links stand alone. */
 .also a, .trust li > a { display: inline-block; min-height: 24px; padding-block: 2px; }
 
-/* Why you can trust it: three short facts, each with where to check it. */
-.trust { padding-top: 2.25rem; }
-.trust h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin-bottom: 0.5rem; }
+/* Why you can trust it: three short facts, each with where to check it, sized to sit in a phone's first screen. */
+.trust { padding-top: 1.25rem; }
+.trust h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin-bottom: 0.35rem; }
 .trust ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0 2rem; }
-.trust li { padding: 0.9rem 0; border-top: 1px solid var(--rule); color: var(--muted); font-size: 1rem; line-height: 1.55; }
-.trust li strong { display: block; color: var(--text); font-family: var(--display); font-size: 1.1rem; letter-spacing: -0.01em; margin-bottom: 0.2rem; }
-.trust li > a { display: block; width: fit-content; margin-top: 0.3rem; font-family: var(--display); color: var(--text); }
+.trust li { padding: 0.55rem 0; border-top: 1px solid var(--rule); color: var(--muted); font-size: 1rem; line-height: 1.5; }
+.trust li strong { color: var(--text); font-family: var(--display); letter-spacing: -0.01em; }
+.trust li > a { font-family: var(--display); color: var(--text); }
 .trust li > a:hover { color: var(--amber); }
-@media (min-width: 48rem) { .trust ul { grid-template-columns: repeat(3, 1fr); } .trust li { border-bottom: 0; } }
+@media (min-width: 48rem) { .trust ul { grid-template-columns: repeat(3, 1fr); } }
 
 /* How it works: three numbered steps, on the day-one list's numbering. */
 .steps3 li { padding: 0.7rem 0; }
@@ -73,5 +74,10 @@
 .nownext .principles li { font-family: var(--display); font-size: 1.1rem; letter-spacing: -0.01em; line-height: 1.5; }
 
 @media (max-width: 34rem) {
-  .hero { padding-top: 2.25rem; padding-bottom: 2.5rem; }
+  .hero { padding-top: 2rem; padding-bottom: 1.25rem; }
+  .trust { padding-top: 0.9rem; }
+  .hero .actions { margin-top: 1.25rem; }
+  .hero .lede { margin-top: 0.9rem; font-size: 1.08rem; }
+  .hero h1 { font-size: 1.9rem; }
+  .trust li { padding: 0.45rem 0; }
 }

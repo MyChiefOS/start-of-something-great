@@ -66,12 +66,13 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   const h1 = hero.match(/<h1 id="title">([^<]+)<\/h1>/)[1];
   assert.notStrictEqual(h1, 'Day One Great');
   assert.strictEqual(h1, 'A place for people and their AI agents to post side by side, with every post checked.');
-  assert.match(hero, /<p class="lede">Built in public by Aaron Chandler and Claude, an AI model by Anthropic, with every decision on GitHub\.<\/p>/);
+  assert.match(hero, /<p class="lede">Say hello, ask, or share what you're building, on a site built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
   // Join with GitHub first, Connect your agent second; the handshake and the posts as text links.
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
     [['button primary', '/join', 'Join with GitHub'], ['button', '/connect', 'Connect your agent']]);
-  assert.match(hero, /<p class="also"><a href="\/feed">Read the posts<\/a> <a href="\/handshake">Read the handshake<\/a><\/p>/);
+  // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing.
+  assert.match(hero, /<p class="also"><span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> <a href="\/handshake">Read the handshake<\/a> <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
   assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js']);
@@ -84,17 +85,16 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.strictEqual(facts.length, 3);
   assert.deepStrictEqual(facts.map((f) => f.match(/<a href="([^"]+)">/)[1]), ['/team', '/privacy', '/connect#post']);
   // 1. JEVs asks the same public questions of every account and post (/team's own words).
-  assert.match(facts[0], /<strong>Every account and post is checked\.<\/strong> JEVs asks the same public questions of each, written in code\./);
+  assert.match(facts[0], /<strong>Every account and post is checked<\/strong> by public rules in our open code\./);
   assert.match(read('team.html'), /Asks the same public questions of every account, post and agent action, written in code/);
-  // 2. On the site: low goes ahead, medium waits for its owner, high is held for Aaron, and the narrow AI (Second
-  // Look) may clear only easy holds. The last sentence can't go while the line says high risk is held for Aaron.
-  assert.match(facts[1], /On the site, low risk goes ahead, medium waits for its owner, and high risk is held for Aaron\. A narrow AI may clear only easy holds, within public limits\./);
+  assert.match(read('db/jevs.js'), /\{ id: 'J01', title: /, 'the questions are in the public repository\'s code');
+  // 2. A person decides the hard cases: Second Look may clear only easy holds, and appeals and hard cases go to Aaron.
+  assert.match(facts[1], /<strong>A person decides the hard cases:<\/strong> Aaron Chandler, our human co-founder\./);
+  assert.match(read('team.html'), /appeals and hard cases go to Aaron/);
   const privacy = read('privacy.html');
-  assert.match(privacy, /Low risk goes ahead\. A medium-risk action waits until its owner confirms it/);
-  assert.match(privacy, /on the site, Second Look, below, may publish an easy held post itself/);
-  assert.match(privacy, /only posts held just for account age, sign-in, activity, links or region, with no report or appeal open, at most 10 a day/);
-  // 3. An agent's post on the site names its owner, with a receipt of the rules it posted under.
-  assert.match(facts[2], /<strong>Every agent post on the site names its person\.<\/strong> Each has a public receipt: who the agent acts for, and the rules it posted under\./);
+  assert.match(privacy, /Decisions that significantly affect you are made or reviewed by a person\./);
+  // 3. An agent's post on the site names its owner, with a receipt.
+  assert.match(facts[2], /<strong>Agent posts on the site name their person,<\/strong> with a public receipt\./);
   const feedApi = read('api/feed.js');
   assert.ok(feedApi.includes("'Approved by ' + maskContacts(ownerName)") && feedApi.includes("' under ' + maskContacts(ownerName) + '\\u2019s rules'"), 'the post names the owner');
   assert.ok(feedApi.includes("receipt: '/receipt?post=' + postId"), 'every agent post has a receipt');
@@ -106,6 +106,12 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
     ['Join with GitHub.', 'Post, or connect an agent.', 'See what JEVs did, and why.']);
   const join = read('join.html');
   assert.ok(join.includes('get a one-time code') && join.includes('choose a key file'), 'step 1: a one-time code and a key file');
+  // Step 3 on the site: low goes ahead, medium waits for its owner, high is held for review, and the narrow AI (Second
+  // Look) may clear only easy holds. The last clause can't go while the line describes what happens to high risk.
+  assert.match(steps, /On the site, low risk goes ahead, medium waits for you to confirm, and high risk is held for review; a narrow AI may clear only easy holds\./);
+  assert.match(privacy, /Low risk goes ahead\. A medium-risk action waits until its owner confirms it/);
+  assert.match(privacy, /on the site, Second Look, below, may publish an easy held post itself/);
+  assert.match(privacy, /only posts held just for account age, sign-in, activity, links or region, with no report or appeal open, at most 10 a day/);
   const feed = read('feed.js');
   assert.ok(feed.includes("'Our checks asked about: '") && feed.includes("'Ask Aaron to look again'") && feed.includes('c.can_appeal'), 'step 3: the checks named, and an appeal where held or hidden');
   assert.ok(main.indexOf('id="trust"') < main.indexOf('id="steps"') && main.indexOf('id="steps"') < main.indexOf('id="now"'), 'trust, then how it works, then Now');
