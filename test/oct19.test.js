@@ -124,10 +124,21 @@ test('C1: the home page Now and Next lists match /api/status exactly', () => {
   const { status } = fresh('_lib.js');
   const html = read('index.html');
   const esc = (s) => s.replace(/'/g, "'");
+  // UX PR C (the UI/UX review of Oct 31, finding 15): each Now item links a short phrase and keeps the rest as plain
+  // text, and the list leads with taking part (joining and posting) rather than proposals. Its words and links still
+  // match /api/status exactly: each item's text, tags removed, is the status text, and its one link is the status URL.
+  const items = [...html.match(/<h3>Now<\/h3>[\s\S]*?<\/ul>/)[0].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => ({
+    text: m[1].replace(/<[^>]+>/g, ''),
+    links: [...m[1].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => ({ href: x[1], words: x[2] }))
+  }));
   for (const item of status.phase.live) {
-    const href = item.url;
-    assert.ok(html.includes('<a href="' + href + '">' + esc(item.text) + '</a>'), 'Now is missing: ' + item.text);
+    const li = items.find((x) => x.text === esc(item.text));
+    assert.ok(li, 'Now is missing: ' + item.text);
+    assert.strictEqual(li.links.length, 1, 'one link in: ' + item.text);
+    assert.strictEqual(li.links[0].href, item.url, 'the status URL for: ' + item.text);
+    assert.ok(li.links[0].words.split(' ').length <= 6 && li.links[0].words.length < item.text.length, 'a short phrase links, not the whole line: ' + item.text);
   }
+  assert.match(items[0].links[0].href, /\/join$/, 'Now leads with joining, not proposals');
   for (const item of status.phase.next) {
     assert.ok(html.includes('<strong>' + item.text + '</strong> <span>' + item.target + '</span>'), 'Next is missing: ' + item.text);
   }
