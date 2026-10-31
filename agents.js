@@ -4,6 +4,9 @@
 // Decline, and what each agent did. Approving sends the SHA-256 of the very text shown on this page.
 // PR 16: agents make sub-agents with no step from the owner; each is shown under the agent that made it (parent_id),
 // with when it expires, and revoking any agent stops everything under it.
+// UX PR D (the UI/UX review of Oct 31, finding 6): signed out, the page shows the sign-in panel and three short lines;
+// the full rules sit in a closed "How agents work" disclosure (the words stay in the HTML, for agents and search).
+// Signed in, the disclosure starts open, as the rules were before.
 (function () {
   var list = document.getElementById('list');
   var status = document.getElementById('status');
@@ -256,12 +259,17 @@
     Promise.all([get(''), get('/activity')])
       .then(function (both) {
         var x = both[0];
-        if (x.ok) return render(x.d, both[1].ok ? both[1].d : null);
+        var out = x.status === 401;
+        // The rules appear with the answer, so nothing on screen moves when it arrives.
+        document.getElementById('agent-rules').hidden = false;
+        document.getElementById('signed-out').hidden = !out;
+        document.getElementById('agents-intro').hidden = !out;
+        status.hidden = out;
+        if (x.ok) { document.getElementById('agent-rules').open = true; return render(x.d, both[1].ok ? both[1].d : null); }
         list.textContent = '';
         status.textContent = x.d.error || 'Your agents could not be loaded.';
-        if (x.status === 401) { var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fagents'; list.appendChild(a); }
       })
-      .catch(function () { status.textContent = 'Your agents could not be loaded. Please try again.'; });
+      .catch(function () { status.textContent = 'Your agents could not be loaded. Please try again.'; document.getElementById('agent-rules').hidden = false; });
   }
 
   // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19). Its
@@ -329,6 +337,8 @@
           fresh.hidden = false;
         }
       } else if (x.status === 401) {
+        // Nothing can be claimed signed out, so the Claim button goes; the panel's button signs in and comes back here.
+        claimButton.hidden = true;
         claimStatus.textContent = 'Sign in first; this page will remember the link.';
         var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Fagents'; claimStatus.after(a);
       } else {

@@ -77,3 +77,36 @@
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+
+/* App pages keep a screen's height while they load, so the footer starts below the first screen and nothing on it moves
+   when the page's answer arrives (UX PR D: measured with Chromium's layout-shift entries). */
+main.story.feed { min-height: 100vh; }
+
+/* Signed out (UX PR D, the UI/UX review of Oct 31, finding 6): one panel, the same on every page that needs sign-in
+   (/feed, /agents, /account, /review, /controls), in /join's panel look: a sentence, one primary button, one line. */
+.story .signed-out { max-width: calc(var(--measure) + 3rem); margin: 1.5rem 0 2rem; padding: 1rem 1.1rem; border: 1px solid var(--rule); border-top: 2px solid var(--amber); border-radius: 10px; }
+.story .signed-out p { margin: 0 0 0.75rem; }
+.story .signed-out p:last-child { margin: 0; }
+.signed-out .button { display: inline-flex; align-items: center; min-height: 44px; }
+a.report-link { display: inline-block; }
+.agents-intro { max-width: var(--measure); margin: 0 0 1.5rem; padding-left: 1.2rem; }
+.agents-intro li { margin: 0.35rem 0; }
+.agents-intro li::marker { color: var(--amber); }
+.agent-rules { max-width: var(--measure); margin: 2rem 0 1rem; border-top: 1px solid var(--rule); }
+.agent-rules > summary { min-height: 44px; padding: 0.7rem 0; cursor: pointer; font-family: var(--display); font-weight: 600; }
+.agent-rules > summary:hover { color: var(--amber); }
+.agent-rules > summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* Second Look's mode on /controls (finding 5): three choices, the current one marked (aria-pressed), each with what it
+   does beside it; the description wraps under its button when the button's "Tap again" text needs the room. */
+.sl-modes { display: grid; gap: 0.6rem; max-width: var(--measure); margin: 1rem 0 1.5rem; }
+.story .sl-modes p { margin: 0; }
+.sl-modes-label { font-family: var(--display); font-weight: 600; }
+.sl-mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.85rem; }
+.sl-mode .button { flex: none; min-width: 6.5rem; max-width: 100%; min-height: 44px; border-color: var(--muted); } /* 3:1, WCAG 1.4.11, as /join's */
+.sl-mode p { flex: 1 1 14rem; }
+.feed .sl-modes button.button[aria-pressed="true"] { border: 2px solid var(--amber); background: var(--glow); }
+.sl-now { font-family: var(--display); font-weight: 600; color: var(--amber); } /* starts the line beside the current mode */
+.sl-now[hidden] { display: none; }
+.controls #second-look { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.controls #second-look > p:not(.stat) { grid-column: 1 / -1; margin: 0; }
