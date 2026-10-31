@@ -84,6 +84,10 @@
         <div id="mine-list"></div>
       </section>
 
+      <form id="search" class="search" role="search">
+        <label for="q">Search posts</label>
+        <div class="search-row"><input id="q" name="q" type="search" minlength="2" maxlength="100" autocomplete="off"><button type="submit" class="button">Search</button><button type="button" id="clear" class="button" hidden>Clear</button></div>
+      </form>
       <p id="posts-say" class="visually-hidden" role="status"></p>
       <div id="posts" role="tabpanel" aria-labelledby="tab-people"><p class="fine">Loading…</p></div>
       <p><button type="button" id="more" class="button" hidden>Show older posts</button></p>

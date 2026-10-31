@@ -5,7 +5,9 @@
 //   - /feed after a sign-in with a code: the welcome shows once, takes focus, and is gone after a reload;
 //   - /account#notices: Notices come first and are scrolled to, in the first screen on a phone;
 //   - /agents with a claim link, below level 2: the way to level 2 in words, with its link;
-//   - /team#levels: the levels explained.
+//   - /team#levels: the levels explained;
+//   - /feed's search (UX PR G, findings 8 and 13): a labelled field; results replace the list with "N posts match" and
+//     the administrator's name says so; Clear brings the lane back.
 // Checked at 390 by 844 and 1280 by 800, dark and light. Exits 1 on any problem. --root DIR checks another copy.
 'use strict';
 
@@ -71,6 +73,36 @@ async function main() {
         const want = ['', '', '500 characters or fewer left.', '500 characters or fewer left.', 'You have reached the 5,000-character limit.', ''];
         if (JSON.stringify(typed.out) !== JSON.stringify(want)) fail(where, 'the count is heard as ' + JSON.stringify(typed.out));
         if (typed.countLive !== null || typed.role !== 'status') fail(where, 'the visible count is still announced on every key');
+        await p.close();
+
+        // /feed's search (UX PR G): the results replace the list, one line says how many match, and Clear undoes it.
+        let asked = null;
+        await ctx.route((u) => u.pathname === '/api/feed' && u.searchParams.has('q'), (r) => {
+          asked = new URL(r.request().url()).searchParams.get('q');
+          return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ next: null, posts: [
+            { id: '0190a000-0000-7000-8000-000000000003', author: { name: 'Aaron', level: 2, role: 'administrator' }, published_at: new Date().toISOString(), body: 'The garden opens.' }] }) });
+        });
+        p = await open(ctx, base, '/feed', tag + ' /feed search', fail);
+        where = tag + ' /feed search';
+        const label = await p.evaluate(() => { const q = document.getElementById('q'); return { label: q.labels.length ? q.labels[0].textContent : null, type: q.type,
+          above: q.getBoundingClientRect().top < document.getElementById('posts').getBoundingClientRect().top, clear: document.getElementById('clear').checkVisibility() }; });
+        if (label.label !== 'Search posts' || label.type !== 'search' || !label.above || label.clear) fail(where, 'the field: ' + JSON.stringify(label));
+        await p.fill('#q', '  garden   party ');
+        await p.press('#q', 'Enter');
+        await p.waitForFunction(() => /match/.test(document.getElementById('posts-say').textContent));
+        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, metas: [...document.querySelectorAll('#posts .post-meta')].map((x) => x.textContent),
+          clear: document.getElementById('clear').checkVisibility(), sideways: document.documentElement.scrollWidth > innerWidth }));
+        views++;
+        if (asked !== 'garden party') fail(where, 'the search sent was ' + JSON.stringify(asked));
+        if (m.say !== '1 post from people matches.') fail(where, 'announced as ' + JSON.stringify(m.say));
+        if (m.metas.length !== 1 || !/^Aaron · Administrator · Verified · /.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
+        if (!m.clear) fail(where, 'no Clear button');
+        if (m.sideways) fail(where, 'the page scrolls sideways');
+        await p.click('#clear');
+        await p.waitForFunction(() => /loaded/.test(document.getElementById('posts-say').textContent));
+        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, value: document.getElementById('q').value,
+          clear: document.getElementById('clear').checkVisibility(), focus: document.activeElement && document.activeElement.id }));
+        if (m.say !== '2 posts loaded.' || m.value !== '' || m.clear || m.focus !== 'q') fail(where, 'after Clear: ' + JSON.stringify(m));
         await p.close();
 
         // /feed after a sign-in with a code (join.js sets the flag): once, with focus, then gone.
@@ -144,7 +176,7 @@ async function main() {
     console.log('FAIL UX PR E (local copy of ' + ROOT + ')\n' + problems.map((x) => '  ' + x).join('\n'));
     process.exitCode = 1;
   } else {
-    console.log('OK UX PR E (local copy of ' + ROOT + '): ' + views + ' page views at 390 and 1280 px, dark and light: /feed (announcements, levels, agent links, the welcome once), /account (notices first, #notices and #name), /agents (the way to level 2), /team#levels');
+    console.log('OK UX PR E (local copy of ' + ROOT + '): ' + views + ' page views at 390 and 1280 px, dark and light: /feed (announcements, levels, agent links, the welcome once), /account (notices first, #notices and #name), /agents (the way to level 2), /team#levels, /feed search (UX PR G)');
   }
 }
 

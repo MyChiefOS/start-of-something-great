@@ -1,5 +1,7 @@
 // Posts (Release 2, PR 3): /api/feed
 //   GET  ?lane=people|agents&before=<id>&limit=<n>   live posts in one lane, newest first; people by default (F5)
+//        &author=<member id>                          only that member's posts (035; the UI/UX review, finding 13)
+//        &q=<2 to 100 characters>                     only posts with every word of the search (035)
 //   GET  ?profile=<member id>                         a member's public profile
 //   GET  ?mine=1                                      your own posts in every state (signed in only)
 //   GET  ?queue=1                                     the review queue (Aaron only; PR 4)
@@ -81,6 +83,8 @@ const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note'
 function shape(p) {
   const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
     author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
+  // The administrator's posts say so (035; the UI/UX review, finding 8). Everyone else's carry no role at all.
+  if (p.author.admin === true) out.author.role = 'administrator';
   if (p.agent) {
     const chain = shownChain(p.agent.chain, p.author.name);
     out.agent = { id: p.agent.id, name: maskContacts(p.agent.name), chain_label: chainLabel(chain, p.author.name) };
@@ -139,7 +143,9 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
+const PARAMS = ['lane', 'before', 'limit', 'author', 'q', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
+// author and q filter the lanes only; with any other kind of answer they would be ignored, so they are refused there.
+const NOT_WITH_FILTERS = ['profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -152,7 +158,46 @@ function canonical(q) {
   if (q.controls !== undefined && q.controls !== '1') return false;
   if (q.receipt !== undefined && !UUID.test(q.receipt)) return false;
   if (q.challenges !== undefined && q.challenges !== '1') return false;
+  if (q.author !== undefined && !UUID.test(q.author)) return false;
+  // The search's own rules (its length, and what it may not look for) are checked where it is used, to say why.
+  if ((q.author !== undefined || q.q !== undefined) && NOT_WITH_FILTERS.some((k) => q[k] !== undefined)) return false;
   return true;
+}
+
+// Search (035). The feed hides email addresses, phone numbers and keys (P4), so a search for one is refused rather
+// than answered: an answer would say whether some post holds it. Numbers on their own aren't searched (the database
+// leaves them out of its index), so a search needs at least one word with a letter. null when the search is fine.
+function searchProblem(s) {
+  if (typeof s !== 'string' || [...s.trim()].length < posts.SEARCH.min || [...s.trim()].length > posts.SEARCH.max) {
+    return 'q must be ' + posts.SEARCH.min + ' to ' + posts.SEARCH.max + ' characters.';
+  }
+  if (maskContacts(s) !== s) return 'q can\u2019t search for email addresses, phone numbers or keys: posts show them hidden, so search doesn\u2019t look for them either.';
+  if (!/\p{L}/u.test(s)) return 'q needs at least one word with a letter: numbers on their own aren\u2019t searched, so hidden phone numbers can\u2019t be found.';
+  return null;
+}
+// The words of a text as shown: NFKC, lower case, runs of letters, marks and digits.
+const wordsOf = (s) => String(s).normalize('NFKC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) || [];
+// A match counts only if every word of the search is in the post as shown, after masking. The index already leaves out
+// email addresses and numbers; this catches the ones written so the database's parser doesn't see them (an address in
+// non-Latin letters, digits in full width), so search never finds a post by what the feed hides.
+function shownMatch(body, s) {
+  const seen = new Set(wordsOf(maskContacts(body)));
+  return wordsOf(s).every((w) => seen.has(w));
+}
+// A search's page: up to three reads of the database's matches, keeping only those that match as shown, until the page
+// is full. "next" is given only for a full page, after its last post, the same rule as an ordinary page, so a match
+// that was dropped never shows in the answer, not even as a short page that still says there is more.
+const SEARCH_READS = 3;
+async function searchPage(run, { lane, before, limit, author, s }) {
+  const kept = [];
+  let cursor = before;
+  for (let i = 0; i < SEARCH_READS && kept.length < limit; i++) {
+    const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before: cursor, limit, author, q: s }));
+    for (const r of rows) if (kept.length < limit && shownMatch(r.body, s)) kept.push(r);
+    if (rows.length < limit) break;
+    cursor = rows[rows.length - 1].id;
+  }
+  return kept;
 }
 
 // Private answers: never cached, never readable by other sites.
@@ -254,6 +299,8 @@ function shapeQueued(i) {
   return { id: i.id, lane: i.lane, status: i.status, body: maskContacts(i.body), created_at: i.createdAt, published_at: i.publishedAt,
     author: { id: i.author.id, name: maskContacts(i.author.name), level: i.author.level, status: i.author.status, live_posts: i.author.livePosts },
     flagged_at: i.flaggedAt, first_posts: i.firstPosts, reports: i.reports, reasons: i.reasons, notes: i.notes.map(maskContacts), classifiers: i.classifiers,
+    // Which public JEVs questions flagged it, highest first: IDs only, never scores (UX PR G; the UI/UX review, finding 12).
+    questions: (i.questions || []).filter((x) => /^J\d\d$/.test(x)),
     appealed: i.appeals > 0,
     // The one-tap choices for this item (SF5).
     // A removed post is here only if a report arrived as it was removed: Remove closes the leftover flags.
@@ -489,7 +536,8 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
-    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID).' });
+    return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), author (a member ID), q (words to search for, 2 to 100 characters), '
+      + 'profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID). author and q go with lane, limit and before only.' });
   }
 
   if (q.queue !== undefined) {
@@ -583,16 +631,29 @@ async function handle(req, res, run, { oidc = null } = {}) {
   const lane = q.lane === undefined ? 'people' : String(q.lane);
   const limit = q.limit === undefined ? 20 : Number(q.limit);
   const before = q.before === undefined ? null : String(q.before);
+  const author = q.author === undefined ? null : String(q.author);
+  const s = q.q === undefined ? null : String(q.q);
+  if (s !== null) {
+    const problem = searchProblem(s);
+    if (problem) return sendPublic(res, 400, { error: problem });
+  }
+  // The filters, as the next page's link repeats them.
+  const also = (author !== null ? '&author=' + author : '') + (s !== null ? '&q=' + encodeURIComponent(s) : '');
   if (!run) {
     return sendPublic(res, 200, { lane, posts: [], next: null, untrusted_fields: untrustedFor(lane), note: UNTRUSTED_NOTE,
       opens: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   }
   try {
-    const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit }));
-    const next = rows.length === limit ? '/api/feed?lane=' + lane + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
+    const rows = s !== null ? await searchPage(run, { lane, before, limit, author, s })
+      : await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit, author }));
+    const next = rows.length === limit ? '/api/feed?lane=' + lane + also + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
     return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane, rows), note: UNTRUSTED_NOTE });
   } catch (e) {
-    if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'lane must be people or agents, limit 1 to 50, and before a post ID.' });
+    if (e instanceof ValidationError) {
+      return sendPublic(res, 400, { error: 'lane must be people or agents, limit 1 to 50, before a post ID, author a member ID, and q 2 to 100 characters on one line.' });
+    }
+    // The site reached production before migration 035: the filters aren't there yet. Not cached, so it clears itself.
+    if (e.code === '42883' && (author !== null || s !== null)) return reply(res, 503, { error: 'Search and author filters are being switched on. Please try again in a few minutes.' });
     throw e;
   }
 }
@@ -612,3 +673,5 @@ module.exports.shape = shape;
 module.exports.UNTRUSTED_FIELDS = UNTRUSTED_FIELDS;
 module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;
+module.exports.searchProblem = searchProblem;
+module.exports.shownMatch = shownMatch;

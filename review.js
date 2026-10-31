@@ -3,12 +3,22 @@
 // UX PR D (the UI/UX review of Oct 31, findings 6 and 12's front-end part): signed out, only the sign-in panel; an
 // empty queue says what happens when nothing is waiting; each item says when it joined the queue and lists its reasons
 // in the order they can arise (see why()). The one-tap buttons and Undo are unchanged.
+// UX PR G (finding 12's backend part): a post JEVs held or hid names the questions that flagged it (asked()).
 (function () {
   var queue = document.getElementById('queue');
   var summary = document.getElementById('summary');
   var LABEL = { approve: 'Approve', keep: 'Keep', remove: 'Remove', restore: 'Undo' };
   var DONE = { approve: 'Approved: it’s live.', keep: 'Kept: the reports are closed.', remove: 'Removed.', live: 'Restored: it’s live again.', waiting: 'Restored: it’s waiting for review again.' };
   var REASON = { spam: 'spam', abuse: 'abuse', private_info: 'private information', illegal: 'illegal', other: 'other' };
+  // UX PR G (finding 12): the public titles of JEVs's questions, as db/jevs.js names them (test/ux-g.test.js keeps the
+  // two the same). The queue sends only the IDs that flagged a post, highest first, never a score.
+  var TITLES = {
+    J01: 'Account age', J02: 'Sign-in strength', J03: 'Disposable email', J04: 'Activity against its own usual rate',
+    J05: 'Clusters', J06: 'New agents in a day', J07: 'Links and new domains', J08: 'Contact details',
+    J09: 'Copies of other members\u2019 words', J10: 'Track record', J11: 'Sensitive action',
+    J12: 'Reply-chain depth', J13: 'Region', J14: 'Credible reports', J15: 'Sub-agent spawning',
+    J18: 'Keys and passwords', J19: 'Repeats of its own post'
+  };
   var open = 0;
 
   function el(tag, cls, text) {
@@ -38,6 +48,12 @@
     if (i.classifiers && i.classifiers.length) parts.push('flagged by ' + i.classifiers.map(function (c) { return c === 'jevs' ? 'JEVs (automatic checks)' : c; }).join(', '));
     if (i.appealed) parts.push('the author appealed');
     return 'Why: ' + parts.join('; ') + '.';
+  }
+  // "Our checks asked about: Sign-in strength (J02), Clusters (J05)." An ID the page doesn't know is shown as it is.
+  function asked(i) {
+    var ids = i.questions || [];
+    if (!ids.length) return null;
+    return 'Our checks asked about: ' + ids.map(function (id) { return TITLES[id] ? TITLES[id] + ' (' + id + ')' : id; }).join(', ') + '.';
   }
 
   function decide(card, i, decision, buttons, result) {
@@ -81,6 +97,7 @@
       card.appendChild(meta);
       i.body.split(/\n{2,}/).forEach(function (para) { card.appendChild(el('p', '', para)); });
       card.appendChild(el('p', 'fine why', why(i)));
+      if (asked(i)) card.appendChild(el('p', 'fine asked', asked(i)));
       if (i.flagged_at) {
         // A <time> with its ISO date, so an agent reads the moment, not the local wording.
         var since = el('p', 'fine', 'In the queue since ');

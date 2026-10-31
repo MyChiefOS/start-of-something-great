@@ -47,7 +47,9 @@ const DEFINERS = {
   // PR 15's second review (R1): the sign-in method of the request's own session, read from the sessions table (which
   // only the sign-in role reads), so what a session makes records it and unlinking that method can undo it.
   'app.current_identity()': 'dog_signin',
-  'app.feed(text, uuid, integer)': 'dog_public',
+  // 035: and two optional filters, a member's posts and words to search for; it also says whether each author is the
+  // administrator (the one column of members it reads for that).
+  'app.feed(text, uuid, integer, uuid, text)': 'dog_public',
   'app.profile(uuid)': 'dog_public',
   'app.reportable(uuid, uuid)': 'dog_public',
   // PR 5: sign-in for agents (resolve a key, self-register, claim), in the sign-in role.

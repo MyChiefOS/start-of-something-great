@@ -33,14 +33,24 @@ async function create(t, { body }) {
   }
 }
 
-async function feed(t, { lane = 'people', before = null, limit = 20 } = {}) {
+// Searches are 2 to 100 characters (035 checks the same).
+const SEARCH = { min: 2, max: 100 };
+
+// author (a member ID) and q (words to search for) are optional (035). Without them this asks with the three arguments
+// the database has always taken, so the feed keeps working while the site and the migration reach production in
+// either order.
+async function feed(t, { lane = 'people', before = null, limit = 20, author = null, q = null } = {}) {
   const l = v.oneOf('lane', lane, LANES);
   const b = before === null ? null : v.uuid('before', before);
   const n = v.int('limit', limit, { min: 1, max: 50 });
-  const rows = await t`select * from app.feed(${l}, ${b}::uuid, ${n}::integer)`;
-  // An agent's post names the agent and, as its author, the person who owns it (F3).
+  const a = author === null ? null : v.uuid('author', author);
+  const s = q === null ? null : v.text('q', q, SEARCH);
+  const rows = a === null && s === null ? await t`select * from app.feed(${l}, ${b}::uuid, ${n}::integer)`
+    : await t`select * from app.feed(${l}, ${b}::uuid, ${n}::integer, ${a}::uuid, ${s}::text)`;
+  // An agent's post names the agent and, as its author, the person who owns it (F3). The administrator's posts say so
+  // (035); nobody else's carry the field.
   return rows.map((r) => ({ id: r.id, lane: r.lane, body: r.body, publishedAt: r.published_at,
-    author: { id: r.author_id, name: r.author_name, level: r.author_level },
+    author: { id: r.author_id, name: r.author_name, level: r.author_level, ...(r.author_admin === true ? { admin: true } : {}) },
     // A sub-agent's post also names the agents above it, nearest first (PR 16).
     agent: r.agent_id ? { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name, active: x.active !== false })) } : null,
     // How an agent's post went out (PR 7, A3): approved by its owner, or under the owner's rules (and which version).
@@ -59,4 +69,4 @@ async function mine(t, { limit = 20 } = {}) {
            where author_id = app.current_member() order by id desc limit ${n}`;
 }
 
-module.exports = { hideKeys, create, feed, profile, mine, LANES };
+module.exports = { hideKeys, create, feed, profile, mine, LANES, SEARCH };
