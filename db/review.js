@@ -61,7 +61,7 @@ async function queue(t, { limit = 50 } = {}) {
       author: { id: r.author_id, name: r.author_name, level: r.author_level, status: r.author_status, livePosts: Number(r.author_live_posts) },
       flaggedAt: r.first_at, firstPosts: r.first_posts, reports: Number(r.reports), reasons: r.reasons, notes: r.notes, classifiers: r.classifiers,
       appeals: Number(r.appeals),
-      secondLook: r.sl_model ? { model: r.sl_model, eligible: r.sl_eligible, suggestion: r.sl_suggestion, reasons: r.sl_reasons } : null
+      secondLook: r.sl_model ? { model: r.sl_model, eligible: r.sl_eligible, suggestion: r.sl_suggestion, reasons: r.sl_reasons.split('; ') } : null
     }))
   };
 }

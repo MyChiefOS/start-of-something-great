@@ -143,7 +143,7 @@ test('a held post gets a suggestion beside it; only Aaron sees it, without its s
   assert.deepStrictEqual([rows[0].post_id, rows[0].model, rows[0].eligible], [a.json.id, 'v0', true]);
   assert.ok(['clear', 'leave'].includes(rows[0].suggestion));
   assert.deepStrictEqual([rows[1].post_id, rows[1].eligible, rows[1].suggestion], [b.json.id, false, 'leave']);
-  assert.match(rows[1].reasons.join(' '), /never Second Look’s to clear: contact details/);
+  assert.match(rows[1].reasons, /never Second Look’s to clear: contact details/);
   // It changed nothing: both posts still wait for Aaron.
   assert.deepStrictEqual((await q(`select status from app.posts where id in ('${a.json.id}', '${b.json.id}')`)).map((r) => r.status), ['waiting', 'waiting']);
   // Aaron's queue shows the suggestion, never the score.
@@ -156,11 +156,11 @@ test('a held post gets a suggestion beside it; only Aaron sees it, without its s
   // Only for a post JEVs is holding: a live post, a second record, or another post gets nothing.
   const live = await feed('POST', { cookie: poster.cookie, json: { body: 'An ordinary post about the meetup, with nothing to hold.' } });
   const record = (post, eligible = true, suggestion = 'clear') => run(poster.ctx,
-    (t) => t`select app.sl_record(${post}::uuid, 'v0', ${eligible}, 0.9, ${suggestion}, ${t.array(['x'])}::text[]) as ok`).then((r) => r[0].ok);
+    (t) => t`select app.sl_record(${post}::uuid, 'v0', ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
   assert.strictEqual(await record(live.json.id), false, 'not held');
   assert.strictEqual(await record(a.json.id), false, 'already recorded by this model');
   // The floor holds in the database too: an ineligible "clear" is refused.
-  await assert.rejects(q(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${a.json.id}', 'v1', false, 0.9, 'clear', '{x}')`), /check/);
+  await assert.rejects(q(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${a.json.id}', 'v1', false, 0.9, 'clear', 'x')`), /check/);
   // Deleting the post deletes its record (account deletion deletes posts).
   await q(`delete from app.review_flags where post_id = '${b.json.id}'; delete from app.jevs_prints where post_id = '${b.json.id}'; delete from app.jevs_post_domains where post_id = '${b.json.id}'; delete from app.posts where id = '${b.json.id}'`);
   assert.strictEqual((await q(`select count(*)::int as n from app.sl_reviews where post_id = '${b.json.id}'`))[0].n, 0);

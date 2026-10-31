@@ -13,11 +13,11 @@ set local role dog_owner;
 create table app.sl_reviews (
   id uuid primary key default app.uuid_v7(),
   post_id uuid not null references app.posts (id) on delete cascade,
-  model text not null check (model ~ '^v[0-9]{1,4}$'),
+  model text not null check (char_length(model) <= 5 and model ~ '^v[0-9]{1,4}$'),
   eligible boolean not null,
   score real not null check (score between 0 and 1),
   suggestion text not null check (suggestion = any (array['clear', 'leave'])),
-  reasons text[] not null check (cardinality(reasons) between 1 and 6),
+  reasons text not null check (char_length(reasons) between 1 and 1000), -- plain reasons, joined by "; " 
   created_at timestamptz not null default now(),
   unique (post_id, model),
   check (eligible or suggestion = 'leave')  -- the never-clear floor, in the database too
@@ -38,13 +38,12 @@ set local role dog_jevs;
 -- nothing to record (no open JEVs hold on the post, or this model already recorded it). Called by the site in the
 -- same transaction as the hold, as whoever posted (a member or an agent); it checks the hold itself, so nobody can
 -- leave a suggestion on another post.
-create function app.sl_record(p_post uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text[])
+create function app.sl_record(p_post uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text)
 returns boolean
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
-  if p_post is null or p_model is null or p_eligible is null or p_score is null or p_suggestion is null or p_reasons is null
-     or exists (select 1 from unnest(p_reasons) r where r is null or char_length(r) > 200) then
+  if p_post is null or p_model is null or p_eligible is null or p_score is null or p_suggestion is null or p_reasons is null then
     raise exception 'bad Second Look record' using errcode = '22023';
   end if;
   if not exists (select 1 from app.review_flags f where f.post_id = p_post and f.source = 'classifier' and f.classifier = 'jevs'
@@ -59,8 +58,8 @@ begin
   return true;
 end
 $$;
-revoke execute on function app.sl_record(uuid, text, boolean, real, text, text[]) from public;
-grant execute on function app.sl_record(uuid, text, boolean, real, text, text[]) to dog_app;
+revoke execute on function app.sl_record(uuid, text, boolean, real, text, text) from public;
+grant execute on function app.sl_record(uuid, text, boolean, real, text, text) to dog_app;
 
 set local role dog_owner;
 revoke create on schema app from dog_jevs;
