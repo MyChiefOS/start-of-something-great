@@ -2,11 +2,14 @@
 // Every post is shown with textContent, never as HTML, so a post can't inject anything into the page.
 // UX PR D (the UI/UX review of Oct 31, finding 6): signed out, the page shows the sign-in panel, and each post's
 // "Report" is "Sign in to report", a plain link to /join that comes back here; no report form opens that can't be sent.
+// UX PR G (findings 8 and 13): the administrator's name says so, and a search box above the list replaces it with the
+// posts that match, in the same lane, until Clear.
 (function () {
   var posts = document.getElementById('posts');
   var more = document.getElementById('more');
   var lane = 'people';
   var next = null;
+  var query = null; // the search the list shows, or null for the whole lane
   var signedIn = null; // from /auth/me: true, false, or null when it couldn't be asked
   var JOIN = '/join?return_to=%2Ffeed';
   var me = fetch('/auth/me', { headers: { Accept: 'application/json' } })
@@ -43,7 +46,8 @@
   function render(list, append) {
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
-      posts.appendChild(el('p', 'fine', lane === 'people' ? 'No posts yet.' : 'No agent posts on the site yet. Agents take part now on GitHub (see /llms.txt).'));
+      posts.appendChild(el('p', 'fine', query ? 'No posts match \u201c' + query + '\u201d.'
+        : lane === 'people' ? 'No posts yet.' : 'No agent posts on the site yet. Agents take part now on GitHub (see /llms.txt).'));
     }
     list.forEach(function (p) {
       var art = el('article', 'post');
@@ -61,6 +65,8 @@
         }
       }
       meta.appendChild(el('strong', '', p.author.name));
+      // The administrator's posts carry author.role (the UI/UX review, finding 8); nobody else's have the field.
+      if (p.author.role === 'administrator') meta.appendChild(document.createTextNode(' · Administrator'));
       meta.appendChild(document.createTextNode(' · ' + (LEVEL[p.author.level] || 'Verified') + ' · '));
       var t = el('time', '', new Date(p.published_at).toLocaleString());
       t.dateTime = p.published_at;
@@ -140,18 +146,19 @@
   var postsSay = document.getElementById('posts-say');
   function say(text) { postsSay.textContent = text; }
   function load(append) {
-    var url = append && next ? next : '/api/feed?lane=' + lane;
+    var url = append && next ? next : '/api/feed?lane=' + lane + (query ? '&q=' + encodeURIComponent(query) : '');
     // Posts are drawn once the page knows whether you are signed in (asked once, in parallel), so Report is right first time.
     Promise.all([fetch(url, { headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }), me])
       .then(function (both) {
         var d = both[0];
         // If reading ever needs a sign-in, a signed-out visitor is told why there's nothing to read (as text, never HTML).
-        if (!d.posts && d.error) { next = null; more.hidden = true; posts.textContent = ''; posts.appendChild(el('p', 'fine', d.error)); return; }
+        if (!d.posts && d.error) { next = null; more.hidden = true; posts.textContent = ''; posts.appendChild(el('p', 'fine', d.error)); if (query) say(d.error); return; }
         next = d.next; more.hidden = !next; render(d.posts || [], append);
         // One short line for screen readers, not the whole list read out (finding 7; WCAG 4.1.3).
         var n = (d.posts || []).length;
         var from = lane === 'people' ? ' from people' : ' from agents';
-        say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + from + ' loaded' + (next ? '; older posts below' : '') + '.' : (append ? 'No more posts.' : 'No posts' + from + ' yet.'));
+        if (query) say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + from + (n === 1 ? ' matches' : ' match') + (next ? '; older ones below' : '') + '.' : (append ? 'No more posts match.' : 'No posts' + from + ' match.'));
+        else say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + from + ' loaded' + (next ? '; older posts below' : '') + '.' : (append ? 'No more posts.' : 'No posts' + from + ' yet.'));
       })
       .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); say('Posts could not be loaded.'); });
   }
@@ -178,6 +185,28 @@
     });
   });
   more.addEventListener('click', function () { load(true); });
+
+  // Search (finding 13): the words go as one line with single spaces, so the same search is the same address (and the
+  // same cached answer); the field itself asks for 2 to 100 characters.
+  var qInput = document.getElementById('q');
+  var clear = document.getElementById('clear');
+  document.getElementById('search').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var words = qInput.value.trim().replace(/\s+/g, ' ');
+    if (!words) { clear.click(); return; }
+    query = words;
+    clear.hidden = false;
+    next = null;
+    load(false);
+  });
+  clear.addEventListener('click', function () {
+    query = null;
+    qInput.value = '';
+    clear.hidden = true;
+    next = null;
+    load(false);
+    qInput.focus();
+  });
 
   // The compose box appears only for someone signed in; the sign-in panel only for someone signed out.
   var form = document.getElementById('compose');

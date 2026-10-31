@@ -14,6 +14,12 @@
 .compose textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .compose-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .compose button.button { cursor: pointer; }
+.search { display: grid; gap: 0.4rem; margin: 0 0 1.25rem; }
+.search label { font-family: var(--display); font-weight: 600; }
+.search-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.search input { flex: 1 1 12rem; min-width: 0; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.search input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.search button.button { cursor: pointer; }
 .feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
 .feed .post p { margin: 0.4rem 0; white-space: pre-line; }
 

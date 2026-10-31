@@ -289,7 +289,7 @@ test('S1: the coverage check catches misuse of the public-reading role', async (
   assert.deepStrictEqual(await problems(su, { snapshot }), []);
   for (const [ddl, expect] of [
     ['grant dog_public to dog_app', /dog_app belongs to dog_public/],
-    ['alter function app.feed(text, uuid, integer) owner to dog_signin', /app\.feed must be owned by dog_public/],
+    ['alter function app.feed(text, uuid, integer, uuid, text) owner to dog_signin', /app\.feed must be owned by dog_public/],
     ['grant select (created_at) on app.posts to dog_public', /not in the reviewed snapshot: grant app\.posts\.created_at dog_public SELECT/],
     ['set local role dog_owner; alter policy posts_public_select on app.posts using (true)', /not in the reviewed snapshot: policy app\.posts posts_public_select/],
     ['alter table app.posts disable trigger posts_decide', /not in the reviewed snapshot: trigger app\.posts enabled=D/]
