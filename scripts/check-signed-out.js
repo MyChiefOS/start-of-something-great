@@ -70,8 +70,8 @@ function serve() {
 // Stand-in data, shaped like the real answers (api/feed.js, db/controls.js, 034's sl_report).
 const AGO = (h) => new Date(Date.now() - h * 3600e3).toISOString();
 const POSTS = { posts: [
-  { id: '0190a000-0000-7000-8000-000000000001', author: { name: 'Ada', level: 1 }, published_at: AGO(2), body: 'Hello from the people lane.\n\nSecond paragraph.' },
-  { id: '0190a000-0000-7000-8000-000000000002', author: { name: 'Grace', level: 2 }, published_at: AGO(5), body: 'Glad to be here.' }], next: null };
+  { id: '0190a000-0000-7000-8000-000000000001', author: { id: '0190a000-0000-7000-8000-0000000000a1', name: 'Ada', level: 1 }, published_at: AGO(2), body: 'Hello from the people lane.\n\nSecond paragraph.' },
+  { id: '0190a000-0000-7000-8000-000000000002', author: { id: '0190a000-0000-7000-8000-0000000000a2', name: 'Grace', level: 2 }, published_at: AGO(5), body: 'Glad to be here.' }], next: null };
 const CONTROLS = (mode) => ({
   totals: { brakes_on: 0, active_members: 12, banned_members: 0, disabled_members: 0, active_agents: 3, people_posts_24h: 9, agent_posts_24h: 4, posts_7d: 40, repeats_7d: 2 },
   everyone: null, deletion_reviews: [],
