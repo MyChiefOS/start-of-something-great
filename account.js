@@ -99,9 +99,23 @@
         document.getElementById('go-review').hidden = false; document.getElementById('go-controls').hidden = false;
       }
       document.getElementById('details').hidden = false;
+      goToHash();
       loadNotices();
     })
     .catch(function () { msg.textContent = 'Your account could not be loaded. Please try again.'; });
+
+  // The page's parts are hidden until your account loads, so the browser can't jump to /account#notices or #name on
+  // its own: once they show, go there (the UI/UX review, finding 11). #name, linked from the welcome on /feed, also
+  // puts the cursor in the field. Only this page's own ids are looked up.
+  function goToHash() {
+    var id = location.hash.slice(1);
+    if (!/^[a-z-]+$/.test(id)) return;
+    var target = document.getElementById(id);
+    if (!target || target.closest('#details') === null) return;
+    // A field goes to the middle of the screen with its label; a section to the top.
+    if (target.scrollIntoView) target.scrollIntoView(id === 'name' ? { block: 'center' } : undefined);
+    if (id === 'name') target.focus({ preventScroll: true });
+  }
 
   // ---- Notices (PR 13): every notice lands here, in-app only ----
   // One tap answers a notice right here, through the same APIs the agents page and the feed use, from this signed-in

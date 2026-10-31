@@ -173,6 +173,9 @@
   // expires or is replaced. It is worth nothing elsewhere: it works only with this browser's own code cookie.
   var KEEP = 'dog-code';
   function forget() { try { sessionStorage.removeItem(KEEP); } catch (e) { /* nothing kept */ } }
+  // After a sign-in with a code (a first sign-in, or a new key file), /feed (where a sign-in lands unless it was sent from another page) greets you once in this tab with three next
+  // steps (the UI/UX review, finding 10). Only a yes is kept: no ID, no name. The key-file sign-in doesn't set it.
+  function welcome() { try { sessionStorage.setItem('dog-welcome', '1'); } catch (e) { /* no greeting: no storage */ } }
   function keep(code, until) { try { sessionStorage.setItem(KEEP, JSON.stringify({ code: code, until: until })); } catch (e) { /* not kept: no storage */ } }
   // That a code ran out, kept in this tab only (no code, no name), so a person who comes back from GitHub after it ran
   // out is told so, with "Get a new code" ready, instead of a page that seems to have forgotten them (the simulation, fix 5).
@@ -261,7 +264,7 @@
     if (back) fb.return_to = back;
     post('/auth/code/finish', fb).then(function (d) {
       if (!timer) return;
-      if (d.signed_in) { stop(); forget(); ranOutMark(null); say('Signed in. Taking you on\u2026', 'signed_in'); location.href = d.go || '/'; return; }
+      if (d.signed_in) { stop(); forget(); ranOutMark(null); if (d.go === '/feed') welcome(); say('Signed in. Taking you on\u2026', 'signed_in'); location.href = d.go || '/'; return; }
       // The region can look different by the time the code is used (a network that changed while travelling): ask
       // then, and carry on with the same code once they confirm (the CSO's re-check, N1).
       if (d.region) { clearInterval(timer); timer = null; document.getElementById('code-wait').textContent = ''; askRegion(d.region, 'finish'); return; }

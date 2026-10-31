@@ -294,4 +294,6 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e && e.stack); process.exitCode = 2; });
+// Run as a script; when required (scripts/check-ux-e.js), lend its local server and stand-ins.
+if (require.main === module) main().catch((e) => { console.error(e && e.stack); process.exitCode = 2; });
+module.exports = { serve, context, open, ROOT };
