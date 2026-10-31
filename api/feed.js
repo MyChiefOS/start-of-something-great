@@ -165,39 +165,50 @@ function canonical(q) {
 }
 
 // Search (035). The feed hides email addresses, phone numbers and keys (P4), so a search for one is refused rather
-// than answered: an answer would say whether some post holds it. Numbers on their own aren't searched (the database
-// leaves them out of its index), so a search needs at least one word with a letter. null when the search is fine.
+// than answered: an answer would say whether some post holds it. The database leaves out of its index every run of
+// characters (between spaces) holding an at sign or a digit of any script (app.post_search_text), and does the same to
+// the search, so a search needs at least one word of letters left. These are the characters the masking reads as an
+// at sign or a digit (api/_proposals.js, fold: NFKC, then any decimal digit); test/ux-g.test.js holds the two the same.
+const atOrDigit = (ch) => /[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'));
+const searchable = (s) => String(s).split(/\s+/).filter((w) => w && ![...w].some(atOrDigit));
+// null when the search is fine.
 function searchProblem(s) {
   if (typeof s !== 'string' || [...s.trim()].length < posts.SEARCH.min || [...s.trim()].length > posts.SEARCH.max) {
     return 'q must be ' + posts.SEARCH.min + ' to ' + posts.SEARCH.max + ' characters.';
   }
   if (maskContacts(s) !== s) return 'q can\u2019t search for email addresses, phone numbers or keys: posts show them hidden, so search doesn\u2019t look for them either.';
-  if (!/\p{L}/u.test(s)) return 'q needs at least one word with a letter: numbers on their own aren\u2019t searched, so hidden phone numbers can\u2019t be found.';
+  if (!searchable(s).some((w) => /\p{L}/u.test(w))) {
+    return 'q needs at least one word of letters: words with digits or an @ aren\u2019t searched, so hidden addresses and phone numbers can\u2019t be found.';
+  }
   return null;
 }
 // The words of a text as shown: NFKC, lower case, runs of letters, marks and digits.
 const wordsOf = (s) => String(s).normalize('NFKC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) || [];
 // A match counts only if every word of the search is in the post as shown, after masking. The index already leaves out
-// email addresses and numbers; this catches the ones written so the database's parser doesn't see them (an address in
-// non-Latin letters, digits in full width), so search never finds a post by what the feed hides.
+// anything with an at sign or a digit; this is the backstop for anything else the masking hides (a key in an older
+// post, stored before keys were hidden on saving), so search never finds a post by what the feed hides.
 function shownMatch(body, s) {
   const seen = new Set(wordsOf(maskContacts(body)));
   return wordsOf(s).every((w) => seen.has(w));
 }
-// A search's page: up to three reads of the database's matches, keeping only those that match as shown, until the page
-// is full. "next" is given only for a full page, after its last post, the same rule as an ordinary page, so a match
-// that was dropped never shows in the answer, not even as a short page that still says there is more.
-const SEARCH_READS = 3;
+// A search's page: reads of the database's matches, keeping only those that match as shown, until the page is full or
+// the matches run out. "next" follows the last post of a full page, as for an ordinary page. Since the index holds no
+// address or number, a dropped match is rare (the backstop above), and up to 10 reads go past them; if 10 reads still
+// leave the page short, "next" continues from where they stopped, so a later match is always reachable.
+const SEARCH_READS = 10;
 async function searchPage(run, { lane, before, limit, author, s }) {
   const kept = [];
   let cursor = before;
+  let more = false;
   for (let i = 0; i < SEARCH_READS && kept.length < limit; i++) {
     const rows = await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before: cursor, limit, author, q: s }));
     for (const r of rows) if (kept.length < limit && shownMatch(r.body, s)) kept.push(r);
-    if (rows.length < limit) break;
+    more = rows.length === limit;
+    if (!more) break;
     cursor = rows[rows.length - 1].id;
   }
-  return kept;
+  // The reads ran out before the page filled: continue from the last post read.
+  return { rows: kept, cursor: kept.length < limit && more ? cursor : null };
 }
 
 // Private answers: never cached, never readable by other sites.
@@ -644,9 +655,11 @@ async function handle(req, res, run, { oidc = null } = {}) {
       opens: 'Posting on the site itself isn\u2019t switched on yet. You can join the conversation now with GitHub on /talk.' });
   }
   try {
-    const rows = s !== null ? await searchPage(run, { lane, before, limit, author, s })
-      : await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit, author }));
-    const next = rows.length === limit ? '/api/feed?lane=' + lane + also + '&before=' + rows[rows.length - 1].id + '&limit=' + limit : null;
+    const found = s !== null ? await searchPage(run, { lane, before, limit, author, s })
+      : { rows: await run({ actor: 'anon' }, (t) => posts.feed(t, { lane, before, limit, author })), cursor: null };
+    const rows = found.rows;
+    const after = rows.length === limit ? rows[rows.length - 1].id : found.cursor;
+    const next = after ? '/api/feed?lane=' + lane + also + '&before=' + after + '&limit=' + limit : null;
     return sendPublic(res, 200, { lane, posts: rows.map(shape), next, untrusted_fields: untrustedFor(lane, rows), note: UNTRUSTED_NOTE });
   } catch (e) {
     if (e instanceof ValidationError) {
