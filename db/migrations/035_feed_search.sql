@@ -35,15 +35,17 @@ set local role dog_owner;
 -- ---- What search may read of a post ----
 -- The text with each space-separated run that holds an at sign or a digit replaced by a space. Immutable: the same text
 -- always gives the same words.
--- "Space" here is exactly JavaScript's \s, the set the site splits on (api/feed.js searchable), written out rather
--- than [[:space:]], whose meaning follows the database's locale: production (ICU, en_US.UTF-8) also counts U+001C to
--- U+001F and U+0085 as spaces, which JavaScript doesn't, so a run the site drops whole could have been indexed in part
--- (the review of e87b924; production's list read Oct 31, read-only).
+-- "Space" here is exactly JavaScript's \s less U+FEFF, the set the site splits on (api/feed.js searchable), written
+-- out rather than [[:space:]], whose meaning follows the database's locale: production (ICU, en_US.UTF-8) also counts
+-- U+001C to U+001F and U+0085 as spaces, which JavaScript doesn't, so a run the site drops whole could have been
+-- indexed in part (the review of e87b924; production's list read Oct 31, read-only). U+FEFF stays part of a word: the
+-- masking deletes it where it touches an address and hides the whole address, so splitting there would index part of
+-- one (the review of 68bb14f and 9ecd3f1).
 create function app.post_search_text(p_text text)
 returns text
 language sql immutable parallel safe
 as $$
-  select pg_catalog.regexp_replace(p_text, '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*[0-9@'
+  select pg_catalog.regexp_replace(p_text, '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*[0-9@'
     || '\u00b2-\u00b3\u00b9\u00bc-\u00be\u0660-\u0669\u06f0-\u06f9\u07c0-\u07c9\u0966-\u096f\u09e6-\u09ef'
     || '\u0a66-\u0a6f\u0ae6-\u0aef\u0b66-\u0b6f\u0be6-\u0bef\u0c66-\u0c6f\u0ce6-\u0cef\u0d66-\u0d6f\u0de6-\u0def'
     || '\u0e50-\u0e59\u0ed0-\u0ed9\u0f20-\u0f29\u1040-\u1049\u1090-\u1099\u17e0-\u17e9\u1810-\u1819\u1946-\u194f'
@@ -55,12 +57,12 @@ as $$
     || '\U00011136-\U0001113f\U000111d0-\U000111d9\U000112f0-\U000112f9\U00011450-\U00011459'
     || '\U000114d0-\U000114d9\U00011650-\U00011659\U000116c0-\U000116c9\U000116d0-\U000116e3'
     || '\U00011730-\U00011739\U000118e0-\U000118e9\U00011950-\U00011959\U00011bf0-\U00011bf9'
-    || '\U00011c50-\U00011c59\U00011d50-\U00011d59\U00011da0-\U00011da9\U00011f50-\U00011f59'
+    || '\U00011c50-\U00011c59\U00011d50-\U00011d59\U00011da0-\U00011da9\U00011de0-\U00011de9\U00011f50-\U00011f59'
     || '\U00016130-\U00016139\U00016a60-\U00016a69\U00016ac0-\U00016ac9\U00016b50-\U00016b59'
     || '\U00016d70-\U00016d79\U0001ccf0-\U0001ccf9\U0001d7ce-\U0001d7ff\U0001e140-\U0001e149'
     || '\U0001e2f0-\U0001e2f9\U0001e4f0-\U0001e4f9\U0001e5f1-\U0001e5fa\U0001e950-\U0001e959'
     || '\U0001f100-\U0001f10a\U0001fbf0-\U0001fbf9'
-    || '＠﹫][^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*', ' ', 'g')
+    || '＠﹫][^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*', ' ', 'g')
 $$;
 revoke execute on function app.post_search_text(text) from public;
 grant execute on function app.post_search_text(text) to dog_public;

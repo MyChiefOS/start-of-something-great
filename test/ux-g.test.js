@@ -409,29 +409,29 @@ test('finding 2 of the review: the index never holds hidden contact text, nor an
   }
 });
 
-test('finding 2 of the review: what the database strips is exactly what the masking reads as an at sign or a digit', async () => {
-  // Node's own Unicode tables, as api/_proposals.js's fold uses them: any decimal digit, and anything NFKC makes an at
-  // sign or a digit. The database must strip every one of them in the first two planes (the direction that keeps
-  // hidden text out of the index). Its list is written for a newer Unicode than some Node builds know (CI's Node 22
-  // lacked U+11DE0 to U+11DE9, Oct 31), so it may strip a few more: that only keeps more out of the index (RK101).
-  // Nothing ordinary is stripped: no Latin, Greek or Cyrillic letter.
+test('finding 2 of the review: what the database strips is exactly the written-out list, and no runtime knows a digit it lacks', async () => {
+  // db/at-or-digit.js (Unicode 17) is the one list: the site splits search words on it and 035 strips it. Exact, so it
+  // can't drift with a runtime's Unicode tables (CI's Node knew U+11DE0 to U+11DE9 when the database didn't, Oct 31).
+  const { RANGES, isAtOrDigitCode } = require('../db/at-or-digit');
   const want = [];
-  for (let cp = 32; cp < 0x20000; cp++) {
+  for (const [lo, hi] of RANGES) for (let cp = lo; cp <= hi; cp++) want.push(cp);
+  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 1114111) cp
+    where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
+  assert.deepStrictEqual(have.map(Number), want, 'the database strips exactly the list, across all of Unicode');
+  // This runtime's own tables, as the masking reads them (api/_proposals.js): nothing it reads as an at sign or a digit
+  // may be missing from the list. If a newer runtime knows more, this fails: extend the list and 035 together.
+  const unknown = [];
+  for (let cp = 32; cp <= 0x10ffff; cp++) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue;
     const ch = String.fromCodePoint(cp);
-    if (/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) want.push(cp);
+    if ((/[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'))) && !isAtOrDigitCode(cp)) unknown.push(cp.toString(16));
   }
-  const [{ have }] = await q(`select coalesce(array_agg(cp order by cp), '{}') as have from generate_series(32, 131071) cp
-    where (cp < 55296 or cp > 57343) and app.post_search_text('x' || chr(cp) || 'x') = ' '`);
-  const stripped = new Set(have.map(Number));
-  assert.deepStrictEqual(want.filter((cp) => !stripped.has(cp)).map((cp) => cp.toString(16)), [], 'every at sign or digit the site masks is kept out of the index');
-  const extra = [...stripped].filter((cp) => !want.includes(cp));
-  assert.ok(extra.every((cp) => !/[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}]/u.test(String.fromCodePoint(cp)) || /\p{N}/u.test(String.fromCodePoint(cp))), 'no ordinary letter is stripped: ' + extra.map((cp) => cp.toString(16)));
-  assert.ok(extra.length <= 64, 'only a few newer digits beyond what this Node knows: ' + extra.length);
+  assert.deepStrictEqual(unknown, [], 'this runtime (Unicode ' + process.versions.unicode + ') knows digits the list lacks');
   // The site refuses the same searches the database would leave empty.
   const { searchProblem } = require('../api/feed.js');
   assert.match(searchProblem('gpt4 2026'), /^q needs at least one word of letters/);
   assert.strictEqual(searchProblem('gpt4 release'), null);
+  assert.strictEqual(searchProblem('zebra \u{11DE3}\u{11DE4}'), null, 'a word in the newest digits is left out, as the database leaves it');
 });
 
 test('finding 2 of the review: with 3 hidden-only matches newer than a visible one, the visible one is still found', async () => {
@@ -629,16 +629,22 @@ test('the review of e87b924: the member trigger runs only when status changes', 
 });
 
 test('the review of e87b924: what the database counts as a space between words is exactly what the site splits on, whatever the locale', async () => {
-  // Every character either side might call a space, across the first plane (production's ICU locale adds U+001C to
-  // U+001F and U+0085 to [[:space:]]; the word filter no longer uses that class).
-  const js = (ch) => /\s/u.test(ch);
-  const rows = await q(`select c, app.post_search_text('ab' || chr(c) || 'x@y') as t from generate_series(1, 65535) c
-                        where (c < 55296 or c > 57343) and (chr(c) ~ '[[:space:]]' or c in (133, 160, 5760, 8192, 8203, 8232, 8233, 8239, 8287, 12288, 65279))`);
-  const wrong = rows.filter((r) => {
-    const ch = String.fromCodePoint(r.c);
-    // Split there: "ab" survives and the address run goes. Not split: the whole run, "ab" with it, goes.
-    return js(ch) ? !r.t.startsWith('ab') : r.t.includes('ab');
-  }).map((r) => r.c.toString(16));
-  assert.deepStrictEqual(wrong, []);
+  // Every code point, U+0001 to U+10FFFF (the review of 68bb14f and 9ecd3f1 asked for all of Unicode). The database
+  // lists the ones it splits on: "ab" survives when it splits there, and the address run goes on its own.
+  const site = (ch) => /[^\S\uFEFF]/u.test(ch);
+  const [{ have }] = await q(`select coalesce(array_agg(c order by c), '{}') as have from generate_series(1, 1114111) c
+    where (c < 55296 or c > 57343) and app.post_search_text('ab' || chr(c) || 'x@y') like 'ab%'`);
+  const want = [];
+  for (let c = 1; c <= 0x10ffff; c++) { if (c >= 0xd800 && c <= 0xdfff) continue; if (site(String.fromCodePoint(c))) want.push(c); }
+  assert.deepStrictEqual(have.map(Number).map((c) => c.toString(16)), want.map((c) => c.toString(16)));
   assert.ok(!migration().split('\n').filter((l) => !/^\s*--/.test(l)).some((l) => l.includes('[[:space:]]')), 'no locale-dependent space class in 035\'s code');
+  // U+FEFF is part of a word, as the masking reads it: no part of these hidden addresses is indexed.
+  const [{ a, b }] = await q(`select app.post_search_text('hello janedoe' || chr(65279) || '@example.com there') as a,
+                                     app.post_search_text('hello janedoe@' || chr(65279) || 'example.com there') as b`);
+  for (const t of [a, b]) {
+    assert.ok(!/janedoe|example/.test(t), 'nothing of the address: ' + JSON.stringify(t));
+    assert.ok(/hello/.test(t) && /there/.test(t), 'the words around it stay: ' + JSON.stringify(t));
+  }
+  const { searchProblem } = require('../api/feed.js');
+  assert.match(searchProblem('janedoe\uFEFF@example.com') || '', /./, 'the site leaves that search empty too');
 });

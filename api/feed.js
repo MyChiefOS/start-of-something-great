@@ -169,8 +169,11 @@ function canonical(q) {
 // characters (between spaces) holding an at sign or a digit of any script (app.post_search_text), and does the same to
 // the search, so a search needs at least one word of letters left. These are the characters the masking reads as an
 // at sign or a digit (api/_proposals.js, fold: NFKC, then any decimal digit); test/ux-g.test.js holds the two the same.
-const atOrDigit = (ch) => /[@\p{Nd}]/u.test(ch) || /[@\p{Nd}]/u.test(ch.normalize('NFKC'));
-const searchable = (s) => String(s).split(/\s+/).filter((w) => w && ![...w].some(atOrDigit));
+// The same list the database strips (db/at-or-digit.js, Unicode 17), plus anything this runtime knows beyond it.
+const { isAtOrDigit: atOrDigit } = require('../db/at-or-digit');
+// Words split on JavaScript's \s less U+FEFF, exactly as 035's word filter splits (U+FEFF stays part of a word: the
+// masking treats it as invisible inside an address, so it must never split one).
+const searchable = (s) => String(s).split(/[^\S\uFEFF]+/u).filter((w) => w && ![...w].some(atOrDigit));
 // null when the search is fine.
 function searchProblem(s) {
   if (typeof s !== 'string' || [...s.trim()].length < posts.SEARCH.min || [...s.trim()].length > posts.SEARCH.max) {
