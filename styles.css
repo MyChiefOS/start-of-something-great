@@ -155,9 +155,10 @@ a:focus-visible, .button:focus-visible {
   padding: 0 1.25rem;
 }
 
-/* Header, written into every page by scripts/shell.js: one row. On phones, the wordmark, Join (Account once signed
-   in) and Menu, whose panel drops below; on wide screens the panel's links sit in the row and Menu goes. The menu is a
-   <details>, so it works on the pages that run no script. */
+/* Header, written into every page by scripts/shell.js: one row, 320 px up. On phones, the wordmark, Menu, whose panel
+   drops below, and Join (Account once signed in), in the Tab order; on wide screens the panel's links sit in the row,
+   "on this site" and "on GitHub" as a small second line, and Menu goes. The menu is a <details>, so it works on the
+   pages that run no script. */
 .site-header { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; padding: 0.75rem 0; }
 .wordmark {
   font-family: var(--display);
@@ -179,11 +180,11 @@ a:focus-visible, .button:focus-visible {
 .site-nav a:hover { color: var(--amber); }
 .site-nav a[aria-current] { text-decoration: underline; text-decoration-color: var(--amber); }
 /* Join (Account once signed in): the menu's one call to action, a pill in the amber, 44 px on phones (finding 15).
-   Shown before Menu on phones, after the links on wide screens. */
-.site-nav a.nav-join { order: -1; display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.8rem; border-radius: 999px; background: var(--amber); color: #15110a; font-weight: 700; white-space: nowrap; }
+   Hover darkens it in the light scheme (6.2:1; a brighter pill fell to 4.4:1). */
+.site-nav a.nav-join { display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.8rem; border-radius: 999px; background: var(--amber); color: #15110a; font-weight: 700; white-space: nowrap; }
 .site-nav a.nav-join:hover { color: #15110a; filter: brightness(1.08); }
 .site-nav a.nav-join[aria-current] { text-decoration-color: currentColor; }
-@media (prefers-color-scheme: light) { .site-nav a.nav-join, .site-nav a.nav-join:hover { color: #ffffff; } }
+@media (prefers-color-scheme: light) { .site-nav a.nav-join, .site-nav a.nav-join:hover { color: #ffffff; } .site-nav a.nav-join:hover { filter: none; background: color-mix(in srgb, var(--amber) 85%, #15110a); } }
 .menu > summary { display: flex; align-items: center; gap: 0.45rem; min-height: 44px; padding: 0 0.4rem; border-radius: 999px; cursor: pointer; list-style: none; font-weight: 600; }
 .menu > summary::-webkit-details-marker { display: none; }
 .menu > summary::after { content: ""; width: 0.4em; height: 0.4em; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-25%) rotate(45deg); }
@@ -196,17 +197,19 @@ a:focus-visible, .button:focus-visible {
 .nav-sub { display: inline-block; margin-left: 0.45rem; color: var(--muted); font-size: 0.85em; }
 .nav-group { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.25rem; }
 .nav-group span { grid-column: 1 / -1; padding-top: 1rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
+@media (max-width: 24rem) { .site-header, .site-nav { column-gap: 0.25rem; } .site-nav a.nav-join { padding: 0 0.5rem; font-size: 0.875rem; } .menu > summary { gap: 0.25rem; padding: 0; } }
 @supports selector(::details-content) {
   @media (min-width: 48rem) {
-    .site-nav { gap: 0.9rem; }
-    .site-nav a.nav-join { order: 0; min-height: 36px; }
+    .site-nav { gap: 0.8rem; }
+    .site-nav a.nav-join { min-height: 36px; }
     .menu > summary, .nav-group { display: none; }
     .menu::details-content { content-visibility: visible; }
-    .menu-panel { position: static; display: flex; align-items: center; gap: 0.9rem; padding: 0; background: none; border: 0; }
-    .site-nav .menu-panel a { display: inline-block; min-height: 24px; padding: 2px 0; border: 0; font-size: inherit; color: var(--muted); }
+    .menu-panel { position: static; display: flex; align-items: center; gap: 0.8rem; padding: 0; background: none; border: 0; }
+    .site-nav .menu-panel a { position: relative; display: inline-block; min-height: 24px; padding: 2px 0; border: 0; font-size: inherit; color: var(--muted); }
     .site-nav .menu-panel a:hover, .site-nav .menu-panel a[aria-current] { color: var(--text); }
     .site-nav .menu-panel a.nav-about { display: inline-block; }
-    .nav-sub { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .site-nav .menu-panel a:has(.nav-sub):has(+ a .nav-sub) { min-width: 3.2rem; }
+    .nav-sub { position: absolute; left: 0; top: 100%; margin: 0; font-size: 0.72rem; line-height: 1; white-space: nowrap; }
   }
 }
 

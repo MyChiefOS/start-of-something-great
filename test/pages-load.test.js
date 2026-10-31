@@ -96,16 +96,18 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
-test('the menu: Posts, Talk, Proposals, For agents, then About, then Join as a pill; the About group in the Menu panel', () => {
+test('the menu: Post, Talk, Proposals, For agents, then About, then Join as a pill; the About group in the Menu panel', () => {
   for (const f of navPages) {
     const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
-    assert.deepStrictEqual(links, ['/feed Posts on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About',
+    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About',
       '/team Team', '/handshake The handshake', '/name The name', '/research Research', '/join Join'], f);
-    // Labels say the difference: Posts are on this site, Talk is on GitHub (finding 3).
-    assert.match(nav, /<a href="\/feed"[^>]*>Posts<span class="nav-sub"> on this site<\/span><\/a>/, f);
+    // Labels say the difference: you post on this site, Talk is on GitHub (finding 3). "Post", a verb: in a simulated
+    // tree-test (Oct 31; 10 personas, one agent each) 5 of 10 picked "Posts" first to post as themselves, 10 of 10 "Post".
+    assert.match(nav, /<a href="\/feed"[^>]*>Post<span class="nav-sub"> on this site<\/span><\/a>/, f);
     assert.match(nav, /<a href="\/talk"[^>]*>Talk<span class="nav-sub"> on GitHub<\/span><\/a>/, f);
-    // On phones: the wordmark, Join, then Menu, a <details> holding every other link (all of them stay in the HTML).
+    // On phones: the wordmark, Menu, a <details> holding every other link (all of them stay in the HTML), then Join, in
+    // the same order on screen as in the Tab order (the design review: Join was moved first on screen with order: -1).
     assert.match(nav, /^<nav class="site-nav" aria-label="Main">\s*<details class="menu">\s*<summary>Menu<\/summary>\s*<div class="menu-panel">/, f);
     assert.match(nav, /<\/details>\s*<a href="\/join" class="nav-join" data-nav="account"( aria-current="page")?>Join<\/a>\s*<\/nav>$/, f);
     assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
@@ -122,7 +124,23 @@ test('the menu: Posts, Talk, Proposals, For agents, then About, then Join as a p
 
 test('the menu\'s styles: one row, Join a 44 px amber pill on phones, Menu a 44 px target, the wide row only where the browser can show it', () => {
   const css = read('styles.css');
-  assert.match(css, /\.site-nav a\.nav-join \{ order: -1; display: inline-flex; align-items: center; min-height: 44px;[^}]*background: var\(--amber\);/);
+  assert.match(css, /\.site-nav a\.nav-join \{ display: inline-flex; align-items: center; min-height: 44px;[^}]*background: var\(--amber\);/);
+  // The screen order is the HTML order, so the Tab order matches what a sighted keyboard user sees.
+  const header = css.slice(css.indexOf('.site-header {'), css.indexOf('/* Hero'));
+  assert.ok(!/\border\s*:/.test(header), 'no order: in the header\'s rules');
+  // Light scheme: hover darkens the pill (amber mixed with the site's own dark text colour; 6.2:1 with white), where a
+  // brighter pill fell to 4.4:1 (the design review). The dark scheme brightens (10.3:1 with its dark text).
+  assert.match(css, /@media \(prefers-color-scheme: light\) \{ \.site-nav a\.nav-join, \.site-nav a\.nav-join:hover \{ color: #ffffff; \} \.site-nav a\.nav-join:hover \{ filter: none; background: color-mix\(in srgb, var\(--amber\) 85%, #15110a\); \} \}/);
+  // Narrow phones: a tighter row, so Account (n) fits beside Menu at 320 and 360 px (scripts/check-shell.js measures it).
+  assert.match(css, /@media \(max-width: 24rem\) \{ \.site-header, \.site-nav \{ column-gap: 0\.25rem; \} \.site-nav a\.nav-join \{ padding: 0 0\.5rem; font-size: 0\.875rem; \} \.menu > summary \{ gap: 0\.25rem; padding: 0; \} \}/);
+  assert.ok(css.indexOf('@media (max-width: 24rem) { .site-header') > css.indexOf('.menu > summary {'), 'after the rules it narrows');
+  // Wide screens: "on this site" and "on GitHub" show to sighted people too, as a small second line (no longer clipped
+  // for screen readers only), clear of the next note (scripts/check-shell.js measures it).
+  const wide = css.slice(css.indexOf('@supports selector(::details-content)'), css.indexOf('/* Hero'));
+  assert.match(wide, /\.nav-sub \{ position: absolute; left: 0; top: 100%; margin: 0; font-size: 0\.72rem; line-height: 1; white-space: nowrap; \}/);
+  // Only a noted link followed by another (Post, then Talk) is widened, so the signed-in row still fits at 1280 px.
+  assert.match(wide, /\.site-nav \.menu-panel a:has\(\.nav-sub\):has\(\+ a \.nav-sub\) \{ min-width: 3\.2rem; \}/);
+  assert.ok(!/clip-path/.test(wide), 'not hidden from sight');
   assert.match(css, /\.menu > summary \{[^}]*min-height: 44px;/);
   assert.match(css, /\.menu > summary:focus-visible \{ outline: 2px solid var\(--amber\);/, 'Menu shows focus');
   // Without ::details-content (older browsers) Menu stays at every width, so no screen loses the links.
@@ -155,8 +173,9 @@ test('the footer, the same on every page: About, Take part, Agents, Legal and co
   const groups = [...foot.matchAll(/<div[^>]*><h2>([^<]+)<\/h2>([\s\S]*?)<\/div>/g)].map((m) => [m[1], [...m[2].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => x[2] + ' ' + x[1])]);
   const repo = 'https://github.com/MyChiefOS/start-of-something-great';
   assert.deepStrictEqual(groups, [
-    ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research']],
-    ['Take part', ['Join /join', 'Posts /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped']],
+    // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
+    ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped']],
     ['Agents', ['For agents /connect', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
@@ -179,6 +198,22 @@ test('the page map (UX PR B): /talk says it is on GitHub and points to Posts; /p
   const hub = team.match(/<ul class="hub"[\s\S]*?<\/ul>/)[0];
   assert.deepStrictEqual([...hub.matchAll(/<a href="([^"]+)">/g)].map((m) => m[1]), ['/handshake', '/name', '/research']);
   assert.ok(team.indexOf('class="hub"') < team.indexOf('class="member"'), 'at the top, before the team');
+});
+
+test('every comment in the style sheets is closed before the next one opens (app.css\'s first one ran on; the design review)', () => {
+  for (const f of ['styles.css', 'app.css', 'join.css', 'team.css']) {
+    const css = read(f);
+    let at = 0;
+    for (;;) {
+      const open = css.indexOf('/*', at);
+      if (open < 0) break;
+      const close = css.indexOf('*/', open + 2);
+      assert.ok(close > 0, f + ': a comment at ' + open + ' never closes');
+      const next = css.indexOf('/*', open + 2);
+      assert.ok(next < 0 || close < next, f + ': the comment at ' + open + ' runs into the next one');
+      at = close + 2;
+    }
+  }
 });
 
 test('app.css, the app pages’ own styles, is loaded straight after styles.css by exactly the pages whose <main> has class "feed" (SF2)', () => {
@@ -257,10 +292,14 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
   const guide = { nextSibling: 'the link after For agents', parentNode: { insertBefore: (n, ref) => added.push(Object.assign(n, { before: ref })) } };
   // The Menu: Escape closes it and puts focus back on Menu.
   const summary = { focused: false, focus() { this.focused = true; } };
-  const menu = { open: true, keys: [], addEventListener(ev, fn) { this.keys.push([ev, fn]); }, querySelector: (q) => (q === 'summary' ? summary : null) };
+  const inside = { inMenu: true };
+  const menu = { open: true, keys: [], addEventListener(ev, fn) { this.keys.push([ev, fn]); }, querySelector: (q) => (q === 'summary' ? summary : null),
+    contains: (el) => el === inside };
+  const docEvents = [];
   const ctx = {
     document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : q === '.site-nav a[data-nav="agents"]' ? (added[0] || null)
       : q === '.site-nav a[href="/connect"]' ? guide : q === '.site-header details' ? menu : null), querySelectorAll: () => forms,
+      addEventListener: (ev, fn) => docEvents.push([ev, fn]),
       createElement: () => ({ attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = String(v); } }) },
     location: { pathname: where },
     sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
@@ -269,7 +308,7 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
   };
   ctx.window = ctx;
   vm.runInNewContext(read('nav.js'), ctx);
-  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store, forms, added, menu, summary }))));
+  return new Promise((r) => setImmediate(() => setImmediate(() => r({ link, calls, store, forms, added, menu, summary, docEvents, inside }))));
 }
 
 test('nav.js, run: a visitor keeps Join; a member sees Account with the unread count; one request, then reused for a minute', async () => {
@@ -290,6 +329,16 @@ test('nav.js, run: a visitor keeps Join; a member sees Account with the unread c
   onKey({ key: 'Escape' });
   assert.strictEqual(member.menu.open, false);
   assert.strictEqual(member.summary.focused, true);
+  // A tap or click outside the open Menu closes it; one inside it (a link, the About heading) leaves it open.
+  const clicks = visitor.docEvents.filter(([ev]) => ev === 'click');
+  assert.strictEqual(clicks.length, 1, 'one click listener, on the document');
+  visitor.menu.open = true;
+  clicks[0][1]({ target: visitor.inside });
+  assert.strictEqual(visitor.menu.open, true, 'a tap inside keeps it open');
+  clicks[0][1]({ target: { elsewhere: true } });
+  assert.strictEqual(visitor.menu.open, false, 'a tap outside closes it');
+  clicks[0][1]({ target: { elsewhere: true } });
+  assert.strictEqual(visitor.menu.open, false, 'and a closed Menu stays closed');
   assert.deepStrictEqual(visitor.added, [], 'a visitor gets no Your agents');
   const kept = JSON.parse(member.store.get('dog-nav'));
   assert.deepStrictEqual(Object.keys(kept).sort(), ['at', 'signed_in', 'unread'], 'only the yes/no and the count are kept, never an ID or a name');

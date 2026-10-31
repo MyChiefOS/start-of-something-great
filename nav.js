@@ -8,7 +8,8 @@
 (function () {
   'use strict';
   // The Menu (a <details>, which opens and closes with Enter or Space on its own): Escape also closes it and puts focus
-  // back on Menu (UX PR B). The pages that run no script keep Enter and Space.
+  // back on Menu, and a tap or click anywhere outside it closes it (UX PR B). The pages that run no script keep Enter,
+  // Space and Menu itself.
   var menu = document.querySelector('.site-header details');
   if (menu && menu.addEventListener) {
     menu.addEventListener('keydown', function (e) {
@@ -16,6 +17,9 @@
       menu.open = false;
       var summary = menu.querySelector('summary');
       if (summary) summary.focus();
+    });
+    document.addEventListener('click', function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
     });
   }
   var link = document.querySelector('.site-nav a[data-nav="account"]');

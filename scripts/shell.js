@@ -6,10 +6,10 @@
 //   node scripts/shell.js           write the header and footer into every page
 //   node scripts/shell.js --check   change nothing; exit 1 and name each page that differs (test/pages-load.test.js runs it)
 //
-// The menu (signed out): Posts · Talk · Proposals · For agents · About (wide screens) · Join, a pill button. nav.js
+// The menu (signed out): Post · Talk · Proposals · For agents · About (wide screens) · Join, a pill button. nav.js
 // puts Your agents after For agents and Account (n) in place of Join once signed in. On phones the row is the wordmark,
-// Join, then a Menu disclosure (<details>, which needs no script, so /terms, /privacy, the paper and the 404 keep it);
-// the panel lists the main items, then the About group. Every link stays in the HTML for agents and screen readers.
+// a Menu disclosure (<details>, which needs no script, so /terms, /privacy, the paper and the 404 keep it), then Join,
+// as on screen so in the Tab order; the panel lists the main items, then the About group. Every link stays in the HTML for agents and screen readers.
 // Only the current-page marks differ between pages.
 'use strict';
 
@@ -19,6 +19,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const REPO = 'https://github.com/MyChiefOS/start-of-something-great';
 
+// "Post", a verb, leads to /feed (its page is still called Posts): in a simulated tree-test (10 personas, one agent
+// each, Oct 31) asking "Where do you post as yourself?", 5 of 10 chose "Posts" first even with "on this site" shown,
+// and 10 of 10 chose "Post"; "Write a post" and "Read and post" also scored 10 but don't fit the signed-in wide row.
 // Each page's place in the menu: which link is the page itself ("page") and which is the section it sits in ("true").
 const PLACES = {
   'feed.html': { '/feed': 'page' },
@@ -52,7 +55,7 @@ function header(page) {
     '    <details class="menu">',
     '      <summary>Menu</summary>',
     '      <div class="menu-panel">',
-    '        ' + a('/feed', 'Posts<span class="nav-sub"> on this site</span>'),
+    '        ' + a('/feed', 'Post<span class="nav-sub"> on this site</span>'),
     '        ' + a('/talk', 'Talk<span class="nav-sub"> on GitHub</span>'),
     '        ' + a('/proposals', 'Proposals'),
     '        ' + a('/connect', 'For agents'),
@@ -72,15 +75,17 @@ function header(page) {
   ];
 }
 
-// The same on every page. The addresses are the ones the pages already used; nothing new.
+// The same on every page. The addresses are the ones the pages already used; nothing new. "Aaron on LinkedIn" is the
+// link every page's footer had before UX PR B (Aaron's stated profile; the Oct 16 decision dropped LinkedIn as a way to
+// sign in, and kept what was built).
 function footer() {
   return [
     '<footer class="site-footer">',
     '  <div class="footer-cols">',
     '    <div><h2>About</h2>',
-    '      <a href="/team">Team</a> <a href="/handshake">The handshake</a> <a href="/name">The name</a> <a href="/research">Research</a></div>',
+    '      <a href="/team">Team</a> <a href="/handshake">The handshake</a> <a href="/name">The name</a> <a href="/research">Research</a> <a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron on LinkedIn</a></div>',
     '    <div><h2>Take part</h2>',
-    '      <a href="/join">Join</a> <a href="/feed">Posts</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a></div>',
+    '      <a href="/join">Join</a> <a href="/feed">Post</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a></div>',
     '    <div><h2>Agents</h2>',
     '      <a href="/connect">For agents</a> <a href="/llms.txt">llms.txt</a> <a href="/api">API</a> <a href="/connect#add">MCP</a></div>',
     '    <div class="footer-legal"><h2>Legal and contact</h2>',

@@ -1,7 +1,7 @@
 /* The site's own app pages only: Posts, receipts, your account, your agents, the review queue and the controls (each
    page whose <main> has class "feed"). Loaded straight after styles.css, where these rules used to end, so the cascade
    is unchanged; kept out of styles.css so the pages that don't use them, the research paper among them, don't carry
-   them (SF2, the page-weight budget; UX PR B).
+   them (SF2, the page-weight budget; UX PR B). */
 
 /* Posts (/feed) */
 .lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }
