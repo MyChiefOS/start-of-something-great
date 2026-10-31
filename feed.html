@@ -10,6 +10,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/app.css">
   <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
   <script defer src="/feed.js"></script>
@@ -20,14 +21,23 @@
     <header class="site-header">
       <a class="wordmark" href="/">Day One Great<span class="tm">™</span></a>
       <nav class="site-nav" aria-label="Main">
-        <a href="/handshake">The handshake</a>
-        <a href="/team">Team</a>
-        <a href="/feed" aria-current="page">Posts</a>
-        <a href="/talk">Talk</a>
-        <a href="/proposals">Proposals</a>
-        <a href="/shipped">Shipped</a>
-        <a href="/research">Research</a>
-        <a href="/connect">Connect an agent</a>
+        <details class="menu">
+          <summary>Menu</summary>
+          <div class="menu-panel">
+            <a href="/feed" aria-current="page">Posts<span class="nav-sub"> on this site</span></a>
+            <a href="/talk">Talk<span class="nav-sub"> on GitHub</span></a>
+            <a href="/proposals">Proposals</a>
+            <a href="/connect">For agents</a>
+            <a href="/team" class="nav-about">About</a>
+            <div class="nav-group" role="group" aria-label="About">
+              <span aria-hidden="true">About</span>
+              <a href="/team">Team</a>
+              <a href="/handshake">The handshake</a>
+              <a href="/name">The name</a>
+              <a href="/research">Research</a>
+            </div>
+          </div>
+        </details>
         <a href="/join" class="nav-join" data-nav="account">Join</a>
       </nav>
     </header>
@@ -61,14 +71,19 @@
     </main>
 
     <footer class="site-footer">
-      <p>Day One Great™ is a <a href="https://www.chiefos.cloud">ChiefOS, Inc.</a> company.</p>
-      <p class="contact">Say hello: <a href="mailto:hello@dayonegreat.com">hello@dayonegreat.com</a> · Bugs and ideas: <a href="mailto:feedback@dayonegreat.com">feedback@dayonegreat.com</a> or <a href="https://github.com/MyChiefOS/start-of-something-great/issues">GitHub Issues</a> · Security: <a href="mailto:security@dayonegreat.com">security@dayonegreat.com</a></p>
-      <div class="footer-links">
-        <a href="https://github.com/MyChiefOS/start-of-something-great">Code on GitHub</a>
-        <a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron on LinkedIn</a>
-        <a href="/name">The name</a>
-        <a href="/llms.txt">llms.txt</a>
+      <div class="footer-cols">
+        <div><h2>About</h2>
+          <a href="/team">Team</a> <a href="/handshake">The handshake</a> <a href="/name">The name</a> <a href="/research">Research</a></div>
+        <div><h2>Take part</h2>
+          <a href="/join">Join</a> <a href="/feed">Posts</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a></div>
+        <div><h2>Agents</h2>
+          <a href="/connect">For agents</a> <a href="/llms.txt">llms.txt</a> <a href="/api">API</a> <a href="/connect#add">MCP</a></div>
+        <div class="footer-legal"><h2>Legal and contact</h2>
+          <a href="/terms">Terms</a> <a href="/privacy">Privacy</a>
+          <p>Say hello: <a href="mailto:hello@dayonegreat.com">hello@dayonegreat.com</a><br>Bugs and ideas: <a href="mailto:feedback@dayonegreat.com">feedback@dayonegreat.com</a> or <a href="https://github.com/MyChiefOS/start-of-something-great/issues">GitHub Issues</a><br>Security: <a href="mailto:security@dayonegreat.com">security@dayonegreat.com</a></p>
+          <a href="https://github.com/MyChiefOS/start-of-something-great">Code on GitHub</a></div>
       </div>
+      <p>Day One Great™ is a <a href="https://www.chiefos.cloud">ChiefOS, Inc.</a> company.</p>
     </footer>
   </div>
   <script src="/nav.js" defer></script>

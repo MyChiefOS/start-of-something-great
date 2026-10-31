@@ -16,9 +16,12 @@ function navWith(answer, pathname = '/feed') {
   const added = [];
   const link = { attrs: { href: '/join' }, textContent: 'Join', setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
     parentNode: { insertBefore: (n, ref) => added.push({ n, before: ref }) } };
+  // For agents, in the Menu's panel: Your agents goes just after it (UX PR B).
+  const guide = { nextSibling: 'after For agents', parentNode: link.parentNode };
   const sandbox = {
     document: {
-      querySelector: (sel) => (sel === '.site-nav a[data-nav="account"]' ? link : sel === '.site-nav a[data-nav="agents"]' ? (added[0] ? added[0].n : null) : null),
+      querySelector: (sel) => (sel === '.site-nav a[data-nav="account"]' ? link : sel === '.site-nav a[data-nav="agents"]' ? (added[0] ? added[0].n : null)
+        : sel === '.site-nav a[href="/connect"]' ? guide : null),
       querySelectorAll: () => [],
       createElement: () => ({ attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = v; } })
     },
@@ -39,7 +42,7 @@ test('item 7: once signed in, the menu has "Your agents" beside Account; a visit
   assert.strictEqual(m.added.length, 1);
   assert.strictEqual(m.added[0].n.textContent, 'Your agents');
   assert.strictEqual(m.added[0].n.attrs.href, '/agents');
-  assert.strictEqual(m.added[0].before, m.link, 'just before Account');
+  assert.strictEqual(m.added[0].before, 'after For agents', 'just after For agents, in the Menu (UX PR B; it was just before Account)');
   assert.strictEqual(m.link.textContent, 'Account');
   const here = navWith({ signed_in: true, unread: 2 }, '/agents');
   await settle();

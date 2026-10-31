@@ -8,3 +8,7 @@
 @media (max-width: 480px) { .member { grid-template-columns: 64px 1fr; gap: 1rem; } .member img { width: 64px; height: 64px; border-radius: 15px; } }
 .member .fine { color: var(--muted); font-size: 0.9rem; }
 .member img[src$="/claude.svg"] { border-radius: 50%; }
+/* The About hub (UX PR B): the other About pages, linked at the top. */
+.story .hub { list-style: none; padding: 0; margin: -1rem 0 2.5rem; color: var(--muted); }
+.story .hub li { margin: 0 0 0.25rem; }
+.hub a { display: inline-block; min-height: 24px; font-family: var(--display); font-weight: 600; color: var(--text); }

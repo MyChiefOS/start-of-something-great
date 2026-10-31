@@ -1,0 +1,79 @@
+/* The site's own app pages only: Posts, receipts, your account, your agents, the review queue and the controls (each
+   page whose <main> has class "feed"). Loaded straight after styles.css, where these rules used to end, so the cascade
+   is unchanged; kept out of styles.css so the pages that don't use them, the research paper among them, don't carry
+   them (SF2, the page-weight budget; UX PR B).
+
+/* Posts (/feed) */
+.lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }
+.lanes [role="tab"] { font: inherit; font-family: var(--display); font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.45rem 1rem; cursor: pointer; }
+.lanes [role="tab"][aria-selected="true"] { color: var(--text); border-color: var(--amber); }
+.lanes [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.compose { display: grid; gap: 0.6rem; margin-bottom: 2rem; }
+.compose label { font-family: var(--display); font-weight: 600; }
+.compose textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.7rem 0.8rem; resize: vertical; }
+.compose textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.compose-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.compose button.button { cursor: pointer; }
+.feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
+.feed .post p { margin: 0.4rem 0; white-space: pre-line; }
+
+/* Reports (/feed) and the review queue (/review): big targets for thumbs (SF5) */
+.feed button.button { cursor: pointer; font-family: var(--display); font-weight: 600; font-size: 1rem; }
+.feed button.button:not(.primary) { background: transparent; }
+.feed button.button:not(.primary):not(.danger) { color: var(--text); }
+.feed button.button:disabled { opacity: 0.6; cursor: default; }
+.report-link { font: inherit; font-size: 0.9rem; color: var(--muted); background: none; border: 0; padding: 0.25rem 0; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule); }
+.report-link:hover { color: var(--amber); }
+.report-form { display: grid; gap: 0.5rem; margin: 0.5rem 0 0.25rem; max-width: 30rem; }
+.report-form select, .report-form input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.report-form select:focus-visible, .report-form input:focus-visible, .report-link:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0 0.25rem; }
+.review-actions .button { min-height: 3rem; justify-content: center; text-align: center; }
+.feed .button.danger { border-color: #c2413b; color: #f1857f; }
+.feed .button.danger:hover { border-color: #e0574f; color: #ffb0ab; }
+@media (prefers-color-scheme: light) { .feed .button.danger { color: #a3302a; } .feed .button.danger:hover { color: #7d211c; } }
+.review-item.decided > :not(.fine):not(.button) { opacity: 0.55; }
+.review .note { font-style: italic; }
+
+/* Agents (/agents) */
+.agents input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.6rem 0.75rem; }
+.agents input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
+.key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
+.agent-of { color: var(--muted); }
+/* Sub-agents (PR 16): each sits under its parent on /agents, a step further in per level (three steps at most, so a
+   deep tree still fits a phone at 390 px). */
+.agent.sub-agent { border-left: 2px solid var(--rule); padding-left: 0.75rem; }
+.agent.depth-1 { margin-left: 0.75rem; }
+.agent.depth-2 { margin-left: 1.5rem; }
+.agent.depth-3, .agent.depth-deep { margin-left: 2.25rem; }
+.claim-agent { font-size: 1.1rem; }
+
+/* Owner controls (/controls, PR 6): the numbers in a grid, the brake form one field per row on a phone */
+.controls #totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.controls .stat { margin: 0; padding: 0.75rem; border: 1px solid var(--rule); border-radius: 6px; }
+.controls .stat strong { display: block; font-size: 1.5rem; }
+.brake-form { display: grid; gap: 0.6rem; max-width: var(--measure); }
+.brake-form label { display: grid; gap: 0.25rem; }
+.brake-form input, .brake-form select { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.brake-form input:focus-visible, .brake-form select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* Your account (/account, PR 8) */
+.account-form { display: grid; gap: 0.6rem; max-width: 30rem; }
+.account-form label { display: grid; gap: 0.25rem; }
+.account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.account-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.inline-form { display: inline; }
+
+/* Agents acting for their owners (PR 7): the inbox, rules and receipts */
+.feed .post p.draft-body { white-space: pre-wrap; border-left: 2px solid var(--amber); padding-left: 0.75rem; }
+/* One tap on a notice (PR 13): the exact words being answered, kept as written (what is shown is what is hashed). */
+.inbox .draft-words { white-space: pre-wrap; font-style: normal; border-left: 2px solid var(--amber); padding: 0.1rem 0 0.1rem 0.75rem; margin: 0.5rem 0; }
+.inbox .one-tap { margin: 0.5rem 0; }
+.rules-form { display: grid; gap: 0.5rem; max-width: 30rem; margin: 0.75rem 0; }
+.rules-form label { display: grid; gap: 0.25rem; }
+.rules-form select, .rules-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.delegation { margin: 0.25rem 0; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
