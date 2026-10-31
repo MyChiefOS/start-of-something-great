@@ -6,7 +6,8 @@
 //   GET  /api/notify/appeals                  open containments and appeals (Aaron only)
 //   POST /api/notify/appeals  {"containment", "decision": "lift" | "keep"}  decide one (Aaron only)
 //   POST /api/notify/sns                      bounces and complaints on sign-in emails, from Amazon SNS, after their
-//                                             signature checks out; kept as keyed fingerprints only
+//                                             signature checks out; kept as keyed fingerprints only. Only while email is
+//                                             switched on (EMAIL_TRANSPORT=ses); otherwise 404
 // One-tap answers happen on the notice itself, through the APIs that already do them, from the member's own session:
 // approving a draft's exact words (/api/agents/approve, R16), keeping an agent acting (/api/agents/reconfirm, R33),
 // and confirming or withdrawing a held post (/api/feed {"challenge", "answer"}). Nothing here is cached. Text written
@@ -133,6 +134,10 @@ const ROUTES = {
 
 async function handle(req, res, run, cfg = ncfg.load(), deps = {}) {
   const route = String((req.query && req.query.route) || '').replace(/^\/+|\/+$/g, '');
+  // Email is switched off in phase 1 (GitHub-only, Oct 23), so Amazon's bounce address isn't there at all: an unused
+  // public door, and the one route here that can make an outbound request, is closed until email is switched on
+  // (Aaron, Oct 30: "leave the code for email as you recommend").
+  if (route === 'sns' && !cfg.emailOn) return reply(res, 404, { error: 'Not found.' });
   const handler = ROUTES[req.method + ' ' + route];
   if (!handler) {
     const known = Object.keys(ROUTES).some((k) => k.split(' ')[1] === route);

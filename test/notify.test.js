@@ -44,7 +44,8 @@ const at = (base, d, user, password) => { const u = new URL(base); u.pathname = 
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const SYSTEM = { actor: 'system' };
-const cfg = ncfg.load({ EMAIL_TRANSPORT: 'log', SNS_TOPIC_ARN: fx.TOPIC, CRON_SECRET: SECRET });
+// emailOn: the bounce address exists only while email is switched on (Oct 30); these tests use the log transport.
+const cfg = { ...ncfg.load({ EMAIL_TRANSPORT: 'log', SNS_TOPIC_ARN: fx.TOPIC, CRON_SECRET: SECRET }), emailOn: true };
 // The sign-in fingerprint keys (signin/config.js), which also key the bounce fingerprints.
 const KEYS = [{ version: 1, key: crypto.randomBytes(32) }];
 cfg.transport = logTransport({ keep: 500, log: () => {} });
@@ -416,6 +417,20 @@ test('N9: a pause whose time is up ends when its owner\'s rules are read or writ
     await assert.rejects(run(other.ctx, (t) => t`update app.containments set lifted_at = now() where member_id = ${other.id}`), /an owner can only appeal/);
     assert.strictEqual(await run(owner.ctx, (t) => notices.liftDue(t)), false, 'nobody lifts someone else\'s');
   } finally { await asOwner(QUIET_WATCH); }
+});
+
+test('email switched off (phase 1, Aaron Oct 30): the bounce address answers 404 to anything, and nothing is fetched or stored', async () => {
+  assert.strictEqual(ncfg.load({}).emailOn, false);
+  assert.strictEqual(ncfg.load({ EMAIL_TRANSPORT: 'ses' }).emailOn, true);
+  const off = { ...cfg, emailOn: false };
+  const visited = [];
+  for (const method of ['GET', 'POST']) {
+    const r = res();
+    await require('../api/notify.js').handle({ method, url: '/api/notify/sns', headers: { host: 'dayonegreat.com', origin: ORIGIN, 'content-type': 'text/plain' },
+      query: { route: 'sns' }, body: '{"Type":"SubscriptionConfirmation"}' }, r, run, off, { keys: KEYS, confirm: async (u) => visited.push(u) });
+    assert.strictEqual(r.statusCode, 404, method);
+  }
+  assert.deepStrictEqual(visited, []);
 });
 
 test('N7: bounces and complaints on sign-in emails arrive only through verified SNS messages, are kept as fingerprints, and stop sign-in email to that address', async () => {
