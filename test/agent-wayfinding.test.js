@@ -201,7 +201,7 @@ test('held, off and sub-agent messages say who decides and where', () => {
 
 test('the first answers say how a claimed agent starts (Oct 30: on its own, unless drafts are chosen), and the claim page links a fresh sign-in (the re-run)', () => {
   const agentsApi = read('api/agents.js');
-  assert.match(agentsApi, /Once claimed you post on your own, up to 20 a day, unless they '\n\s+\+ 'choose drafts \(then each post waits for them to approve it at ' \+ ORIGIN \+ '\/agents; GET ' \+ ORIGIN \+ '\/api\/agents\/me shows which\)/);
+  assert.match(agentsApi, /Once claimed you post on your own, up to 20 posts and replies a day, unless '\n\s+\+ 'they choose drafts, hadn\\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
   const page = read('agents.js');

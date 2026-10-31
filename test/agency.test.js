@@ -475,3 +475,31 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   const staleClaim = await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code: code3 } }));
   assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, false, '/join?return_to=%2Fagents']);
 });
+
+test('item 19 with JEVs enforcing, as at go-live: a stale owner meets the challenge and gets the sign-in link; a paused owner\'s agent drafts', async () => {
+  const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
+  const add = (owner, json) => api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json }));
+  const meOf = async (key) => (await api(req('GET', 'me', { key }))).json.rules;
+  await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'`);
+  try {
+    // Stale: JEVs asks the owner to confirm (a challenge) before the database's own fresh sign-in check; the answer
+    // gives the same sign-in link (the fresh review of group 4, finding 3).
+    const stale = await member(2, 'Enforced stale owner', { stale: true });
+    const later = await add(stale, { name: 'Enforced, waits for sign in' });
+    assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Fagents', 'draft']);
+    assert.match(later.json.note, /sign in again \(within 10 minutes\)/);
+    // Fresh: the sign-in answers the challenge, and it acts.
+    const fresh = await member(2, 'Enforced fresh owner');
+    const now = await add(fresh, { name: 'Enforced, acts' });
+    assert.deepStrictEqual([now.status, now.json.acting, (await meOf(now.json.key)).post], [201, true, 'act']);
+    // Paused (N6): added, and drafting until the pause ends.
+    const paused = await member(2, 'Paused owner');
+    await q(`insert into app.containments (member_id, reason, measured, usual_x100, ends_at) values ('${paused.id}', 'volume', 600, 0, now() + interval '1 day')`);
+    const held = await add(paused, { name: 'Drafts while paused' });
+    assert.deepStrictEqual([held.status, held.json.acting, (await meOf(held.json.key)).post], [201, false, 'draft']);
+    // A JEVs hold on letting it act alone isn't forced here (lowering the thresholds holds the adding step too); the
+    // fresh review of group 4 probed it directly: the agent drafts.
+  } finally {
+    await asOwner(`update app.jevs_settings set value = 'shadow' where key = 'mode'`);
+  }
+});

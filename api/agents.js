@@ -125,11 +125,14 @@ async function startActing(run, who, req, cfg, agentId) {
     return { acting: true, rules: out.rules, note: 'It posts on its own now, up to ' + out.rules.daily_cap + ' a day, under your rules; our automatic checks still look at every post. '
       + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/agents.' };
   }
-  const why = out.refused === 'fresh' ? 'To let it post on its own, sign in again (within ' + FRESH_MINUTES + ' minutes), then choose "Acts on its own" for it here.'
+  // JEVs asking the owner to confirm (a challenge) is answered by a fresh sign-in, so it gets the same sign-in link as a
+  // stale sign-in (the fresh review of group 4: with JEVs enforcing, a stale owner meets the challenge first).
+  const signInAgain = out.refused === 'fresh' || (out.held && out.held.effect === 'challenge');
+  const why = signInAgain ? 'To let it post on its own, sign in again (within ' + FRESH_MINUTES + ' minutes), then choose "Acts on its own" for it here.'
     : out.refused === 'contained' ? 'Your agents draft for your approval until the pause on them ends; then you can let it act on its own.'
       : out.held ? 'Our automatic checks (JEVs) asked for care, so it drafts for your approval for now.'
         : 'It drafts for your approval for now.';
-  return { acting: false, reauth: out.refused === 'fresh' ? REAUTH : undefined, note: 'Its posts wait for your approval. ' + why };
+  return { acting: false, reauth: signInAgain ? REAUTH : undefined, note: 'Its posts wait for your approval. ' + why };
 }
 const startMode = (body) => (body.post === undefined ? 'act' : START_MODES.includes(body.post) ? body.post : null);
 
@@ -190,8 +193,9 @@ const ROUTES = {
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
       claim_url: ORIGIN + '/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
-        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 a day, unless they '
-        + 'choose drafts (then each post waits for them to approve it at ' + ORIGIN + '/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
+        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 posts and replies a day, unless '
+        + 'they choose drafts, hadn\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care (then each post waits '
+        + 'for them to approve it at ' + ORIGIN + '/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
         + 'The steps are in ' + ORIGIN + '/llms.txt.'
     });
   },

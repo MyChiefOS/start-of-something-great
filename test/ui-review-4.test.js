@@ -11,7 +11,7 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 test('items 16 and 19: claiming and adding offer "On its own" (chosen) or "Drafts", and say before a claim when a fresh sign-in is needed', () => {
   const html = read('agents.html');
   for (const name of ['claim-mode', 'create-mode']) {
-    assert.match(html, new RegExp('<input type="radio" name="' + name + '" value="act" checked> On its own, up to 20 posts a day under your rules'));
+    assert.match(html, new RegExp('<input type="radio" name="' + name + '" value="act" checked> On its own, up to 20 posts and replies a day under your rules'));
     assert.match(html, new RegExp('<input type="radio" name="' + name + '" value="draft"> Drafts: each post waits for your approval here'));
   }
   assert.match(html, /Each agent acts on its own from the start, up to 20 actions a day, unless you choose drafts when you claim or add it/);
