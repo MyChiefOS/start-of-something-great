@@ -30,3 +30,9 @@ test('item 19: the API starts an agent acting through the same step as the rules
   assert.match(fn, /delegation\.setRules\(t, \{ agent: agentId, post: 'act', reply: 'act', report: now \? now\.report : 'draft'/, 'posting and replies; reports keep drafting');
   assert.ok(!/fresh: true|set_config\('app\.fresh'/.test(fn), 'never claims a fresh sign-in it doesn’t have: the database decides (R17)');
 });
+
+test('the choice\'s styles live in agents.css, which only /agents loads, so the shared styles.css stays in its page-weight budget (SF2)', () => {
+  assert.match(read('agents.html'), /<link rel="stylesheet" href="\/agents\.css">/);
+  assert.match(read('agents.css'), /\.start-mode \{/);
+  assert.ok(!/\.start-mode/.test(read('styles.css')));
+});
