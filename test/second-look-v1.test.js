@@ -124,6 +124,21 @@ test("Kimi's second capability: security questions, advice only, on an allowed m
   assert.deepStrictEqual(await v1.askQuestion({ question: 'What now?', token: TOKEN, model: 'openai/gpt-5' }), { error: 'model not allowed' });
 });
 
+test("the identity token goes only to Vercel's own AI Gateway, at one fixed address, never redirected (control 8's exception)", () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'secondlook', 'v1.js'), 'utf8');
+  assert.deepStrictEqual(src.match(/https?:\/\/[^'"\s)]+/g).filter((u) => !u.includes('example')), ['https://ai-gateway.vercel.sh/v1/chat/completions']);
+  assert.strictEqual((src.match(/fetchImpl\(/g) || []).length, 2, 'two calls');
+  assert.strictEqual((src.match(/fetchImpl\(GATEWAY, \{\s*method: 'POST',? ?(?:\n\s*)?redirect: 'error'/g) || []).length, 2, 'both to GATEWAY, no redirects');
+  // Only the two routes peek at it, and only to hand it to Second Look.
+  const uses = [];
+  for (const f of fs.readdirSync(path.join(__dirname, '..', 'api'))) {
+    if (/peekToken/.test(fs.readFileSync(path.join(__dirname, '..', 'api', f), 'utf8'))) uses.push(f);
+  }
+  assert.deepStrictEqual(uses.sort(), ['cron.js', 'feed.js']);
+});
+
 // ---- Against a database ----
 
 const SERVER = process.env.TEST_DATABASE_URL;

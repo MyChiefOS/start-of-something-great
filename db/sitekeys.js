@@ -59,6 +59,15 @@ function apply(body, env = process.env) {
   }
 }
 
+// Second Look (034): the token, read without removing it, for the one other place it may go: Vercel's own AI Gateway
+// (secondlook/v1.js's fixed address, never redirected). Vercel issues the token and runs the gateway, so this gives no
+// new party anything (an exception to the CSO's control 8 that Aaron approves with the Second Look v1 PR). Read before
+// ensure() below takes the token off the request.
+function peekToken(req) {
+  const h = req && req.headers && req.headers['x-vercel-oidc-token'];
+  return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
+}
+
 // Reads the token and removes it from the request (M3).
 function takeToken(req) {
   const headers = req && req.headers;
@@ -144,4 +153,4 @@ function candidates(body = last && last.body) {
 
 const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; };
 
-module.exports = { ensure, refetch, candidates, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, peekToken, BROKER, _reset };

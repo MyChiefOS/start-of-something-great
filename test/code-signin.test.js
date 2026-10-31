@@ -676,7 +676,7 @@ if (!SERVER) {
     assert.strictEqual(await db.tx(web, asM, (x) => store.watchReach(x, 'controls')), false, 'once a day');
     assert.deepStrictEqual(await alerts('watch:reach:' + who.member_id + ':%'), ['Someone reached for administrator powers']);
     const feedSrc = read('api/feed.js');
-    assert.strictEqual((feedSrc.match(/await reach\(run, who, '(review|controls)'\)/g) || []).length, 4, 'all four administrator refusals in the feed API alert');
+    assert.strictEqual((feedSrc.match(/await reach\(run, who, '(review|controls)'\)/g) || []).length, 5, 'all five administrator refusals in the feed API alert (the fifth: Second Look, 034)');
     // 6. A first-time sensitive action alerts once.
     await su.begin(async (x) => { await x.unsafe(`insert into app.jevs_decisions (action, subject_kind, member_id, level, mode, effect, applied, error, total, scores)
       values ('agent.key', 'member', '${who.member_id}', 'low', 'shadow', 'none', true, false, 0, '{}')`); });

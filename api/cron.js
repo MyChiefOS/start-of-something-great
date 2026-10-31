@@ -71,8 +71,7 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
 module.exports = async (req, res) => {
   try {
     // The identity token, for Second Look's model calls, before sitekeys takes it off the request (M3).
-    const h = req && req.headers && req.headers['x-vercel-oidc-token'];
-    const oidc = typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
+    const oidc = require('../db/sitekeys').peekToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {
