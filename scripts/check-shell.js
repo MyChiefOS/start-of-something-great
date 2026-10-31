@@ -15,6 +15,7 @@
 //     header shows a visible focus ring (at 390 and 1280);
 //   - where nav.js runs, a tap outside the open Menu closes it and a tap inside keeps it open (390);
 //   - hovering Join keeps its text at 4.5:1 or more, light and dark;
+//   - the home page at 390 by 844: its headline, lede and "Join with GitHub" are in the first screen (UX PR C);
 //   - no script errors and no security-policy refusals from our own files.
 // --shots DIR saves screenshots of /, /feed, /talk, /team, /proposals and the 404 at 360, 390 and 1280 px in dark and
 // light, the open Menu at 360 and 390, and the header signed in; --no-checks only takes them (for the "before" copy).
@@ -195,6 +196,7 @@ async function main() {
   const fail = (where, what) => problems.push(where + ': ' + what);
   let pages = 0;
   const hover = [];
+  const firstScreen = [];
   try {
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
@@ -292,6 +294,29 @@ async function main() {
       }
     }
     if (CHECKS) {
+      // The home page's first screen (UX PR C, the UI/UX review's finding 2): on a 390 by 844 phone, the headline, the
+      // lede and Join with GitHub are all on screen without scrolling, signed out and signed in, light and dark.
+      for (const signedIn of [false, true]) {
+        for (const scheme of ['dark', 'light']) {
+          const where = 'first screen 390x844 ' + scheme + (signedIn ? ' signed in' : ' signed out');
+          const ctx = await context(browser, base, { width: 390, height: 844, scheme, signedIn });
+          const p = await open(ctx, base, '/', where, fail);
+          const seen = await p.evaluate(() => ['.hero h1', '.hero .lede', '.hero .button.primary[href="/join"]'].map((sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return { sel, missing: true };
+            const r = el.getBoundingClientRect();
+            return { sel, top: Math.round(r.top), bottom: Math.round(r.bottom), shown: el.checkVisibility() };
+          }));
+          for (const x of seen) {
+            if (x.missing) fail(where, x.sel + ' is missing');
+            else if (!x.shown || x.top < 0 || x.bottom > 844) fail(where, x.sel + ' is not in the first screen (' + x.top + ' to ' + x.bottom + ' px)');
+          }
+          firstScreen.push(scheme + (signedIn ? ' in' : ' out') + ' ' + seen.map((x) => x.bottom).join('/'));
+          await ctx.close();
+        }
+      }
+    }
+    if (CHECKS) {
       for (const scheme of ['light', 'dark']) {
         const ctx = await context(browser, base, { width: 1280, height: 800, scheme, signedIn: false });
         const p = await open(ctx, base, '/feed', 'hover ' + scheme, fail);
@@ -316,7 +341,7 @@ async function main() {
     console.log('FAIL the shell (local copy of ' + ROOT + ')\n' + problems.map((x) => '  ' + x).join('\n'));
     process.exitCode = 1;
   } else {
-    console.log('OK the shell (local copy of ' + ROOT + '): ' + (CHECKS ? pages / 2 + ' pages, each at 320, 360, 390 and 1280 px, signed out and signed in; Join on hover ' + hover.join(', ') : 'screenshots only') + (SHOTS ? '; screenshots in ' + SHOTS : ''));
+    console.log('OK the shell (local copy of ' + ROOT + '): ' + (CHECKS ? pages / 2 + ' pages, each at 320, 360, 390 and 1280 px, signed out and signed in; Join on hover ' + hover.join(', ') + '; home first screen at 390x844 (bottoms of the H1, lede, Join with GitHub): ' + firstScreen.join(', ') : 'screenshots only') + (SHOTS ? '; screenshots in ' + SHOTS : ''));
   }
 }
 

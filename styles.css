@@ -213,56 +213,12 @@ a:focus-visible, .button:focus-visible {
   }
 }
 
-/* Hero: the horizon */
-.hero {
-  position: relative;
-  padding-top: 5rem;
-  padding-bottom: 4rem;
-  isolation: isolate;
-}
-.hero::before {
-  /* the first light rising behind the headline */
-  content: "";
-  position: absolute;
-  z-index: -1;
-  left: -20%;
-  right: -20%;
-  bottom: 0;
-  height: 70%;
-  /* centred and sized to fade out fully inside its box: no hard edges */
-  background: radial-gradient(ellipse 46% 96% at 50% 100%, var(--glow), transparent 100%);
-  animation: dawn 2.4s ease-out both;
-}
-.hero::after {
-  /* the horizon line */
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, var(--amber), transparent 85%);
-}
-@keyframes dawn {
-  from { opacity: 0; transform: translateY(12%); }
-  to { opacity: 1; transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero::before { animation: none; }
-}
-
 h1, h2, h3 {
   font-family: var(--display);
   font-weight: 700;
   line-height: 1.08;
   letter-spacing: -0.025em;
   margin: 0;
-}
-.hero h1 {
-  font-size: clamp(3rem, 11vw, 6.25rem);
-  font-weight: 800;
-  letter-spacing: -0.045em;
-  line-height: 0.95;
 }
 .lede {
   max-width: var(--measure);
@@ -380,7 +336,6 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 
 @media (max-width: 34rem) {
   body { font-size: 1.0625rem; }
-  .hero { padding-top: 3rem; padding-bottom: 3rem; }
   .lede { font-size: 1.15rem; }
 }
 

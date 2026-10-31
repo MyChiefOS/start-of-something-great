@@ -202,7 +202,7 @@ test('the page map (UX PR B): /talk says it is on GitHub and points to Posts; /p
 });
 
 test('every comment in the style sheets is closed before the next one opens (app.css\'s first one ran on; the design review)', () => {
-  for (const f of ['styles.css', 'app.css', 'join.css', 'team.css']) {
+  for (const f of ['styles.css', 'app.css', 'join.css', 'team.css', 'home.css']) {
     const css = read(f);
     let at = 0;
     for (;;) {

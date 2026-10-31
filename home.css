@@ -1,0 +1,83 @@
+/* The home page's own styles (UX PR C, the UI/UX review of Oct 31, finding 2 and finding 15's glow and "Now" links).
+   Only index.html loads this file, so the shared styles.css stays within the page-weight budget (SF2: the paper page
+   is at its 403 KB cap). Colours and fonts are the site's tokens only. */
+
+/* The first screen: a value line, one sentence on who builds it, Join with GitHub, Connect your agent. */
+.hero {
+  position: relative;
+  padding-top: 4rem;
+  padding-bottom: 3rem;
+  isolation: isolate;
+}
+.hero::before {
+  /* the first light rising behind the headline */
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -20%;
+  right: -20%;
+  bottom: 0;
+  height: 70%;
+  background: radial-gradient(ellipse 46% 96% at 50% 100%, var(--glow), transparent 100%);
+  /* faded out before the horizon line, so the glow has no flat lower edge (finding 15) */
+  -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent 90%);
+  mask-image: linear-gradient(to bottom, #000 25%, transparent 90%);
+  animation: dawn 2.4s ease-out both;
+}
+.hero::after {
+  /* the horizon line */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber), transparent 85%);
+}
+@keyframes dawn {
+  from { opacity: 0; transform: translateY(12%); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero::before { animation: none; }
+}
+.hero h1 {
+  max-width: 15em;
+  font-size: clamp(2rem, 6.4vw, 3.4rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+.hero .lede { margin-top: 1.25rem; }
+.hero .actions { margin-top: 1.75rem; }
+.also { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 1.25rem; margin: 1rem 0 0; font-family: var(--display); font-size: 0.95rem; }
+.also span { flex-basis: 100%; color: var(--muted); }
+/* At least 24 by 24 CSS px to tap (WCAG 2.5.8): these links stand alone. */
+.also a, .trust li > a { display: inline-block; min-height: 24px; padding-block: 2px; }
+
+/* Why you can trust it: three short facts, each with where to check it, sized to sit in a phone's first screen. */
+.trust { padding-top: 1.25rem; }
+.trust h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin-bottom: 0.35rem; }
+.trust ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0 2rem; }
+.trust li { padding: 0.55rem 0; border-top: 1px solid var(--rule); color: var(--muted); font-size: 1rem; line-height: 1.5; }
+.trust li strong { color: var(--text); font-family: var(--display); letter-spacing: -0.01em; }
+.trust li > a { font-family: var(--display); color: var(--text); }
+.trust li > a:hover { color: var(--amber); }
+@media (min-width: 48rem) { .trust ul { grid-template-columns: repeat(3, 1fr); } }
+
+/* How it works: three numbered steps, on the day-one list's numbering. */
+.steps3 li { padding: 0.7rem 0; }
+.steps3 strong { font-family: var(--display); letter-spacing: -0.01em; }
+
+/* Now: a short verb phrase links; the rest of the line is plain text (finding 15). */
+.nownext .principles li { font-family: var(--display); font-size: 1.1rem; letter-spacing: -0.01em; line-height: 1.5; }
+
+@media (max-width: 34rem) {
+  .hero { padding-top: 2rem; padding-bottom: 1.25rem; }
+  .trust { padding-top: 0.9rem; }
+  .hero .actions { margin-top: 1.25rem; }
+  .hero .lede { margin-top: 0.9rem; font-size: 1.08rem; }
+  .hero h1 { font-size: 1.9rem; }
+  .trust li { padding: 0.45rem 0; }
+}
