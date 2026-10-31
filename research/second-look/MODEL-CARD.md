@@ -74,7 +74,7 @@ GitHub are never used, because our checks don't keep their text.
 - AUC 0.982.
 - It would have cleared 202 comments: 200 ordinary (50% of all ordinary ones) and 2 spam (1 in 101).
 - That does **not** meet 1 in 80. With 2 wrong in 202, the 95% upper bound of its wrong-clear rate is about 3.5%
-  (two-sided Clopper-Pearson), roughly 1 in 29.
+  (two-sided Clopper-Pearson, 3.53%), about 1 in 28.
 - These numbers are optimistic too: the threshold was chosen on the same comments.
 
 **On this site's posts it has never been tested.** There are none held yet. Music-video comments and text messages
@@ -101,7 +101,7 @@ decisions on posts it would have cleared, and comes as a separate change after /
 
 ## Oversight
 - Aaron decides every held post.
-- Nothing shows its records while it is tested; only an administrator can read them in the database.
+- Nothing shows its records while it is tested; in the database only an administrator can read them, and JEVs's role can see only whether a post already has one.
 - Each record is kept as long as its post's row: removing a post only changes its status, and deleting the account
   deletes the post and its record.
 - Its version is recorded beside each suggestion.

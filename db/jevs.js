@@ -307,7 +307,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
       try {
         const secondLook = require('../secondlook');
         const r = secondLook.review({ text: body, scores, error });
-        await t.savepoint((x) => x`select app.sl_record(${sub}::uuid, ${secondLook.VERSION}, ${r.eligible}, ${r.score}, ${r.suggestion}, ${r.reasons.join('; ')})`);
+        await t.savepoint((x) => x`select app.sl_record(${d.decision_id}::uuid, ${secondLook.VERSION}, ${r.eligible}, ${r.score}, ${r.suggestion}, ${r.reasons.join('; ')})`);
       } catch (e) { logFailure('second look', e); }
     }
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,

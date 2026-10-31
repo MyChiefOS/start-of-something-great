@@ -7,8 +7,8 @@
 --   separate PR, after /privacy and /terms say so).
 --   Written only through app.sl_record (dog_jevs, which already reads JEVs's decisions and flags), and only for a post
 --   with an open JEVs hold that has no record yet from that model version. The database works out eligibility itself
---   from JEVs's own record of the hold and refuses a record that disagrees. Read only by an administrator (no page
---   shows it yet). Kept as long as the post's row: removing a post only changes its status, so the record stays until
+--   from JEVs's own record of the hold and refuses a record that disagrees. Read by an administrator (no page shows
+--   it yet), and by JEVs's role only to see whether a post already has a record. Kept as long as the post's row: removing a post only changes its status, so the record stays until
 --   the post row is deleted (account deletion deletes it, on delete cascade). No text is copied here, only the score
 --   and plain reasons.
 set local role dog_owner;
@@ -38,36 +38,43 @@ grant select (post_id, model), insert (post_id, model, eligible, score, suggesti
 grant create on schema app to dog_jevs;
 set local role dog_jevs;
 
--- Records Second Look's suggestion for a post JEVs is holding for Aaron. Returns true if recorded, false if there is
--- nothing to record (no open JEVs hold on the post, or this model already recorded it). Called by the site in the
--- same transaction as the hold. Anyone with the site's role could call it for any post with an open JEVs hold, so it
--- trusts nothing it is told about eligibility: it works out the never-clear floor itself, from JEVs's latest hold
--- decision on the post, and refuses a record that disagrees (the site's code has a bug if it does).
+-- Records Second Look's suggestion for the post a JEVs hold decision is holding for Aaron. Takes the decision itself
+-- (its id), so it checks exactly the hold just made, not some later one. Returns true if recorded, false if there is
+-- nothing to record (not an applied hold on a post, the post's JEVs flag already closed, or this model already
+-- recorded it). Called by the site in the same transaction as the hold. Anyone with the site's role could call it, so
+-- it trusts nothing it is told about eligibility or the model: it accepts only model versions listed here (a new
+-- version is a migration), works out the never-clear floor itself from the decision's scores, and refuses a record
+-- that disagrees (the site's code has a bug if it does). It can't check the score or the suggestion, which come from
+-- the model; the clearing PR must not trust records written through the site's role (harness/PLAN.md).
 -- The floor: eligible only if JEVs's scoring didn't fail, no question outside account age (J01), sign-in strength (J02),
 -- activity rate (J04), links (J07) and region (J13) scored the post above 0, and one of those five scored 25 or more.
-create function app.sl_record(p_post uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text)
+create function app.sl_record(p_decision uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text)
 returns boolean
 language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
+  v_post uuid;
   v_scores jsonb;
   v_error boolean;
   v_eligible boolean;
 begin
-  if p_post is null or p_model is null or p_eligible is null or p_score is null or p_suggestion is null or p_reasons is null then
+  if p_decision is null or p_model is null or p_eligible is null or p_score is null or p_suggestion is null or p_reasons is null then
     raise exception 'bad Second Look record' using errcode = '22023';
   end if;
-  if not exists (select 1 from app.review_flags f where f.post_id = p_post and f.source = 'classifier' and f.classifier = 'jevs'
+  if p_model <> all (array['v0']) then
+    raise exception 'unknown Second Look model' using errcode = '22023';
+  end if;
+  select d.subject_id, d.scores, d.error into v_post, v_scores, v_error from app.jevs_decisions d
+   where d.id = p_decision and d.subject_kind = 'post' and d.effect = 'hold' and d.applied
+     and d.action = any (array['post.create', 'post.approved']);
+  if v_post is null then
+    return false;
+  end if;
+  if not exists (select 1 from app.review_flags f where f.post_id = v_post and f.source = 'classifier' and f.classifier = 'jevs'
                  and f.resolved_at is null) then
     return false;
   end if;
-  if exists (select 1 from app.sl_reviews r where r.post_id = p_post and r.model = p_model) then
-    return false;
-  end if;
-  select d.scores, d.error into v_scores, v_error from app.jevs_decisions d
-   where d.subject_kind = 'post' and d.subject_id = p_post and d.effect = 'hold' and d.applied
-   order by d.created_at desc, d.id desc limit 1;
-  if v_scores is null then
+  if exists (select 1 from app.sl_reviews r where r.post_id = v_post and r.model = p_model) then
     return false;
   end if;
   v_eligible := not v_error
@@ -81,7 +88,7 @@ begin
     raise exception 'Second Look and the database disagree on eligibility' using errcode = '22023';
   end if;
   insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons)
-    values (p_post, p_model, v_eligible, p_score, p_suggestion, p_reasons);
+    values (v_post, p_model, v_eligible, p_score, p_suggestion, p_reasons);
   return true;
 end
 $$;

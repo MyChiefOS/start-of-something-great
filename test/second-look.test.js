@@ -160,18 +160,29 @@ test('a held post gets a blind record beside it; nothing shows it; the database 
   // Nobody else reads the record, not even the poster.
   const asPoster = await run(poster.ctx, (t) => t`select count(*)::int as n from app.sl_reviews`);
   assert.strictEqual(asPoster[0].n, 0);
-  // Only for a post JEVs is holding: a live post, a second record, or another post gets nothing.
+  // Only for a hold JEVs just made: a live post's decision, a second record, or an unknown model gets nothing.
   const live = await feed('POST', { cookie: poster.cookie, json: { body: 'An ordinary post about the meetup, with nothing to hold.' } });
-  const record = (post, eligible = true, suggestion = 'clear') => run(poster.ctx,
-    (t) => t`select app.sl_record(${post}::uuid, 'v0', ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
-  assert.strictEqual(await record(live.json.id), false, 'not held');
-  assert.strictEqual(await record(a.json.id), false, 'already recorded by this model');
-  // The database works out eligibility from JEVs's own record and refuses a caller who claims otherwise.
-  const recordAs = (post, model, eligible, suggestion) => run(poster.ctx,
-    (t) => t`select app.sl_record(${post}::uuid, ${model}, ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
-  await assert.rejects(recordAs(b.json.id, 'v1', true, 'clear'), /disagree on eligibility/, 'held for contact details: never eligible');
-  await assert.rejects(recordAs(a.json.id, 'v1', false, 'leave'), /disagree on eligibility/, 'held for links only: eligible');
-  assert.strictEqual(await recordAs(b.json.id, 'v1', false, 'leave'), true);
+  const decisionOf = async (post) => (await q(`select id from app.jevs_decisions where subject_id = '${post}' order by created_at desc limit 1`))[0].id;
+  const record = (decision, eligible, suggestion = eligible ? 'clear' : 'leave', model = 'v0') => run(poster.ctx,
+    (t) => t`select app.sl_record(${decision}::uuid, ${model}, ${eligible}, 0.9, ${suggestion}, 'x') as ok`).then((r) => r[0].ok);
+  assert.strictEqual(await record(await decisionOf(live.json.id), true), false, 'not a hold');
+  assert.strictEqual(await record(await decisionOf(a.json.id), true), false, 'already recorded by this model');
+  await assert.rejects(record(await decisionOf(a.json.id), true, 'clear', 'v9'), /unknown Second Look model/);
+  // The database works out eligibility from the decision itself and refuses a caller who claims otherwise, small
+  // scores included (the second review's finding): a hold on links (J07 30) with a small cluster score (J05 5).
+  await q(`delete from app.sl_reviews where post_id in ('${a.json.id}', '${b.json.id}')`);
+  const [fake] = await q(`insert into app.jevs_decisions (action, subject_kind, subject_id, member_id, level, mode, effect, applied, error, total, scores)
+    values ('post.create', 'post', '${a.json.id}', '${poster.id}', 'high', 'enforce', 'hold', true, false, 35, '{"J07": 30, "J05": 5}') returning id`);
+  await assert.rejects(record(fake.id, true), /disagree on eligibility/, 'a small floor score blocks in the database too');
+  await assert.rejects(record(await decisionOf(b.json.id), true), /disagree on eligibility/, 'held for contact details: never eligible');
+  assert.strictEqual(await record(fake.id, false), true);
+  // A failure in Second Look never breaks posting: with its record refused, a post is still held as usual.
+  await q(`revoke execute on function app.sl_record(uuid, text, boolean, real, text, text) from dog_app`);
+  const c = await feed('POST', { cookie: poster.cookie, json: { body: 'More notes from the meetup on these pages ' + links(4) } });
+  await q(`grant execute on function app.sl_record(uuid, text, boolean, real, text, text) to dog_app`);
+  assert.strictEqual(c.status, 202, JSON.stringify(c.json));
+  assert.deepStrictEqual((await q(`select status from app.posts where id = '${c.json.id}'`)).map((r) => r.status), ['waiting']);
+  assert.strictEqual((await q(`select count(*)::int as n from app.sl_reviews where post_id = '${c.json.id}'`))[0].n, 0);
   // The floor holds in the database too: an ineligible "clear" is refused.
   await assert.rejects(q(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${a.json.id}', 'v1', false, 0.9, 'clear', 'x')`), /check/);
   // Deleting the post deletes its record (account deletion deletes posts).
