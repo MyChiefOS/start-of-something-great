@@ -441,10 +441,78 @@ test('finding 2 of the review: with 3 hidden-only matches newer than a visible o
     assert.deepStrictEqual(page.json.posts.map((p) => p.id), [shown], 'limit ' + limit);
     assert.ok(!hidden.some((h) => JSON.stringify(page.json).includes(h)));
   }
-  // Words and numbers together: the number must be shown, and here it is hidden.
+  // Words and numbers together: the number is left out of the search on both sides (re-review finding 1), so it neither
+  // finds nor filters anything, and the answer is the same as for the word alone.
   const phone = await say(m, 'hello, call +1 415 555 0100');
-  assert.ok(!(await get({ q: 'hello 0100' })).json.posts.some((p) => p.id === phone));
+  const ids = async (query) => (await get({ q: query, limit: '50' })).json.posts.map((p) => p.id);
+  assert.deepStrictEqual(await ids('hello 0100'), await ids('hello'));
+  assert.ok((await ids('hello')).includes(phone));
   assert.strictEqual(await wordsOf(phone), "'call' 'hello'");
+});
+
+// A GET /api/feed that counts its reads of the database (each search read is one app.feed call).
+async function countedGet(query) {
+  let reads = 0;
+  const counting = (ctx, fn) => { reads++; return run(ctx, fn); };
+  const r = res();
+  await require('../api/feed.js').handle(httpReq('GET', '/api/feed', { query }), r, counting);
+  return { status: r.statusCode, json: JSON.parse(r.body), reads };
+}
+
+test('re-review finding 1: a search word with a digit or an @ is left out on both sides: one read, the right posts', async () => {
+  const tag = word();
+  const m = await member(2, 'Digits');
+  const older = await say(m, 'The ' + tag + ' garden opens.');
+  const newer = await say(m, 'Another ' + tag + ' note, about gpt4.');
+  const r = await countedGet({ q: 'zzz9 ' + tag, limit: '20' });
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(r.json.posts.map((p) => p.id), [newer, older]);
+  assert.strictEqual(r.reads, 1, 'one read, none thrown away');
+  assert.strictEqual(r.json.next, null);
+  // A page at a time, still one read each.
+  const one = await countedGet({ q: 'gpt4 ' + tag, limit: '1' });
+  assert.deepStrictEqual([one.json.posts.map((p) => p.id), one.reads], [[newer], 1]);
+  assert.match(one.json.next, new RegExp('&before=' + newer + '&limit=1$'));
+  // Nothing searchable left: refused, with no read at all.
+  const none = await countedGet({ q: 'zzz9 gpt4' });
+  assert.deepStrictEqual([none.status, none.reads], [400, 0]);
+  assert.match(none.json.error, /^q needs at least one word of letters: words with digits or an @ aren’t searched/);
+});
+
+test('re-review finding 2: the search table holds only what the feed shows: a ban takes rows out, an unban brings them back', async () => {
+  const tag = word();
+  const author = await member(2, 'To be banned');
+  const id = await say(author, 'Only here ' + tag);
+  assert.ok(await wordsOf(id));
+  const ban = await feed('POST', { cookie: aaron.cookie, json: { ban: author.id, note: 'test' } });
+  assert.strictEqual(ban.status, 200, JSON.stringify(ban.json));
+  assert.strictEqual(await wordsOf(id), undefined, 'banned: no row');
+  const hidden = await countedGet({ q: tag });
+  assert.deepStrictEqual([hidden.json.posts, hidden.reads, hidden.json.next], [[], 1, null], 'a banned-only word: one read, nothing to check');
+  const [{ n }] = await q(`select count(*)::int as n from app.post_search where words @@ plainto_tsquery('pg_catalog.simple'::regconfig, '${tag}')`);
+  assert.strictEqual(n, 0);
+  assert.strictEqual((await feed('POST', { cookie: aaron.cookie, json: { unban: author.id, note: 'test' } })).status, 200);
+  assert.ok(await wordsOf(id), 'unbanned: back');
+  assert.deepStrictEqual((await get({ q: tag })).json.posts.map((p) => p.id), [id]);
+});
+
+test('re-review finding 2: an agent’s posts keep their rows exactly while the feed shows them, revoked or not', async () => {
+  const owner = await member(2, 'Agent owner');
+  const made = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Searchable helper', post: 'act' } });
+  assert.strictEqual(made.status, 201, JSON.stringify(made.json));
+  const tag = word();
+  const posted = await feed('POST', { key: made.json.key, json: { body: 'From an agent ' + tag } });
+  assert.strictEqual(posted.status, 201, JSON.stringify(posted.json));
+  const shown = async () => (await get({ lane: 'agents', limit: '50' })).json.posts.some((p) => p.id === posted.json.id);
+  assert.deepStrictEqual([await shown(), Boolean(await wordsOf(posted.json.id))], [true, true]);
+  // Revoking stops the agent's keys; the feed keeps showing what it posted (the agents policy: anything but unclaimed),
+  // so search does too. An agent can never go back to unclaimed (005's guard).
+  assert.strictEqual((await agentsApi('POST', 'revoke', { cookie: owner.cookie, json: { agent: made.json.agent_id } })).status, 200);
+  assert.deepStrictEqual([await shown(), Boolean(await wordsOf(posted.json.id))], [true, true]);
+  assert.deepStrictEqual((await get({ lane: 'agents', q: tag })).json.posts.map((p) => p.id), [posted.json.id]);
+  // And the owner's ban takes it out of both.
+  assert.strictEqual((await feed('POST', { cookie: aaron.cookie, json: { ban: owner.id, note: 'test' } })).status, 200);
+  assert.deepStrictEqual([await shown(), Boolean(await wordsOf(posted.json.id))], [false, false]);
 });
 
 test('finding 1 of the review: at 100,000 posts, as dog_public, search uses post_search_words and a member’s posts use posts_live_author', async (t) => {

@@ -9,8 +9,13 @@
 --   2. Search reads app.post_search, not app.posts. app.feed runs as dog_public, and app.posts forces row-level security;
 --      the text-search match (@@) isn't leakproof, so under those policies Postgres never uses an index on app.posts for
 --      it and reads every live post (measured by the review: about a second a search at 300,000 posts). app.post_search
---      holds one row per live post (its lane, author, time and words), kept in step by a trigger on app.posts, with a
---      policy for dog_public that is simply true, so its GIN index is used. Each search finds IDs through that index
+--      holds one row per post the feed can show (live, by an active member, and for an agent's post an agent the feed
+--      names: any but unclaimed, by the agents policy), with its lane, author, time and words. Triggers keep it in step:
+--      on app.posts, and on app.members when a member stops or starts being active (a ban, a disabled account, an unban
+--      or restore), so a search never reads rows the feed would only throw away (the re-review: a word found only in a
+--      banned member's posts cost a check of each). An agent can't go back to unclaimed (005's guard), and the feed keeps
+--      showing a revoked agent's posts, so no agent change needs one. Its policy for dog_public is simply true, so its
+--      GIN index is used. Each search finds IDs through that index
 --      first, then sorts them. A member's posts use their own index on app.posts (posts_live_author), whose test is a
 --      plain equality and works under the policies.
 --   3. Search never holds what the feed hides. The words come from the post with every run of characters (between
@@ -73,18 +78,21 @@ alter table app.post_search force row level security;
 create policy post_search_public on app.post_search for all to dog_public using (true) with check (true);
 grant select, insert, update, delete on app.post_search to dog_public;
 create index post_search_words on app.post_search using gin (words);
+create index post_search_author on app.post_search (author_id);
 
--- Kept in step with app.posts: a post that is live has its row, with its current words, lane, author and time; any
--- other post has none. A deleted post's row goes with it (the foreign key).
+-- Kept in step with app.posts: a post the feed can show has its row, with its current words, lane, author and time; any
+-- other post has none. Read as dog_public, so "can show" is the feed's own rule: the members and agents policies decide
+-- whether the author and the agent are visible. A deleted post's row goes with it (the foreign key).
 create function app.post_search_sync() returns trigger
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
-  if new.status = 'live' then
+  if new.status = 'live' and exists (select 1 from app.members m where m.id = new.author_id)
+     and (new.agent_id is null or exists (select 1 from app.agents a where a.id = new.agent_id)) then
     insert into app.post_search (post_id, lane, author_id, published_at, words)
       values (new.id, new.lane, new.author_id, new.published_at, strip(to_tsvector('pg_catalog.simple'::regconfig, app.post_search_text(new.body))))
       on conflict (post_id) do update set lane = excluded.lane, author_id = excluded.author_id, published_at = excluded.published_at, words = excluded.words;
-  elsif tg_op = 'UPDATE' and old.status = 'live' then
+  elsif tg_op = 'UPDATE' then
     delete from app.post_search s where s.post_id = new.id;
   end if;
   return null;
@@ -93,15 +101,43 @@ $$;
 revoke execute on function app.post_search_sync() from public;
 create trigger post_search_sync after insert or update on app.posts for each row execute function app.post_search_sync();
 alter table app.posts enable always trigger post_search_sync;
+
+-- A member who stops being active (banned, or disabled by a deletion review) takes their rows out; one who becomes
+-- active again (unbanned, restored) brings back every live post of theirs the feed can show. Erasing an account deletes
+-- its posts, and their rows with them (the foreign key). new.status is read from the row itself: dog_public sees only
+-- active members.
+create function app.post_search_member() returns trigger
+language plpgsql security definer set search_path = pg_catalog
+as $$
+begin
+  if old.status = 'active' and new.status <> 'active' then
+    delete from app.post_search s where s.author_id = new.id;
+  elsif old.status <> 'active' and new.status = 'active' then
+    insert into app.post_search (post_id, lane, author_id, published_at, words)
+      select p.id, p.lane, p.author_id, p.published_at, strip(to_tsvector('pg_catalog.simple'::regconfig, app.post_search_text(p.body)))
+      from app.posts p
+      where p.author_id = new.id and p.status = 'live'
+        and (p.agent_id is null or exists (select 1 from app.agents a where a.id = p.agent_id))
+      on conflict (post_id) do update set lane = excluded.lane, author_id = excluded.author_id, published_at = excluded.published_at, words = excluded.words;
+  end if;
+  return null;
+end
+$$;
+revoke execute on function app.post_search_member() from public;
+create trigger post_search_member after update on app.members for each row execute function app.post_search_member();
+alter table app.members enable always trigger post_search_member;
 grant create on schema app to dog_public;
 alter function app.post_search_sync() owner to dog_public;
+alter function app.post_search_member() owner to dog_public;
 revoke create on schema app from dog_public;
 
--- Every post that is live now.
+-- Every post the feed can show now (as dog_public, under the same policies the triggers read through).
 set local role dog_public;
 insert into app.post_search (post_id, lane, author_id, published_at, words)
   select p.id, p.lane, p.author_id, p.published_at, strip(to_tsvector('pg_catalog.simple'::regconfig, app.post_search_text(p.body)))
-  from app.posts p where p.status = 'live';
+  from app.posts p
+  where p.status = 'live' and exists (select 1 from app.members m where m.id = p.author_id)
+    and (p.agent_id is null or exists (select 1 from app.agents a where a.id = p.agent_id));
 set local role dog_owner;
 
 -- A member's posts, newest first.
@@ -149,7 +185,8 @@ begin
   if v_words is not null then
     -- search:begin (test/ux-g.test.js reads the plan of this statement as dog_public)
     -- The matches come from the index newest first; each is checked against app.posts only until the page is full, so a
-    -- common word costs one sort of its matches, not one check of each.
+    -- common word costs one sort of its matches, not one check of each. The table holds only posts the feed can show,
+    -- so the checks rarely drop one (a ban racing a post going live can leave a row until the next change).
     ids := '{}';
     for v_post in select s.post_id from app.post_search s
                  where s.words @@ v_words and s.lane = p_lane
