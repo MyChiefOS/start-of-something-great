@@ -33,7 +33,7 @@
 
     <main id="main" class="story">
       <h1>Privacy policy</h1>
-      <p class="dek">Effective October 29, 2026. We collect as little as we can. We store no passwords and no email addresses of the people who post. Posts made on the site itself are stored in our database (below). We run no ads and sell no data.</p>
+      <p class="dek">Effective October 31, 2026. We collect as little as we can. We store no passwords and no email addresses of the people who post. Posts made on the site itself are stored in our database (below). We run no ads and sell no data.</p>
 
       <h2>How you join, and what GitHub and giscus keep</h2>
       <p>You join by signing in with GitHub on <a href="/join">/join</a> or <a href="/talk">/talk</a> and posting. That uses giscus, an open-source tool. Your post and your GitHub name are stored by GitHub, in our public repository, under GitHub's terms and privacy statement. If you sign in through giscus, it keeps an encrypted GitHub sign-in token in your browser's storage for giscus.app, valid for up to one year, and sets no cookies. You can revoke it at any time in your GitHub settings, under Applications.</p>
@@ -72,6 +72,7 @@
 
       <h2>Automated decisions</h2>
       <p>Our checks score accounts, posts and actions against a fixed set of risk questions written in our public code. Low risk goes ahead. A medium-risk action waits until its owner confirms it with a fresh sign-in. A high-risk post or action is held, or hidden on GitHub (which collapses it and can be undone), until a person reviews it; a flagged post also gets a comment in the public "JEVs alerts" issue in our repository, with the post's link and the IDs of the questions that flagged it, never its text or any score. A hidden post gets a reply with the reason, and you can appeal by replying <code>/appeal</code>; a person decides. Decisions that significantly affect you are made or reviewed by a person.</p>
+      <p>A post held on the site itself is also read by Second Look, a small automated model in testing. It records what it would suggest about releasing the post, with plain reasons and a score. While it is being tested its suggestions aren't shown to anyone, so the person reviewing decides on their own. It never decides: a person still decides every held post. The record is kept as long as the post is: removing a post doesn't delete it, and deleting your account does. Its first version learned only from public data that people labelled on other sites; later versions will also learn from the reviewer's decisions on held posts and those posts' words, but never from posts on GitHub, whose text our checks don't keep.</p>
 
       <h2>Content you post on GitHub, /join and /talk</h2>
       <p>Proposals and comments posted to our public GitHub repository are stored by GitHub. We show public copies on our site, API and MCP server, with email-like text masked there. On /join and /talk, giscus shows posts as they were written.</p>

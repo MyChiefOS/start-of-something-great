@@ -271,6 +271,14 @@ constraint app.sessions sessions_member_id_fkey FOREIGN KEY (member_id) REFERENC
 constraint app.sessions sessions_pkey PRIMARY KEY (id)
 constraint app.sessions sessions_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.sessions sessions_token_hash_key UNIQUE (token_hash)
+constraint app.sl_reviews sl_reviews_check CHECK ((eligible OR (suggestion = 'leave'::text)))
+constraint app.sl_reviews sl_reviews_model_check CHECK (((char_length(model) <= 5) AND (model ~ '^v[0-9]{1,4}$'::text)))
+constraint app.sl_reviews sl_reviews_pkey PRIMARY KEY (id)
+constraint app.sl_reviews sl_reviews_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
+constraint app.sl_reviews sl_reviews_post_id_model_key UNIQUE (post_id, model)
+constraint app.sl_reviews sl_reviews_reasons_check CHECK (((char_length(reasons) >= 1) AND (char_length(reasons) <= 1000)))
+constraint app.sl_reviews sl_reviews_score_check CHECK (((score >= (0)::double precision) AND (score <= (1)::double precision)))
+constraint app.sl_reviews sl_reviews_suggestion_check CHECK ((suggestion = ANY (ARRAY['clear'::text, 'leave'::text])))
 constraint app.subagent_settings subagent_settings_check CHECK ((default_ttl_hours <= max_ttl_hours))
 constraint app.subagent_settings subagent_settings_default_ttl_hours_check CHECK (((default_ttl_hours >= 1) AND (default_ttl_hours <= 720)))
 constraint app.subagent_settings subagent_settings_max_depth_check CHECK (((max_depth >= 1) AND (max_depth <= 10)))
@@ -440,6 +448,8 @@ default app.schema_migrations.applied_at = now()
 default app.sessions.created_at = now()
 default app.sessions.id = app.uuid_v7()
 default app.sessions.last_seen_at = now()
+default app.sl_reviews.created_at = now()
+default app.sl_reviews.id = app.uuid_v7()
 default app.subagent_settings.default_ttl_hours = 24
 default app.subagent_settings.id = app.uuid_v7()
 default app.subagent_settings.max_depth = 3
@@ -613,6 +623,7 @@ function app.set_administrator(p_member uuid) owner=dog_owner execute=dog_owner 
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=3909648eaeaca764383b8ac7cf549020
 function app.sign_in_core(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=6362fa910745e08a4643a10115455220
 function app.sign_in_known(p_provider text, p_fingerprints text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=682aa6ef67fe945f0e1b08fa2a1567d1
+function app.sl_record(p_decision uuid, p_model text, p_eligible boolean, p_score real, p_suggestion text, p_reasons text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=a541f61fbfed77d9bcb01b35012746c6
 function app.stamp_ok() owner=dog_signin execute=dog_signin,dog_app,dog_public,dog_limits,dog_erase,dog_delegate,dog_jevs,dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=b29df82946b44f34f762668db83c2116
 function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=7dce1c744a0223cc4fc6cc86736c162e
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
@@ -1138,6 +1149,15 @@ grant app.sessions.member_id dog_app SELECT
 grant app.sessions.member_id dog_erase SELECT
 grant app.sessions.member_id dog_signin INSERT
 grant app.sessions.token_hash dog_signin INSERT
+grant app.sl_reviews dog_app SELECT
+grant app.sl_reviews.eligible dog_jevs INSERT
+grant app.sl_reviews.model dog_jevs INSERT
+grant app.sl_reviews.model dog_jevs SELECT
+grant app.sl_reviews.post_id dog_jevs INSERT
+grant app.sl_reviews.post_id dog_jevs SELECT
+grant app.sl_reviews.reasons dog_jevs INSERT
+grant app.sl_reviews.score dog_jevs INSERT
+grant app.sl_reviews.suggestion dog_jevs INSERT
 grant app.subagent_settings dog_app SELECT
 grant app.subagent_settings dog_jevs SELECT
 grant app.subagent_settings dog_signin SELECT
@@ -1388,6 +1408,9 @@ policy app.sessions sessions_signin_delete cmd=d permissive=true to=dog_signin u
 policy app.sessions sessions_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.sessions sessions_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.sessions sessions_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.sl_reviews sl_reviews_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
+policy app.sl_reviews sl_reviews_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
+policy app.sl_reviews sl_reviews_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
 policy app.subagent_settings subagent_settings_narrow_select cmd=r permissive=true to=dog_signin,dog_jevs using=true check=
 policy app.subagent_settings subagent_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.subagent_settings subagent_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) check=

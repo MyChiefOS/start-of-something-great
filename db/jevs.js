@@ -300,6 +300,16 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     if (WATCH_FIRST.includes(action)) {
       try { await t.savepoint((x) => x`select app.watch_first(${action})`); } catch (e) { logFailure('behaviour watch', e); }
     }
+    // Second Look (033): a post JEVs is holding for Aaron gets what Second Look would suggest recorded beside it, blind
+    // (not shown to him while it is tested). It changes nothing; loaded here and run in its own savepoint, so a missing
+    // model or a failure never changes the decision or the post.
+    if (d.effect === 'hold' && d.applied && (action === 'post.create' || action === 'post.approved') && sub) {
+      try {
+        const secondLook = require('../secondlook');
+        const r = secondLook.review({ text: body, scores, error });
+        await t.savepoint((x) => x`select app.sl_record(${d.decision_id}::uuid, ${secondLook.VERSION}, ${r.eligible}, ${r.score}, ${r.suggestion}, ${r.reasons.join('; ')})`);
+      } catch (e) { logFailure('second look', e); }
+    }
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,
       challengeStatus: d.challenge_status, scores, error };
   } catch (e) {

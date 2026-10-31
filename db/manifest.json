@@ -127,6 +127,10 @@
     {
       "version": "032_guardrails",
       "sha256": "fbce69d1b06879f93edec9f6c9e0b037dced181e6ef48f58c6a60f1eea7179cf"
+    },
+    {
+      "version": "033_second_look",
+      "sha256": "3aa7da07c9680cc1335e309f51dafa6d945ec7f304321e813fed7dcee1d530c6"
     }
   ]
 }

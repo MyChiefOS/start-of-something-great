@@ -91,6 +91,12 @@ test.before(async () => {
     await t.unsafe(`insert into app.jevs_challenges (decision_id, owner_id, action, subject_kind, subject_id, expires_at)
                     values ('${p.jevs.decision}', '${A.id}', 'post.create', 'post', '${p.id}', now() + interval '1 day')`);
   });
+  // Second Look's suggestion on a post of A's that JEVs held (033), written as the database's own function would.
+  await su.begin(async (t) => {
+    await t.unsafe(`insert into app.review_flags (post_id, source, classifier, score) values ('${p.id}', 'classifier', 'jevs', 0.9)`);
+    await t.unsafe('set local role dog_jevs');
+    await t.unsafe(`insert into app.sl_reviews (post_id, model, eligible, score, suggestion, reasons) values ('${p.id}', 'v0', true, 0.9, 'clear', 'held for links')`);
+  });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
   await su.begin(async (t) => {
