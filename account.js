@@ -52,10 +52,16 @@
         again.href = '/join?return_to=%2Faccount';
         msg.after(again);
       }
-      document.getElementById('who').textContent = 'Level ' + d.trust_level + ' · joined ' + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id;
+      // The level's name, as /feed shows it, with what it means (PR E's review, finding 3).
+      var whoLine = document.getElementById('who');
+      whoLine.textContent = ({ 0: 'Email only', 1: 'GitHub member', 2: 'Verified' }[d.trust_level] || 'Level ' + d.trust_level) + ' (level ' + d.trust_level + ') · joined '
+        + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id + ' · ';
+      var levels = el('a', '', 'What the levels mean'); levels.href = '/team#levels';
+      whoLine.appendChild(levels);
       var list = document.getElementById('signins');
       d.sign_ins.forEach(function (s) {
-        var li = el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider) + ' (level ' + s.level + ')');
+        // The method only: its own strength number isn't the account's level, and showing both confused (PR E's review).
+        var li = el('li', '', 'Signs in with ' + (PROVIDER[s.provider] || s.provider));
         // An Unlink form for each method while there is more than one: a plain same-site POST. /account is served
         // form-action 'self' (vercel.json; guarded by test/security.test.js, which also covers forms built here).
         if (d.sign_ins.length > 1 && s.id) {
@@ -229,7 +235,12 @@
         var needActivity = kinds.indexOf('draft_waiting') >= 0 || kinds.indexOf('act_reconfirm') >= 0;
         var needChallenges = kinds.indexOf('challenge') >= 0;
         return Promise.all([needActivity ? getJson('/api/agents/activity') : null, needChallenges ? getJson('/api/feed?challenges=1') : null])
-          .then(function (r) { renderNotices(x.d, { activity: r[0], challenges: r[1] && r[1].challenges }); });
+          .then(function (r) {
+            renderNotices(x.d, { activity: r[0], challenges: r[1] && r[1].challenges });
+            // Notices above the name field push it down; browsers without scroll anchoring (Safari before 27) don't
+            // follow it, so go there again (PR E's review, finding 4).
+            if (location.hash === '#name') goToHash();
+          });
       })
       .catch(function () { summary.textContent = 'Your notices could not be loaded. Please try again.'; });
   }

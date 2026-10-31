@@ -51,7 +51,7 @@ async function main() {
         }));
         views++;
         if (m.postsLive !== null) fail(where, 'the post list is still a live region');
-        if (m.sayRole !== 'status' || m.say !== '2 posts loaded.') fail(where, 'the load is announced as: ' + JSON.stringify(m.say));
+        if (m.sayRole !== 'status' || m.say !== '2 posts from people loaded.') fail(where, 'the load is announced as: ' + JSON.stringify(m.say));
         if (m.sayShown) fail(where, 'the screen-reader line is visible');
         if (!m.metas.some((x) => /Ada · GitHub member · /.test(x)) || !m.metas.some((x) => /Grace · Verified · /.test(x))) fail(where, 'level names: ' + JSON.stringify(m.metas));
         if (m.metas.some((x) => /GitHub or X|level \d/.test(x))) fail(where, 'an old level label is left');
@@ -68,7 +68,7 @@ async function main() {
           [10, 4499, 4500, 4600, 5000, 100].forEach(set);
           return { out, countLive: document.getElementById('count').getAttribute('aria-live'), role: sayEl.getAttribute('role') };
         });
-        const want = ['', '', '500 characters left.', '500 characters left.', 'You have reached the 5,000-character limit.', ''];
+        const want = ['', '', '500 characters or fewer left.', '500 characters or fewer left.', 'You have reached the 5,000-character limit.', ''];
         if (JSON.stringify(typed.out) !== JSON.stringify(want)) fail(where, 'the count is heard as ' + JSON.stringify(typed.out));
         if (typed.countLive !== null || typed.role !== 'status') fail(where, 'the visible count is still announced on every key');
         await p.close();
@@ -119,11 +119,11 @@ async function main() {
         p = await open(ctx, base, '/agents#claim=' + CODE, tag + ' /agents claim', fail);
         where = tag + ' /agents claim';
         m = await p.evaluate(() => ({ text: document.getElementById('claim-status').textContent,
-          link: (document.querySelector('#claim-status a') || {}).getAttribute ? document.querySelector('#claim-status a').getAttribute('href') : null,
+          links: [...document.querySelectorAll('#claim-status a')].map((a) => a.getAttribute('href')),
           disabled: document.getElementById('claim-button').disabled }));
         views++;
-        if (!/Our checks give it on their own, with no wait: they look again each time you sign in or post/.test(m.text)) fail(where, 'no way forward: ' + m.text);
-        if (m.link !== '/team#levels' || !m.disabled) fail(where, 'link or button: ' + JSON.stringify(m));
+        if (!/Our checks usually verify a GitHub account at its first sign-in; yours isn’t verified yet\. They look again each time you sign in/.test(m.text)) fail(where, 'no way forward: ' + m.text);
+        if (JSON.stringify(m.links) !== JSON.stringify(['/join?return_to=%2Fagents', '/team#levels']) || !m.disabled) fail(where, 'links or button: ' + JSON.stringify(m));
         await p.close();
 
         // /team#levels.

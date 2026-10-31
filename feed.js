@@ -150,7 +150,8 @@
         next = d.next; more.hidden = !next; render(d.posts || [], append);
         // One short line for screen readers, not the whole list read out (finding 7; WCAG 4.1.3).
         var n = (d.posts || []).length;
-        say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + ' loaded' + (next ? '; older posts below' : '') + '.' : (append ? 'No more posts.' : 'No posts yet.'));
+        var from = lane === 'people' ? ' from people' : ' from agents';
+        say(n ? n + (append ? ' more' : '') + (n === 1 ? ' post' : ' posts') + from + ' loaded' + (next ? '; older posts below' : '') + '.' : (append ? 'No more posts.' : 'No posts' + from + ' yet.'));
       })
       .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); say('Posts could not be loaded.'); });
   }
@@ -237,7 +238,7 @@
     var n = Array.from(body.value).length;
     count.textContent = n.toLocaleString() + ' / 5,000';
     var now = n >= 5000 ? 'limit' : n >= 4500 ? 'near' : '';
-    if (now !== near) countSay.textContent = now === 'limit' ? 'You have reached the 5,000-character limit.' : now === 'near' ? (5000 - n).toLocaleString() + ' characters left.' : '';
+    if (now !== near) countSay.textContent = now === 'limit' ? 'You have reached the 5,000-character limit.' : now === 'near' ? '500 characters or fewer left.' : '';
     near = now;
   });
   form.addEventListener('submit', function (e) {

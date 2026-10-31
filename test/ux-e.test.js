@@ -17,7 +17,9 @@ test('finding 7: /feed announces a short line when posts load and the count only
   const js = read('feed.js');
   assert.match(js, /var now = n >= 5000 \? 'limit' : n >= 4500 \? 'near' : '';/);
   assert.match(js, /if \(now !== near\) countSay\.textContent =/, 'said once when it changes, not on every key');
-  assert.match(js, /' loaded' \+ \(next \? '; older posts below' : ''\)/);
+  assert.match(js, /var from = lane === 'people' \? ' from people' : ' from agents';/, 'the lane is said, so switching lanes is heard');
+  assert.match(js, /from \+ ' loaded' \+ \(next \? '; older posts below' : ''\)/);
+  assert.match(js, /now === 'near' \? '500 characters or fewer left\.'/, 'a line that stays true while it is kept');
   assert.match(read('app.css'), /\.visually-hidden \{ position: absolute; width: 1px; height: 1px;/);
 });
 
@@ -54,8 +56,15 @@ test('finding 9 and /team#levels: the way to level 2, in words the code backs', 
   assert.match(read('api/agents.js'), /can_own: who\.trustLevel >= 2 \|\| who\.isAdmin === true/);
   // /agents: the claim's way forward, and the link's 24 hours from registering (005).
   const agents = read('agents.js');
-  assert.match(agents, /Our checks give it on their own, with no wait: they look again each time you sign in or post, so sign in again or write a post, then come back to this link\. It works for 24 hours from when your agent registered\./);
+  // Most GitHub members are verified at their first sign-in (J01 at most 25, J02 10 for GitHub, J13 0 or 10); the
+  // way offered is signing in again, never a filler post (PR E's review, finding 1).
+  assert.match(agents, /Our checks usually verify a GitHub account at its first sign-in; yours isn\\u2019t verified yet\. They look again each time you sign in, and nobody has to approve it\. This link works for 24 hours from when your agent registered\./);
+  assert.match(agents, /again\.href = '\/join\?return_to=%2Fagents';/);
   assert.match(agents, /why\.href = '\/team#levels';/);
+  assert.match(read('db/jevs.js'), /num\(s\.best_identity\) === 1 \? \(num\(s\.providers\) >= 2 \? 0 : 10\)/);
+  // "unless an administrator has set the account's level by hand" (032: a hand-set level stops the promotion).
+  assert.match(team, /unless an administrator has set the account's level by hand/);
+  assert.match(rule, /and mem_level < 2 and mem_hand is null and mem_jevs is null;/);
   assert.match(read('db/migrations/005_agents.sql'), /p_claim_hash, now\(\) \+ interval '24 hours'\) returning id into aid;/);
   // No notice is promised: a promotion sends none (032 writes the audit log only).
   assert.ok(!/notice/i.test(agents.split("if (!x.d.can_own) {")[1].split('}')[0]), 'no notice promised');
@@ -85,6 +94,10 @@ test('finding 11: /account puts Notices first, and #notices and #name are brough
   assert.match(js, /if \(!\/\^\[a-z-\]\+\$\/\.test\(id\)\) return;/, 'only plain ids are looked up');
   assert.match(js, /target\.closest\('#details'\) === null/);
   assert.match(read('nav.js'), /link\.setAttribute\('href', '\/account#notices'\);/);
+  assert.match(js, /if \(location\.hash === '#name'\) goToHash\(\);/, '#name again once notices above it have drawn');
+  // Finding 8 on /account too: the level's name, and the levels explained.
+  assert.match(js, /\{ 0: 'Email only', 1: 'GitHub member', 2: 'Verified' \}\[d\.trust_level\]/);
+  assert.match(js, /levels\.href = '\/team#levels';/);
 });
 
 test('finding 14 (page part): /feed names its JSON for agents, and says where the posts are without JavaScript', () => {
