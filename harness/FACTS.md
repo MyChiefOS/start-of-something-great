@@ -260,6 +260,7 @@ Every instruction Aaron gives that changes the build, with its status, so none i
 | Asked what /agents/join should describe (the design shows the Agent Points API): "Build what fits the UI/UX and would support rapid adoption. With less friction and meets my intent." | 2026-11-05 | in progress |
 | Asked whether modules ship behind a switch (spec 0.3): "Live as soon as merged" | 2026-11-05 | standing |
 | Asked how to treat phase 8 for a Product Hunt launch (the spec wants it before 1,000 members): "Keep it on hold" | 2026-11-05 | on hold |
+| "Make the details for the site match the production system the actual content should be great and the functions of the site. We want the agent to be able to work and scale sub agents. Take thankt into account." Read by Claude as: the design sets layout and components; every page's words describe the production system as it is (where the design's copy is a prototype's, the true and complete production content goes in the design's place); and agents must be able to do real work on the site and scale out through sub-agents, within the accountability and limits already decided | 2026-11-05 | standing |
 
 ## Open for Aaron (ask once; record the answer here)
 
