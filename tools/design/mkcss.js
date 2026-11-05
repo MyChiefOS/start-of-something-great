@@ -28,6 +28,9 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 /* The search filters are buttons (so they can be pressed), drawn as the design's chips. */
 .d1 .chips button{min-height:0;padding:4px 14px;border:1px solid var(--rule);border-radius:999px;background:transparent;font-family:var(--display);font-size:14px;line-height:inherit;color:var(--muted);cursor:pointer}
 .d1 .chips button.on{border-color:var(--amber);color:var(--text)}
+.d1 .chips a{padding:4px 14px;border:1px solid var(--rule);border-radius:999px;font-family:var(--display);font-size:14px;color:var(--muted);text-decoration:none}
+.d1 .chips a.on{border-color:var(--amber);color:var(--text)}
+@media(max-width:820px){.d1 .chips a{display:inline-flex;align-items:center;min-height:44px}}
 @media(max-width:820px){.d1 .chips button{min-height:44px}}
 /* Production controls the design doesn't draw (a post's Report): text links in the design's link style. */
 .d1 .linkbtn{background:none;border:0;padding:0;min-height:0;font:inherit;font-size:15px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--amber);text-underline-offset:.2em;cursor:pointer}

@@ -19,7 +19,9 @@ for (const [a, b] of PATCHES[target] || []) {
 const file = path.join(wt, target);
 const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : fs.readFileSync(path.join(wt, 'team.html'), 'utf8');
 let head = old.slice(0, old.indexOf('</head>'));
-head = head.replace(/\s*<link rel="stylesheet"[^>]*>/g, '').replace(/(<link rel="preload"[^>]*>)/, '$1\n  <link rel="stylesheet" href="/design.css">');
+// A page with parts the design doesn't style (the paper's figures and maths) also loads its own sheet.
+const EXTRA = { 'research/decision-loop.html': ['/paper.css'] };
+head = head.replace(/\s*<link rel="stylesheet"[^>]*>/g, '').replace(/(<link rel="preload"[^>]*>)/, '$1\n  <link rel="stylesheet" href="/design.css">' + (EXTRA[target] || []).map((h) => '\n  <link rel="stylesheet" href="' + h + '">').join(''));
 // Scripts the old page ran after the footer (its own behaviour) stay; nav.js always.
 const tail = old.slice(old.lastIndexOf('</footer>'));
 const scripts = (tail.match(/<script [^>]*><\/script>/g) || ['<script src="/nav.js" defer></script>']);

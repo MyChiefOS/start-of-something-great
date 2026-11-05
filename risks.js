@@ -19,8 +19,8 @@
     if (next.status) p.set('status', next.status);
     if (next.severity) p.set('severity', next.severity);
     a.setAttribute('href', '/risks' + (p.toString() ? '?' + p.toString() : '') + '#shown');
-    if (want[f] === v) a.setAttribute('aria-current', 'true');
-    else a.removeAttribute('aria-current');
+    if (want[f] === v) { a.setAttribute('aria-current', 'true'); a.className = 'on'; }
+    else { a.removeAttribute('aria-current'); a.className = ''; }
   });
 
   var all = rows.querySelectorAll('tr');
