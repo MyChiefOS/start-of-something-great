@@ -1,0 +1,35 @@
+/* /loops' own styles (the design handoff of Nov 5, 2026, static/loops.html): the five flow diagrams (boxes joined by
+   arrows, the return line below with its pill) and the 12-step chain in four columns. The arrows are drawn by CSS and
+   hidden from screen readers; the steps are an ordered list, so their order is announced. Tokens only. */
+
+.flow-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 2rem 0 0; padding: 0; list-style: none; font-family: var(--display); font-size: 0.875rem; }
+.flow-pills li { display: flex; align-items: center; gap: 0.6rem; }
+.flow-pills li + li::before { content: "\2192" / ""; color: var(--muted); }
+
+.loop { padding: 1.6rem 1.5rem 1.25rem; margin-bottom: 1.4rem; }
+.flow { display: flex; align-items: stretch; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.flow li { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; margin: 0 1.1rem 0 0; padding: 0.75rem; border: 1px solid var(--rule); border-radius: 10px;
+  font-family: var(--display); font-size: 0.9rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+.flow li:last-child { margin-right: 0; }
+.flow li:not(:last-child)::after { content: "\2192" / ""; position: absolute; right: -1.15rem; top: 50%; transform: translateY(-50%); color: var(--amber); font-weight: 400; }
+.back { display: flex; align-items: center; gap: 0.75rem; margin: 0.9rem 0 0; max-width: none; }
+.dash .back { max-width: none; }
+.back .ret { color: var(--amber); font-size: 1.25rem; line-height: 1; }
+.back .line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--amber), var(--rule)); }
+.back .pill { white-space: normal; }
+.points { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem; }
+.dash .points { max-width: none; }
+
+.chain12 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 1.75rem; margin: 0; padding: 0; list-style: none; }
+.chain12 li { display: grid; grid-template-columns: 1.9rem 1fr; align-items: baseline; padding: 0.75rem 0; border-top: 1px solid var(--rule); font-size: 0.97rem; }
+
+@media (max-width: 51.24rem) {
+  .flow { flex-direction: column; gap: 1.6rem; }
+  .flow li { margin: 0; }
+  .flow li:not(:last-child)::after { content: "\2193" / ""; right: auto; left: 1.1rem; top: auto; bottom: -1.45rem; transform: none; }
+  .points { grid-template-columns: 1fr; }
+  .chain12 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 30rem) {
+  .chain12 { grid-template-columns: 1fr; }
+}

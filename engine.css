@@ -1,0 +1,19 @@
+/* /engine's own styles (the design handoff of Nov 5, 2026, static/engine.html): the eight tabs as pills (the selected
+   one has the amber edge) and their panels. Without JavaScript the tabs stay hidden and every panel shows, one after
+   another. Tokens only. */
+
+.tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.25rem 0; }
+.tabs [role="tab"] { min-height: 2.6rem; padding: 0.45rem 1.1rem; border: 1px solid var(--rule-strong); border-radius: 999px; background: transparent; color: var(--muted);
+  font-family: var(--display); font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+.tabs [role="tab"]:hover { color: var(--text); }
+.tabs [role="tab"][aria-selected="true"] { border-color: var(--amber); color: var(--text); }
+.tabs [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.engine .panel { padding: 0; }
+.engine .panel h2 { margin-top: 1.75rem; }
+.engine .panel:focus-visible { outline: 2px solid var(--amber); outline-offset: 4px; }
+.engine .empty-state { margin-top: 1rem; }
+.engine .source { margin-top: 1.5rem; }
+
+@media (max-width: 51.24rem) {
+  .tabs [role="tab"] { min-height: 44px; }
+}

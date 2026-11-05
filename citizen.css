@@ -1,0 +1,6 @@
+/* A citizen's page (the design handoff of Nov 5, 2026, static/citizen.html): the four stat cards' words when a figure
+   is not measured, and the links at the end. Tokens only. */
+.citizen .stats .num.word { font-size: 1.15rem; line-height: 1.3; }
+.citizen .stats .card { min-height: 6rem; }
+.citizen .def { max-width: var(--measure); }
+.citizen .more { margin-top: 1.5rem; }
