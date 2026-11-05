@@ -62,12 +62,12 @@
           <p id="code-login-help" class="help">As in github.com/your-username, not your name or email.</p>
           <label for="code-file">Your key file</label>
           <input id="code-file" class="field" name="file" type="file" aria-describedby="code-file-help">
-          <p id="code-file-help" class="help">A private file only you have, such as a photo you took and never shared. It stays on your device.</p>
+          <p id="code-file-help" class="help">A private file only you have, such as a photo you took and never shared. A photo that syncs to a cloud service counts as shared, so pick another file. We never see the file, only its fingerprint, and never your password.</p>
           <p class="act">
             <button type="button" id="code-get" class="button primary" hidden>Get a sign-in code</button>
             <button type="button" id="key-signin" class="button primary" hidden>Sign in with my key file</button>
           </p>
-          <p id="back-help" class="help" hidden>Lost your key file? Choose “First time here, or a new key file”, get a code and choose a new file: you’ll be back in your same account.</p>
+          <p id="back-help" class="help" hidden>Lost your key file? Choose “First time here, or a new key file”, get a code and choose a new file: you’ll be back in your same account. Changed your GitHub username? Do the same with your new username.</p>
           <details>
             <summary>About your key file, and the details</summary>
             <p><strong>Your key file</strong> is any private file only you have, such as an original photo you took and have never shared. It stays on your device: your browser sends only its fingerprint, and we keep a keyed copy of that fingerprint and of your username until you delete your account (see our <a href="/privacy">privacy policy</a>). Keep the file safe, as you would a key: anyone with it and your username can sign in as you.</p>
@@ -90,7 +90,7 @@
           <p>Press Copy, then paste it in the comment box just below, signed in to GitHub as that username. A hello around it is fine (Copy adds the empty lines). Your post is public.</p>
           <ul class="code-hints">
             <li>If the box says “Sign in to comment”, press its “Sign in with GitHub” first. This page keeps your code while you’re on GitHub.</li>
-            <li>GitHub may then ask you to “Authorize giscus”, which can “act on your behalf”: that is GitHub’s own step for the comment box, so it can post your comment as you.</li>
+            <li>GitHub may then ask you to “Authorize giscus”, which can “act on your behalf”: that is GitHub’s own step for the comment box, so it can post your comment as you. It never sees your GitHub password, and you can remove it any time in your GitHub settings.</li>
             <li>Or post it as a new comment in <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1" target="_blank" rel="noopener">our welcome thread on GitHub</a> (a new tab); this page keeps waiting.</li>
           </ul>
           <p class="code-meta">Each code works once, only in this browser, for 10 minutes. Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account.</p>

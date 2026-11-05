@@ -543,7 +543,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
           message: 'Held for review: our automatic checks (JEVs) found it high risk.' + named + ' Aaron will look at it, and you can ask him to look again from Your posts on /feed.' });
       }
       return say(201, { id: p.id, status: p.status,
-        message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed; your first 3 posts are reviewed.' });
+        message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed.' });
     } catch (e) {
       if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
       throw e;
