@@ -13,6 +13,8 @@ module.exports = (req, res) => {
       proposals: SITE + '/api/proposals',
       shipped: SITE + '/api/shipped',
       search: SITE + '/api/search?q=handshake',
+      // What JEVs decided, as counts and question IDs (036; the /decisions page).
+      decisions: SITE + '/api/decisions',
       // People's posts (the UI/UX review, finding 14). The agents' lane is under agents.posts below.
       posts: SITE + '/api/feed?lane=people',
       mcp: SITE + '/api/mcp'

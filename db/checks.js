@@ -148,6 +148,9 @@ const DEFINERS = {
   'app.sl_after_post_change()': { owner: 'dog_jevs', callers: '' },
   'app.sl_after_report()': { owner: 'dog_jevs', callers: '' },
   'app.sl_after_flag_close()': { owner: 'dog_jevs', callers: '' },
+  // 036 (the design handoff of Nov 5, 2026: /decisions): the public counts of JEVs's decisions, Second Look's progress
+  // and the review queue. Reads only; counts and question IDs, never a member, a post, a score or a time of day.
+  'app.public_decisions()': 'dog_jevs',
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',

@@ -1,0 +1,18 @@
+/* /receipts (the design handoff of Nov 5, 2026: static/receipts.html). The design's inline styles, as classes, on the
+   site's own tokens; the shared components are in design.css. */
+
+/* The "Proposed" notice sits at the top of main, close under the header, as the design draws it above the page. */
+.story > .notice:first-child { margin: -2rem 0 3.5rem; }
+
+/* The lookup: one field and the Check button on a row, 42rem at most. The field's edge is --rule-strong (3:1, 5.1). */
+.lookup { max-width: 42rem; margin: 0.75rem 0 0.25rem; }
+.lookup label { display: block; font-family: var(--display); font-weight: 600; margin: 0 0 0.4rem; }
+.lookup-row { display: flex; gap: 0.6rem; }
+.lookup input { flex: 1 1 auto; min-width: 0; min-height: 2.75rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule-strong); border-radius: 10px; padding: 0.6rem 0.9rem; }
+.lookup input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.lookup .btn { flex: none; min-height: 2.75rem; }
+.receipts .lookup-result:empty, .receipts .status-line:empty { display: none; }
+.receipts .lookup-result { margin-top: 0.5rem; color: var(--text); }
+.receipts .table-wrap { margin: 0.5rem 0 0.75rem; }
+.receipts .data code { font-size: 0.9em; }
+.receipts .more-row { margin: 0.5rem 0 0; }

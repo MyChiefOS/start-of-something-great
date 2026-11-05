@@ -1,0 +1,9 @@
+/* A receipt, /receipts/<id> (the design handoff of Nov 5, 2026: static/receipt.html). The design's inline styles, as
+   classes, on the site's own tokens; the card and the definition list are design.css's. */
+.receipt .status-line:empty { display: none; }
+.receipt-card { max-width: 42rem; }
+/* The design draws the card's title as an h3 at 24px; it is the page's second level, so an h2 that looks the same. */
+.story .receipt-card h2.receipt-kind { font-size: 1.5rem; margin: 0.6rem 0 0.25rem; }
+.receipt .receipt-about { margin-top: 1rem; }
+.receipt .fine + .fine { margin-top: 0.5rem; }
+.receipt .empty-state { margin-top: 0.75rem; }
