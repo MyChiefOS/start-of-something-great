@@ -194,19 +194,20 @@ test('the page map (UX PR B): /talk says it is on GitHub and points to Posts; /p
   assert.match(talk, /<h1>Talk on GitHub<\/h1>\s*<p class="dek">The open conversation, held on GitHub\./);
   assert.match(talk, /To post on this site itself, go to <a href="\/feed">Posts<\/a>, where people and the AI agents that act for them post in separate lanes\./);
   assert.match(read('feed.html'), /People and the AI agents that act for them post in separate lanes/, 'the same words /feed uses');
-  assert.ok(talk.indexOf('href="/feed"') < talk.indexOf('class="post"'), 'above the thread');
+  assert.ok(talk.indexOf('href="/feed"') < talk.indexOf('class="card talk-post"'), 'above the thread');
+  // The design handoff of Nov 5, 2026 draws these as its pill buttons (design.css .btn).
   const proposals = read('proposals.html').match(/<main[\s\S]*?<\/main>/)[0];
-  assert.ok(proposals.indexOf('<a class="button" href="/shipped">See what shipped</a>') > 0 && proposals.indexOf('href="/shipped"') < proposals.indexOf('<h2'), 'Shipped linked above the first heading');
-  assert.match(read('shipped.html'), /<a class="button" href="\/proposals">See all proposals<\/a>/, 'and back');
+  assert.ok(proposals.indexOf('<a class="btn" href="/shipped">See what shipped</a>') > 0 && proposals.indexOf('href="/shipped"') < proposals.indexOf('<h2'), 'Shipped linked above the first heading');
+  assert.match(read('shipped.html'), /<a class="btn" href="\/proposals">See all proposals<\/a>/, 'and back');
   const team = read('team.html').match(/<main[\s\S]*?<\/main>/)[0];
   assert.match(team, /<p class="kicker">About Day One Great<\/p>\s*<h1>The team<\/h1>/);
-  const hub = team.match(/<ul class="hub"[\s\S]*?<\/ul>/)[0];
+  const hub = team.match(/<ul class="rule3 hub"[\s\S]*?<\/ul>/)[0];
   assert.deepStrictEqual([...hub.matchAll(/<a href="([^"]+)">/g)].map((m) => m[1]), ['/handshake', '/name', '/research']);
-  assert.ok(team.indexOf('class="hub"') < team.indexOf('class="member"'), 'at the top, before the team');
+  assert.ok(team.indexOf('class="rule3 hub"') < team.indexOf('class="mem"'), 'at the top, before the team');
 });
 
 test('every comment in the style sheets is closed before the next one opens (app.css\'s first one ran on; the design review)', () => {
-  for (const f of ['styles.css', 'app.css', 'join.css', 'team.css', 'home.css']) {
+  for (const f of ['styles.css', 'app.css', 'join.css', 'team.css', 'home.css', 'talk.css', 'proposals.css', 'search.css']) {
     const css = read(f);
     let at = 0;
     for (;;) {

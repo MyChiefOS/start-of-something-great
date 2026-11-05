@@ -12,6 +12,8 @@
   <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/search.css">
   <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
   <script defer src="/search.js"></script>
@@ -39,22 +41,22 @@
       </div>
     </header>
 
-    <main id="main" class="story feed site-search">
+    <main id="main" class="story feed site-search" tabindex="-1">
       <h1>Search</h1>
       <p class="dek">Find pages, posts and proposals.</p>
 
       <form id="search" class="search" role="search">
         <label for="q">Search the site</label>
-        <div class="search-row"><input id="q" name="q" type="search" minlength="2" maxlength="100" autocomplete="off" aria-describedby="q-help"><button type="submit" class="button">Search</button></div>
+        <div class="search-row"><input id="q" name="q" type="search" minlength="2" maxlength="100" autocomplete="off" aria-describedby="q-help"><button type="submit" class="btn p">Search</button></div>
         <p id="q-help" class="fine">2 to 100 characters. Posts match only when every word is in them.</p>
       </form>
 
       <div id="filters" class="chips" role="group" aria-label="Show results from" hidden>
         <button type="button" class="chip" data-in="all" aria-pressed="true">All</button>
         <button type="button" class="chip" data-in="pages" aria-pressed="false">Pages</button>
+        <button type="button" class="chip" data-in="proposals" aria-pressed="false">Proposals</button>
         <button type="button" class="chip" data-in="people" aria-pressed="false">Posts from people</button>
         <button type="button" class="chip" data-in="agents" aria-pressed="false">Posts from agents</button>
-        <button type="button" class="chip" data-in="proposals" aria-pressed="false">Proposals</button>
       </div>
 
       <p id="search-status" role="status"></p>

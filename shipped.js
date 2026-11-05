@@ -1,7 +1,11 @@
 // Renders /api/shipped. Public text is only ever inserted with textContent (check P5):
 // this file must never use innerHTML, insertAdjacentHTML, outerHTML or document.write.
+// Each shipped proposal is drawn as the design's card (the design handoff of Nov 5, 2026, static/shipped.html): the
+// Shipped pill, title, who proposed it, the proposal's own words, then the decision on GitHub. Only real entries: when
+// nothing has shipped, the empty state says so and where to start.
 (function () {
   'use strict';
+  var PROPOSE = 'https://github.com/MyChiefOS/start-of-something-great/issues/new?template=proposal.yml';
   var list = document.getElementById('shipped');
   var summary = document.getElementById('summary');
 
@@ -25,17 +29,11 @@
   }
 
   function card(p) {
-    var a = el('article', 'proposal');
-    var meta = el('p', 'post-meta');
-    meta.appendChild(el('span', 'status status-shipped', 'Shipped'));
-    meta.appendChild(document.createTextNode(' · ' + day(p.shipped_at) + ' · #' + p.number));
-    a.appendChild(meta);
+    var a = el('article', 'card');
+    a.appendChild(el('span', 'pill f', 'Shipped'));
     a.appendChild(el('h3', null, p.title || 'Untitled proposal'));
+    a.appendChild(el('p', 'fine', 'Proposed by ' + credit(p) + ' on ' + day(p.proposed_at) + ' · shipped ' + day(p.shipped_at) + ' · #' + p.number));
     if (p.change) a.appendChild(el('p', 'proposal-text', p.change));
-    var by = el('p', 'proposal-text');
-    by.appendChild(el('strong', null, 'Proposed by '));
-    by.appendChild(document.createTextNode(credit(p) + ' on ' + day(p.proposed_at) + '.'));
-    a.appendChild(by);
     if (p.edited_after_approval) a.appendChild(el('p', 'flag', 'Edited after approval: check the history on GitHub.'));
     var url = safeGithubUrl(p.url);
     if (url) {
@@ -54,10 +52,15 @@
     .then(function (data) {
       var ps = (data && data.shipped) || [];
       if (!ps.length) {
-        summary.textContent = 'Nothing has shipped from a proposal yet. The first one could be yours. ';
+        summary.textContent = 'Nothing has shipped from a proposal yet.';
+        var empty = el('div', 'empty-state');
+        empty.appendChild(el('p', null, 'Nothing has shipped from a proposal yet. The first one could be yours.'));
+        var p = el('p');
         var link = el('a', null, 'Propose a change');
-        link.href = 'https://github.com/MyChiefOS/start-of-something-great/issues/new?template=proposal.yml';
-        summary.appendChild(link);
+        link.href = PROPOSE;
+        p.appendChild(link);
+        empty.appendChild(p);
+        list.appendChild(empty);
         return;
       }
       summary.textContent = ps.length + (ps.length === 1 ? ' proposal' : ' proposals') + ' shipped, newest first.';

@@ -1,0 +1,7 @@
+/* The proposal lists, on /proposals and /shipped (the design handoff of Nov 5, 2026, static/proposals.html and
+   static/shipped.html): one amber-topped card per proposal (design.css .card, .pill, .stack), drawn by proposals.js and
+   shipped.js from the live API. */
+.list { margin-top: 1rem; }
+.list .card h3 { margin: 0.5rem 0 0.4rem; overflow-wrap: anywhere; }
+.list .card p { margin: 0 0 0.5rem; }
+.story .after-list { margin-top: 1.25rem; }

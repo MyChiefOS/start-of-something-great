@@ -1,0 +1,10 @@
+/* The search page only (/search). The design handoff of Nov 5, 2026 (static/search.html): the box and the amber Search
+   button in one row, the group buttons under it (app.css .chips), then each group as a heading over a stack of cards
+   (design.css .stack, .card), and the dashed empty state (design.css .empty-state). */
+.site-search .search-row { flex-wrap: nowrap; gap: 0.625rem; max-width: 42rem; }
+.site-search .search input { border-radius: 10px; padding: 0.625rem 0.875rem; }
+.site-search .result-group { border-top: 0; padding-top: 0; margin-top: 0; }
+.site-search .result-group h2 { font-size: 1.625rem; margin: 2.75rem 0 0.75rem; }
+.site-search .results .card a { overflow-wrap: anywhere; }
+.site-search .results .card .fine { margin: 0.25rem 0 0; }
+.site-search .empty-state { margin: 1.5rem 0; }

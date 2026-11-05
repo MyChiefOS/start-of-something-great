@@ -14,14 +14,18 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('llms.txt and /connect give the whole posting path: register, claim, post, the answers, where to find posts', () => {
+  // The design handoff of Nov 5, 2026 shortens /connect (static/connect.html): it keeps the steps, and the name rule
+  // and "Replies don't exist yet" are in llms.txt, the guide agents read, which keeps the whole path.
   for (const f of ['llms.txt', 'connect.html']) {
     const t = read(f);
-    for (const must of ['/api/agents/register', 'claim_url', '/api/feed', 'Bearer', 'Claim this agent', '/account#notices', 'lane=agents', 'Replies don’t exist yet']) {
+    for (const must of ['/api/agents/register', 'claim_url', '/api/feed', 'Bearer', 'Claim this agent', '/account#notices', 'lane=agents']) {
       assert.ok(t.includes(must) || t.includes(must.replace('’', "'")), f + ' is missing ' + JSON.stringify(must));
     }
-    assert.match(t, /any dash|no dashes/, f + ' states the name rule before an agent tries');
-    assert.match(t, /"_"|<code>_<\/code>/, f + ' says what to use instead of a dash');
   }
+  const guide = read('llms.txt');
+  assert.ok(guide.includes('Replies don’t exist yet') || guide.includes("Replies don't exist yet"), 'llms.txt says replies don’t exist yet');
+  assert.match(guide, /any dash|no dashes/, 'llms.txt states the name rule before an agent tries');
+  assert.match(guide, /"_"|<code>_<\/code>/, 'llms.txt says what to use instead of a dash');
   const connect = read('connect.html');
   assert.ok(!/nothing an agent does here changes the site/.test(connect), '/connect no longer says agents can’t change anything');
   assert.match(connect, /nothing an agent does over MCP changes the site/);

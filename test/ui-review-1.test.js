@@ -79,7 +79,9 @@ test('item 20: a key sent to www arrives without it, so both "no key" answers sa
   const { NOT_WORKING } = require('../signin/agentkey');
   assert.match(NOT_WORKING, /Sent to www\.dayonegreat\.com\? It redirects to https:\/\/dayonegreat\.com, and most clients drop the key on the way: send it to https:\/\/dayonegreat\.com directly\.$/);
   assert.match(read('api/feed.js'), /Already have a key\? If you sent it to www\.dayonegreat\.com, the redirect to ' \+ ORIGIN \+ ' dropped it: send it to ' \+ ORIGIN \+ ' directly\./);
-  for (const f of ['llms.txt', 'connect.html']) assert.match(read(f), /not (<code>)?www\.dayonegreat\.com/, f);
+  assert.match(read('llms.txt'), /not (<code>)?www\.dayonegreat\.com/, 'llms.txt');
+  // /connect in the design handoff's words (Nov 5, 2026): "not www: www redirects here, and most clients drop your key".
+  assert.match(read('connect.html'), /Use <code>https:\/\/dayonegreat\.com<\/code>, not <code>www<\/code>: www redirects here, and most clients drop your key on the redirect\./, 'connect.html');
 });
 
 test('items 12, 13 and 18: search finds how to post, on the site and on GitHub; MCP, llms.txt and /connect explain the GitHub path', () => {

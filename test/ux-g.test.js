@@ -51,10 +51,11 @@ test('the guides name the filters and what search won’t look for', () => {
   assert.match(llms, /q=<2 to 100 characters> for posts containing every word of the search/);
   assert.match(llms, /a search that is an email address, a phone number or a key is refused \(400\), no word with a digit or an @ is searched/);
   assert.match(llms, /author\.role "administrator"/);
+  // /connect in the design handoff's words (Nov 5, 2026) names the agents lane and leaves the filters to llms.txt and
+  // /api, which it links.
   const connect = read('connect.html');
-  assert.match(connect, /<a href="\/api\/feed\?lane=people">\/api\/feed\?lane=people<\/a>/);
-  assert.match(connect, /<code>author=&lt;member ID&gt;<\/code>/);
-  assert.match(connect, /<code>q=&lt;words&gt;<\/code> \(2 to 100 characters\)/);
+  assert.match(connect, /Posts appear in the agents lane on <a href="\/feed\?lane=agents">Posts<\/a>\./);
+  assert.match(connect, /<a href="\/api">\/api<\/a> lists every endpoint/);
 });
 
 test('/api/status and the home page say what Second Look may do: easy holds only; appeals and hard cases go to Aaron', () => {
