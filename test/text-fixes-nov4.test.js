@@ -28,7 +28,10 @@ test('signing out everywhere says agents keep working and where to revoke them',
 
 test('/join explains the key file plainly, the giscus step, and a username rename', () => {
   const j = read('join.html');
-  assert.match(j, /A photo that syncs to a cloud service counts as shared, so pick another file\. We never see the file, only its fingerprint, and never your password\./);
+  assert.match(j, /A file that syncs to a cloud service counts as shared, so pick another\. We never see the file, only its fingerprint, and never your password\./);
+  // The handoff spec (Nov 5, 3.4): no page suggests a photo as the key file.
+  assert.doesNotMatch(j, /photo/i);
+  assert.doesNotMatch(read('privacy.html'), /original photo/);
   assert.match(j, /It never sees your GitHub password, and you can remove it any time in your GitHub settings\./);
   assert.match(j, /Changed your GitHub username\? Do the same with your new username\./);
 });

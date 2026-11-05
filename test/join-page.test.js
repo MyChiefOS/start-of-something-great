@@ -374,7 +374,7 @@ test('the copy on /join promises no time, and says only what the code and the JE
   // The simulation's wording.
   assert.match(main, /<p class="dek">A free GitHub account, no new password to make here\./);
   assert.match(main, /id="path-back" class="path-choice"[^>]*>I have a key file<\/button>/);
-  assert.match(main, /id="code-file-help" class="help">A private file only you have, such as a photo you took and never shared\. A photo that syncs to a cloud service counts as shared, so pick another file\. We never see the file, only its fingerprint, and never your password\.<\/p>/);
+  assert.match(main, /id="code-file-help" class="help">Any private file only you have, of any type, that you have never sent or uploaded anywhere\. A file that syncs to a cloud service counts as shared, so pick another\. We never see the file, only its fingerprint, and never your password\.<\/p>/);
   assert.ok(!/nothing to fill in/.test(html), 'the meta description no longer says there is nothing to fill in');
   const step = main.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
   assert.match(step, /<h3 id="code-title" tabindex="-1">Post your code<\/h3>/);
