@@ -254,7 +254,7 @@ test('N5: notice links are paths on this site only; agent names in titles are ma
   assert.ok(!t.title.includes('bob@example.com'), t.title);
   assert.match(t.title, /\[email hidden\]/);
   assert.deepStrictEqual(box.untrusted_fields, ['notices[].title', 'notices[].body']);
-  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /n\.link && \/\^\\\/\(\?!\\\/\)\/\.test\(n\.link\)/, 'the page checks again before linking');
+  assert.ok(fs.readFileSync(path.join(root, 'account.js'), 'utf8').includes(String.raw`n.link && /^\/(?![/\\])/.test(n.link)`), 'the page checks again before linking (no // or /\ either)');
 });
 
 test('scanner-safe sign-in links (item 4): the email link opens a page that changes nothing; only a same-site POST uses it', () => {
