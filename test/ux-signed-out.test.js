@@ -155,7 +155,7 @@ test('/controls, given a 401: only the heading and the sign-in panel show, and n
   await settle();
   assert.deepStrictEqual(showing(p.main), ['h1', 'signed-out']);
   assert.strictEqual(p.$('admin').hidden, true, 'the brake, owners, JEVs and Second Look stay hidden');
-  const button = p.$('signed-out').querySelector('a.button');
+  const button = p.$('signed-out').querySelector('a.btn');
   assert.strictEqual(button.textContent, 'Sign in with GitHub');
   assert.strictEqual(button.getAttribute('href'), '/join?return_to=%2Fcontrols');
   assert.deepStrictEqual(p.sent, []);
@@ -289,7 +289,9 @@ test('one panel, the same on each page that needs sign-in: a sentence, one prima
     const lines = panels[0].split('\n').map((l) => l.trim()).filter(Boolean);
     assert.strictEqual(lines.length, 5, file + ': ' + lines.join(' / '));
     assert.match(lines[1], /^<p>[^<]+\.<\/p>$/, file + ': one sentence on what the page is for');
-    assert.strictEqual(lines[2], '<p><a class="button primary" href="/join?return_to=' + encodeURIComponent(url) + '">Sign in with GitHub</a></p>', file);
+    // The design handoff of Nov 5 (static/feed.html): the button is a small amber pill (design.css .btn.p.s).
+    assert.strictEqual(lines[2], '<p><a class="btn p s" href="/join?return_to=' + encodeURIComponent(url) + '">Sign in with GitHub</a></p>', file);
+    assert.match(html, /<link rel="stylesheet" href="\/design\.css">/, file + ' loads the design components');
     assert.strictEqual(lines[3], JOIN_LINE, file);
     assert.ok(!/<script>|<script [^>]*>[^<]/.test(html), file + ': no inline script');
   }

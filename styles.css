@@ -298,9 +298,9 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 
 /* Story pages */
 .story { padding-top: 3.5rem; padding-bottom: 1rem; }
-.story h1 { font-size: clamp(2.4rem, 8vw, 4rem); letter-spacing: -0.04em; max-width: 14ch; }
-.story .dek { color: var(--muted); font-size: 1.2rem; margin: 1rem 0 2.5rem; max-width: var(--measure); }
-.story h2 { font-size: 1.6rem; margin: 2.75rem 0 1rem; }
+.story h1 { font-size: clamp(2.2rem, 7vw, 3.6rem); letter-spacing: -0.04em; max-width: 16ch; }
+.story .dek { color: var(--muted); font-size: 1.25rem; margin: 1rem 0 2rem; max-width: var(--measure); }
+.story h2 { font-size: 1.625rem; margin: 2.75rem 0 0.75rem; }
 .story p, .story ul { max-width: var(--measure); }
 .story ul { padding-left: 1.2rem; }
 .story li { margin-bottom: 0.5rem; }

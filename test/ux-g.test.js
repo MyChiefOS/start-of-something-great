@@ -78,7 +78,7 @@ test('/feed: a labelled search box above the list, with Clear and one status lin
   assert.match(form[0], /<button type="button" id="clear" class="button" hidden>Clear<\/button>/);
   assert.ok(html.indexOf('id="search"') < html.indexOf('id="posts"'), 'above the list');
   const js = read('feed.js');
-  assert.match(js, /if \(p\.author\.role === 'administrator'\) meta\.appendChild\(document\.createTextNode\(' · Administrator'\)\);/);
+  assert.match(js, /if \(!p\.agent && p\.author\.role === 'administrator'\) meta\.appendChild\(el\('span', 'pill m', 'Administrator'\)\);/, 'the administrator says so, as a pill (the design handoff)');
   assert.match(js, /from \+ \(n === 1 \? ' matches' : ' match'\)/);
   assert.match(js, /'&q=' \+ encodeURIComponent\(query\)/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'still no HTML injection points');

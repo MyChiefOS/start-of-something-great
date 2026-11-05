@@ -255,7 +255,8 @@ test('/join leads with one compact sign-in panel, the comment box under the code
   for (const id of ['code-get', 'key-signin']) assert.match(fields, new RegExp('id="' + id + '" class="button primary"'), id + ' is a primary button');
   // 4. The code, large, with Copy styled as a button, the time left out of the live region and the takeover warning beside it.
   const step = panel.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
-  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
+  // The design handoff (static/join.html): the code, Copy, then "Works once, for 10 minutes".
+  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button> <span class="code-works">Works once, for 10 minutes<\/span> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
   assert.match(step, /<span id="code-time" aria-hidden="true"><\/span>/);
   assert.match(step, /Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account\./, 'the takeover warning sits beside the code, never folded away');
   assert.match(step, /for 10 minutes/, 'the same 10 minutes the server gives (signin/flow.js CODE_MINUTES)');

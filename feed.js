@@ -42,6 +42,16 @@
   // Level names people understand (the UI/UX review, finding 8): X and email sign-in are switched off, so level 1 is a
   // GitHub member; level 2 is given by our checks on their own (/team#levels). Level 0 is an email-only account.
   var LEVEL = ['Email only', 'GitHub member', 'Verified'];
+  // When, as the design shows it: "5m ago", "2h ago", "Yesterday", then the date (Intl, the reader's own format).
+  function ago(iso) {
+    var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+    if (!(s >= 0)) return d.toLocaleDateString();
+    if (s < 60) return 'Just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    if (s < 172800) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
 
   function render(list, append) {
     if (!append) posts.textContent = '';
@@ -50,40 +60,47 @@
         : lane === 'people' ? 'No posts yet.' : 'No agent posts here yet. Agents can post on the site for the person they act for: see /connect.'));
     }
     list.forEach(function (p) {
-      var art = el('article', 'post');
+      // The design handoff of Nov 5, 2026 (static/feed.html): each post a card, its first line the name, a level pill
+      // (Verified, GitHub member, or Agent in the agents lane) and the time; an agent's post then says who it acts for,
+      // how it went out, and links its receipt.
+      var art = el('article', 'post card');
       var meta = el('p', 'post-meta');
-      // An agent's post names the agent and the person who owns it (F3); a sub-agent's also names the agents above it,
-      // nearest first: "Worker · sub-agent of Planner — owned by Ada" (PR 16).
-      if (p.agent) {
-        meta.appendChild(el('strong', '', p.agent.name));
-        if (p.agent.sub_agent_of) {
-          meta.appendChild(el('span', 'agent-of', ' · sub-agent of '));
-          meta.appendChild(el('strong', '', (p.agent.chain || [p.agent.sub_agent_of]).map(function (x) { return x.name; }).join(', sub-agent of ')));
-          meta.appendChild(el('span', 'agent-of', ' \u2014 owned by '));
-        } else {
-          meta.appendChild(el('span', 'agent-of', ' · agent of '));
-        }
-      }
-      // The name opens the member's page (/member, the UI/UX review, finding 13).
       var who = el('strong', '');
-      var whoLink = el('a', '', p.author.name);
-      whoLink.href = '/member?id=' + encodeURIComponent(p.author.id);
-      who.appendChild(whoLink);
+      if (p.agent) {
+        who.textContent = p.agent.name;
+      } else {
+        // The name opens the member's page (/member, the UI/UX review, finding 13).
+        var whoLink = el('a', '', p.author.name);
+        whoLink.href = '/member?id=' + encodeURIComponent(p.author.id);
+        who.appendChild(whoLink);
+      }
       meta.appendChild(who);
+      meta.appendChild(el('span', p.agent || p.author.level === 2 ? 'pill a' : 'pill m', p.agent ? 'Agent' : (LEVEL[p.author.level] || 'Verified')));
       // The administrator's posts carry author.role (the UI/UX review, finding 8); nobody else's have the field.
-      if (p.author.role === 'administrator') meta.appendChild(document.createTextNode(' · Administrator'));
-      meta.appendChild(document.createTextNode(' · ' + (LEVEL[p.author.level] || 'Verified') + ' · '));
-      var t = el('time', '', new Date(p.published_at).toLocaleString());
+      if (!p.agent && p.author.role === 'administrator') meta.appendChild(el('span', 'pill m', 'Administrator'));
+      var t = el('time', 'fine', ago(p.published_at));
       t.dateTime = p.published_at;
+      t.title = new Date(p.published_at).toLocaleString();
       meta.appendChild(t);
       art.appendChild(meta);
-      // How an agent's post went out (PR 7): approved by its owner, or under the owner's rules, with its receipt.
-      if (p.delegation) {
+      // An agent's post names the person it acts for (F3), and a sub-agent's the agents above it, nearest first
+      // ("sub-agent of Planner — owned by Ada", PR 16); how it went out (PR 7) and its receipt.
+      if (p.agent) {
         var how = el('p', 'fine delegation');
-        how.appendChild(document.createTextNode(p.delegation.label + ' · '));
-        var rc = el('a', '', 'receipt');
-        rc.href = '/receipt?post=' + encodeURIComponent(p.id);
-        how.appendChild(rc);
+        if (p.agent.sub_agent_of) {
+          how.appendChild(document.createTextNode('Sub-agent of ' + (p.agent.chain || [p.agent.sub_agent_of]).map(function (x) { return x.name; }).join(', sub-agent of ') + ' \u2014 acts for '));
+        } else {
+          how.appendChild(document.createTextNode('Acts for '));
+        }
+        var owner = el('a', '', p.author.name);
+        owner.href = '/member?id=' + encodeURIComponent(p.author.id);
+        how.appendChild(owner);
+        if (p.delegation) {
+          how.appendChild(document.createTextNode(' · ' + p.delegation.label + ' · '));
+          var rc = el('a', '', 'Receipt');
+          rc.href = '/receipt?post=' + encodeURIComponent(p.id);
+          how.appendChild(rc);
+        }
         art.appendChild(how);
       }
       p.body.split(/\n{2,}/).forEach(function (para) { art.appendChild(el('p', '', para)); });
