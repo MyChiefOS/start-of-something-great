@@ -148,11 +148,13 @@ test('the menu\'s styles: one row, Join a 44 px amber pill on phones, Menu a 44 
   assert.match(css, /@supports selector\(::details-content\) \{\s*@media \(min-width: 48rem\) \{[\s\S]*?\.menu > summary, \.nav-group \{ display: none; \}[\s\S]*?\.menu::details-content \{ content-visibility: visible; \}/);
   // The logo, the colour tokens and the fonts are as they were (Aaron's limits for the review).
   assert.match(css, /\.wordmark \{\n  font-family: var\(--display\);\n  font-weight: 700;\n  font-size: 1\.05rem;\n  letter-spacing: -0\.01em;\n  text-decoration: none;\n  white-space: nowrap;\n\}/);
-  assert.match(css, /--ink: #0d0f14;\n  --text: #ece7dd;\n  --muted: #9a9ba5;\n  --rule: #23262e;\n  --amber: #f2a33a;\n  --glow: rgba\(242, 163, 58, 0\.18\);/);
-  assert.match(css, /--ink: #f6f7f9;\n    --text: #15171c;\n    --muted: #5b5e68;\n    --rule: #dcdee4;\n    --amber: #a65e00;\n    --glow: rgba\(242, 163, 58, 0\.22\);/);
+  // The one addition since: --rule-strong, a grey for form field borders at 3:1 (the design handoff of Nov 5,
+  // CODING_AGENT_SPEC.md 5.1; test/design-standard.test.js). The brand colours themselves are unchanged.
+  assert.match(css, /--ink: #0d0f14;\n  --text: #ece7dd;\n  --muted: #9a9ba5;\n  --rule: #23262e;\n(?:  \/\*[\s\S]*?\*\/\n)?  --rule-strong: #626160;\n  --amber: #f2a33a;\n  --glow: rgba\(242, 163, 58, 0\.18\);/);
+  assert.match(css, /--ink: #f6f7f9;\n    --text: #15171c;\n    --muted: #5b5e68;\n    --rule: #dcdee4;\n    --rule-strong: #8c8e91;\n    --amber: #a65e00;\n    --glow: rgba\(242, 163, 58, 0\.22\);/);
   const colours = [...new Set((css + read('app.css')).match(/#[0-9a-fA-F]{3,6}\b/g))].sort();
   assert.deepStrictEqual(colours, ['#0d0f14', '#15110a', '#15171c', '#23262e', '#5b5e68', '#7d211c', '#9a9ba5', '#a3302a', '#a65e00', '#c2413b', '#dcdee4',
-    '#e0574f', '#ece7dd', '#f1857f', '#f2a33a', '#f6f7f9', '#ffb0ab', '#ffffff'], 'no new colours');
+    '#e0574f', '#ece7dd', '#f1857f', '#f2a33a', '#f6f7f9', '#ffb0ab', '#ffffff', '#626160', '#8c8e91'].sort(), 'no new colours but --rule-strong\'s two');
 });
 
 test('every page with a menu loads nav.js, except the pages that run no script; nav.js writes text only, to our own paths', () => {

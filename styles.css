@@ -100,6 +100,9 @@
   --text: #ece7dd;
   --muted: #9a9ba5;
   --rule: #23262e;
+  /* Borders of form fields and other controls (WCAG 1.4.11 needs 3:1 against the page): 3.10:1 here, 3.06:1 in
+     light. --rule stays for decorative lines only (the design handoff of Nov 5, CODING_AGENT_SPEC.md 5.1). */
+  --rule-strong: #626160;
   --amber: #f2a33a;
   --glow: rgba(242, 163, 58, 0.18);
   --display: "Bricolage Grotesque", "Bricolage Fallback", "Helvetica Neue", Arial, sans-serif;
@@ -114,6 +117,7 @@
     --text: #15171c;
     --muted: #5b5e68;
     --rule: #dcdee4;
+    --rule-strong: #8c8e91;
     --amber: #a65e00;
     --glow: rgba(242, 163, 58, 0.22);
     color-scheme: light;
@@ -433,7 +437,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .email-signin label { font-family: var(--display); font-weight: 600; }
 .email-signin input {
   font: inherit; color: var(--text); background: transparent;
-  border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.65rem 0.8rem;
+  border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.65rem 0.8rem;
 }
 .email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }
