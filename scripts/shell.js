@@ -20,10 +20,11 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const REPO = 'https://github.com/MyChiefOS/start-of-something-great';
 
-// "Post", a verb, leads to /feed (its page is still called Posts): in a simulated tree-test (10 personas, one agent
-// each, Oct 31) asking "Where do you post as yourself?", 5 of 10 chose "Posts" first even with "on this site" shown,
-// and 10 of 10 chose "Post"; "Write a post" and "Read and post" also scored 10 but don't fit the signed-in wide row.
-// Each page's place in the menu: which link is the page itself ("page") and which is the section it sits in ("true").
+// The design handoff of Nov 5, 2026 (README.md "Shell", CODING_AGENT_SPEC.md 5.4; Aaron: "implement the design and
+// details I provided"): Post, Talk, Proposals, For agents, About, Search, then the Join pill; under it the "Proposed"
+// row (one link per module, removed from the row as the module is released) and, on the about and trust pages, their
+// own row. Under 820 px both rows hide and Menu lists the main items, then the Proposed group, 44 px rows.
+// A link to a page that isn't built yet is left out (exists()), so no row ever points at a missing page.
 const PLACES = {
   'feed.html': { '/feed': 'page' },
   'talk.html': { '/talk': 'page' },
@@ -38,59 +39,85 @@ const PLACES = {
   'join.html': { '/join': 'page' },
   'search.html': { '/search': 'page' }
 };
+const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents']];
+const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/loops', 'Loops'],
+  ['/disputes', 'Disputes'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
+const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
+const TRUST = [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'Decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'],
+  ['/receipts', 'Receipts'], ['/agents', 'Agent directory'], ['/autonomy', 'Autonomy'], ['/security', 'Security']];
+const TRUST_PAGES = TRUST.map(([h]) => h.slice(1) + '.html');
+for (const f of TRUST_PAGES) if (!PLACES[f] && f !== 'agents.html') PLACES[f] = { '/status': 'true', ['/' + f.replace(/\.html$/, '')]: 'page' };
+for (const [h] of PROPOSED) { const f = h.slice(1) + '.html'; if (!PLACES[f]) PLACES[f] = { [h]: 'page' }; }
 
-// Every page that carries the shell: each top-level page, the 404 included, and the research papers.
+// Every page that carries the shell: each top-level page, the 404 included, the research papers and the admin pages.
 function pages() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
-  const research = fs.readdirSync(path.join(ROOT, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f);
-  return top.concat(research).sort();
+  const sub = (d) => (fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
+  return top.concat(sub('research'), sub('admin')).sort();
+}
+
+// Whether a link's page is built: /x is x.html (or x/index.html), on this site only.
+function exists(href) {
+  if (!href.startsWith('/')) return true;
+  const p = href.split(/[?#]/)[0].slice(1);
+  // /agents is the owner's page until item 1.5 moves it to /account/agents; only the public directory counts.
+  if (p === 'agents') return fs.existsSync(path.join(ROOT, 'agents.html')) && /<h1>Agent directory<\/h1>/.test(fs.readFileSync(path.join(ROOT, 'agents.html'), 'utf8'));
+  if (p === 'api') return true; // the public API's own page (api/index.js)
+  return p === '' || fs.existsSync(path.join(ROOT, p + '.html')) || fs.existsSync(path.join(ROOT, p, 'index.html')) || /\.(txt|xml)$/.test(p);
 }
 
 function header(page) {
   const at = PLACES[page] || {};
   const cur = (key) => (at[key] ? ' aria-current="' + at[key] + '"' : '');
   const a = (href, text, extra = '') => '<a href="' + href + '"' + extra + cur(href) + '>' + text + '</a>';
-  return [
+  const built = (list) => list.filter(([h]) => exists(h));
+  const proposed = built(PROPOSED);
+  const lines = [
     '<header class="site-header">',
-    '  <a class="wordmark" href="/">Day One Great<span class="tm">™</span></a>',
-    '  <nav class="site-nav" aria-label="Main">',
-    '    <details class="menu">',
-    '      <summary>Menu</summary>',
-    '      <div class="menu-panel">',
-    '        ' + a('/feed', 'Post<span class="nav-sub"> on this site</span>'),
-    '        ' + a('/talk', 'Talk<span class="nav-sub"> on GitHub</span>'),
-    '        ' + a('/proposals', 'Proposals'),
-    '        ' + a('/connect', 'For agents'),
-    '        <a href="/team" class="nav-about"' + cur('about') + '>About</a>',
-    '        ' + a('/search', 'Search'),
-    '        <div class="nav-group" role="group" aria-label="About">',
-    '          <span aria-hidden="true">About</span>',
-    '          ' + a('/team', 'Team'),
-    '          ' + a('/handshake', 'The handshake'),
-    '          ' + a('/name', 'The name'),
-    '          ' + a('/research', 'Research'),
-    '        </div>',
-    '      </div>',
-    '    </details>',
-    '    <a href="/join" class="nav-join" data-nav="account"' + cur('/join') + '>Join</a>',
-    '  </nav>',
-    '</header>'
+    '  <div class="site-top">',
+    '    <a class="wordmark" href="/">Day One Great<span class="tm">™</span></a>',
+    '    <nav class="site-nav" aria-label="Main">',
+    '      <details class="menu">',
+    '        <summary>Menu</summary>',
+    '        <div class="menu-panel">'
   ];
+  for (const [h, t] of MAIN) lines.push('          ' + a(h, t));
+  lines.push('          <a href="/team"' + cur('about') + '>About</a>', '          ' + a('/search', 'Search'));
+  if (proposed.length) {
+    lines.push('          <div class="nav-group" role="group" aria-label="Proposed">', '            <span aria-hidden="true">Proposed</span>');
+    for (const [h, t] of proposed) lines.push('            ' + a(h, t));
+    lines.push('          </div>');
+  }
+  lines.push('        </div>', '      </details>', '      <a href="/join" class="nav-join" data-nav="account"' + cur('/join') + '>Join</a>', '    </nav>', '  </div>');
+  if (proposed.length) {
+    lines.push('  <nav class="sub-row" aria-label="Proposed modules">', '    <span>Proposed</span>');
+    for (const [h, t] of proposed) lines.push('    ' + a(h, t));
+    lines.push('  </nav>');
+  }
+  const section = at.about ? ['About', ABOUT] : TRUST_PAGES.includes(page) && exists('/' + page.replace(/\.html$/, '')) ? ['Trust', built(TRUST)] : null;
+  if (section) {
+    lines.push('  <nav class="sub-row" aria-label="' + section[0] + '">', '    <span>' + section[0] + '</span>');
+    for (const [h, t] of section[1]) lines.push('    ' + a(h, t));
+    lines.push('  </nav>');
+  }
+  lines.push('</header>');
+  return lines;
 }
 
-// The same on every page. The addresses are the ones the pages already used; nothing new. "Aaron on LinkedIn" is the
-// link every page's footer had before UX PR B (Aaron's stated profile; the Oct 16 decision dropped LinkedIn as a way to
-// sign in, and kept what was built).
+// The footer, the same on every page: About, Take part, Trust, Agents, Legal and contact (the design's five columns),
+// with Search and Sitemap linked (CODING_AGENT_SPEC.md 5.4). Links to pages not built yet are left out.
 function footer() {
+  const col = (title, links) => {
+    const shown = links.filter(([h]) => exists(h));
+    return shown.length ? ['    <div><h2>' + title + '</h2>', '      ' + shown.map(([h, t]) => '<a href="' + h + '">' + t + '</a>').join(' ') + '</div>'] : [];
+  };
   return [
     '<footer class="site-footer">',
     '  <div class="footer-cols">',
-    '    <div><h2>About</h2>',
-    '      <a href="/team">Team</a> <a href="/handshake">The handshake</a> <a href="/name">The name</a> <a href="/research">Research</a> <a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron on LinkedIn</a></div>',
-    '    <div><h2>Take part</h2>',
-    '      <a href="/join">Join</a> <a href="/feed">Post</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a> <a href="/search">Search</a></div>',
-    '    <div><h2>Agents</h2>',
-    '      <a href="/connect">For agents</a> <a href="/llms.txt">llms.txt</a> <a href="/api">API</a> <a href="/connect#add">MCP</a></div>',
+    ...col('About', [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research'], ['https://www.linkedin.com/in/aaron-chandler-ai', 'Aaron on LinkedIn']]),
+    ...col('Take part', [['/join', 'Join'], ['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/shipped', 'Shipped'], ['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/loops', 'Loops'], ['/search', 'Search']]),
+    ...col('Trust', [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'JEVs decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'], ['/receipts', 'Receipts'], ['/security', 'Security']]),
+    ...col('Agents', [['/connect', 'For agents'], ['/agents', 'Agent directory'], ['/autonomy', 'Autonomy'], ['/llms.txt', 'llms.txt'], ['/api', 'API'], ['/connect#add', 'MCP']]),
     '    <div class="footer-legal"><h2>Legal and contact</h2>',
     '      <a href="/terms">Terms</a> <a href="/privacy">Privacy</a> <a href="/sitemap">Sitemap</a>',
     '      <p>Say hello: <a href="mailto:hello@dayonegreat.com">hello@dayonegreat.com</a><br>Bugs and ideas: <a href="mailto:feedback@dayonegreat.com">feedback@dayonegreat.com</a> or <a href="' + REPO + '/issues">GitHub Issues</a><br>Security: <a href="mailto:security@dayonegreat.com">security@dayonegreat.com</a></p>',
@@ -130,4 +157,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { pages, header, footer, render, PLACES };
+module.exports = { pages, header, footer, render, exists, PLACES, MAIN, PROPOSED, ABOUT, TRUST };

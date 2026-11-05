@@ -90,36 +90,37 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'shell.js'), '--check'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   // Only the current-page marks differ: with them taken out, every header is the same, and every footer is identical.
-  const headers = new Set(shell.pages().map((f) => read(f).match(/<header class="site-header">[\s\S]*?<\/header>/)[0].replace(/ aria-current="(page|true)"/g, '')));
+  // The design handoff (Nov 5): the about and trust pages add their own row under the header; the rest is one header.
+  const headers = new Set(shell.pages().map((f) => read(f).match(/<header class="site-header">[\s\S]*?<\/header>/)[0].replace(/ aria-current="(page|true)"/g, '')
+    .replace(/\n *<nav class="sub-row" aria-label="(About|Trust)">[\s\S]*?<\/nav>/, '')));
   assert.strictEqual(headers.size, 1, 'one header');
   const footers = new Set(shell.pages().map((f) => read(f).match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0]));
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
-test('the menu: Post, Talk, Proposals, For agents, then About, Search, then Join as a pill; the About group in the Menu panel', () => {
+test('the menu (the design handoff of Nov 5, 2026, README "Shell"): Post, Talk, Proposals, For agents, About, Search, then Join as a pill', () => {
   for (const f of navPages) {
     const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
-    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About', '/search Search',
-      '/team Team', '/handshake The handshake', '/name The name', '/research Research', '/join Join'], f);
-    // Labels say the difference: you post on this site, Talk is on GitHub (finding 3). "Post", a verb: in a simulated
-    // tree-test (Oct 31; 10 personas, one agent each) 5 of 10 picked "Posts" first to post as themselves, 10 of 10 "Post".
-    assert.match(nav, /<a href="\/feed"[^>]*>Post<span class="nav-sub"> on this site<\/span><\/a>/, f);
-    assert.match(nav, /<a href="\/talk"[^>]*>Talk<span class="nav-sub"> on GitHub<\/span><\/a>/, f);
+    const proposed = shell.PROPOSED.filter(([h]) => shell.exists(h)).map(([h, t]) => h + ' ' + t);
+    assert.deepStrictEqual(links, ['/feed Post', '/talk Talk', '/proposals Proposals', '/connect For agents', '/team About', '/search Search', ...proposed, '/join Join'], f);
     // On phones: the wordmark, Menu, a <details> holding every other link (all of them stay in the HTML), then Join, in
-    // the same order on screen as in the Tab order (the design review: Join was moved first on screen with order: -1).
+    // the same order on screen as in the Tab order.
     assert.match(nav, /^<nav class="site-nav" aria-label="Main">\s*<details class="menu">\s*<summary>Menu<\/summary>\s*<div class="menu-panel">/, f);
     assert.match(nav, /<\/details>\s*<a href="\/join" class="nav-join" data-nav="account"( aria-current="page")?>Join<\/a>\s*<\/nav>$/, f);
-    // Search (the design handoff of Nov 5, 2026, 5.4) sits after About on wide screens and before the About group on phones.
-    assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<a href="\/search"( aria-current="page")?>Search<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
-    // At most one current mark among the links shown on a wide screen, and one among those in the phone panel.
-    const wide = nav.replace(/<div class="nav-group"[\s\S]*?<\/div>/, '');
-    const phone = nav.replace(/<a href="\/team" class="nav-about"[^>]*>About<\/a>/, '');
-    for (const part of [wide, phone]) assert.ok((part.match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark');
+    assert.ok((nav.match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the menu');
   }
-  assert.match(read('team.html'), /<a href="\/team" class="nav-about" aria-current="page">About<\/a>/);
-  assert.match(read('handshake.html'), /class="nav-about" aria-current="true">About<\/a>[\s\S]*<a href="\/handshake" aria-current="page">The handshake<\/a>/);
+  assert.match(read('team.html'), /<a href="\/team" aria-current="page">About<\/a>/);
+  // The about pages carry the About row: Team, The handshake, The name, Research.
+  for (const f of ['team.html', 'handshake.html', 'name.html', 'research.html', 'research/decision-loop.html']) {
+    const row = read(f).match(/<nav class="sub-row" aria-label="About">[\s\S]*?<\/nav>/);
+    assert.ok(row, f + ' has the About row');
+    assert.deepStrictEqual([...row[0].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]), ['/team', '/handshake', '/name', '/research'], f);
+  }
+  assert.match(read('handshake.html'), /<a href="\/team" aria-current="true">About<\/a>[\s\S]*<a href="\/handshake" aria-current="page">The handshake<\/a>/);
   assert.match(read('shipped.html'), /<a href="\/proposals" aria-current="true">Proposals<\/a>/);
+  // No link in the shell points at a page that isn't built.
+  for (const f of shell.pages()) for (const m of read(f).match(/<header class="site-header">[\s\S]*?<\/header>|<footer class="site-footer">[\s\S]*?<\/footer>/g).join('').matchAll(/href="(\/[^"#?]*)/g)) assert.ok(shell.exists(m[1]), f + ' links ' + m[1]);
   assert.ok(!/<script/.test(read('scripts/shell.js').replace(/^\/\/.*$/gm, '')), 'the shell adds no script: script-src \'self\' and the no-script pages hold');
 });
 
@@ -134,19 +135,16 @@ test('the menu\'s styles: one row, Join a 44 px amber pill on phones, Menu a 44 
   assert.match(css, /@media \(prefers-color-scheme: light\) \{ \.site-nav a\.nav-join, \.site-nav a\.nav-join:hover \{ color: #ffffff; \} \.site-nav a\.nav-join:hover \{ filter: none; background: color-mix\(in srgb, var\(--amber\) 85%, #15110a\); \} \}/);
   // Narrow phones, signed in: a tighter row, so Account (n) fits beside Menu at 320 and 360 px (scripts/check-shell.js
   // measures it). Signed out, Join keeps its pill shape and spacing: there is room.
-  assert.match(css, /@media \(max-width: 24rem\) \{ \.site-header, \.site-nav:has\(\[href\^="\/account"\]\) \{ column-gap: 0\.25rem; \} \.site-nav a\.nav-join\[href\^="\/account"\] \{ padding: 0 0\.5rem; font-size: 0\.875rem; \} \.site-nav:has\(\[href\^="\/account"\]\) \.menu > summary \{ gap: 0\.25rem; padding: 0; \} \}/);
-  assert.ok(css.indexOf('@media (max-width: 24rem) { .site-header') > css.indexOf('.menu > summary {'), 'after the rules it narrows');
-  // Wide screens: "on this site" and "on GitHub" show to sighted people too, as a small second line (no longer clipped
-  // for screen readers only), clear of the next note (scripts/check-shell.js measures it).
+  assert.match(css, /@media \(max-width: 24rem\) \{ \.site-top, \.site-nav:has\(\[href\^="\/account"\]\) \{ column-gap: 0\.25rem; \} \.site-nav a\.nav-join\[href\^="\/account"\] \{ padding: 0 0\.5rem; font-size: 0\.875rem; \} \.site-nav:has\(\[href\^="\/account"\]\) \.menu > summary \{ gap: 0\.25rem; padding: 0; \} \}/);
+  assert.ok(css.indexOf('@media (max-width: 24rem) { .site-top') > css.indexOf('.menu > summary {'), 'after the rules it narrows');
+  // From 820 px (the design): the links sit in the row, and the Proposed and section rows show under it.
   const wide = css.slice(css.indexOf('@supports selector(::details-content)'), css.indexOf('/* Hero'));
-  assert.match(wide, /\.nav-sub \{ position: absolute; left: 0; top: 100%; margin: 0; font-size: 0\.72rem; line-height: 1; white-space: nowrap; \}/);
-  // Only a noted link followed by another (Post, then Talk) is widened, so the signed-in row still fits at 1280 px.
-  assert.match(wide, /\.site-nav \.menu-panel a:has\(\.nav-sub\):has\(\+ a \.nav-sub\) \{ min-width: 3\.75rem; \}/);
+  assert.match(wide, /@media \(min-width: 51\.25rem\) \{\s*\.sub-row \{ display: flex; \}/);
   assert.ok(!/clip-path/.test(wide), 'not hidden from sight');
   assert.match(css, /\.menu > summary \{[^}]*min-height: 44px;/);
   assert.match(css, /\.menu > summary:focus-visible \{ outline: 2px solid var\(--amber\);/, 'Menu shows focus');
   // Without ::details-content (older browsers) Menu stays at every width, so no screen loses the links.
-  assert.match(css, /@supports selector\(::details-content\) \{\s*@media \(min-width: 48rem\) \{[\s\S]*?\.menu > summary, \.nav-group \{ display: none; \}[\s\S]*?\.menu::details-content \{ content-visibility: visible; \}/);
+  assert.match(css, /@supports selector\(::details-content\) \{\s*@media \(min-width: 51\.25rem\) \{[\s\S]*?\.menu > summary, \.nav-group \{ display: none; \}[\s\S]*?\.menu::details-content \{ content-visibility: visible; \}/);
   // The logo, the colour tokens and the fonts are as they were (Aaron's limits for the review).
   assert.match(css, /\.wordmark \{\n  font-family: var\(--display\);\n  font-weight: 700;\n  font-size: 1\.05rem;\n  letter-spacing: -0\.01em;\n  text-decoration: none;\n  white-space: nowrap;\n\}/);
   // The one addition since: --rule-strong, a grey for form field borders at 3:1 (the design handoff of Nov 5,

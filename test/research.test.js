@@ -23,12 +23,13 @@ test('research pages are in the sitemap, the site search and llms.txt', () => {
   assert.ok(read('llms.txt').includes('https://dayonegreat.com/research/decision-loop'));
 });
 
-test('every page links to Research in its main navigation', () => {
+// The design handoff of Nov 5 (README "Shell"): Research sits in the About row on the about pages and in every footer.
+test('every page links to Research in its shell (the About row or the footer)', () => {
   const files = fs.readdirSync(root).filter((f) => f.endsWith('.html') && f !== '404.html')
     .concat(fs.readdirSync(path.join(root, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f));
   for (const f of files) {
-    const nav = (read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/) || [''])[0];
-    assert.ok(nav.includes('href="/research"'), f + ' has no Research link in its navigation');
+    const shell = (read(f).match(/<header class="site-header">[\s\S]*?<\/header>|<footer class="site-footer">[\s\S]*?<\/footer>/g) || []).join('');
+    assert.ok(shell.includes('href="/research"'), f + ' has no Research link in its shell');
   }
 });
 
