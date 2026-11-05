@@ -132,7 +132,7 @@ test('/sitemap lists every page that has an address of its own, and the footer r
   const linked = new Set([...map.matchAll(/<a href="([^"#]+)"/g)].map((m) => m[1]));
   const shell = require('../scripts/shell');
   // Pages reached only with an ID (a member, a receipt) open from a post; the 404 has no address of its own.
-  const byId = ['member.html', 'receipt.html', '404.html', 'sitemap.html'];
+  const byId = ['member.html', 'receipt.html', 'agent.html', '404.html', 'sitemap.html'];
   for (const f of shell.pages().filter((x) => !byId.includes(x))) {
     const addr = f === 'index.html' ? '/' : '/' + f.replace(/\.html$/, '');
     assert.ok(linked.has(addr), 'the sitemap links ' + addr);

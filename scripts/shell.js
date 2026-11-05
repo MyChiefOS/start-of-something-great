@@ -53,7 +53,7 @@ for (const [h] of PROPOSED) { const f = h.slice(1) + '.html'; if (!PLACES[f]) PL
 function pages() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
   const sub = (d) => (fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
-  return top.concat(sub('research'), sub('admin')).sort();
+  return top.concat(sub('research'), sub('admin'), sub('account')).sort();
 }
 
 // Whether a link's page is built: /x is x.html (or x/index.html), on this site only.

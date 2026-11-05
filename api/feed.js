@@ -288,7 +288,7 @@ async function agentPost(req, res, run) {
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
     if (out.drafted) {
       return say(202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
-        message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/agents' + '; it expires in 48 hours if they don\u2019t. '
+        message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/account/agents' + '; it expires in 48 hours if they don\u2019t. '
           + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents. '
           // What became of it, from the agent's side (the UI/UX review, item 15).
           + 'To see what became of it: GET ' + ORIGIN + '/api/agents/drafts?draft=' + out.drafted.id + ' with your key.' });
@@ -389,7 +389,7 @@ async function answerChallenge(req, res, run, who, body) {
     if (out.refused === 'expired') return reply(res, 410, { error: 'That challenge expired. Please do it again.' });
     if (out.refused === 'fresh') {
       return reply(res, 403, { error: 'To confirm this, sign in again, then do it once more: it goes ahead straight away, and this request is answered too.',
-        reauth: '/join?return_to=%2Fagents' });
+        reauth: '/join?return_to=%2Faccount%2Fagents' });
     }
     return reply(res, 200, { challenge: body.challenge, status: out.status,
       message: out.status === 'confirmed' ? 'Confirmed. If it was a post, it\u2019s live now.' : 'Withdrawn. If it was a post, it won\u2019t be published.' });

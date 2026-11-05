@@ -526,7 +526,7 @@ test('sensitive actions at medium risk ask the owner to sign in again (the chall
     const waiting = await agentsApi('POST', '', { cookie: owner.cookie, json: { name: 'Helper 11', post: 'draft' } });
     assert.strictEqual(waiting.status, 403);
     assert.match(waiting.json.error, /sign in again/);
-    assert.strictEqual(waiting.json.reauth, '/join?return_to=%2Fagents');
+    assert.strictEqual(waiting.json.reauth, '/join?return_to=%2Faccount%2Fagents');
     const [pending] = await q(`select status, action from app.jevs_challenges where id = '${waiting.json.challenge}'`);
     assert.deepStrictEqual(pending, { status: 'pending', action: 'agent.create' });
     assert.strictEqual((await q(`select count(*)::int as n from app.agents where owner_id = '${owner.id}'`))[0].n, 11, 'the twelfth wasn\'t made');

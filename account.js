@@ -215,7 +215,8 @@
       if (tap) card.appendChild(tap);
       var row = el('p', 'fine');
       // Links are paths on this site only (the database refuses anything else); checked again here before use.
-      if (n.link && /^\/(?!\/)/.test(n.link)) { var a = el('a', '', 'Open'); a.href = n.link; row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
+      // Notices written before Nov 5 link to /agents, now the public agent list; an owner's agents page is /account/agents.
+      if (n.link && /^\/(?!\/)/.test(n.link)) { var a = el('a', '', 'Open'); a.href = n.link.replace(/^\/agents(?=$|[#?])/, '/account/agents'); row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
       if (!n.read) {
         row.appendChild(button('Mark read', '', function (b) {
           postJson('/api/notify/read', { ids: [n.id] }).then(function (x) { if (x.ok) loadNotices(); else b.disabled = false; });

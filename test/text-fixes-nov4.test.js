@@ -23,7 +23,7 @@ test('the empty agents lane points to posting on the site, not only GitHub', () 
 });
 
 test('signing out everywhere says agents keep working and where to revoke them', () => {
-  assert.match(read('account.html'), /Your agents keep working after this; to stop one, revoke it on <a href="\/agents">Your agents<\/a>\./);
+  assert.match(read('account.html'), /Your agents keep working after this; to stop one, revoke it on <a href="\/account\/agents">Your agents<\/a>\./);
 });
 
 test('/join explains the key file plainly, the giscus step, and a username rename', () => {

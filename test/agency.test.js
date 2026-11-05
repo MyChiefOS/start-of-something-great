@@ -24,7 +24,7 @@ const ORIGIN = 'https://dayonegreat.com';
 const CFG = { ipKey: crypto.randomBytes(32) };
 
 test('the agents page shows each draft in full and approves by hashing the very text it showed', () => {
-  const js = fs.readFileSync(path.join(root, 'agents.js'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'account/agents.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function/.test(js));
   assert.match(js, /crypto\.subtle\.digest\('SHA-256'/, 'the page hashes what it shows');
   assert.match(js, /body\.textContent = d\.body/, 'the whole text, as text');
@@ -165,7 +165,7 @@ test('R17: letting an agent act alone, or raising its cap, needs a sign-in in th
   const owner = await member(2, 'Signed in long ago', { stale: true });
   const a = await newAgent(owner);
   const raise = await rules(owner, a, { post: 'act' });
-  assert.deepStrictEqual([raise.status, raise.json.reauth], [403, '/join?return_to=%2Fagents']);
+  assert.deepStrictEqual([raise.status, raise.json.reauth], [403, '/join?return_to=%2Faccount%2Fagents']);
   assert.strictEqual((await rules(owner, a, { daily_cap: 50 })).status, 403, 'a bigger cap is more autonomy too');
   assert.strictEqual((await rules(owner, a, { post: 'off', daily_cap: 5 })).status, 201, 'lowering is always allowed');
   // The database holds the line even if the site forgets: an owner call without the fresh flag can't raise.
@@ -179,7 +179,7 @@ test('R17: letting an agent act alone, or raising its cap, needs a sign-in in th
   await rules(fresh, acting, { post: 'act' });
   await q(`update app.sessions set created_at = now() - interval '1 hour' where member_id = '${fresh.id}'`);
   const minted = await api(req('POST', 'key', { cookie: fresh.cookie, origin: ORIGIN, json: { agent: acting.id } }));
-  assert.deepStrictEqual([minted.status, minted.json.reauth], [403, '/join?return_to=%2Fagents']);
+  assert.deepStrictEqual([minted.status, minted.json.reauth], [403, '/join?return_to=%2Faccount%2Fagents']);
   assert.strictEqual((await say(acting.key, 'the old key still works; nothing was rotated')).status, 201);
   await assert.rejects(run(fresh.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${acting.id}, ${c.sha256hex('sneaky')})`), /fresh_sign_in/);
   // Versions are only ever added.
@@ -458,13 +458,13 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   // An owner who signed in long ago: added, drafting, and told how to let it act (R17 unchanged).
   const stale = await member(2, 'Long-ago owner', { stale: true });
   const later = await add(stale, { name: 'Waits for a fresh sign in' });
-  assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Fagents', 'draft']);
+  assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Faccount%2Fagents', 'draft']);
   assert.match(later.json.note, /To let it post on its own, sign in again \(within 10 minutes\), then choose "Acts on its own" for it here\./);
   // Claiming a self-registered agent: the preview says whether it can act at once; the claim makes it act.
   const reg = async (name) => (await api(req('POST', 'register', { json: { name } }))).json.claim_url.split('#claim=')[1];
   const code = await reg('Registered itself');
   const look = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code, preview: true } }));
-  assert.deepStrictEqual([look.json.fresh, look.json.reauth], [true, '/join?return_to=%2Fagents']);
+  assert.deepStrictEqual([look.json.fresh, look.json.reauth], [true, '/join?return_to=%2Faccount%2Fagents']);
   assert.strictEqual((await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code, preview: true } }))).json.fresh, false);
   const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }));
   assert.deepStrictEqual([claimed.status, claimed.json.claimed, claimed.json.acting, claimed.json.rules.post], [200, true, true, 'act']);
@@ -473,7 +473,7 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   assert.deepStrictEqual([drafting.json.claimed, drafting.json.acting], [true, false]);
   const code3 = await reg('Claimed long after signing in');
   const staleClaim = await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code: code3 } }));
-  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, false, '/join?return_to=%2Fagents']);
+  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, false, '/join?return_to=%2Faccount%2Fagents']);
 });
 
 test('item 19 with JEVs enforcing, as at go-live: a stale owner meets the challenge and gets the sign-in link; a paused owner\'s agent drafts', async () => {
@@ -486,7 +486,7 @@ test('item 19 with JEVs enforcing, as at go-live: a stale owner meets the challe
     // gives the same sign-in link (the fresh review of group 4, finding 3).
     const stale = await member(2, 'Enforced stale owner', { stale: true });
     const later = await add(stale, { name: 'Enforced, waits for sign in' });
-    assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Fagents', 'draft']);
+    assert.deepStrictEqual([later.status, later.json.acting, later.json.reauth, (await meOf(later.json.key)).post], [201, false, '/join?return_to=%2Faccount%2Fagents', 'draft']);
     assert.match(later.json.note, /sign in again \(within 10 minutes\)/);
     // Fresh: the sign-in answers the challenge, and it acts.
     const fresh = await member(2, 'Enforced fresh owner');

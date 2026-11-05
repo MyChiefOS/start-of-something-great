@@ -33,7 +33,7 @@ const SHOTS = arg('--shots');
 const CHECKS = !process.argv.includes('--no-checks');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
   '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.txt': 'text/plain', '.json': 'application/json' };
-const PAGES = ['/feed', '/agents', '/account', '/review', '/controls'];
+const PAGES = ['/feed', '/account/agents', '/account', '/review', '/controls'];
 
 const OWN_POLICY = ['/talk', '/join', '/account'];
 const DEFAULT_POLICY = '/((?!talk/?$|join/?$|account/?$|auth/).*)';
@@ -118,7 +118,7 @@ async function context(browser, base, { width, height, scheme, who, queue = QUEU
     if (out) {
       if (u.searchParams.has('controls')) return json(r, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
       if (u.searchParams.has('queue')) return json(r, 401, { error: 'Sign in to review.', join: '/join' });
-      if (u.pathname.startsWith('/api/agents')) return json(r, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Fagents' });
+      if (u.pathname.startsWith('/api/agents')) return json(r, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Faccount%2Fagents' });
       return json(r, 401, { error: 'Sign in to see your notices.', join: '/join?return_to=%2Faccount' });
     }
     if (u.searchParams.has('controls')) return json(r, 200, CONTROLS('shadow'));
@@ -201,7 +201,7 @@ async function main() {
               }
               if (await p.locator('.report-form').count()) fail(where, 'a report form opened');
             }
-            if (url === '/agents') {
+            if (url === '/account/agents') {
               const a = await p.evaluate(() => {
                 const d = document.querySelector('details.agent-rules');
                 return { lines: [...document.querySelectorAll('#agents-intro li')].filter((x) => x.checkVisibility()).length, open: d && d.open,

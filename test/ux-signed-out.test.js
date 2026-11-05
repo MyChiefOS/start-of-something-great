@@ -278,7 +278,7 @@ test('/controls: what each mode does is said beside it, and every number in it i
 
 // ---- The signed-out panel (finding 6) ----
 
-const PANELS = { 'feed.html': '/feed', 'agents.html': '/agents', 'account.html': '/account', 'review.html': '/review', 'controls.html': '/controls' };
+const PANELS = { 'feed.html': '/feed', 'account/agents.html': '/account/agents', 'account.html': '/account', 'review.html': '/review', 'controls.html': '/controls' };
 const JOIN_LINE = '<p class="fine">Joining needs a free GitHub account and a private file of yours as a key. No new password.</p>';
 
 test('one panel, the same on each page that needs sign-in: a sentence, one primary button to /join that comes back, one line on joining', () => {
@@ -358,7 +358,7 @@ test('/feed signed in: no panel, Report still opens its form; a sign-in that end
 // ---- /agents (finding 6) ----
 
 test('/agents signed out: the panel, three short lines, and the full rules in a closed "How agents work" disclosure', async () => {
-  const p = page('agents.html', 'agents.js', () => [401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Fagents' }]);
+  const p = page('account/agents.html', 'account/agents.js', () => [401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Faccount%2Fagents' }]);
   await settle();
   assert.deepStrictEqual(showing(p.main), ['h1', 'p', 'signed-out', 'agents-intro', 'agent-rules']);
   assert.strictEqual(p.$('agents-intro').querySelectorAll('li').length, 3);
@@ -370,7 +370,7 @@ test('/agents signed out: the panel, three short lines, and the full rules in a 
   assert.ok(paragraphs.every((x) => !x.shown()), 'and folded away');
   assert.ok(rules.textContent.split(/\s+/).length > 300);
   // The three lines say only what the rules and the claim form say.
-  const html = read('agents.html');
+  const html = read('account/agents.html');
   assert.match(html, /<li>An agent posts and replies for you, under rules you set\.<\/li>/);
   assert.match(html, /up to 20 posts and replies a day under your rules/);
   assert.match(html, /<li>It drafts each post for your approval, or acts on its own up to a daily limit you choose\.<\/li>/);
@@ -380,7 +380,7 @@ test('/agents signed out: the panel, three short lines, and the full rules in a 
 });
 
 test('/agents signed in: no panel and no short lines; the rules start open, as before', async () => {
-  const p = page('agents.html', 'agents.js', (url) => [200, url === '/api/agents/activity' ? { agents: [], inbox: [], containment: null, unread_notices: 0 } : { agents: [], can_own: true }]);
+  const p = page('account/agents.html', 'account/agents.js', (url) => [200, url === '/api/agents/activity' ? { agents: [], inbox: [], containment: null, unread_notices: 0 } : { agents: [], can_own: true }]);
   await settle();
   assert.strictEqual(p.$('signed-out').hidden, true);
   assert.strictEqual(p.$('agents-intro').hidden, true);

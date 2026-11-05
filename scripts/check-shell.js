@@ -38,7 +38,8 @@ const SHOT_PAGES = [['home', '/'], ['feed', '/feed'], ['talk', '/talk'], ['team'
 function addresses() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && f !== '404.html').map((f) => (f === 'index.html' ? '/' : '/' + f.replace(/\.html$/, '')));
   const research = fs.readdirSync(path.join(ROOT, 'research')).filter((f) => f.endsWith('.html')).map((f) => '/research/' + f.replace(/\.html$/, ''));
-  return top.concat(research, ['/no-such-page']);
+  const account = fs.readdirSync(path.join(ROOT, 'account')).filter((f) => f.endsWith('.html')).map((f) => '/account/' + f.replace(/\.html$/, ''));
+  return top.concat(research, account, ['/no-such-page']);
 }
 
 // The security policy Vercel sends for a page: /talk, /join and /account have their own rule in vercel.json, and every

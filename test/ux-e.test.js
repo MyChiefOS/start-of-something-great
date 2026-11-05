@@ -26,7 +26,7 @@ test('finding 7: /feed announces a short line when posts load and the count only
 test('finding 8: names show "GitHub member" or "Verified", never "GitHub or X" (X sign-in is off), with what the levels mean', () => {
   const js = read('feed.js');
   assert.match(js, /var LEVEL = \['Email only', 'GitHub member', 'Verified'\];/);
-  for (const f of ['feed.js', 'feed.html', 'receipt.js', 'agents.js', 'agents.html', 'team.html', 'account.js']) assert.ok(!/GitHub or X/.test(read(f)), f);
+  for (const f of ['feed.js', 'feed.html', 'receipt.js', 'account/agents.js', 'account/agents.html', 'team.html', 'account.js']) assert.ok(!/GitHub or X/.test(read(f)), f);
   assert.match(read('feed.html'), /<a href="\/team#levels">What the levels mean<\/a>/);
   // Phase 1 signs in with GitHub only: code sign-in makes a GitHub identity at level 1 (023's code_sign_in).
   assert.match(read('db/migrations/023_code_signin.sql'), /app\.sign_in\('github', array\[c\.fingerprint\], 1::smallint, 1::smallint/);
@@ -55,11 +55,11 @@ test('finding 9 and /team#levels: the way to level 2, in words the code backs', 
   // "A verified member can also own AI agents."
   assert.match(read('api/agents.js'), /can_own: who\.trustLevel >= 2 \|\| who\.isAdmin === true/);
   // /agents: the claim's way forward, and the link's 24 hours from registering (005).
-  const agents = read('agents.js');
+  const agents = read('account/agents.js');
   // Most GitHub members are verified at their first sign-in (J01 at most 25, J02 10 for GitHub, J13 0 or 10); the
   // way offered is signing in again, never a filler post (PR E's review, finding 1).
   assert.match(agents, /Our checks usually verify a GitHub account at its first sign-in; yours isn\\u2019t verified yet\. They look again each time you sign in, and nobody has to approve it\. This link works for 24 hours from when your agent registered\./);
-  assert.match(agents, /again\.href = '\/join\?return_to=%2Fagents';/);
+  assert.match(agents, /again\.href = '\/join\?return_to=%2Faccount%2Fagents';/);
   assert.match(agents, /why\.href = '\/team#levels';/);
   assert.match(read('db/jevs.js'), /num\(s\.best_identity\) === 1 \? \(num\(s\.providers\) >= 2 \? 0 : 10\)/);
   // "unless an administrator has set the account's level by hand" (032: a hand-set level stops the promotion).

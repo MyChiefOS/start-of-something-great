@@ -1,0 +1,386 @@
+// /agents: an owner's agents (PR 5). Claim one from its link (the code is after "#", so it never reaches our server
+// until the owner presses Claim), add one, make a new key, revoke. Names are shown with textContent only.
+// PR 7: each agent's rules (off / draft / act and a daily limit), the inbox of drafts with one-tap Approve and
+// Decline, and what each agent did. Approving sends the SHA-256 of the very text shown on this page.
+// PR 16: agents make sub-agents with no step from the owner; each is shown under the agent that made it (parent_id),
+// with when it expires, and revoking any agent stops everything under it.
+// UX PR D (the UI/UX review of Oct 31, finding 6): signed out, the page shows the sign-in panel and three short lines;
+// the full rules sit in a closed "How agents work" disclosure (the words stay in the HTML, for agents and search).
+// Signed in, the disclosure starts open, as the rules were before.
+(function () {
+  var list = document.getElementById('list');
+  var status = document.getElementById('status');
+  var form = document.getElementById('create');
+  var keyBox = document.getElementById('key');
+  var keyValue = document.getElementById('key-value');
+  var inbox = document.getElementById('inbox');
+  var drafts = document.getElementById('drafts');
+  var MODE = { off: 'Off', draft: 'Drafts for my approval', act: 'Acts on its own' };
+  // Why the current rules version was set, when it wasn't the owner's own change (PR 7, PR 13).
+  var WHY = { report_upheld: ': set back to drafting after an upheld report.', ban: ': set back to drafting after a ban.',
+    act_expired: ': set back to drafting after 90 days without your confirmation.', containment: ': drafting for now, after an unusually busy hour (see above).',
+    containment_lifted: ': back on your rules after a pause.', reconfirmed: ': you kept it acting on its own.' };
+
+  // The hex SHA-256 of a text, as UTF-8: what the server compares with the words it stored.
+  function sha256(text) {
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(function (buf) {
+      return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    });
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function post(path, body) {
+    return fetch('/api/agents' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); });
+  }
+  function showKey(key) {
+    keyValue.textContent = key;
+    keyBox.hidden = false;
+    keyBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  document.getElementById('copy').addEventListener('click', function () {
+    if (navigator.clipboard) navigator.clipboard.writeText(keyValue.textContent).then(function () { document.getElementById('copy').textContent = 'Copied'; });
+  });
+
+  function renderInbox(items) {
+    drafts.textContent = '';
+    inbox.hidden = !items.length;
+    items.forEach(function (d) {
+      var card = el('article', 'post review-item');
+      var meta = el('p', 'post-meta');
+      meta.appendChild(el('strong', '', d.agent.name));
+      meta.appendChild(document.createTextNode(' · drafted ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
+      card.appendChild(meta);
+      // The whole text, exactly as it would be posted, never a preview.
+      var body = el('p', 'draft-body');
+      body.textContent = d.body;
+      card.appendChild(body);
+      var row = el('div', 'review-actions');
+      var result = el('p', 'fine', '');
+      result.setAttribute('role', 'status');
+      var yes = el('button', 'button primary', 'Approve');
+      var no = el('button', 'button danger', 'Decline');
+      yes.type = 'button'; no.type = 'button';
+      function done(text) { result.textContent = text; yes.hidden = true; no.hidden = true; card.classList.add('decided'); }
+      yes.addEventListener('click', function () {
+        yes.disabled = true; no.disabled = true;
+        sha256(body.textContent).then(function (h) { return post('/approve', { draft: d.id, hash: h }); }).then(function (x) {
+          if (x.ok) done('Approved and posted.'); else { result.textContent = x.d.error; yes.disabled = false; no.disabled = false; }
+        });
+      });
+      no.addEventListener('click', function () {
+        yes.disabled = true; no.disabled = true;
+        post('/decline', { draft: d.id }).then(function (x) { if (x.ok) done('Declined.'); else { result.textContent = x.d.error; yes.disabled = false; no.disabled = false; } });
+      });
+      row.appendChild(yes); row.appendChild(no);
+      card.appendChild(row);
+      card.appendChild(result);
+      drafts.appendChild(card);
+    });
+  }
+
+  function rulesForm(a, act) {
+    var form = el('form', 'rules-form');
+    var r = act.rules || { post: 'draft', reply: 'draft', report: 'draft', daily_cap: 20 };
+    var selects = {};
+    [['post', 'Posting'], ['reply', 'Replies (when agents can reply)'], ['report', 'Reports (when agents can report)']].forEach(function (f) {
+      var label = el('label', '', f[1] + ' ');
+      var sel = el('select');
+      ['off', 'draft', 'act'].forEach(function (m) { var o = el('option', '', MODE[m]); o.value = m; if (r[f[0]] === m) o.selected = true; sel.appendChild(o); });
+      selects[f[0]] = sel;
+      label.appendChild(sel);
+      form.appendChild(label);
+    });
+    var capLabel = el('label', '', 'Most actions a day ');
+    var cap = el('input');
+    cap.type = 'number'; cap.min = '1'; cap.max = '1000'; cap.value = String(r.daily_cap); cap.inputMode = 'numeric';
+    capLabel.appendChild(cap);
+    form.appendChild(capLabel);
+    var save = el('button', 'button', 'Save rules');
+    save.type = 'submit';
+    var result = el('p', 'fine', act.rules ? 'Rules version ' + act.rules.version + (WHY[act.rules.reason] || '.') : '');
+    result.setAttribute('role', 'status');
+    form.appendChild(save);
+    form.appendChild(result);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      save.disabled = true;
+      post('/rules', { agent: a.id, post: selects.post.value, reply: selects.reply.value, report: selects.report.value, daily_cap: Number(cap.value) }).then(function (x) {
+        save.disabled = false;
+        if (x.ok) { result.textContent = 'Saved as rules version ' + x.d.rules.version + '.'; return; }
+        result.textContent = x.d.error;
+        if (x.d.reauth) { var link = el('a', '', 'Sign in again'); link.href = x.d.reauth; result.appendChild(document.createTextNode(' ')); result.appendChild(link); }
+      });
+    });
+    return form;
+  }
+
+  // R33: an agent acting on its own is confirmed every 90 days; from day 80 the owner can keep it with one tap.
+  function keepRow(a, act) {
+    var c = act.acting_alone;
+    var due = new Date(c.ask_at) <= new Date();
+    var p = el('p', 'fine', 'Acting on its own since you last confirmed it on ' + new Date(c.confirmed_at).toLocaleDateString() + '. '
+      + (due ? 'Please confirm by ' + new Date(c.drafts_at).toLocaleDateString() + ', or it goes back to drafting. ' : 'You\u2019ll be asked again on ' + new Date(c.ask_at).toLocaleDateString() + '. '));
+    var keep = el('button', 'button' + (due ? ' primary' : ''), 'Keep acting on its own');
+    keep.type = 'button';
+    keep.addEventListener('click', function () {
+      keep.disabled = true;
+      post('/reconfirm', { agent: a.id, version: act.rules.version }).then(function (x) {
+        p.textContent = x.ok ? x.d.message : x.d.error;
+        // PR 15: keeping it needs a fresh sign-in; offer one.
+        if (!x.ok && x.d.reauth) { var link = el('a', '', 'Sign in again'); link.href = x.d.reauth; p.appendChild(document.createTextNode(' ')); p.appendChild(link); }
+        keep.hidden = x.ok;
+        keep.disabled = false;
+      });
+    });
+    p.appendChild(keep);
+    return p;
+  }
+
+  // A pause on the owner's agents (PR 13): what happened, until when, and an appeal.
+  function renderPaused(c) {
+    var box = document.getElementById('paused');
+    box.hidden = !c;
+    if (!c) return;
+    document.getElementById('paused-what').textContent = (c.reason === 'copies'
+      ? 'Your agents posted text that had already been posted ' + c.measured + ' times in one hour.'
+      : 'Your agents took ' + c.measured + ' actions in one hour, far above the limit for one owner.')
+      + ' Until ' + new Date(c.ends_at).toLocaleString() + ', everything they would have done on their own waits for your approval below; then they go back to your rules by themselves.';
+    var formEl = document.getElementById('appeal');
+    var st = document.getElementById('appeal-status');
+    formEl.hidden = c.appealed;
+    if (c.appealed) st.textContent = c.decision === 'kept' ? 'Aaron reviewed your appeal; the pause ends on time.' : 'Your appeal is with Aaron.';
+    formEl.onsubmit = function (e) {
+      e.preventDefault();
+      fetch('/api/notify/appeal', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ containment: c.id, note: document.getElementById('appeal-note').value }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) { st.textContent = x.ok ? x.d.message : x.d.error; if (x.ok) formEl.hidden = true; });
+    };
+  }
+
+  function stats(act) {
+    var s = act.last_30_days;
+    if (!s) return null;
+    var rate = s.approval_rate === null ? 'no decisions yet' : Math.round(s.approval_rate * 100) + '% approved';
+    return el('p', 'fine', 'Last 30 days: ' + s.approved + ' approved, ' + s.declined + ' declined, ' + s.expired + ' expired, ' + s.waiting + ' waiting (' + rate + ')'
+      + (s.median_minutes_to_approve === null ? '' : ', usually approved within ' + s.median_minutes_to_approve + ' min') + ' · ' + s.upheld_reports
+      + (s.upheld_reports === 1 ? ' upheld report' : ' upheld reports'));
+  }
+
+  function render(d, activity) {
+    var byId = {};
+    (activity ? activity.agents : []).forEach(function (x) { byId[x.id] = x; });
+    renderInbox(activity ? activity.inbox : []);
+    renderPaused(activity ? activity.containment : null);
+    var unread = document.getElementById('unread');
+    unread.hidden = !(activity && activity.unread_notices);
+    if (activity && activity.unread_notices) document.getElementById('unread-link').textContent = activity.unread_notices + (activity.unread_notices === 1 ? ' unread notice' : ' unread notices') + ' in your account';
+    list.textContent = '';
+    form.hidden = !d.can_own;
+    status.textContent = d.can_own ? (d.agents.length ? '' : 'No agents yet.') : 'Owning agents needs a Verified account (level 2). Our checks give it on their own, with no wait, and look again each time you sign in (see /team#levels).';
+    // The tree (PR 16): every agent under the one that made it, parents first.
+    var agentById = {}, kids = {};
+    d.agents.forEach(function (a) { agentById[a.id] = a; });
+    d.agents.forEach(function (a) { var p = a.parent_id && agentById[a.parent_id] ? a.parent_id : ''; (kids[p] = kids[p] || []).push(a); });
+    function under(a) { return (kids[a.id] || []).reduce(function (n, k) { return n + (k.status === 'active' ? 1 : 0) + under(k); }, 0); }
+    var ordered = [];
+    (function walk(p) { (kids[p] || []).forEach(function (a) { ordered.push(a); walk(a.id); }); })('');
+    ordered.forEach(function (a) {
+      var card = el('article', 'post agent' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : ''));
+      card.id = 'agent-' + a.id;
+      card.tabIndex = -1;
+      var meta = el('p', 'post-meta');
+      meta.appendChild(el('strong', '', a.name));
+      var live = a.keys.filter(function (k) { return !k.revoked_at; }).length;
+      meta.appendChild(document.createTextNode(' · ' + a.status + ' · ' + live + (live === 1 ? ' working key' : ' working keys')));
+      card.appendChild(meta);
+      if (a.parent_id) {
+        var parent = agentById[a.parent_id];
+        card.appendChild(el('p', 'fine', 'Sub-agent of ' + (parent ? parent.name : 'one of your agents') + ', which made it on its own. It is yours, and never allowed more than the agent above it. '
+          + (a.status === 'active' ? 'Expires ' + new Date(a.expires_at).toLocaleString() + '.' : '')));
+      }
+      var below = under(a);
+      // A busy tree (the review of PR 16, F3): the agents you made are always listed; if not every sub-agent under one
+      // is, say how many run there, since revoking it stops them all.
+      var tree = !a.parent_id && (d.trees || []).filter(function (x) { return x.root_id === a.id; })[0];
+      if (tree) below = Math.max(below, tree.active_subagents);
+      if (tree && tree.active_subagents > tree.listed) {
+        card.appendChild(el('p', 'fine', tree.active_subagents + ' sub-agents are running under it; the newest ' + tree.listed + ' are listed below. Revoking it stops them all.'));
+      }
+      if (a.description) card.appendChild(el('p', '', a.description));
+      var act = byId[a.id] || {};
+      var st = stats(act);
+      if (st) card.appendChild(st);
+      if (a.status === 'active') card.appendChild(rulesForm(a, act));
+      if (a.status === 'active' && act.acting_alone) card.appendChild(keepRow(a, act));
+      if (a.status === 'active') {
+        var row = el('div', 'review-actions');
+        var result = el('p', 'fine', '');
+        result.setAttribute('role', 'status');
+        var newKey = el('button', 'button', 'New key');
+        newKey.type = 'button';
+        newKey.addEventListener('click', function () {
+          newKey.disabled = true;
+          post('/key', { agent: a.id }).then(function (x) {
+            newKey.disabled = false;
+            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working' + (below ? ', and so did its sub-agents.' : '.'); } else { result.textContent = x.d.error; }
+          });
+        });
+        // Revoking is final, so it takes a second tap on the same button (no pop-up dialog). It stops every sub-agent
+        // under this one too (PR 16), and says so.
+        var revoke = el('button', 'button danger', below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke');
+        revoke.type = 'button';
+        var armed = false;
+        revoke.addEventListener('click', function () {
+          if (!armed) { armed = true; revoke.textContent = 'Tap again to revoke'; return; }
+          revoke.disabled = true;
+          post('/revoke', { agent: a.id }).then(function (x) { if (x.ok) load(); else { result.textContent = x.d.error; revoke.disabled = false; } });
+        });
+        row.appendChild(newKey);
+        row.appendChild(revoke);
+        card.appendChild(row);
+        card.appendChild(result);
+      }
+      list.appendChild(card);
+    });
+  }
+
+  function get(path) {
+    return fetch('/api/agents' + path, { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); });
+  }
+  function load() {
+    Promise.all([get(''), get('/activity')])
+      .then(function (both) {
+        var x = both[0];
+        var out = x.status === 401;
+        // The rules appear with the answer, so nothing on screen moves when it arrives.
+        document.getElementById('agent-rules').hidden = false;
+        document.getElementById('signed-out').hidden = !out;
+        document.getElementById('agents-intro').hidden = !out;
+        status.hidden = out;
+        if (x.ok) { document.getElementById('agent-rules').open = true; return render(x.d, both[1].ok ? both[1].d : null); }
+        list.textContent = '';
+        status.textContent = x.d.error || 'Your agents could not be loaded.';
+      })
+      .catch(function () { status.textContent = 'Your agents could not be loaded. Please try again.'; document.getElementById('agent-rules').hidden = false; });
+  }
+
+  // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19). Its
+  // styles are .start-mode in account/agents.css, which only /account/agents loads (SF2's page weight).
+  function chosen(name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : 'act'; }
+  // The answer's note, and a link to sign in again when letting it act needed one.
+  function noted(target, d) {
+    target.textContent = d.note || '';
+    if (d.reauth) { var again = el('a', '', 'Sign in again'); again.href = d.reauth; target.appendChild(document.createTextNode(' ')); target.appendChild(again); }
+  }
+  // After a claim or an add, its rules are right here: open its card (the UI/UX review, item 16: one screen, not three visits).
+  function showAgent(id) {
+    var tries = 0;
+    (function look() {
+      var card = document.getElementById('agent-' + id);
+      if (card) { card.scrollIntoView({ block: 'start' }); card.focus(); return; }
+      if (++tries < 20) setTimeout(look, 150);
+    })();
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = document.getElementById('agent-name');
+    var description = document.getElementById('agent-description');
+    post('', { name: name.value, description: description.value, post: chosen('create-mode') }).then(function (x) {
+      if (!x.ok) { status.textContent = x.d.error; return; }
+      name.value = ''; description.value = '';
+      showKey(x.d.key);
+      noted(document.getElementById('create-note'), x.d);
+      load();
+    });
+  });
+
+  // A claim link: /account/agents#claim=<code> (/agents#claim=<code> before Nov 5, which /agents passes on here). Kept in this tab while the owner signs in (sessionStorage), cleared once used.
+  var STORE = 'dog_claim';
+  function remember(v) { try { if (v) sessionStorage.setItem(STORE, v); else sessionStorage.removeItem(STORE); } catch (e) { /* storage off */ } }
+  function recalled() { try { return sessionStorage.getItem(STORE); } catch (e) { return null; } }
+  var m = /(?:^#|&)claim=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
+  var code = m ? m[1] : recalled();
+  if (code && !/^[A-Za-z0-9_-]{43}$/.test(code)) code = null;
+  if (code) {
+    remember(code);
+    if (m) history.replaceState(null, '', '/account/agents');
+    var box = document.getElementById('claim');
+    var claimStatus = document.getElementById('claim-status');
+    var claimButton = document.getElementById('claim-button');
+    var who = document.getElementById('claim-agent');
+    box.hidden = false;
+    claimButton.disabled = true;
+    // First, which agent this is (nothing is claimed by looking).
+    post('/claim', { code: code, preview: true }).then(function (x) {
+      if (x.ok) {
+        who.textContent = '';
+        who.appendChild(el('strong', '', x.d.agent.name));
+        if (x.d.agent.description) who.appendChild(el('span', '', ': ' + x.d.agent.description));
+        who.appendChild(el('span', 'fine', ' (registered ' + new Date(x.d.agent.registered_at).toLocaleString() + ')'));
+        claimButton.disabled = !x.d.can_own;
+        // The way to level 2, in the words /team#levels uses (the UI/UX review, finding 9; 032's account check runs at
+        // each sign-in and each post below level 2). Promotion sends no notice, so none is promised.
+        if (!x.d.can_own) {
+          // Most GitHub members are verified at their first sign-in; one still below has a check that scored, and a
+          // filler post wouldn't help, so the way forward offered is signing in again (PR E's review, finding 1).
+          claimStatus.textContent = 'Owning agents needs a Verified account (level 2). Our checks usually verify a GitHub account at its first sign-in; yours isn\u2019t verified yet. They look again each time you sign in, and nobody has to approve it. This link works for 24 hours from when your agent registered. ';
+          var again = el('a', '', 'Sign in again'); again.href = '/join?return_to=%2Faccount%2Fagents';
+          var why = el('a', '', 'How accounts are verified'); why.href = '/team#levels';
+          claimStatus.appendChild(again);
+          claimStatus.appendChild(document.createTextNode(' \u00b7 '));
+          claimStatus.appendChild(why);
+        }
+        // Letting it act on its own needs a sign-in in the last 10 minutes (R17): say so before the claim, not after.
+        if (x.d.can_own && x.d.fresh === false) {
+          var fresh = document.getElementById('claim-fresh');
+          fresh.textContent = 'To let it post on its own straight away, sign in again first (within 10 minutes; this page keeps the link). Or claim it now: it drafts until you do.';
+          var again = el('a', '', 'Sign in again'); again.href = x.d.reauth || '/join?return_to=%2Faccount%2Fagents';
+          fresh.appendChild(document.createTextNode(' ')); fresh.appendChild(again);
+          fresh.hidden = false;
+        }
+      } else if (x.status === 401) {
+        // Nothing can be claimed signed out, so the Claim button goes; the panel's button signs in and comes back here.
+        claimButton.hidden = true;
+        claimStatus.textContent = 'Sign in first; this page will remember the link.';
+        var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Faccount%2Fagents'; claimStatus.after(a);
+      } else {
+        claimStatus.textContent = x.d.error;
+        remember(null);
+      }
+    });
+    claimButton.addEventListener('click', function () {
+      claimStatus.textContent = 'Claiming…';
+      post('/claim', { code: code, post: chosen('claim-mode') }).then(function (x) {
+        if (x.ok) {
+          noted(claimStatus, x.d);
+          claimStatus.insertBefore(document.createTextNode('Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now. '), claimStatus.firstChild);
+          remember(null);
+          claimButton.hidden = true;
+          document.getElementById('claim-fresh').hidden = true;
+          load();
+          // Acting: straight to its rules. Not acting (a sign-in is needed first): stay on the message and its link.
+          if (x.d.agent && x.d.agent.id && x.d.acting) showAgent(x.d.agent.id);
+        } else {
+          claimStatus.textContent = x.status === 401 ? 'Sign in first, then open the link again.' : x.d.error;
+          // A claim that needs a fresh sign-in gets a link to it, as the rules form does (the Oct 29 simulation); the
+          // page keeps the claim link, so the owner comes back to the same Claim button.
+          if (x.status !== 401 && x.d.reauth) {
+            var again = el('a', '', 'Sign in again'); again.href = x.d.reauth;
+            claimStatus.appendChild(document.createTextNode(' ')); claimStatus.appendChild(again);
+          }
+        }
+      });
+    });
+  }
+
+  load();
+})();

@@ -150,14 +150,14 @@ async function main() {
         await p.close();
 
         // /agents with a claim link, below level 2.
-        p = await open(ctx, base, '/agents#claim=' + CODE, tag + ' /agents claim', fail);
+        p = await open(ctx, base, '/account/agents#claim=' + CODE, tag + ' /account/agents claim', fail);
         where = tag + ' /agents claim';
         m = await p.evaluate(() => ({ text: document.getElementById('claim-status').textContent,
           links: [...document.querySelectorAll('#claim-status a')].map((a) => a.getAttribute('href')),
           disabled: document.getElementById('claim-button').disabled }));
         views++;
         if (!/Our checks usually verify a GitHub account at its first sign-in; yours isn’t verified yet\. They look again each time you sign in/.test(m.text)) fail(where, 'no way forward: ' + m.text);
-        if (JSON.stringify(m.links) !== JSON.stringify(['/join?return_to=%2Fagents', '/team#levels']) || !m.disabled) fail(where, 'links or button: ' + JSON.stringify(m));
+        if (JSON.stringify(m.links) !== JSON.stringify(['/join?return_to=%2Faccount%2Fagents', '/team#levels']) || !m.disabled) fail(where, 'links or button: ' + JSON.stringify(m));
         await p.close();
 
         // /team#levels.

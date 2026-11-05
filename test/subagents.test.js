@@ -30,11 +30,11 @@ const HOUR = 3600000;
 // ---- Without a database: the pages and the public questions ----
 
 test('SA10 (pages): /agents shows the tree, and the feed and receipts show the chain, all as text, never HTML', () => {
-  for (const f of ['agents.js', 'feed.js', 'receipt.js']) {
+  for (const f of ['account/agents.js', 'feed.js', 'receipt.js']) {
     const js = fs.readFileSync(path.join(root, f), 'utf8');
     assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function|\.style\b|setAttribute\('style'/.test(js), f + ' builds with text and classes only (CSP)');
   }
-  const agentsJs = fs.readFileSync(path.join(root, 'agents.js'), 'utf8');
+  const agentsJs = fs.readFileSync(path.join(root, 'account/agents.js'), 'utf8');
   assert.match(agentsJs, /parent_id/, 'the agents page places each sub-agent under its parent');
   assert.match(agentsJs, /sub-agent of/i);
   assert.match(fs.readFileSync(path.join(root, 'feed.js'), 'utf8'), /sub_agent_of/);
@@ -708,7 +708,7 @@ test('review F5: a post or receipt names an ancestor only while it is active; ot
   assert.deepStrictEqual(after.agent.chain[1], { id: null, name: 'an agent of Eve', active: false });
   const rc = await receipt(p.json.id);
   assert.ok(!JSON.stringify(rc).includes('Acme') && !JSON.stringify(after).includes('Acme') && !JSON.stringify(after).includes(lead.id));
-  assert.match(fs.readFileSync(path.join(root, 'agents.html'), 'utf8'), /names of your agents that have sub-agents appear on their sub-agents’ public posts/);
+  assert.match(fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8'), /names of your agents that have sub-agents appear on their sub-agents’ public posts/);
 });
 
 test('review F6: refusals that need no scoring don\'t reach JEVs, and each agent\'s requests are limited', async () => {

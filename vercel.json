@@ -189,6 +189,10 @@
     {
       "source": "/api/notify/:path*",
       "destination": "/api/notify?route=:path*"
+    },
+    {
+      "source": "/agents/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+      "destination": "/agent"
     }
   ],
   "crons": [

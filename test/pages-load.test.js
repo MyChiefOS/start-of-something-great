@@ -81,7 +81,7 @@ test('"hidden" always hides, even where a class sets display (the post box on /f
 // <details>, which needs no script).
 const NO_SCRIPT = ['terms.html', 'privacy.html', 'research/decision-loop.html', '404.html'];
 const shell = require('../scripts/shell');
-const navPages = pages.concat(fs.readdirSync(path.join(root, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f))
+const navPages = pages.concat(...['research', 'admin', 'account'].filter((d) => fs.existsSync(path.join(root, d))).map((d) => fs.readdirSync(path.join(root, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f)))
   .filter((f) => read(f).includes('<nav class="site-nav"'));
 
 test('every page, the 404 included, carries the shell exactly as scripts/shell.js writes it (any drift fails)', () => {
@@ -164,13 +164,13 @@ test('every page with a menu loads nav.js, except the pages that run no script; 
   assert.ok(!/<script/.test(read('404.html')), 'the 404 runs no script');
   const js = read('nav.js');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'text only');
-  assert.deepStrictEqual([...js.matchAll(/setAttribute\('href', '([^']+)'\)/g)].map((m) => m[1]), ['/agents', '/account#notices'], 'our own paths only: Your agents (the UI/UX review, item 7) and Account, at its notices');
+  assert.deepStrictEqual([...js.matchAll(/setAttribute\('href', '([^']+)'\)/g)].map((m) => m[1]), ['/account/agents', '/account#notices'], 'our own paths only: Your agents (the UI/UX review, item 7) and Account, at its notices');
   assert.match(read('account.html'), /<section id="notices" class="inbox"/, 'the notices anchor exists');
   assert.deepStrictEqual([...js.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1]), ['/auth/me'], 'one request: /auth/me carries the count');
   assert.match(js, /if \(!state \|\| state\.signed_in !== true\) return;/, 'a visitor keeps "Join"');
 });
 
-test('the footer, the same on every page: About, Take part, Agents, Legal and contact, with the addresses the pages already used', () => {
+test('the footer, the same on every page (the design\'s columns, each link only once its page is built): About, Take part, Agents, Legal and contact', () => {
   const foot = read('index.html').match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0];
   const groups = [...foot.matchAll(/<div[^>]*><h2>([^<]+)<\/h2>([\s\S]*?)<\/div>/g)].map((m) => [m[1], [...m[2].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => x[2] + ' ' + x[1])]);
   const repo = 'https://github.com/MyChiefOS/start-of-something-great';
@@ -178,7 +178,7 @@ test('the footer, the same on every page: About, Take part, Agents, Legal and co
     // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
     ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Search /search']],
-    ['Agents', ['For agents /connect', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
+    ['Agents', ['For agents /connect', 'Agent directory /agents', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);
@@ -323,7 +323,7 @@ test('nav.js, run: a visitor keeps Join; a member sees Account with the unread c
   assert.strictEqual(member.link.textContent, 'Account (3)');
   assert.strictEqual(member.link.attrs.href, '/account#notices', 'Account opens on the notices (finding 11)');
   assert.strictEqual(member.link.attrs['aria-label'], 'Account, 3 unread notices');
-  assert.deepStrictEqual(member.added.map((a) => [a.textContent, a.attrs.href, a.before]), [['Your agents', '/agents', 'the link after For agents']], 'and Your agents, just after For agents');
+  assert.deepStrictEqual(member.added.map((a) => [a.textContent, a.attrs.href, a.before]), [['Your agents', '/account/agents', 'the link after For agents']], 'and Your agents, just after For agents');
   // Escape closes the open Menu and returns focus to it; other keys, or a closed Menu, change nothing.
   const [ev, onKey] = member.menu.keys[0];
   assert.strictEqual(ev, 'keydown');
