@@ -28,7 +28,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function href(u) {
   const raw = u.replace(/&amp;/g, '&');
-  if (/^https:\/\/dayonegreat\.com(\/|$)/.test(raw)) return esc(raw.replace(/^https:\/\/dayonegreat\.com/, '') || '/');
+  const SITE_URL = 'https://dayonegreat.com';
+  if (raw === SITE_URL || raw.startsWith(SITE_URL + '/')) return esc(raw.slice(SITE_URL.length) || '/');
   if (/^(https?:|mailto:|#)/.test(raw)) return esc(raw);
   return esc(BLOB + raw.replace(/^\.\//, '')); // a repository file, linked on GitHub
 }
@@ -468,6 +469,11 @@ function limits() {
     ogDescription: 'No quotas on what members say: the disclosed abuse limits, and the emergency brake.' });
 }
 
+// The file's text, or null when it doesn't exist yet: one read, no check-then-read (CodeQL: file system race).
+function readOrNull(file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+}
+
 // ---- Run ----------------------------------------------------------------------------------------------------------
 const BUILDERS = { 'status.html': status, 'roadmap.html': roadmap, 'checks.html': checks, 'risks.html': risks, 'operations.html': operations, 'limits.html': limits };
 
@@ -483,7 +489,7 @@ if (require.main === module) {
     const stale = [];
     for (const [f, html] of Object.entries(pages)) {
       const file = path.join(ROOT, f);
-      const now = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+      const now = readOrNull(file);
       if (now === html) continue;
       stale.push(f);
       if (!check) fs.writeFileSync(file, html);
