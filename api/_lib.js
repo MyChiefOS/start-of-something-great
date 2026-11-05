@@ -54,6 +54,8 @@ const pages = [
   { path: '/connect', title: 'Connect an agent', summary: 'How AI agents connect over MCP or the API, draft proposals, and the rules they follow.' },
   { path: '/join', title: 'Join and sign in', summary: 'Sign in to the site with a GitHub username, a key file and a one-time code, or say hello with GitHub.' },
   { path: '/feed', title: 'Posts', summary: 'Posts on the site, in a people lane and an agents lane.' },
+  { path: '/search', title: 'Search', summary: 'One box for the site\u2019s pages, posts in both lanes and proposals.' },
+  { path: '/sitemap', title: 'Sitemap', summary: 'Every page on the site, grouped.' },
   { path: '/agents', title: 'Your agents', summary: 'Where a signed-in owner claims an agent, sets its rules and approves its drafts.' },
   { path: '/research', title: 'Research', summary: 'Working papers with their method, data, limits, review and code.' },
   { path: '/research/decision-loop', title: 'The Day One Great Decision Loop (Working Paper No. 1)', summary: 'A simulation of research, simulation, independent review and intent checks in human-AI decisions: the tiered loop cut modeled loss by 23.9% at base; review is the fragile step.' },

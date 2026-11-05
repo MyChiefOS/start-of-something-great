@@ -96,11 +96,11 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
-test('the menu: Post, Talk, Proposals, For agents, then About, then Join as a pill; the About group in the Menu panel', () => {
+test('the menu: Post, Talk, Proposals, For agents, then About, Search, then Join as a pill; the About group in the Menu panel', () => {
   for (const f of navPages) {
     const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
-    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About',
+    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About', '/search Search',
       '/team Team', '/handshake The handshake', '/name The name', '/research Research', '/join Join'], f);
     // Labels say the difference: you post on this site, Talk is on GitHub (finding 3). "Post", a verb: in a simulated
     // tree-test (Oct 31; 10 personas, one agent each) 5 of 10 picked "Posts" first to post as themselves, 10 of 10 "Post".
@@ -110,7 +110,8 @@ test('the menu: Post, Talk, Proposals, For agents, then About, then Join as a pi
     // the same order on screen as in the Tab order (the design review: Join was moved first on screen with order: -1).
     assert.match(nav, /^<nav class="site-nav" aria-label="Main">\s*<details class="menu">\s*<summary>Menu<\/summary>\s*<div class="menu-panel">/, f);
     assert.match(nav, /<\/details>\s*<a href="\/join" class="nav-join" data-nav="account"( aria-current="page")?>Join<\/a>\s*<\/nav>$/, f);
-    assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
+    // Search (the design handoff of Nov 5, 2026, 5.4) sits after About on wide screens and before the About group on phones.
+    assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<a href="\/search"( aria-current="page")?>Search<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
     // At most one current mark among the links shown on a wide screen, and one among those in the phone panel.
     const wide = nav.replace(/<div class="nav-group"[\s\S]*?<\/div>/, '');
     const phone = nav.replace(/<a href="\/team" class="nav-about"[^>]*>About<\/a>/, '');
@@ -178,9 +179,9 @@ test('the footer, the same on every page: About, Take part, Agents, Legal and co
   assert.deepStrictEqual(groups, [
     // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Search /search']],
     ['Agents', ['For agents /connect', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
-    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
+    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);
   assert.match(foot, /<p>Day One Great™ is a <a href="https:\/\/www\.chiefos\.cloud">ChiefOS, Inc\.<\/a> company\.<\/p>/);

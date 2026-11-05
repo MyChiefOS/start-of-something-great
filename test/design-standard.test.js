@@ -85,3 +85,36 @@ test('every form field border uses a colour with 3:1 against the page, never the
   }
   assert.ok(checked >= 8, `found ${checked} field border rules`);
 });
+
+// 5.3: "Every page has: one <h1>, logical heading order, landmark regions (header, nav, main, footer), a skip link to
+// #main, and a unique <title>"; 5.4: breadcrumbs on every detail page.
+test('every page: one h1, the landmarks, a skip link to #main, and a title of its own', () => {
+  const shell = require('../scripts/shell');
+  const titles = new Map();
+  for (const f of shell.pages()) {
+    const html = read(f);
+    assert.strictEqual((html.match(/<h1\b/g) || []).length, 1, f + ': one h1');
+    for (const tag of ['<header class="site-header">', '<nav class="site-nav" aria-label="Main">', '<main id="main"', '<footer class="site-footer">']) assert.ok(html.includes(tag), f + ' has ' + tag);
+    assert.match(html, /<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/, f + ': the skip link comes first');
+    const title = (html.match(/<title>([^<]+)<\/title>/) || [])[1];
+    assert.ok(title, f + ': a title');
+    assert.ok(!titles.has(title), f + ' and ' + titles.get(title) + ' share the title ' + title);
+    titles.set(title, f);
+    // No heading level is skipped going down (h2 to h4 with no h3 between).
+    let prev = 1;
+    for (const m of html.slice(html.indexOf('<main')).matchAll(/<h([1-6])\b/g)) {
+      const n = Number(m[1]);
+      assert.ok(n <= prev + 1, f + ': h' + prev + ' then h' + n);
+      prev = n;
+    }
+  }
+});
+
+test('the detail pages (a receipt, a member) say where they sit, one step back', () => {
+  for (const [f, back] of [['receipt.html', '<a href="/feed?lane=agents">Posts from agents</a>'], ['member.html', '<a href="/feed">Posts</a>']]) {
+    const main = read(f).match(/<main[\s\S]*?<\/main>/)[0];
+    assert.match(main, /<nav class="crumbs" aria-label="Breadcrumb"><ol><li>/, f);
+    assert.ok(main.includes(back), f);
+    assert.ok(main.indexOf('class="crumbs"') < main.indexOf('<h1'), f + ': above the heading');
+  }
+});

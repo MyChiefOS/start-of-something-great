@@ -100,8 +100,7 @@
   --text: #ece7dd;
   --muted: #9a9ba5;
   --rule: #23262e;
-  /* Borders of form fields and other controls (WCAG 1.4.11 needs 3:1 against the page): 3.10:1 here, 3.06:1 in
-     light. --rule stays for decorative lines only (the design handoff of Nov 5, CODING_AGENT_SPEC.md 5.1). */
+  /* Field borders, 3:1 (WCAG 1.4.11); --rule is decorative only */
   --rule-strong: #626160;
   --amber: #f2a33a;
   --glow: rgba(242, 163, 58, 0.18);
@@ -152,12 +151,14 @@ a:focus-visible, .button:focus-visible {
   border-radius: 2px;
 }
 
+/* Shell 1200 px, content 46rem (design handoff, Nov 5) */
 .wrap {
   width: 100%;
-  max-width: 46rem;
+  max-width: 75rem;
   margin: 0 auto;
-  padding: 0 1.25rem;
+  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
 }
+.wrap > main { max-width: 46rem; }
 
 /* Header, written into every page by scripts/shell.js: one row, 320 px up. On phones, the wordmark, Menu, whose panel
    drops below, and Join (Account once signed in), in the Tab order; on wide screens the panel's links sit in the row,
