@@ -8,9 +8,12 @@
   // No page: one sentence and the way back. A banned, held or deleted member answers exactly as an unknown ID does, so
   // the page never shows that anyone was moderated (the profile reads active members only, 001 and 003).
   function none(text) {
-    summary.textContent = text + ' ';
+    summary.textContent = text;
+    var shown = document.getElementById('none');
+    shown.textContent = text + ' ';
     var back = el('a', '', 'Back to Posts'); back.href = '/feed';
-    summary.appendChild(back);
+    shown.appendChild(back);
+    shown.hidden = false;
   }
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) { none('This address doesn\u2019t name a member.'); return; }
   var LEVEL = ['Email only', 'GitHub member', 'Verified']; // as /feed and /account name them (UX PR E)
@@ -56,24 +59,40 @@
     more.addEventListener('click', function () { if (!more.disabled) load(true); });
     return load(false);
   }
+  // The design's post card (static/member.html): the words, then a fine line: when, and Report (a person's post) or the
+  // agent's name and its receipt (an agent's post).
+  var tpl = document.getElementById('post-tpl');
+  function ago(iso) {
+    var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+    if (!(s >= 0)) return d.toLocaleDateString();
+    if (s < 60) return 'Just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    if (s < 172800) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
   function post(p) {
-    var art = el('article', 'post card'); // a card, as the design draws it (static/member.html)
-    var meta = el('p', 'post-meta');
+    var card = tpl.content.firstElementChild.cloneNode(true);
+    var body = card.querySelector('[data-slot="body"]');
+    var meta = card.querySelector('[data-slot="meta"]');
+    var paras = p.body.split(/\n{2,}/);
+    body.textContent = paras[0];
+    for (var i = 1; i < paras.length; i++) { var q = body.cloneNode(false); q.textContent = paras[i]; card.insertBefore(q, meta); }
     // Who acted, as /feed says it: "Worker · sub-agent of Planner, owned by Ada" (the API's own chain label).
-    if (p.agent) { meta.appendChild(el('strong', '', p.agent.name)); meta.appendChild(el('span', 'agent-of', ' \u00b7 ' + (p.agent.chain_label || 'agent of ' + p.author.name) + ' \u00b7 ')); }
-    var t = el('time', '', new Date(p.published_at).toLocaleString());
+    if (p.agent) meta.appendChild(document.createTextNode(p.agent.name + (p.agent.sub_agent_of && p.agent.chain_label ? ' (' + p.agent.chain_label + ')' : '') + ' · '));
+    var t = el('time', '', ago(p.published_at));
     t.dateTime = p.published_at;
+    t.title = new Date(p.published_at).toLocaleString();
     meta.appendChild(t);
-    art.appendChild(meta);
-    if (p.delegation) {
-      var how = el('p', 'fine delegation');
-      how.appendChild(document.createTextNode(p.delegation.label + ' · '));
-      var rc = el('a', '', 'receipt'); rc.href = '/receipt?post=' + encodeURIComponent(p.id);
-      how.appendChild(rc);
-      art.appendChild(how);
+    meta.appendChild(document.createTextNode(' · '));
+    if (p.agent && p.delegation) {
+      var rc = el('a', '', 'Receipt'); rc.href = '/receipt?post=' + encodeURIComponent(p.id);
+      meta.appendChild(rc);
+    } else {
+      var rp = el('a', '', 'Report'); rp.href = '/feed?q=' + encodeURIComponent(String(p.body).replace(/\s+/g, ' ').slice(0, 60).replace(/\s\S*$/, ''));
+      meta.appendChild(rp);
     }
-    p.body.split(/\n{2,}/).forEach(function (para) { art.appendChild(el('p', '', para)); });
-    return art;
+    return card;
   }
   // The administrator's badge comes with their posts (035's author.role); the profile answer doesn't carry it.
   var badged = false;
@@ -85,11 +104,8 @@
     document.getElementById('name').textContent = m.name;
     document.title = m.name + ' · Day One Great';
     summary.textContent = 'Loading their posts\u2026';
-    var lv = el('span', '', (LEVEL[m.level] || 'Level ' + m.level) + ' (level ' + m.level + ') · ');
-    var what = el('a', '', 'What the levels mean'); what.href = '/team#levels';
-    lv.appendChild(what);
-    row('Level', lv);
-    row('Joined', new Date(m.joined).toLocaleDateString());
+    row('Level', LEVEL[m.level] || 'Level ' + m.level);
+    row('Joined', new Date(m.joined).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
     facts.hidden = false;
     // One line says what both lists show (the lists' own lines would appear with their sections and often go unheard).
     // No total from the profile: it counts their agents' posts with theirs, and posts no list shows (PR F's review).

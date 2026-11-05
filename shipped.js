@@ -9,6 +9,9 @@
   var list = document.getElementById('shipped');
   var summary = document.getElementById('summary');
 
+  // Each entry is the design's card, cloned from the page's <template> and filled with text.
+  var tpl = document.getElementById('card-tpl');
+  function slot(n, k) { return n.querySelector('[data-slot="' + k + '"]'); }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -29,21 +32,20 @@
   }
 
   function card(p) {
-    var a = el('article', 'card');
-    a.appendChild(el('span', 'pill f', 'Shipped'));
-    a.appendChild(el('h3', null, p.title || 'Untitled proposal'));
-    a.appendChild(el('p', 'fine', 'Proposed by ' + credit(p) + ' on ' + day(p.proposed_at) + ' · shipped ' + day(p.shipped_at) + ' · #' + p.number));
-    if (p.change) a.appendChild(el('p', 'proposal-text', p.change));
-    if (p.edited_after_approval) a.appendChild(el('p', 'flag', 'Edited after approval: check the history on GitHub.'));
+    var a = tpl.content.firstElementChild.cloneNode(true);
+    slot(a, 'title').textContent = p.title || 'Untitled proposal';
+    slot(a, 'by').textContent = 'Proposed by ' + credit(p) + ' on ' + day(p.proposed_at) + ' · shipped ' + day(p.shipped_at) + ' · #' + p.number;
+    var text = slot(a, 'text');
+    if (p.change) text.textContent = p.change; else text.remove();
+    var linkP = slot(a, 'link');
+    if (p.edited_after_approval) { var f = el('p', linkP.className, 'Edited after approval: check the history on GitHub.'); a.insertBefore(f, linkP); }
     var url = safeGithubUrl(p.url);
     if (url) {
       var link = el('a', null, 'See the decision on GitHub');
       link.href = url;
       link.rel = 'noopener';
-      var foot = el('p', 'fine');
-      foot.appendChild(link);
-      a.appendChild(foot);
-    }
+      linkP.appendChild(link);
+    } else linkP.remove();
     return a;
   }
 
@@ -53,7 +55,7 @@
       var ps = (data && data.shipped) || [];
       if (!ps.length) {
         summary.textContent = 'Nothing has shipped from a proposal yet.';
-        var empty = el('div', 'empty-state');
+        var empty = el('div', 'empty');
         empty.appendChild(el('p', null, 'Nothing has shipped from a proposal yet. The first one could be yours.'));
         var p = el('p');
         var link = el('a', null, 'Propose a change');

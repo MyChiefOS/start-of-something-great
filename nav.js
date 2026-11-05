@@ -10,7 +10,7 @@
   // The Menu (a <details>, which opens and closes with Enter or Space on its own): Escape also closes it and puts focus
   // back on Menu, and a tap or click anywhere outside it closes it (UX PR B). The pages that run no script keep Enter,
   // Space and Menu itself.
-  var menu = document.querySelector('.site-header details');
+  var menu = document.querySelector('.hd details.mnav');
   if (menu && menu.addEventListener) {
     menu.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape' || !menu.open) return;
@@ -22,35 +22,34 @@
       if (menu.open && !menu.contains(e.target)) menu.open = false;
     });
   }
-  var link = document.querySelector('.site-nav a[data-nav="account"]');
-  if (!link || !window.fetch) return;
+  // The pill is drawn twice in the design's header: in the wide row and in the Menu's panel. Both change together.
+  var links = document.querySelectorAll ? Array.prototype.slice.call(document.querySelectorAll('.hd a[data-nav="account"]')) : [];
+  if (!links.length || !window.fetch) return;
   var KEY = 'dog-nav', TTL_MS = 60000;
 
   function show(state) {
     if (!state || state.signed_in !== true) return;
     // Your agents, after For agents, once signed in: where an owner claims agents and approves their drafts (the UI/UX
-    // review, item 7: "Agents" in the menu led to the setup guide, so owners couldn't find their drafts). It sits in the
-    // Menu's panel, so on a phone the row stays the wordmark, Account and Menu (UX PR B).
-    if (!document.querySelector('.site-nav a[data-nav="agents"]')) {
-      var mine = document.createElement('a');
-      mine.textContent = 'Your agents';
-      mine.setAttribute('href', '/account/agents');
-      mine.setAttribute('data-nav', 'agents');
-      if (location.pathname === '/account/agents') mine.setAttribute('aria-current', 'page');
-      var guide = document.querySelector('.site-nav a[href="/connect"]');
-      if (guide) guide.parentNode.insertBefore(mine, guide.nextSibling);
-      else link.parentNode.insertBefore(mine, link);
+    // review, item 7). In the wide row and in the Menu, like every other link.
+    if (!document.querySelector('.hd a[data-nav="agents"]')) {
+      Array.prototype.forEach.call(document.querySelectorAll('.hd .dnav a[href="/connect"], .hd .mpanel a[href="/connect"]'), function (guide) {
+        var mine = document.createElement('a');
+        mine.textContent = 'Your agents';
+        mine.setAttribute('href', '/account/agents');
+        mine.setAttribute('data-nav', 'agents');
+        if (location.pathname === '/account/agents') { mine.className = 'on'; mine.setAttribute('aria-current', 'page'); }
+        guide.parentNode.insertBefore(mine, guide.nextSibling);
+      });
     }
     // Account opens on your notices, the inbox for everything that needs you (the UI/UX review, finding 11).
-    link.textContent = 'Account';
-    link.setAttribute('href', '/account#notices');
-    if (location.pathname === '/account') link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
     var count = Number.isInteger(state.unread) && state.unread > 0 ? state.unread : 0;
-    if (count > 0) {
-      link.textContent = 'Account (' + (count > 99 ? '99+' : count) + ')';
-      link.setAttribute('aria-label', 'Account, ' + count + ' unread notice' + (count === 1 ? '' : 's'));
-    }
+    links.forEach(function (link) {
+      link.textContent = count > 0 ? 'Account (' + (count > 99 ? '99+' : count) + ')' : 'Account';
+      link.setAttribute('href', '/account#notices');
+      if (location.pathname === '/account') link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+      if (count > 0) link.setAttribute('aria-label', 'Account, ' + count + ' unread notice' + (count === 1 ? '' : 's'));
+    });
   }
   function remembered() {
     try {
