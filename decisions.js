@@ -4,8 +4,7 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var status = $('status');
-  var WHERE = { site_post: 'Site post', agent_post: 'Agent post', agent_draft: 'Agent draft', account: 'Account', deletion: 'Account deletion',
-    agent: 'Agent', github_post: 'GitHub post', github_account: 'GitHub account', github_agent: 'GitHub agent', signup: 'Sign-up' };
+  var WHERE = { site_post: 'Site post', agent_post: 'Agent post', agent_draft: 'Agent draft', account: 'Account', agent: 'Agent', github_post: 'GitHub post', github_account: 'GitHub account', github_agent: 'GitHub agent', signup: 'Sign-up' };
   // The design's words where it has them ("Held for Aaron", "Hidden, reason sent", "Declined politely").
   var OUTCOME = { held: 'Held for Aaron', hidden: 'Hidden until Aaron looks', queued: 'Sent to Aaron’s queue', challenged: 'Waiting for the owner',
     recorded_only: 'Recorded only, not carried out', scoring_error: 'Couldn’t be scored, so held', alerted: 'Aaron alerted', went_ahead: 'Went ahead',
@@ -13,25 +12,29 @@
   var day = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
   function text(id, value) { $(id).textContent = value; }
-  function count(n) { return new Intl.NumberFormat().format(n); }
+  var K = 5;
+  // A count of 1 to 4 comes back null (036): say "fewer than 5", so no number on the page describes one person.
+  function count(n) { return n === null ? 'Fewer than ' + K : new Intl.NumberFormat().format(n); }
   function rate(part, whole, min) {
-    if (whole < min) return 'Not enough history yet';
+    if (whole === null || whole < min) return 'Not enough history yet';
+    if (part === null) return 'Fewer than ' + K + ' of ' + count(whole);
     return Math.round((100 * part) / whole) + '% of ' + count(whole);
   }
   function minutes(m) {
-    if (m === null) return 'None yet';
+    if (m === null) return 'Not shown under ' + K + ' decisions';
     if (m < 90) return (Math.round(m * 10) / 10) + ' minutes';
     return (Math.round((m / 60) * 10) / 10) + ' hours';
   }
-  function hours(h) { return h === null ? 'None waiting' : h < 1 ? Math.round(h * 60) + ' minutes' : (Math.round(h * 10) / 10) + ' hours'; }
+  function hours(h) { return h === null ? 'Not shown under ' + K + ' items' : h < 1 ? Math.round(h * 60) + ' minutes' : (Math.round(h * 10) / 10) + ' hours'; }
 
   function render(d) {
     if (!d.available) {
       status.textContent = d.message || 'There are no decisions to count here.';
       return;
     }
+    K = d.min_count || 5;
     var ago = Math.max(0, Math.round((Date.now() - new Date(d.generated_at).getTime()) / 60000));
-    text('counted', ago < 1 ? 'Counted just now.' : 'Counted ' + ago + (ago === 1 ? ' minute' : ' minutes') + ' ago.');
+    text('counted', 'Counted to the start of the hour. Counts from 1 to 4 show as “fewer than 5”, and smaller groups aren’t listed, so no number points to one person.');
     status.textContent = '';
 
     var h = d.last_24h;
@@ -39,8 +42,8 @@
     text('n-medium', count(h.medium_waiting));
     text('n-high', count(h.high_held));
     text('n-appeals', count(h.appeals_open));
-    var note = 'Site and GitHub together: ' + count(h.decisions) + (h.decisions === 1 ? ' decision' : ' decisions') + ' in all.';
-    if (h.high > h.high_held) note += ' ' + count(h.high - h.high_held) + ' more scored high risk without a hold or a hide: '
+    var note = 'Site and GitHub together: ' + count(h.decisions) + ' decisions in all.';
+    if (h.high !== null && h.high_held !== null && h.high > h.high_held) note += ' ' + count(h.high - h.high_held) + ' more scored high risk without a hold or a hide: '
       + (d.jevs_mode === 'shadow' ? 'JEVs is in shadow mode on the site, so it records and changes nothing there.' : 'some actions are only recorded, or alerted to Aaron.');
     note += ' Appeals are counted for site posts; an /appeal on GitHub alerts Aaron directly.';
     text('day-note', note);
@@ -96,8 +99,8 @@
     text('q-median', hours(q.median_hours));
     text('q-oldest', hours(q.oldest_hours));
     var means = 'JEVs and Second Look take the first look; a person decides what they hold. In the last 30 days a person decided '
-      + count(p.d30.decided) + (p.d30.decided === 1 ? ' item' : ' items') + (p.d30.decided < min ? ', too few to give rates yet' : '') + '. '
-      + (q.open ? count(q.open) + (q.open === 1 ? ' is' : ' are') + ' waiting now, the oldest for ' + hours(q.oldest_hours) + '.' : 'Nothing is waiting now.');
+      + count(p.d30.decided) + ' items' + (p.d30.decided === null || p.d30.decided < min ? ', too few to give rates yet' : '') + '. '
+      + (q.open === 0 ? 'Nothing is waiting now.' : count(q.open) + (q.open === 1 ? ' is' : ' are') + ' waiting now' + (q.oldest_hours === null ? '.' : ', the oldest for ' + hours(q.oldest_hours) + '.'));
     text('means-text', means);
   }
 

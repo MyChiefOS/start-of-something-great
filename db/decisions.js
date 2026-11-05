@@ -1,12 +1,14 @@
 // The public counts behind /decisions (036, app.public_decisions; the design handoff of Nov 5, 2026). The database
 // counts; this file only reads the one value and makes every number a number. Counts and question IDs only: nothing
-// here names a member, an agent or a post, or carries a score or a time of day.
+// here names a member, an agent or a post, or carries a score or a time of day. Counts of 1 to 4 come back null.
 'use strict';
 
 const int = (x) => (x === null || x === undefined ? 0 : Math.max(0, Math.trunc(Number(x)) || 0));
+// A count the database keeps back because it is 1 to 4 (036's k = 5) stays null: "fewer than 5", never a 0.
+const few = (x) => (x === null || x === undefined ? null : int(x));
 const num = (x) => (x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Number(x));
-const window = (w) => ({ decided: int(w && w.decided), approved: int(w && w.approved), removed: int(w && w.removed),
-  undone: int(w && w.undone), median_minutes: num(w && w.median_minutes) });
+const window = (w) => ({ decided: few(w && w.decided), approved: few(w && w.approved), removed: few(w && w.removed),
+  undone: few(w && w.undone), median_minutes: num(w && w.median_minutes) });
 
 function shape(d) {
   const day = d.last_24h || {};
@@ -16,8 +18,9 @@ function shape(d) {
   return {
     generated_at: d.generated_at,
     jevs_mode: d.jevs_mode === 'enforce' ? 'enforce' : 'shadow',
-    last_24h: { decisions: int(day.decisions), low: int(day.low), medium_waiting: int(day.medium_waiting), high: int(day.high),
-      high_held: int(day.high_held), appeals_open: int(day.appeals_open) },
+    min_count: int(d.min_count) || 5,
+    last_24h: { decisions: few(day.decisions), low: few(day.low), medium_waiting: few(day.medium_waiting), high: few(day.high),
+      high_held: few(day.high_held), appeals_open: few(day.appeals_open) },
     high_7d: (Array.isArray(d.high_7d) ? d.high_7d : []).map((r) => ({ day: String(r.day).slice(0, 10), place: String(r.place),
       outcome: String(r.outcome), decisions: int(r.decisions),
       questions: (Array.isArray(r.questions) ? r.questions : []).map(String).filter((x) => /^(J[0-9]{2}|region)$/.test(x)) })),
@@ -25,7 +28,7 @@ function shape(d) {
       daily_clear_cap: int(sl.daily_clear_cap), shadow_clears_decided: int(sl.shadow_clears_decided),
       shadow_clears_removed: int(sl.shadow_clears_removed) } : null,
     oversight: { people: { d7: window(people.d7), d30: window(people.d30) },
-      queue: { open: int(q.open), median_hours: num(q.median_hours), oldest_hours: num(q.oldest_hours) } }
+      queue: { open: few(q.open), median_hours: num(q.median_hours), oldest_hours: num(q.oldest_hours) } }
   };
 }
 

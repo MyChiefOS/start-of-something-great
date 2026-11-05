@@ -74,43 +74,51 @@ test('an empty site: every count is zero, the lists are empty, Second Look is in
   assert.ok(!Number.isNaN(Date.parse(d.generated_at)));
 });
 
-test('the counts: the last 24 hours from site and GitHub decisions, high-risk days grouped with question IDs only, region declines, Second Look and the queue', async () => {
+test('the counts, private by size and time (the review of Nov 5): k = 5, whole hours, no deletions, question IDs only', async () => {
   const ada = await member('Ada');
   const acct = (await su`insert into app.gh_accounts (github_id, login) values (424242, 'octo-test') returning id`)[0].id;
-  // Last 24 hours: 3 low on the site and 2 on GitHub; 2 medium challenges carried out (and 1 in shadow, not counted as
-  // waiting); high: 1 held, 1 hidden, 1 recorded only on the site, 1 hidden on GitHub; one older than a day.
-  for (let i = 0; i < 3; i++) await site({ level: 'low', member: ada });
-  for (let i = 0; i < 2; i++) await github({ risk: 'low', account: acct });
-  await site({ level: 'medium', effect: 'challenge' });
-  await site({ level: 'medium', effect: 'challenge', action: 'agent.rules' });
-  await site({ level: 'medium', effect: 'challenge', applied: false });
-  await site({ level: 'high', effect: 'hold', member: ada, scores: { J07: 61, J08: 31, J04: 5 } });
-  await site({ level: 'high', effect: 'hold', member: ada, scores: { J09: 25 } });
-  await site({ level: 'high', effect: 'hide', applied: false, scores: { J07: 91 } });
-  await github({ risk: 'high', effect: 'hide', account: acct, scores: { J16: 41, J17: 83, J01: 10 } });
-  await site({ ago: '3 days', level: 'high', effect: 'hold', agent: crypto.randomUUID(), scores: { J04: 70 } });
-  await site({ ago: '8 days', level: 'high', effect: 'hold', scores: { J04: 70 } }); // outside the 7 days
-  await su`insert into app.region_declines (day, country, declines) values (current_date, 'FR', 2), (current_date, 'DE', 1)`;
+  // The last 24 hours (to the start of this hour): 6 low on the site and 2 on GitHub; 2 medium challenges carried out (and
+  // 1 in shadow, not counted as waiting); high: 6 held site posts, 1 recorded only, 1 hidden on GitHub.
+  for (let i = 0; i < 6; i++) await site({ ago: '2 hours', level: 'low', member: ada });
+  for (let i = 0; i < 2; i++) await github({ ago: '2 hours', risk: 'low', account: acct });
+  await site({ ago: '2 hours', level: 'medium', effect: 'challenge' });
+  await site({ ago: '2 hours', level: 'medium', effect: 'challenge', action: 'agent.rules' });
+  await site({ ago: '2 hours', level: 'medium', effect: 'challenge', applied: false });
+  for (let i = 0; i < 5; i++) await site({ ago: '2 hours', level: 'high', effect: 'hold', member: ada, scores: i ? { J09: 25 } : { J07: 61, J08: 31, J04: 5 } });
+  await site({ ago: '26 hours', level: 'high', effect: 'hold', member: ada, scores: { J07: 40 } }); // the 7 days, not the 24 hours
+  await site({ ago: '2 hours', level: 'high', effect: 'hide', applied: false, scores: { J07: 91 } });
+  await github({ ago: '2 hours', risk: 'high', effect: 'hide', account: acct, scores: { J16: 41, J17: 83, J01: 10 } });
+  // Account deletions are never counted here: that review is between the member and Aaron (Oct 16).
+  for (let i = 0; i < 6; i++) await site({ ago: '2 hours', level: 'high', effect: 'queue', action: 'account.delete', member: ada, scores: { J11: 30 } });
+  // This hour's decisions wait for the hour to end, so polling can't time one.
+  for (let i = 0; i < 7; i++) await site({ ago: '0 seconds', level: 'low', member: ada });
+  await su`insert into app.region_declines (day, country, declines) values ((now() - interval '1 day')::date, 'FR', 4), ((now() - interval '1 day')::date, 'DE', 2), (current_date - 3, 'FR', 2)`;
 
   const d = await ask();
-  assert.deepStrictEqual(d.last_24h, { decisions: 12, low: 5, medium_waiting: 2, high: 4, high_held: 3, appeals_open: 0 });
-  const today = new Date().toISOString().slice(0, 10);
-  const find = (place, outcome) => d.high_7d.find((r) => r.place === place && r.outcome === outcome);
-  // Two holds of site posts today are one row: a count and the questions that scored 25 or more, sorted; J04 (5) is not.
-  assert.deepStrictEqual(find('site_post', 'held'), { day: today, place: 'site_post', outcome: 'held', decisions: 2, questions: ['J07', 'J08', 'J09'] });
-  assert.deepStrictEqual(find('site_post', 'recorded_only').questions, ['J07']);
-  assert.deepStrictEqual(find('github_post', 'hidden'), { day: today, place: 'github_post', outcome: 'hidden', decisions: 1, questions: ['J16', 'J17'] });
-  assert.strictEqual(find('agent_post', 'held').decisions, 1);
-  assert.notStrictEqual(find('agent_post', 'held').day, today);
-  // Region declines: today's countries added together, and no country named.
-  assert.deepStrictEqual(find('signup', 'declined'), { day: today, place: 'signup', outcome: 'declined', decisions: 3, questions: ['region'] });
-  assert.strictEqual(d.high_7d.reduce((n, r) => n + r.decisions, 0), 2 + 1 + 1 + 1 + 3, 'the 8-day-old hold is left out');
+  // 6 + 2 low, 3 medium, 5 + 1 + 1 high = 18 in all; under 5 shows as null (fewer than 5).
+  // 5 held site posts and the GitHub hide are 6 held or hidden; 2 medium waiting is under 5.
+  assert.deepStrictEqual(d.last_24h, { decisions: 18, low: 8, medium_waiting: null, high: 7, high_held: 6, appeals_open: 0 });
+  assert.strictEqual(d.min_count, 5);
+  const find = (place, outcome) => d.high_7d.filter((r) => r.place === place && r.outcome === outcome);
+  // The six held site posts are one row once grouped by their day; question IDs that scored 25 or more, sorted.
+  const held = find('site_post', 'held');
+  assert.strictEqual(held.reduce((n, r) => n + r.decisions, 0) >= 5, true);
+  for (const r of held) { assert.ok(r.decisions >= 5, 'no group under 5 is listed'); assert.ok(r.questions.every((q) => ['J07', 'J08', 'J09'].includes(q))); }
+  // Groups under 5 aren't listed at all: the recorded-only hold, the GitHub hide, the 2 region declines of day -3.
+  assert.deepStrictEqual(find('site_post', 'recorded_only'), []);
+  assert.deepStrictEqual(find('github_post', 'hidden'), []);
+  for (const r of d.high_7d) assert.ok(r.decisions >= 5, JSON.stringify(r));
+  // Region declines: one day's countries added together (6), and no country named.
+  assert.deepStrictEqual(find('signup', 'declined').map((r) => [r.decisions, r.questions]), [[6, ['region']]]);
+  assert.ok(!d.high_7d.some((r) => r.place === 'deletion'), 'no account deletions');
 
-  // Nothing in the answer names a member, an agent or a post, carries a score or a country, or a time of day.
-  const text = JSON.stringify(await raw());
+  // Nothing in the answer names a member, an agent or a post, carries a score or a country, or a time inside the hour.
+  const rawd = await raw();
+  const text = JSON.stringify(rawd);
   assert.ok(!text.includes(ada) && !text.includes(acct) && !text.includes('octo-test'), 'no member or account');
-  assert.ok(!/"(member|agent|subject|post)(_id)?"|"scores"|"total"|"FR"|"DE"/.test(text), 'no IDs, scores or countries: ' + text.slice(0, 200));
+  assert.ok(!/"(member|agent|subject|post)(_id)?"|"scores"|"total"|"FR"|"DE"|deletion|J11/.test(text), 'no IDs, scores, countries or deletions: ' + text.slice(0, 200));
   assert.ok(!/:(61|31|91|41|83)\b/.test(text), 'no score values');
+  assert.strictEqual(new Date(rawd.generated_at).getUTCMinutes() + new Date(rawd.generated_at).getUTCSeconds(), 0, 'counted to the start of the hour');
   for (const r of d.high_7d) assert.match(r.day, /^\d{4}-\d{2}-\d{2}$/);
 });
 
@@ -130,40 +138,46 @@ test('Second Look: the approvals since its latest removal, out of the unlock cou
   assert.strictEqual((await ask()).second_look.agreed_in_a_row, 0, 'only decisions after counted_since count, as for the unlock');
 });
 
-test('human oversight: one row per decision a person made (all flags on a post close together), its median time, and the open queue by post', async () => {
+test('human oversight: one row per decision a person made, a median only from 5, and the open queue in whole hours, from 5 items', async () => {
   const ada = await member('Grace');
-  // A post with the JEVs decision every post has (010's commit-time rule, app.posts_scored), in one transaction.
   const post = (ago) => su.begin(async (t) => {
     const [p] = await t`insert into app.posts (author_id, body, status, created_at) values (${ada}, 'A post to review', 'waiting', now() - ${ago}::interval) returning id`;
     await t`insert into app.jevs_decisions (action, subject_kind, subject_id, member_id, level, mode, effect, applied, error, total, scores)
             values ('post.create', 'post', ${p.id}, ${ada}, 'low', 'enforce', 'none', true, false, 0, '{}'::jsonb)`;
     return p.id;
   });
-  // Three decisions in the last 7 days (an approval, a keep and a removal), one 20 days ago (a removal undone), one
-  // 40 days ago (left out); and two posts waiting, one with two open flags.
+  // Six decisions in the last 7 days (five approvals, one with two flags closed together, and a removal), one 20 days
+  // ago (a removal undone), one 40 days ago (left out).
   const flags = [];
-  for (const [ago, took, decision, n] of [['1 day', 10, 'approve', 2], ['2 days', 30, 'keep', 1], ['3 days', 50, 'remove', 1], ['20 days', 120, 'restore', 1], ['40 days', 5, 'remove', 1]]) {
+  for (const [ago, took, decision, n] of [['1 day', 10, 'approve', 2], ['2 days', 20, 'approve', 1], ['2 days', 30, 'keep', 1], ['3 days', 40, 'approve', 1],
+    ['3 days', 50, 'approve', 1], ['4 days', 60, 'remove', 1], ['20 days', 120, 'restore', 1], ['40 days', 5, 'remove', 1]]) {
     const p = await post(ago);
     for (let i = 0; i < n; i++) flags.push({ p, ago, took, decision, src: i === 0 ? 'first_posts' : 'classifier' });
   }
-  // One transaction, so one decision's flags close at the same moment, as app.review_decide closes them.
   await su.begin(async (t) => { for (const f of flags) {
     await t.unsafe(`insert into app.review_flags (post_id, source, classifier, created_at, resolved_at, resolved_by, decision)
       values ('${f.p}', '${f.src}', ${f.src === 'classifier' ? "'jevs'" : 'null'}, now() - interval '${f.ago}' - interval '${f.took} minutes',
               now() - interval '${f.ago}', '${ada}', '${f.decision}')`);
   } });
+  // Two posts waiting (one with two open flags and an appeal): under 5, so the queue shows "fewer than 5" and no ages.
   const w1 = await post('5 hours');
-  const w2 = await post('1 hour');
+  const w2 = await post('3 hours');
   await su`insert into app.review_flags (post_id, source, created_at) values (${w1}, 'first_posts', now() - interval '5 hours')`;
-  await su`insert into app.review_flags (post_id, source, classifier, created_at) values (${w1}, 'classifier', 'jevs', now() - interval '2 hours')`;
-  await su`insert into app.review_flags (post_id, source, classifier, created_at) values (${w2}, 'classifier', 'jevs', now() - interval '1 hour')`;
-  await su`insert into app.review_flags (post_id, source, created_at) values (${w2}, 'appeal', now() - interval '30 minutes')`;
+  await su`insert into app.review_flags (post_id, source, classifier, created_at) values (${w1}, 'classifier', 'jevs', now() - interval '4 hours')`;
+  await su`insert into app.review_flags (post_id, source, classifier, created_at) values (${w2}, 'classifier', 'jevs', now() - interval '3 hours')`;
+  await su`insert into app.review_flags (post_id, source, created_at) values (${w2}, 'appeal', now() - interval '3 hours')`;
 
-  const d = await ask();
-  assert.deepStrictEqual(d.oversight.people.d7, { decided: 3, approved: 2, removed: 1, undone: 0, median_minutes: 30 });
-  assert.deepStrictEqual(d.oversight.people.d30, { decided: 4, approved: 2, removed: 1, undone: 1, median_minutes: 40 });
-  assert.deepStrictEqual(d.oversight.queue, { open: 2, median_hours: 3, oldest_hours: 5 });
-  assert.strictEqual(d.last_24h.appeals_open, 1);
+  let d = await ask();
+  assert.deepStrictEqual(d.oversight.people.d7, { decided: 6, approved: 5, removed: null, undone: 0, median_minutes: 35 });
+  assert.deepStrictEqual(d.oversight.people.d30, { decided: 7, approved: 5, removed: null, undone: null, median_minutes: 40 });
+  assert.deepStrictEqual(d.oversight.queue, { open: null, median_hours: null, oldest_hours: null });
+  assert.strictEqual(d.last_24h.appeals_open, null, 'one appeal is fewer than 5');
+  // Five waiting: the count and whole-hour ages show.
+  for (const ago of ['6 hours', '7 hours', '8 hours']) { const w = await post(ago); await su`insert into app.review_flags (post_id, source, created_at) values (${w}, 'first_posts', now() - ${ago}::interval)`; }
+  d = await ask();
+  assert.strictEqual(d.oversight.queue.open, 5);
+  assert.ok(Number.isInteger(d.oversight.queue.median_hours) && Number.isInteger(d.oversight.queue.oldest_hours), 'whole hours');
+  assert.ok(d.oversight.queue.oldest_hours >= 7 && d.oversight.queue.oldest_hours <= 8, String(d.oversight.queue.oldest_hours));
 });
 
 test('rights: any visitor may ask through the site’s role; it runs as JEVs’s role, reads only, and no other role may call it', async () => {

@@ -117,9 +117,9 @@ function res() {
   r.end = (b) => { r.body = b || ''; };
   return r;
 }
-async function api(url, run, method = 'GET') {
+async function api(url, run, method = 'GET', headers = {}) {
   const r = res();
-  await require('../api/decisions').handle({ method, url, headers: {} }, r, run);
+  await require('../api/decisions').handle({ method, url, headers }, r, run);
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null, headers: r.headers };
 }
 test('/api/decisions: read-only, no parameters (so the edge cache can’t be skipped), cached a minute, and says so when there is no database', async () => {
@@ -128,7 +128,10 @@ test('/api/decisions: read-only, no parameters (so the edge cache can’t be ski
   assert.match(off.headers['cache-control'], /^public, s-maxage=60, stale-while-revalidate=60$/);
   const param = await api('/api/decisions?x=1', () => assert.fail('the database is not asked'));
   assert.strictEqual(param.status, 400);
+  // The edge doesn't cache a request with an Authorization header, so one is refused too (the review, finding 3).
+  assert.strictEqual((await api('/api/decisions', () => assert.fail('the database is not asked'), 'GET', { authorization: 'x' })).status, 400);
   assert.strictEqual((await api('/api/decisions', null, 'POST')).status, 405);
+  require('../api/decisions')._forget();
   let ctx = null;
   const fake = { generated_at: '2026-11-05T12:00:00Z', jevs_mode: 'enforce', last_24h: { decisions: '7', low: 4, medium_waiting: 1, high: 2, high_held: 2, appeals_open: 0 },
     high_7d: [{ day: '2026-11-05', place: 'github_post', outcome: 'hidden', decisions: 1, questions: ['J16', 'not an id', 'region'] }],
@@ -139,8 +142,13 @@ test('/api/decisions: read-only, no parameters (so the edge cache can’t be ski
   assert.strictEqual(on.status, 200);
   assert.strictEqual(on.json.last_24h.decisions, 7, 'numbers are numbers');
   assert.deepStrictEqual(on.json.high_7d[0].questions, ['J16', 'region'], 'only question IDs pass');
-  assert.deepStrictEqual(on.json.oversight.people.d7, { decided: 3, approved: 0, removed: 0, undone: 0, median_minutes: null });
+  // A count the database keeps back (1 to 4, 036's k) stays null: "fewer than 5", never a 0.
+  assert.deepStrictEqual(on.json.oversight.people.d7, { decided: 3, approved: null, removed: null, undone: null, median_minutes: null });
   assert.strictEqual(on.json.min_sample, 20);
+  // This copy keeps its answer a minute: a second visit doesn't ask the database.
+  const again = await api('/api/decisions', () => assert.fail('the database is not asked again within the minute'));
+  assert.strictEqual(again.status, 200);
+  require('../api/decisions')._forget();
   const early = await api('/api/decisions', async () => { throw Object.assign(new Error('no function'), { code: '42883' }); });
   assert.deepStrictEqual([early.status, early.headers['cache-control']], [503, 'no-store'], 'before 036 is applied: not cached');
   assert.match(read('api/index.js'), /decisions: SITE \+ '\/api\/decisions'/, 'listed with the public API');

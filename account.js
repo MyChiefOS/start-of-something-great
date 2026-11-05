@@ -245,7 +245,7 @@
       var row = el('p', 'fine notice-meta', new Date(n.created_at).toLocaleString() + (n.read ? '' : ' · new') + (n.for_admins ? ' · for administrators' : '') + ' ');
       // Links are paths on this site only (the database refuses anything else); checked again here before use.
       // Notices written before Nov 5 link to /agents, now the public agent list; an owner's agents page is /account/agents.
-      if (n.link && /^\/(?!\/)/.test(n.link)) { var a = el('a', '', 'Open'); a.href = moved(n.link.replace(/^\/agents(?=$|[#?])/, '/account/agents')); row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
+      if (n.link && /^\/(?![/\\])/.test(n.link)) { var a = el('a', '', 'Open'); a.href = moved(n.link.replace(/^\/agents(?=$|[#?])/, '/account/agents')); row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
       if (!n.read) {
         row.appendChild(button('Mark read', '', function (b) {
           postJson('/api/notify/read', { ids: [n.id] }).then(function (x) { if (x.ok) loadNotices(); else b.disabled = false; });
