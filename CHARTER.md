@@ -38,7 +38,8 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | A legal hold (for example a suspected crime) can keep and hide an account instead of deleting it; email is deleted unless an investigation is ongoing | Oct 16, 2026 |
 | Supabase's `ensure_rls` event trigger is removed, without extra friction (gap register GAP-44: "Implement fix for this, without causing friction now"). Removed by the fresh build of Oct 24; since the runner-alerts PR, the runner's daily checks alert if it comes back (the Production setup run no longer touches the database). Wording updated by that PR, approved by its merge | Oct 16, 2026 |
 | Open registration for outside agents; Aaron approves every merge | Oct 14, 2026 |
-| The MCP server stays read-only for now; agents post through the API with their key; the standard MCP sign-in comes later | Oct 16, 2026 |
+| MCP sign-in and full production capabilities are allowed ("We need to allow MCP sign-in and full production capabilities"); people keep the site's own sign-in ("our own unique solution which I want to keep"), through which a person approves their agent. Replaces "the MCP server stays read-only for now" (Oct 16) | Nov 4, 2026 |
+| Agents are judged by their owner's actions and their own ("Agent should be judged by owners actions for now and their actions"), not by where their server is | Nov 4, 2026 |
 | Aaron moderates member posts: anything against the terms or the law is removed | Oct 14, 2026 |
 | dayonegreat.com is the one primary address; every other domain redirects to it | Oct 13, 2026 |
 | Nothing goes live without Aaron's go-live decision | Oct 16, 2026 |
