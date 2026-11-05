@@ -4,6 +4,17 @@
 // borders use --rule-strong (CODING_AGENT_SPEC.md 5.1). Then every inline style from the ported pages, as a class.
 'use strict';
 const fs = require('fs');
+const imp = (decl) => decl.split(/;(?![^(]*\))/).map((d) => d.trim()).filter(Boolean).map((d) => (/!important$/.test(d) ? d : d + '!important')).join(';');
+// The rules for a set of the design's inline styles: each as a class, then (after them, so it wins) the design's one
+// rule that reads inline styles: under 820 px, a grid written inline becomes one column.
+function classes(styles) {
+  const keys = Object.keys(styles).sort();
+  const grids = keys.filter((c) => /grid-template-columns/.test(styles[c]));
+  return keys.map((c) => '.d1 .' + c + '{' + imp(styles[c]) + '}').join('\n') + '\n'
+    + (grids.length ? '@media(max-width:820px){' + grids.map((c) => '.d1 .' + c + '.' + c).join(',') + '{grid-template-columns:1fr!important}}\n' : '');
+}
+module.exports = { classes };
+if (require.main !== module) return;
 const [designCss, siteStyles, stylesJson, out] = process.argv.slice(2);
 let css = fs.readFileSync(designCss, 'utf8');
 const fonts = (fs.readFileSync(siteStyles, 'utf8').match(/@font-face \{[\s\S]*?\}/g) || []).join('\n');
@@ -17,10 +28,8 @@ css = css.replace(/(\.d1 input\{[^}]*?)border:1px solid var\(--rule\)/, '$1borde
   .replace(/(\.d1 select\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)');
 // The one rule that reads inline styles: under 820 px, any grid written inline becomes one column.
 const styles = JSON.parse(fs.readFileSync(stylesJson, 'utf8'));
-const gridded = Object.keys(styles).filter((c) => /grid-template-columns/.test(styles[c]));
-css = css.replace('.d1 [style*="grid-template-columns"]{grid-template-columns:1fr!important}', gridded.map((c) => '.d1 .' + c + '.' + c).join(',') + '{grid-template-columns:1fr!important}');
-const imp = (decl) => decl.split(/;(?![^(]*\))/).map((d) => d.trim()).filter(Boolean).map((d) => (/!important$/.test(d) ? d : d + '!important')).join(';');
-const inline = Object.keys(styles).sort().map((c) => '.d1 .' + c + '{' + imp(styles[c]) + '}').join('\n');
+css = css.replace('.d1 [style*="grid-template-columns"]{grid-template-columns:1fr!important}', '');
+
 const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, static/css/styles.css), as written. Changes for production
    only: the site's own font files, the theme from the visitor's system setting, --rule-strong on form fields (spec 5.1),
    and the design's inline styles as classes (x...) with the same values, since the security policy allows no inline style. */
@@ -45,5 +54,5 @@ html,body{background:#0d0f14}
 @media (prefers-color-scheme: light){html,body{background:#f6f7f9}}
 `;
 // The grid override must come after the inline classes it overrides: move the 820 px block to the end.
-fs.writeFileSync(out, head + css + '\n/* The design\'s inline styles */\n' + inline + '\n@media(max-width:820px){' + gridded.map((c) => '.d1 .' + c + '.' + c).join(',') + '{grid-template-columns:1fr!important}}\n');
-console.log('wrote', out, Object.keys(styles).length, 'inline classes,', gridded.length, 'grids');
+fs.writeFileSync(out, head + css + '\n/* The design\'s inline styles that several pages share; a page\'s own are in /css/<page>.css */\n' + classes(styles));
+console.log('wrote', out, Object.keys(styles).length, 'shared inline classes');

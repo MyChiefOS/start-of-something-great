@@ -1,0 +1,4 @@
+/* autonomy.html: its own inline styles from Aaron's design, as classes. Written by tools/design/build.js. */
+.d1 .x3b4a6452{font-size:19px!important}
+.d1 .xac4d15da{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))!important;gap:14px!important;margin:20px 0!important;max-width:60rem!important}
+@media(max-width:820px){.d1 .xac4d15da.xac4d15da{grid-template-columns:1fr!important}}
