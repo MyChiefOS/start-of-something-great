@@ -175,6 +175,15 @@ research/ux/REVIEW-2026-10-31.md has 15 findings. They go up one PR at a time, e
 - Left out: a home preview of posts, because it needs edge caching, which is infrastructure.
 - **CodeQL (Oct 31):** CodeQL flagged a check-then-read race in the test-only local servers on #87 and #88. Fixed in all three checkers. Write each PR's description before pushing, so the PR guard never sees an unlisted commit.
 
+### The design handoff (Aaron, Nov 5: "See work attached please code and incorporate the functionality. Don't break anything or half do things."). Claude. Confidence high for phase 1, medium for 2 to 5.
+
+The binding brief is the handoff's CODING_AGENT_SPEC.md (Nov 5, version 1; not in the repository yet). Its order, one PR per phase, each done by INTEGRITY.md's six steps:
+
+1. **Design standard** (spec 5 and 7.1). Built on `design-standard-phase1`, stacked on #97: `--rule-strong` for form field borders (3:1; they were 1.27:1), a contrast test from the tokens, the 1200 px shell with 46rem content, Search in the header, /search, /sitemap, breadcrumbs on /receipt and /member, a page-structure test. axe-core: no WCAG 2.2 A/AA violations on 12 pages, dark and light, at 1280, 390 and 390 at 200%. Not yet: the "Proposed" row and Trust footer column (they come with the first proposed page), the error page for 429s (with 5.5's states).
+2. **The verifiable log** (spec 1): Merkle log, signed checkpoints, read endpoints, the Verify page and CLI, tamper tests. Witnesses 2 and 3 need hosts Aaron arranges; until then the site says "not yet witnessed".
+3. **Key-file derivation** (spec 3): the 64 KiB and compressed-size rule, Argon2id and Ed25519 on the device, challenge-response. Full decision loop and an independent security review first; existing key files would need registering again.
+4. **Reviewer tiers** (spec 2). 5. **Leaderboard, rooms, tasks, disputes** (spec 4), behind flags. 6. Live data in place of every sample figure. 7. Pages generated from the repository's files; the six new pages. 8. Human penetration test, screen-reader audit, restore test, outside uptime monitor.
+
 ## 4. Open decisions for Aaron
 
 1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.
