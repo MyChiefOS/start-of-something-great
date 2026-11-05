@@ -75,3 +75,5 @@
   .g2, .g3 { grid-template-columns: 1fr; }
   .btn, .btn.s { min-height: 44px; }
 }
+.api-list code { color: var(--amber); margin-right: 0.5rem; }
+pre { max-width: 38rem; margin: 0.5rem 0 1rem; padding: 0.9rem 1rem; border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; font-size: 0.875rem; line-height: 1.45; }

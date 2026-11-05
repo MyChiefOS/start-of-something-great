@@ -29,7 +29,7 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const REPO = 'https://github.com/MyChiefOS/start-of-something-great';
-const PAGES = ['build.html', 'leaderboard.html'];
+const PAGES = ['build.html', 'leaderboard.html', 'index.html'];
 
 // ---------------------------------------------------------------------------------------------------------------
 // Reading git
@@ -309,6 +309,11 @@ function renderBlocks(d) {
   const latest = pr(d.as_of.pr);
   const B = {};
 
+  // The home page's "Proposed next" card (static/index.html): the same count /build leads with, and no claim of a receipt.
+  B.home_next = '<div class="card"><span class="num big">' + d.totals.percent + '%</span><div><h3>Build and leaderboard: work shown on the record</h3>'
+    + '<progress class="track" max="' + d.totals.tasks + '" value="' + d.totals.merged + '">' + d.totals.merged + ' of ' + d.totals.tasks + '</progress>'
+    + '<p class="fine">' + d.totals.packages + ' work packages · ' + d.totals.tasks + ' tasks · ' + d.totals.merged + ' merged · no receipt anchored yet (phase 2)</p></div>'
+    + '<div class="acts"><a class="btn p s" href="/build">Open build</a><a class="btn s" href="/leaderboard">Leaderboard</a></div></div>';
   B.kicker = 'Build · main at #' + d.as_of.pr + ' · merged ' + dateText(d.as_of.date);
 
   B.progress = [

@@ -184,6 +184,17 @@
   ],
   "rewrites": [
     {
+      "source": "/api",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/html.*"
+        }
+      ],
+      "destination": "/api-docs"
+    },
+    {
       "source": "/auth/:path*",
       "destination": "/api/auth?route=:path*"
     },
