@@ -161,7 +161,7 @@ test('a held post gets a blind record beside it; nothing shows it; the database 
   const item = queue.json.items.find((i) => i.id === b.json.id);
   assert.ok(item, 'the held post is in the queue');
   assert.strictEqual(item.second_look, undefined);
-  assert.doesNotMatch(read('review.js'), /second.?look/i);
+  assert.doesNotMatch(read('admin/review.js'), /second.?look/i);
   // Nobody else reads the record, not even the poster.
   const asPoster = await run(poster.ctx, (t) => t`select count(*)::int as n from app.sl_reviews`);
   assert.strictEqual(asPoster[0].n, 0);

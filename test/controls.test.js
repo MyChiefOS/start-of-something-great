@@ -25,11 +25,11 @@ const ORIGIN = 'https://dayonegreat.com';
 const CFG = { ipKey: crypto.randomBytes(32) };
 
 test('the owner-controls page is private, phone-sized, shows names as text only, and asks twice before the biggest steps', () => {
-  const html = fs.readFileSync(path.join(root, 'controls.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'admin', 'controls.html'), 'utf8');
   assert.match(html, /name="robots" content="noindex"/);
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1"/);
-  assert.match(html, /<script defer src="\/controls\.js"><\/script>/);
-  const js = fs.readFileSync(path.join(root, 'controls.js'), 'utf8');
+  assert.match(html, /<script defer src="\/admin\/controls\.js"><\/script>/);
+  const js = fs.readFileSync(path.join(root, 'admin', 'controls.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write|eval\(|new Function/.test(js), 'no HTML injection points');
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js), 'no browser dialogs');
   assert.match(js, /fetch\('\/api\/feed\?controls=1'/);

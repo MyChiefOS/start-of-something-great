@@ -56,8 +56,9 @@ test('item 7: once signed in, the menu has "Your agents" beside Account; a visit
 test('items 7 and 8: /account links Your agents for everyone, and the review queue and controls only for the administrator', () => {
   const html = read('account.html');
   assert.match(html, /<li><a href="\/account\/agents">Your agents<\/a>/);
-  assert.match(html, /<li id="go-review" hidden><a href="\/review">Review queue<\/a>/);
-  assert.match(html, /<li id="go-controls" hidden><a href="\/controls">Controls<\/a>/);
+  // At /admin/review and /admin/controls since Nov 5, 2026 (the design handoff, CODING_AGENT_SPEC.md section 6).
+  assert.match(html, /<li id="go-review" hidden><a href="\/admin\/review">Review queue<\/a>/);
+  assert.match(html, /<li id="go-controls" hidden><a href="\/admin\/controls">Controls<\/a>/);
   const js = read('account.js');
   const shown = js.match(/if \(d\.is_admin\) \{[\s\S]*?\n {6}\}/);
   assert.ok(shown, 'shown inside the administrator check');

@@ -27,11 +27,11 @@ const CFG = { ipKey: crypto.randomBytes(32) };
 // Read when used, so each check below fails on its own where 035 is missing.
 const migration = () => (fs.existsSync(path.join(root, 'db/migrations/035_feed_search.sql')) ? read('db/migrations/035_feed_search.sql') : '');
 
-test('finding 12: /review names the questions by their public titles, the same as db/jevs.js, and stays blind to the other reviewer', () => {
-  const js = read('review.js');
+test('finding 12: /admin/review names the questions by their public titles, the same as db/jevs.js, and stays blind to the other reviewer', () => {
+  const js = read('admin/review.js');
   const map = js.match(/var TITLES = \{([\s\S]*?)\};/)[1];
   const titles = Object.fromEntries([...map.matchAll(/(J\d\d): '((?:[^'\\]|\\.)*)'/g)].map((m) => [m[1], JSON.parse('"' + m[2] + '"')]));
-  assert.deepStrictEqual(titles, Object.fromEntries(jevs.QUESTIONS.map((q) => [q.id, q.title])), 'review.js and db/jevs.js name the same questions the same way');
+  assert.deepStrictEqual(titles, Object.fromEntries(jevs.QUESTIONS.map((q) => [q.id, q.title])), 'admin/review.js and db/jevs.js name the same questions the same way');
   assert.match(js, /'Our checks asked about: ' \+ ids\.map\(function \(id\) \{ return TITLES\[id\] \? TITLES\[id\] \+ ' \(' \+ id \+ '\)' : id; \}\)\.join\(', '\)/);
   assert.doesNotMatch(js, /second.?look/i);
   assert.doesNotMatch(js.replace(/\/\/.*$/gm, ''), /score/i, 'the page\u2019s code never reads a score');

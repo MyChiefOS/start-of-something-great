@@ -22,6 +22,7 @@ class El {
   get textContent() { return this.tagName === '#TEXT' ? this._text : this._text + this.children.map((c) => c.textContent).join(''); }
   set textContent(v) { this.children.forEach((c) => { c.parentNode = null; }); this.children = []; this._text = String(v); }
   get firstChild() { return this.children[0] || null; }
+  get childNodes() { return this.children; } // /account counts its Add buttons this way (test/design-app.test.js)
   get options() { return this.children.filter((c) => c.tagName === 'OPTION'); }
   setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'hidden') this.hidden = true; }
   removeAttribute(k) { delete this.attrs[k]; }

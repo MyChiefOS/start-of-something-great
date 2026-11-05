@@ -24,11 +24,11 @@ const SERVER = process.env.TEST_DATABASE_URL;
 const ORIGIN = 'https://dayonegreat.com';
 
 test('SF5: the review page decides each post with one tap, shows member text as text only, and asks no "are you sure"', () => {
-  const html = fs.readFileSync(path.join(root, 'review.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'admin', 'review.html'), 'utf8');
   assert.match(html, /name="robots" content="noindex"/);
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1"/);
-  assert.match(html, /<script defer src="\/review\.js"><\/script>/);
-  const js = fs.readFileSync(path.join(root, 'review.js'), 'utf8');
+  assert.match(html, /<script defer src="\/admin\/review\.js"><\/script>/);
+  const js = fs.readFileSync(path.join(root, 'admin', 'review.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'no HTML injection points');
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js), 'no dialog between the tap and the decision');
   // One button per action the API offers; the tap sends the decision.

@@ -1,4 +1,4 @@
-// /agents: an owner's agents (PR 5). Claim one from its link (the code is after "#", so it never reaches our server
+// /account/agents: an owner's agents (PR 5; at /agents until Nov 5, 2026). Claim one from its link (the code is after "#", so it never reaches our server
 // until the owner presses Claim), add one, make a new key, revoke. Names are shown with textContent only.
 // PR 7: each agent's rules (off / draft / act and a daily limit), the inbox of drafts with one-tap Approve and
 // Decline, and what each agent did. Approving sends the SHA-256 of the very text shown on this page.
@@ -6,7 +6,11 @@
 // with when it expires, and revoking any agent stops everything under it.
 // UX PR D (the UI/UX review of Oct 31, finding 6): signed out, the page shows the sign-in panel and three short lines;
 // the full rules sit in a closed "How agents work" disclosure (the words stay in the HTML, for agents and search).
-// Signed in, the disclosure starts open, as the rules were before.
+// The design handoff of Nov 5, 2026 (static/agents.html): the three short lines for everyone, each draft as a card with
+// Approve and Reject drawn alike (CODING_AGENT_SPEC.md 2.2: equal weight), and each agent as a card with its name, a
+// pill for its mode, and Drafts, Change limit, New key and Revoke. Change limit opens the agent's rules (the same form
+// as before); Drafts sets each "acts on its own" back to drafts, as the 90-day clock does. The rules disclosure starts
+// closed, as drawn.
 (function () {
   var list = document.getElementById('list');
   var status = document.getElementById('status');
@@ -51,20 +55,20 @@
     drafts.textContent = '';
     inbox.hidden = !items.length;
     items.forEach(function (d) {
-      var card = el('article', 'post review-item');
-      var meta = el('p', 'post-meta');
+      var card = el('article', 'card agents-draft');
+      var meta = el('p', 'fine');
       meta.appendChild(el('strong', '', d.agent.name));
-      meta.appendChild(document.createTextNode(' · drafted ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
+      meta.appendChild(document.createTextNode(' · draft · written ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
       card.appendChild(meta);
       // The whole text, exactly as it would be posted, never a preview.
       var body = el('p', 'draft-body');
       body.textContent = d.body;
       card.appendChild(body);
-      var row = el('div', 'review-actions');
+      var row = el('div', 'acts');
       var result = el('p', 'fine', '');
       result.setAttribute('role', 'status');
-      var yes = el('button', 'button primary', 'Approve');
-      var no = el('button', 'button danger', 'Decline');
+      var yes = el('button', 'btn s', 'Approve');
+      var no = el('button', 'btn s', 'Reject');
       yes.type = 'button'; no.type = 'button';
       function done(text) { result.textContent = text; yes.hidden = true; no.hidden = true; card.classList.add('decided'); }
       yes.addEventListener('click', function () {
@@ -75,7 +79,7 @@
       });
       no.addEventListener('click', function () {
         yes.disabled = true; no.disabled = true;
-        post('/decline', { draft: d.id }).then(function (x) { if (x.ok) done('Declined.'); else { result.textContent = x.d.error; yes.disabled = false; no.disabled = false; } });
+        post('/decline', { draft: d.id }).then(function (x) { if (x.ok) done('Rejected.'); else { result.textContent = x.d.error; yes.disabled = false; no.disabled = false; } });
       });
       row.appendChild(yes); row.appendChild(no);
       card.appendChild(row);
@@ -101,7 +105,7 @@
     cap.type = 'number'; cap.min = '1'; cap.max = '1000'; cap.value = String(r.daily_cap); cap.inputMode = 'numeric';
     capLabel.appendChild(cap);
     form.appendChild(capLabel);
-    var save = el('button', 'button', 'Save rules');
+    var save = el('button', 'btn s', 'Save rules');
     save.type = 'submit';
     var result = el('p', 'fine', act.rules ? 'Rules version ' + act.rules.version + (WHY[act.rules.reason] || '.') : '');
     result.setAttribute('role', 'status');
@@ -126,7 +130,7 @@
     var due = new Date(c.ask_at) <= new Date();
     var p = el('p', 'fine', 'Acting on its own since you last confirmed it on ' + new Date(c.confirmed_at).toLocaleDateString() + '. '
       + (due ? 'Please confirm by ' + new Date(c.drafts_at).toLocaleDateString() + ', or it goes back to drafting. ' : 'You\u2019ll be asked again on ' + new Date(c.ask_at).toLocaleDateString() + '. '));
-    var keep = el('button', 'button' + (due ? ' primary' : ''), 'Keep acting on its own');
+    var keep = el('button', 'btn s' + (due ? ' p' : ''), 'Keep acting on its own');
     keep.type = 'button';
     keep.addEventListener('click', function () {
       keep.disabled = true;
@@ -164,6 +168,19 @@
     };
   }
 
+  var DRAFT = function (m) { return m === 'act' ? 'draft' : m; };
+  // The pill's words: how it posts, its daily limit when it acts on its own, and when a sub-agent expires.
+  function modeText(a, act) {
+    if (a.status !== 'active') return a.status === 'revoked' ? 'Revoked' : a.status;
+    var r = act.rules;
+    var text = !r ? 'Rules not loaded' : r.post === 'act' ? 'Acts on its own \u00b7 ' + r.daily_cap + ' a day' : r.post === 'off' ? 'Posting off' : 'Drafts';
+    if (a.parent_id && a.expires_at) {
+      var days = Math.round((new Date(a.expires_at) - new Date()) / 86400000);
+      text += ' \u00b7 ' + (days >= 2 ? 'expires in ' + days + ' days' : 'expires ' + new Date(a.expires_at).toLocaleString());
+    }
+    return text;
+  }
+
   function stats(act) {
     var s = act.last_30_days;
     if (!s) return null;
@@ -192,14 +209,19 @@
     var ordered = [];
     (function walk(p) { (kids[p] || []).forEach(function (a) { ordered.push(a); walk(a.id); }); })('');
     ordered.forEach(function (a) {
-      var card = el('article', 'post agent' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : ''));
+      var card = el('article', 'card agent-card' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : '') + (a.status === 'active' ? '' : ' decided'));
       card.id = 'agent-' + a.id;
       card.tabIndex = -1;
-      var meta = el('p', 'post-meta');
-      meta.appendChild(el('strong', '', a.name));
+      var act = byId[a.id] || {};
+      // The name, and its mode as a pill in words (never colour alone), as the design draws it.
+      var head = el('div', 'agent-head');
+      var name = el('h3', '', a.name);
+      if (a.parent_id) { name.appendChild(document.createTextNode(' ')); name.appendChild(el('span', 'fine', '(sub-agent)')); }
+      head.appendChild(name);
+      head.appendChild(el('span', 'pill' + (act.rules && act.rules.post === 'act' && a.status === 'active' ? ' a' : ''), modeText(a, act)));
+      card.appendChild(head);
       var live = a.keys.filter(function (k) { return !k.revoked_at; }).length;
-      meta.appendChild(document.createTextNode(' · ' + a.status + ' · ' + live + (live === 1 ? ' working key' : ' working keys')));
-      card.appendChild(meta);
+      card.appendChild(el('p', 'fine', a.status + ' · ' + live + (live === 1 ? ' working key' : ' working keys')));
       if (a.parent_id) {
         var parent = agentById[a.parent_id];
         card.appendChild(el('p', 'fine', 'Sub-agent of ' + (parent ? parent.name : 'one of your agents') + ', which made it on its own. It is yours, and never allowed more than the agent above it. '
@@ -214,16 +236,43 @@
         card.appendChild(el('p', 'fine', tree.active_subagents + ' sub-agents are running under it; the newest ' + tree.listed + ' are listed below. Revoking it stops them all.'));
       }
       if (a.description) card.appendChild(el('p', '', a.description));
-      var act = byId[a.id] || {};
       var st = stats(act);
       if (st) card.appendChild(st);
-      if (a.status === 'active') card.appendChild(rulesForm(a, act));
       if (a.status === 'active' && act.acting_alone) card.appendChild(keepRow(a, act));
       if (a.status === 'active') {
-        var row = el('div', 'review-actions');
+        var row = el('div', 'acts');
         var result = el('p', 'fine', '');
         result.setAttribute('role', 'status');
-        var newKey = el('button', 'button', 'New key');
+        // Drafts: every part that acts on its own goes back to drafts, the daily limit kept (011's act_expire does the
+        // same). Lowering needs no fresh sign-in. Shown only while something acts on its own.
+        var r = act.rules;
+        if (r && [r.post, r.reply, r.report].indexOf('act') >= 0) {
+          var toDrafts = el('button', 'btn s', 'Drafts');
+          toDrafts.type = 'button';
+          toDrafts.setAttribute('aria-label', 'Drafts: ' + a.name + ' drafts each post for your approval');
+          toDrafts.addEventListener('click', function () {
+            toDrafts.disabled = true;
+            post('/rules', { agent: a.id, post: DRAFT(r.post), reply: DRAFT(r.reply), report: DRAFT(r.report), daily_cap: r.daily_cap }).then(function (x) {
+              toDrafts.disabled = false;
+              if (x.ok) { result.textContent = 'Back to drafts: each post waits for your approval here.'; load(); } else { result.textContent = x.d.error; }
+            });
+          });
+          row.appendChild(toDrafts);
+        }
+        // Change limit: its rules (posting, replies, reports and the daily limit), folded until asked for.
+        var rules = rulesForm(a, act);
+        rules.id = 'rules-' + a.id;
+        rules.hidden = true;
+        var change = el('button', 'btn s', 'Change limit');
+        change.type = 'button';
+        change.setAttribute('aria-expanded', 'false');
+        change.setAttribute('aria-controls', rules.id);
+        change.addEventListener('click', function () {
+          rules.hidden = !rules.hidden;
+          change.setAttribute('aria-expanded', String(!rules.hidden));
+        });
+        row.appendChild(change);
+        var newKey = el('button', 'btn s', 'New key');
         newKey.type = 'button';
         newKey.addEventListener('click', function () {
           newKey.disabled = true;
@@ -234,7 +283,7 @@
         });
         // Revoking is final, so it takes a second tap on the same button (no pop-up dialog). It stops every sub-agent
         // under this one too (PR 16), and says so.
-        var revoke = el('button', 'button danger', below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke');
+        var revoke = el('button', 'btn s danger', below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke');
         revoke.type = 'button';
         var armed = false;
         revoke.addEventListener('click', function () {
@@ -245,6 +294,7 @@
         row.appendChild(newKey);
         row.appendChild(revoke);
         card.appendChild(row);
+        card.appendChild(rules);
         card.appendChild(result);
       }
       list.appendChild(card);
@@ -263,9 +313,8 @@
         // The rules appear with the answer, so nothing on screen moves when it arrives.
         document.getElementById('agent-rules').hidden = false;
         document.getElementById('signed-out').hidden = !out;
-        document.getElementById('agents-intro').hidden = !out;
-        status.hidden = out;
-        if (x.ok) { document.getElementById('agent-rules').open = true; return render(x.d, both[1].ok ? both[1].d : null); }
+        document.getElementById('mine').hidden = out;
+        if (x.ok) return render(x.d, both[1].ok ? both[1].d : null);
         list.textContent = '';
         status.textContent = x.d.error || 'Your agents could not be loaded.';
       })
@@ -285,7 +334,12 @@
     var tries = 0;
     (function look() {
       var card = document.getElementById('agent-' + id);
-      if (card) { card.scrollIntoView({ block: 'start' }); card.focus(); return; }
+      if (card) {
+        // Its rules open with it, so they are on this screen (item 16), as Change limit would open them.
+        var rules = document.getElementById('rules-' + id);
+        if (rules) { rules.hidden = false; var b = card.querySelector('[aria-controls="rules-' + id + '"]'); if (b) b.setAttribute('aria-expanded', 'true'); }
+        card.scrollIntoView({ block: 'start' }); card.focus(); return;
+      }
       if (++tries < 20) setTimeout(look, 150);
     })();
   }

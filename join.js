@@ -25,7 +25,7 @@
   if (el && key && Object.prototype.hasOwnProperty.call(text, key)) { el.textContent = text[key]; el.hidden = false; }
 })();
 
-// After signing in with GitHub or X, go back to the page that sent you here (for example /review). The server
+// After signing in with GitHub or X, go back to the page that sent you here (for example /admin/review). The server
 // checks the path again (signin/http.js returnPath): only a path on this site is ever followed.
 (function () {
   var rt = new URLSearchParams(location.search).get('return_to');

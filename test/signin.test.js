@@ -1203,7 +1203,8 @@ test('PR 15 re-review (probe G): a link ends the session that made it, so a copi
   assert.strictEqual((await me(env, back.browser)).member_id, id);
   const [n] = await q(`select body from app.notices where member_id = '${id}' and kind = 'signin_linked'`);
   assert.match(n.body, /every session of yours was signed out, the one that linked it too/);
-  assert.match(fs.readFileSync(path.join(root, 'account.html'), 'utf8'), /Adding one signs you out everywhere, this browser too, so you sign in again with any of your methods/);
+  // The design's words since Nov 5, 2026 (static/account.html); the notice above says how to sign in again.
+  assert.match(fs.readFileSync(path.join(root, 'account.html'), 'utf8'), /Adding or removing a sign-in method works only within 10 minutes of signing in, and leaves a notice here\. Adding one signs you out everywhere, this browser too\.<\/p>/);
 });
 
 test('PR 15 re-review: a page read that loses a race is retried, and never becomes an error page', async () => {

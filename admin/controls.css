@@ -1,0 +1,55 @@
+/* /admin/controls only (the design handoff of Nov 5, 2026: static/controls.html). The design's inline styles as
+   classes, on the site's own tokens (styles.css) and components (design.css: .stats, .card, .num, .li, .pill, .btn,
+   .table-wrap, table.data). */
+.story .controls-summary { margin: -1rem 0 1.25rem; }
+.controls #totals { margin-bottom: 0.5rem; }
+.story #totals-more { margin: 0 0 0.5rem; }
+.controls .stats .card { padding: 0.9rem 1.1rem; }
+.controls #second-look .stats { margin: 1rem 0; }
+.controls .stats .card p.fine { margin: 0.25rem 0 0; }
+/* app.css lays the old Second Look numbers out as a grid; its record is one .stats block now. */
+.controls #second-look { display: block; margin: 0; }
+
+/* Deletion reviews and the brake line: cards and rows as drawn. */
+.controls .deletion { max-width: 42rem; overflow-wrap: anywhere; }
+.story .deletion p { margin: 0 0 0.5rem; }
+.controls .acts { margin: 0.5rem 0 0; gap: 0.6rem; }
+
+/* The brake: one field per row, the label above it, at most 24rem wide, as drawn. */
+.brake { max-width: 24rem; }
+.brake label { display: block; margin: 0.9rem 0 0.4rem; font-family: var(--display); font-weight: 600; }
+.brake input, .brake select { box-sizing: border-box; width: 100%; min-height: 2.75rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule-strong); border-radius: 10px; padding: 0.6rem 0.9rem; }
+.brake select { background: var(--ink); }
+.brake input:focus-visible, .brake select:focus-visible, .ask input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.story .brake p.brake-go { margin: 0.9rem 0 0.25rem; }
+
+/* Owners and most agents: the design's rows, the name on the left and the count on the right. */
+.controls .rows { margin: 0.75rem 0 0; max-width: 46rem; }
+.controls .li.owner { grid-template-columns: 1fr auto; align-items: start; }
+.controls .li.owner .who { min-width: 0; overflow-wrap: anywhere; }
+.story .li.owner p { margin: 0.4rem 0 0; }
+
+/* JEVs: the day's decisions as pills; the latest high-risk ones under them. */
+.pills { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.75rem 0; }
+.story #jevs p { margin: 0.4rem 0; }
+
+/* Second Look: each mode a small button with what it does beside it; the current one has the amber edge and glow. */
+.controls .sl-modes { display: flex; flex-direction: column; gap: 1rem; max-width: 42rem; margin: 1rem 0 1.25rem; }
+.controls .sl-mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; }
+.controls .sl-mode .btn { flex: none; min-width: 5.5rem; }
+.controls .sl-mode .btn[aria-pressed="true"] { border: 2px solid var(--amber); background: var(--glow); }
+.controls .sl-mode p { flex: 1 1 14rem; margin: 0; }
+.ask label { display: block; margin: 0.9rem 0 0.4rem; font-family: var(--display); font-weight: 600; }
+.ask input { box-sizing: border-box; width: 100%; max-width: 38rem; min-height: 2.75rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule-strong); border-radius: 10px; padding: 0.6rem 0.9rem; }
+.story .ask p { margin: 0.75rem 0 0; }
+
+/* Same text, many posts: the design's table. */
+.controls #repeated { margin-top: 0.75rem; }
+.controls #repeated .data { min-width: 32rem; }
+.controls #repeated td:first-child { overflow-wrap: anywhere; }
+.story p.refresh { margin: 0.9rem 0 0; }
+
+/* A destructive button keeps the design's red edge, and its words. */
+.btn.danger { border-color: #c2413b; color: #f1857f; }
+.btn.danger:hover { border-color: #e0574f; color: #ffb0ab; }
+@media (prefers-color-scheme: light) { .btn.danger { color: #a3302a; } .btn.danger:hover { color: #7d211c; } }

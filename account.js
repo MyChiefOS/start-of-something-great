@@ -2,6 +2,10 @@
 // sign-in method, with a form per method (never the last one; the server checks that the session is fresh).
 // The forms post to /auth/... themselves; this only fills in the page and shows what happened. Text is set with
 // textContent, never as HTML.
+// The design handoff of Nov 5, 2026 (static/account.html): "Signed in as <name> · <level>" under the heading, and each
+// notice as a card with a pill naming its kind, its words, and its answers in one row of equal buttons
+// (CODING_AGENT_SPEC.md 2.2: Approve and Reject with equal weight). The administrator's pages moved to /admin/review and
+// /admin/controls; notices written before the move are opened at the new address.
 (function () {
   var msg = document.getElementById('message');
   // A deletion JEVs flagged as high risk (PR 12; Aaron, Oct 16, 2026). Nothing is deleted until Aaron decides.
@@ -46,7 +50,8 @@
         return;
       }
       var d = x.d;
-      msg.textContent = note || 'Signed in as ' + d.display_name + '.';
+      var level = { 0: 'Email only', 1: 'GitHub member', 2: 'Verified' }[d.trust_level] || 'Level ' + d.trust_level;
+      msg.textContent = note || 'Signed in as ' + d.display_name + ' \u00b7 ' + level;
       if (q.get('error') === 'fresh' || q.get('error') === 'fresh_method' || q.get('error') === 'senior') {
         var again = el('a', '', 'Sign in again');
         again.href = '/join?return_to=%2Faccount';
@@ -54,7 +59,7 @@
       }
       // The level's name, as /feed shows it, with what it means (PR E's review, finding 3).
       var whoLine = document.getElementById('who');
-      whoLine.textContent = ({ 0: 'Email only', 1: 'GitHub member', 2: 'Verified' }[d.trust_level] || 'Level ' + d.trust_level) + ' (level ' + d.trust_level + ') · joined '
+      whoLine.textContent = level + ' (level ' + d.trust_level + ') · joined '
         + new Date(d.joined).toLocaleDateString() + ' · member ID ' + d.member_id + ' · ';
       var levels = el('a', '', 'What the levels mean'); levels.href = '/team#levels';
       whoLine.appendChild(levels);
@@ -70,7 +75,7 @@
           f.action = '/auth/account/unlink';
           var hid = el('input');
           hid.type = 'hidden'; hid.name = 'id'; hid.value = s.id;
-          var b = el('button', 'button', 'Unlink');
+          var b = el('button', 'btn s', 'Unlink');
           b.type = 'submit';
           f.appendChild(hid);
           f.appendChild(b);
@@ -85,7 +90,7 @@
       var add = document.getElementById('add-methods');
       ['github', 'x'].forEach(function (p) {
         if (have.indexOf(p) >= 0) return;
-        var a = el('a', 'button', 'Add ' + PROVIDER[p]);
+        var a = el('a', 'btn s', 'Add ' + PROVIDER[p]);
         a.href = '/auth/' + p + '/start?link=1&return_to=%2Faccount';
         add.appendChild(a);
         add.appendChild(document.createTextNode(' '));
@@ -144,8 +149,9 @@
       return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
     });
   }
+  // Every answer on a notice is the same small button: no answer is drawn as the one to pick (2.2, equal weight).
   function button(label, cls, act) {
-    var b = el('button', 'button' + (cls ? ' ' + cls : ''), label);
+    var b = el('button', 'btn s' + (cls ? ' ' + cls : ''), label);
     b.type = 'button';
     b.addEventListener('click', function () { b.disabled = true; act(b); });
     return b;
@@ -159,9 +165,14 @@
     if (x.ok) setTimeout(loadNotices, 1200);
   }
 
-  // The words, shown exactly as written, and the buttons that answer this notice.
+  // Back to drafting, as the 90-day clock itself would do (011, app.act_expire): every "acts on its own" becomes
+  // "drafts", the daily limit stays. Lowering needs no fresh sign-in (api/agents.js, POST rules).
+  var DRAFT = function (m) { return m === 'act' ? 'draft' : m; };
+
+  // The words, shown exactly as written, and the buttons that answer this notice, in one row (the design's .acts).
   function oneTap(n, ctx) {
     var box = el('div', 'one-tap');
+    var acts = el('div', 'acts');
     var out = el('p', 'fine', '');
     out.setAttribute('role', 'status');
     if (n.kind === 'draft_waiting' && n.subject && n.subject.kind === 'draft') {
@@ -169,17 +180,23 @@
       if (!d) return null;
       var words = el('blockquote', 'draft-words', d.body);
       box.appendChild(words);
-      box.appendChild(button('Approve these words', 'primary', function (b) {
+      acts.appendChild(button('Approve and post', '', function (b) {
         sha256(words.textContent).then(function (h) { return postJson('/api/agents/approve', { draft: d.id, hash: h }); })
           .then(function (x) { answered(out, x); b.disabled = x.ok; });
       }));
-      box.appendChild(document.createTextNode(' '));
-      box.appendChild(button('Decline', '', function (b) { postJson('/api/agents/decline', { draft: d.id }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
+      acts.appendChild(button('Reject', '', function (b) { postJson('/api/agents/decline', { draft: d.id }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
     } else if (n.kind === 'act_reconfirm' && n.subject && n.subject.kind === 'agent') {
       var a = ctx.activity && ctx.activity.agents.find(function (x) { return x.id === n.subject.id; });
       if (!a || !a.acting_alone || !a.rules) return null;
-      box.appendChild(button('Keep it acting on its own', 'primary', function (b) {
+      acts.appendChild(button('Keep acting', '', function (b) {
         postJson('/api/agents/reconfirm', { agent: a.id, version: a.rules.version }).then(function (x) { answered(out, x); b.disabled = x.ok; });
+      }));
+      acts.appendChild(button('Back to drafts', '', function (b) {
+        postJson('/api/agents/rules', { agent: a.id, post: DRAFT(a.rules.post), reply: DRAFT(a.rules.reply), report: DRAFT(a.rules.report), daily_cap: a.rules.daily_cap })
+          .then(function (x) {
+            if (x.ok) x.d.message = 'Back to drafts: its posts wait for your approval on Your agents.';
+            answered(out, x); b.disabled = x.ok;
+          });
       }));
     } else if (n.kind === 'challenge' && n.subject && n.subject.kind === 'challenge') {
       var c = ctx.challenges && ctx.challenges.find(function (x) { return x.id === n.subject.id; });
@@ -189,15 +206,27 @@
       var why = el('a', 'fine', 'Why was it held? See Your posts');
       why.href = '/feed#mine';
       box.appendChild(why);
-      box.appendChild(document.createTextNode(' '));
-      box.appendChild(button('Confirm: post it', 'primary', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'confirm' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
-      box.appendChild(document.createTextNode(' '));
-      box.appendChild(button('Withdraw it', '', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'decline' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
+      acts.appendChild(button('Confirm: post it', '', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'confirm' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
+      acts.appendChild(button('Withdraw it', '', function (b) { postJson('/api/feed', { challenge: c.id, answer: 'decline' }).then(function (x) { answered(out, x); b.disabled = x.ok; }); }));
     } else {
       return null;
     }
+    box.appendChild(acts);
     box.appendChild(out);
     return box;
+  }
+
+  // The pill on each card names the notice's kind in the design's words; one that needs an answer has the amber edge.
+  var KIND = { draft_waiting: 'Draft waiting', act_reconfirm: '90-day check', challenge: 'Held post', signin_keyfile: 'Sign-in',
+    signin_linked: 'Sign-in', signin_unlinked: 'Sign-in', alert: 'Alert' };
+  var ASKS = { draft_waiting: true, act_reconfirm: true, challenge: true, alert: true };
+  // Notices keep the address they were written with, and the database still writes the old ones (011 to 034): /review
+  // and /controls moved to /admin/review and /admin/controls on Nov 5, so the link opens the new address, "#" part kept;
+  // a sign-in link that came back to /agents (011's challenge notice) comes back to /account/agents.
+  function moved(link) {
+    return link.replace(/^\/(review|controls)(?=$|[#?])/, '/admin/$1')
+      .replace(/^(\/join\?return_to=)%2Fagents(?=$|[&#]|%23|%3F)/, '$1%2Faccount%2Fagents')
+      .replace(/^(\/join\?return_to=)%2F(review|controls)(?=$|[&#]|%23|%3F)/, '$1%2Fadmin%2F$2');
   }
 
   function renderNotices(d, ctx) {
@@ -205,18 +234,18 @@
     summary.textContent = d.notices.length ? (d.unread ? d.unread + ' unread' : 'All read') : 'No notices yet. When something needs you, it shows up here first.';
     readAll.hidden = !d.unread;
     d.notices.forEach(function (n) {
-      var card = el('article', 'post notice' + (n.read ? ' decided' : ''));
-      var meta = el('p', 'post-meta');
-      meta.appendChild(el('strong', '', n.title));
-      meta.appendChild(document.createTextNode(' · ' + new Date(n.created_at).toLocaleString() + (n.read ? '' : ' · new') + (n.for_admins ? ' · for administrators' : '')));
-      card.appendChild(meta);
+      var card = el('article', 'card notice-card' + (n.read ? ' decided' : ''));
+      card.appendChild(el('span', 'pill ' + (ASKS[n.kind] && !n.read ? 'a' : 'm'), KIND[n.kind] || 'Notice'));
+      var title = el('p', 'notice-title');
+      title.appendChild(el('strong', '', n.title));
+      card.appendChild(title);
       if (n.body) card.appendChild(el('p', '', n.body));
       var tap = oneTap(n, ctx);
       if (tap) card.appendChild(tap);
-      var row = el('p', 'fine');
+      var row = el('p', 'fine notice-meta', new Date(n.created_at).toLocaleString() + (n.read ? '' : ' · new') + (n.for_admins ? ' · for administrators' : '') + ' ');
       // Links are paths on this site only (the database refuses anything else); checked again here before use.
       // Notices written before Nov 5 link to /agents, now the public agent list; an owner's agents page is /account/agents.
-      if (n.link && /^\/(?!\/)/.test(n.link)) { var a = el('a', '', 'Open'); a.href = n.link.replace(/^\/agents(?=$|[#?])/, '/account/agents').replace(/^\/join\?return_to=%2Fagents(?=$|[&#])/, '/join?return_to=%2Faccount%2Fagents'); row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
+      if (n.link && /^\/(?!\/)/.test(n.link)) { var a = el('a', '', 'Open'); a.href = moved(n.link.replace(/^\/agents(?=$|[#?])/, '/account/agents')); row.appendChild(a); row.appendChild(document.createTextNode(' ')); }
       if (!n.read) {
         row.appendChild(button('Mark read', '', function (b) {
           postJson('/api/notify/read', { ids: [n.id] }).then(function (x) { if (x.ok) loadNotices(); else b.disabled = false; });
