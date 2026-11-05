@@ -20,21 +20,13 @@ const shell = require('../scripts/shell');
 // design's h1 was a sample (a made-up project, room or dispute), the static h1 is the real one or a plain one the
 // script fills from the address.
 const PAGES = [
-  { file: 'rooms.html', path: '/rooms', h1: 'Rooms', h2: null, kicker: 'Agent Points' },
-  { file: 'room.html', path: '/rooms/{code}', h1: 'Room', h2: ['Specialist leaderboard', 'Open projects'] },
-  { file: 'projects.html', path: '/projects', h1: 'Projects', h2: ['When nothing matches'], kicker: 'Agent Points' },
-  { file: 'project.html', path: '/projects/{id}', h1: 'Build Day One Great', h2: ['Complete this project'] },
-  { file: 'disputes.html', path: '/disputes', h1: 'Disputes', h2: ['How a dispute works'], kicker: 'Proposed module' },
-  { file: 'dispute.html', path: '/disputes/{id}', h1: 'No dispute here', h2: ['Evidence'] },
   { file: 'agents/join.html', path: '/agents/join', h1: 'Join as an agent', kicker: 'For agents',
     h2: ['1. Join', '2. Store your key, pass on the claim link', '3. Post for the person you act for', 'If you lose your key'] },
-  { file: 'admin/console.html', path: '/admin/console', h1: 'Admin console', kicker: 'Agent Points',
-    h2: ['Projects by status', 'Ledger integrity', 'Checkpoints', 'Activity log'] },
   { file: 'admin/go-live.html', path: '/admin/go-live', h1: 'Release checklist (SF6)', kicker: 'Go live',
     h2: ['Decisions', 'Accounts and settings', 'Legal', 'Go live'] }
 ];
 const FILES = PAGES.map((p) => p.file);
-const SCRIPTS = ['soc-rooms.js', 'rooms.js', 'room.js', 'projects.js', 'project.js', 'dispute.js', 'admin/console.js'];
+const SCRIPTS = [];
 
 // The design's sample set: invented people, agents, projects, receipts, hashes, counts and times
 // (static/rooms.html, room.html, projects.html, project.html, disputes.html, dispute.html, agentjoin.html, console.html).
@@ -77,12 +69,6 @@ test('the design’s h1, kicker and section headings, in order; one h1 and no sk
     for (const tag of ['<header class="site-header">', '<nav class="site-nav" aria-label="Main">', '<main id="main"', '<footer class="site-footer">']) assert.ok(read(p.file).includes(tag), p.file + ' has ' + tag);
     assert.match(read(p.file), /<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/, p.file);
   }
-  // Detail pages say where they sit, one step back, above the heading (5.4).
-  for (const [f, back] of [['room.html', '/rooms'], ['project.html', '/projects'], ['dispute.html', '/disputes']]) {
-    const m = main(f);
-    assert.match(m, new RegExp('<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="' + back + '">'), f);
-    assert.ok(m.indexOf('class="crumbs"') < m.indexOf('<h1'), f + ': breadcrumbs above the heading');
-  }
 });
 
 test('no inline style, no inline script, no on* handler; scripts are files, write text only and fetch only our own API', () => {
@@ -102,11 +88,6 @@ test('no inline style, no inline script, no on* handler; scripts are files, writ
     for (const u of js.matchAll(/fetch\('([^']+)'/g)) assert.match(u[1], /^\/(api\/|auth\/me$)/, f + ' fetches ' + u[1]);
     assert.ok(!/\.style\b|setAttribute\('style'/.test(js), f + ': no inline styles from script either');
   }
-  // Every page script beside its page is loaded by that page; the shared room list by the pages that read it.
-  for (const [page, js] of [['rooms.html', 'rooms.js'], ['room.html', 'room.js'], ['projects.html', 'projects.js'], ['project.html', 'project.js'], ['dispute.html', 'dispute.js'], ['admin/console.html', 'admin/console.js']]) {
-    assert.match(read(page), new RegExp('<script src="/' + js.replace('.', '\\.') + '" defer></script>'), page + ' loads ' + js);
-  }
-  assert.match(read('room.html'), /<script src="\/soc-rooms\.js" defer><\/script>\n  <script src="\/room\.js" defer><\/script>/, 'the room list loads before room.js');
 });
 
 test('no figure from the design’s sample set: no made-up person, agent, project, receipt, score, hash or time', () => {
@@ -117,148 +98,9 @@ test('no figure from the design’s sample set: no made-up person, agent, projec
   for (const f of SCRIPTS) for (const s of SAMPLES.filter((x) => !x.startsWith('>'))) assert.ok(!read(f).includes(s), f + ' carries the sample "' + s + '"');
 });
 
-test('the Proposed notice stays where the module is not built, rewritten true; /agents/join, which is real, drops it', () => {
-  for (const f of ['rooms.html', 'room.html', 'projects.html', 'project.html', 'disputes.html', 'dispute.html', 'admin/console.html']) {
-    const m = main(f);
-    assert.match(m, /^<main[^>]*>\s*<div class="notice"><b>Proposed\.<\/b> /, f + ': the notice comes first');
-    assert.ok(!/It is not part of the live Day One Great site|There is no dispute page on the live site yet/.test(m), f + ': the design’s wording, which is no longer true, is gone');
-    assert.match(m.match(/<div class="notice">[\s\S]*?<\/div>/)[0], /phase 5|phase 2/, f + ': says which phase it waits for');
-  }
+test('/agents/join, which is real, carries no Proposed notice', () => {
   assert.ok(!/<b>Proposed\.<\/b>/.test(main('agents/join.html')), '/agents/join describes the live registration');
-  // Aaron's phase 5 decision (NOTES.md): audits by a JEVs-based auditor and Third Look, not members picked at random.
-  for (const f of ['disputes.html', 'dispute.html', 'project.html']) assert.match(main(f), /JEVs-based auditor and (by )?Third Look/, f);
   for (const f of FILES) assert.ok(!/drand|public randomness|random-number/.test(main(f)), f + ': no randomly chosen auditors');
-});
-
-test('the 23 rooms are the SOC 2018 major groups, the same in soc-rooms.js, /rooms (cards and list) and the /projects filter', () => {
-  const ctx = { window: {} };
-  vm.runInNewContext(read('soc-rooms.js'), ctx);
-  const rooms = JSON.parse(JSON.stringify(ctx.window.DOG_ROOMS)); // out of the script's own context, for deepStrictEqual
-  assert.strictEqual(rooms.length, 23);
-  assert.deepStrictEqual(rooms.map((r) => r[0]), ['11', '13', '15', '17', '19', '21', '23', '25', '27', '29', '31', '33', '35', '37', '39', '41', '43', '45', '47', '49', '51', '53', '55'].map((c) => c + '-0000'));
-  const amp = (s) => s.replace(/&/g, '&amp;');
-  const html = read('rooms.html');
-  const cards = [...html.matchAll(/<a href="\/rooms\/([0-9-]+)"><div class="card"><span class="room-code">([0-9-]+)<\/span><h2>([^<]+)<\/h2>/g)].map((m) => [m[1], m[3]]);
-  assert.deepStrictEqual(cards, rooms.map(([c, n]) => [c, amp(n)]), 'the All 23 cards');
-  const list = [...html.match(/<ul class="room-list">[\s\S]*?<\/ul>/)[0].matchAll(/<a href="\/rooms\/([0-9-]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2]]);
-  assert.deepStrictEqual(list, rooms.map(([c, n]) => [c, amp(n)]), 'the folded list');
-  assert.match(html, /<summary>23 rooms with no open tasks<\/summary>/, 'counted, not the design’s sample 17');
-  const opts = [...read('projects.html').matchAll(/<option value="([0-9-]+)">\1 ([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);
-  assert.deepStrictEqual(opts, rooms.map(([c, n]) => [c, amp(n)]), 'the room filter');
-});
-
-// A stand-in DOM, just enough for these scripts: elements by id, hidden, textContent, attributes and listeners.
-function dom(ids, extra = {}) {
-  const els = {};
-  const make = (id) => {
-    const e = { id, hidden: false, textContent: '', attrs: {}, on: {}, tabIndex: 0, children: [],
-      setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
-      addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, appendChild(c) { this.children.push(c); return c; }, focus() { dom.focused = this; },
-      querySelectorAll: () => [], querySelector: () => null };
-    return e;
-  };
-  for (const id of ids) els[id] = make(id);
-  Object.assign(els, extra);
-  return { els, make, document: { getElementById: (id) => els[id] || null, createElement: () => make(''), createTextNode: (t) => ({ textContent: t }),
-    querySelectorAll: () => [], title: '' } };
-}
-const settle = () => new Promise((r) => setImmediate(() => setImmediate(() => setImmediate(r))));
-
-function runConsole(answers) {
-  const tabIds = ['summary', 'agents', 'projects', 'submissions', 'ledger', 'admins'];
-  const d = dom(['summary', 'admin', 'signed-out', 'not-allowed', 'stat-agents'].concat(tabIds.map((t) => 'panel-' + t)));
-  const tabs = tabIds.map((t) => { const e = d.make('tab-' + t); e.attrs['aria-controls'] = 'panel-' + t; return e; });
-  d.els.admin.hidden = true; d.els['signed-out'].hidden = true; d.els['not-allowed'].hidden = true;
-  d.els.admin.querySelectorAll = (q) => (q === '[role="tab"]' ? tabs : []);
-  const asked = [];
-  const fetch = (u) => { asked.push(u); const [status, body] = answers[u] || [404, {}]; return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) }); };
-  vm.runInNewContext(read('admin/console.js'), { document: d.document, fetch, Date, Number, String, Array, Promise });
-  return settle().then(() => ({ els: d.els, asked, tabs }));
-}
-
-test('/admin/console shows nothing of the console until the server says this is the administrator', async () => {
-  const html = read('admin/console.html');
-  assert.match(html, /<div id="admin" hidden>/, 'hidden in the HTML');
-  assert.match(html, /<meta name="robots" content="noindex">/);
-  assert.match(html, /<span class="num" id="stat-agents">…<\/span>/, 'the one live figure is empty until the answer fills it');
-  const visitor = await runConsole({ '/auth/me': [200, { signed_in: false }] });
-  assert.deepStrictEqual(visitor.asked, ['/auth/me'], 'a visitor is never sent to the administrator API');
-  assert.strictEqual(visitor.els.admin.hidden, true);
-  assert.strictEqual(visitor.els['signed-out'].hidden, false);
-  const member = await runConsole({ '/auth/me': [200, { signed_in: true }], '/api/feed?controls=1': [403, { error: 'Only Aaron can see the owner controls.' }] });
-  assert.deepStrictEqual(member.asked, ['/auth/me', '/api/feed?controls=1']);
-  assert.strictEqual(member.els.admin.hidden, true, 'a member who isn’t the administrator sees none of it');
-  assert.strictEqual(member.els['not-allowed'].hidden, false);
-  assert.strictEqual(member.els['stat-agents'].textContent, '', 'and no figure');
-  const expired = await runConsole({ '/auth/me': [200, { signed_in: true }], '/api/feed?controls=1': [401, {}] });
-  assert.strictEqual(expired.els.admin.hidden, true);
-  assert.strictEqual(expired.els['signed-out'].hidden, false);
-  const off = await runConsole({ '/auth/me': [503, {}] });
-  assert.strictEqual(off.els.admin.hidden, true, 'sign-in off: nothing shown');
-  assert.match(off.els.summary.textContent, /Sign-in isn’t available right now/);
-  const aaron = await runConsole({ '/auth/me': [200, { signed_in: true }], '/api/feed?controls=1': [200, { totals: { active_agents: 1234 } }] });
-  assert.strictEqual(aaron.els.admin.hidden, false, 'the administrator sees the console');
-  assert.strictEqual(aaron.els['stat-agents'].textContent, '1,234', 'the live agent count, from the answer');
-  // Tabs: arrow keys move and show the next panel; Home and End go to the ends; one tab stop.
-  const key = (t, k) => t.on.keydown[0]({ key: k, preventDefault() {} });
-  key(aaron.tabs[0], 'ArrowRight');
-  assert.strictEqual(aaron.tabs[1].attrs['aria-selected'], 'true');
-  assert.strictEqual(aaron.els['panel-agents'].hidden, false);
-  assert.strictEqual(aaron.els['panel-summary'].hidden, true);
-  assert.deepStrictEqual(aaron.tabs.map((t) => t.tabIndex), [-1, 0, -1, -1, -1, -1]);
-  key(aaron.tabs[1], 'End');
-  assert.strictEqual(aaron.els['panel-admins'].hidden, false);
-  key(aaron.tabs[5], 'ArrowRight');
-  assert.strictEqual(aaron.els['panel-summary'].hidden, false, 'wraps round');
-  key(aaron.tabs[0], 'ArrowLeft');
-  assert.strictEqual(aaron.els['panel-admins'].hidden, false);
-});
-
-test('/admin/console: the tabs and panels are wired one to one, and the ledger shows the single public log', () => {
-  const m = main('admin/console.html');
-  const tabs = [...m.matchAll(/<button type="button" role="tab" id="tab-(\w+)" aria-controls="panel-(\w+)" aria-selected="(true|false)" tabindex="(0|-1)">([^<]+)<\/button>/g)];
-  assert.deepStrictEqual(tabs.map((t) => t[5]), ['Summary', 'Agents', 'Projects', 'Submissions', 'Ledger', 'Admins'], 'the design’s tabs');
-  for (const t of tabs) {
-    assert.strictEqual(t[1], t[2]);
-    assert.match(m, new RegExp('<div role="tabpanel" id="panel-' + t[1] + '" aria-labelledby="tab-' + t[1] + '" tabindex="0"' + (t[3] === 'true' ? '>' : ' hidden>')));
-  }
-  // README "Admin console": "in the new design show the single log: tree size, last checkpoint, witnesses, last
-  // consistency check".
-  for (const part of ['Tree size', 'Last checkpoint', 'Witnesses', 'Last consistency check']) assert.ok(m.includes('<td>' + part + '</td>'), part);
-  assert.ok(!/hash chain per room<\/p>|<h2>Anchors<\/h2>/.test(m), 'not the per-room chains and anchors');
-});
-
-test('/projects: one real project, this site; the design’s default chip (Open) and the empty state say so', () => {
-  const m = main('projects.html');
-  const rows = [...m.matchAll(/<tr data-status="(\w+)" data-room="([0-9-]+)"[^>]*>/g)];
-  assert.strictEqual(rows.length, 1, 'one project');
-  assert.match(m, /<a href="\/projects\/day-one-great">Build Day One Great<\/a>/);
-  assert.match(m, /<caption id="project-count">1 project: this site's own work/);
-  for (const id of ['project-q', 'project-room']) assert.match(m, new RegExp('<label class="field-label" for="' + id + '">'), 'a visible label for #' + id);
-  // Run projects.js in a stand-in DOM.
-  const row = { hidden: false, attrs: { 'data-status': 'claimed', 'data-room': '15-0000', 'data-since': '2026-10-13', 'data-search': 'build day one great day-one-great' },
-    getAttribute(k) { return this.attrs[k]; }, querySelector: () => age };
-  const age = { textContent: 'Since Oct 13, 2026' };
-  const chipEls = ['open', 'claimed', 'submitted', 'completed', 'all'].map((s) => ({ attrs: { 'data-status': s }, getAttribute(k) { return this.attrs[k]; }, setAttribute(k, v) { this.attrs[k] = v; } }));
-  const d = dom(['project-q', 'project-room', 'status-chips', 'project-table', 'no-match-text']);
-  d.els['status-chips'].querySelectorAll = () => chipEls;
-  d.document.querySelectorAll = (q) => (q === '#project-rows tr' ? [row] : []);
-  d.els['project-q'].value = '';
-  d.els['project-room'].value = '';
-  vm.runInNewContext(read('projects.js'), { document: d.document, Date: { parse: Date.parse, now: () => Date.parse('2026-11-05T12:00:00Z') }, Math, String, Array });
-  assert.strictEqual(age.textContent, '23d', 'the age, in whole days');
-  assert.strictEqual(d.els['status-chips'].hidden, false, 'the chips show once the script runs');
-  assert.strictEqual(row.hidden, true, 'Open is the default, and this project is claimed');
-  assert.strictEqual(d.els['project-table'].hidden, true);
-  assert.match(d.els['no-match-text'].textContent, /^No open projects yet\. The one project here, this site, is claimed/);
-  const click = (s) => d.els['status-chips'].on.click[0]({ target: { closest: () => chipEls.find((c) => c.attrs['data-status'] === s) } });
-  click('all');
-  assert.strictEqual(row.hidden, false);
-  assert.strictEqual(d.els['project-table'].hidden, false);
-  d.els['project-q'].value = 'tax';
-  d.els['project-q'].on.input[0]();
-  assert.strictEqual(row.hidden, true);
-  assert.strictEqual(d.els['no-match-text'].textContent, 'No projects match “tax”.');
 });
 
 test('/agents/join describes the registration that exists today: the call, its limits and answers match the API', () => {

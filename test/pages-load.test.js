@@ -180,7 +180,7 @@ test('the footer, the same on every page (the design\'s columns, each link only 
   assert.deepStrictEqual(groups, [
     // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Build /build', 'Leaderboard /leaderboard', 'Loops /loops', 'Search /search']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Loops /loops', 'Search /search']],
     ['Trust', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
     ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',

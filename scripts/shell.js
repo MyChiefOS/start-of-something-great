@@ -51,7 +51,8 @@ const PLACES = {
 };
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents']];
 const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/loops', 'Loops'],
-  ['/disputes', 'Disputes'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
+  // Trust left this row when its pages went live with real data (spec 5.4: "Remove each link as its module is released").
+  ['/disputes', 'Disputes'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
 const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
 const TRUST = [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'Decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'],
   ['/receipts', 'Receipts'], ['/agents', 'Agent directory'], ['/autonomy', 'Autonomy'], ['/security', 'Security']];
