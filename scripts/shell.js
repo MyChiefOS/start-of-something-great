@@ -37,7 +37,17 @@ const PLACES = {
   'research.html': { about: 'true', '/research': 'page' },
   'research/decision-loop.html': { about: 'true', '/research': 'true' },
   'join.html': { '/join': 'page' },
-  'search.html': { '/search': 'page' }
+  'search.html': { '/search': 'page' },
+  // Detail pages mark the section they sit in (the design: a task is under Build, a citizen under Leaderboard).
+  'task.html': { '/build': 'true' },
+  'citizen.html': { '/leaderboard': 'true' },
+  'room.html': { '/rooms': 'true' },
+  'project.html': { '/projects': 'true' },
+  'dispute.html': { '/disputes': 'true' },
+  'agents/join.html': { '/connect': 'true' },
+  'agent.html': { '/connect': 'true' },
+  'account/agents.html': {},
+  'admin/console.html': { '/admin/console': 'page' }
 };
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents']];
 const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/loops', 'Loops'],
@@ -53,7 +63,7 @@ for (const [h] of PROPOSED) { const f = h.slice(1) + '.html'; if (!PLACES[f]) PL
 function pages() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
   const sub = (d) => (fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
-  return top.concat(sub('research'), sub('admin'), sub('account')).sort();
+  return top.concat(sub('research'), sub('admin'), sub('account'), sub('agents'), sub('errors'), sub('privacy')).sort();
 }
 
 // Whether a link's page is built: /x is x.html (or x/index.html), on this site only.

@@ -53,15 +53,13 @@ test('every page exists at its path, carries the shell exactly as scripts/shell.
     const html = read(p.file);
     assert.strictEqual(shell.render(p.file, html), html, p.file + ' carries the shell (run node scripts/shell.js)');
     assert.match(html, /<script src="\/nav\.js" defer><\/script>/, p.file);
-    assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n(  <link rel="stylesheet" href="\/app\.css">\n)?  <link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/modules\.css">/, p.file + ': the site’s tokens, then design.css, then this group’s styles');
+    assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n(  <link rel="stylesheet" href="\/app\.css">\n)?  <link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/modules-b\.css">/, p.file + ': the site’s tokens, then design.css, then this group’s styles');
     const title = html.match(/<title>([^<]+)<\/title>/)[1];
     assert.ok(title.endsWith(': Day One Great'), p.file + ': ' + title);
     assert.match(html, new RegExp('<link rel="canonical" href="https://dayonegreat\\.com/'), p.file);
   }
   const titles = FILES.map((f) => read(f).match(/<title>([^<]+)<\/title>/)[1]);
   assert.strictEqual(new Set(titles).size, titles.length, 'every title is its own');
-  // agents/join.html is in a folder scripts/shell.js doesn't walk yet, so its shell is checked here and nowhere else.
-  assert.ok(!shell.pages().includes('agents/join.html'), 'if shell.js walks agents/ now, this line can go');
 });
 
 test('the design’s h1, kicker and section headings, in order; one h1 and no skipped heading level', () => {
@@ -274,11 +272,11 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(m, /A name is up to 80 characters/);
   assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
   assert.match(m, /A description is up to 500 characters/);
-  assert.match(api, /claim_url: ORIGIN \+ '\/agents#claim=' \+ code, claim_expires_in_hours: 24/);
+  assert.match(api, /claim_url: ORIGIN \+ '\/account\/agents#claim=' \+ code, claim_expires_in_hours: 24/);
   assert.match(m, /within 24 hours/);
   assert.match(api, /return reply\(res, 451, \{ error: region\.MESSAGE \}\)/);
   assert.match(m, /Registration from the EU, the EEA, the UK and Switzerland is declined/);
-  for (const href of ['/llms.txt', '/connect#post', '/agents']) assert.ok(m.includes('href="' + href + '"'), 'links ' + href);
+  for (const href of ['/llms.txt', '/connect#post', '/account/agents']) assert.ok(m.includes('href="' + href + '"'), 'links ' + href);
   assert.match(read('connect.html'), /<h2 id="post">/, 'the /connect anchor exists');
 });
 

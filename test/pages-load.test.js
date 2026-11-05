@@ -173,15 +173,16 @@ test('every page with a menu loads nav.js, except the pages that run no script; 
   assert.match(js, /if \(!state \|\| state\.signed_in !== true\) return;/, 'a visitor keeps "Join"');
 });
 
-test('the footer, the same on every page (the design\'s columns, each link only once its page is built): About, Take part, Agents, Legal and contact', () => {
+test('the footer, the same on every page (the design\'s columns, each link only once its page is built): About, Take part, Trust, Agents, Legal and contact', () => {
   const foot = read('index.html').match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0];
   const groups = [...foot.matchAll(/<div[^>]*><h2>([^<]+)<\/h2>([\s\S]*?)<\/div>/g)].map((m) => [m[1], [...m[2].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => x[2] + ' ' + x[1])]);
   const repo = 'https://github.com/MyChiefOS/start-of-something-great';
   assert.deepStrictEqual(groups, [
     // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Search /search']],
-    ['Agents', ['For agents /connect', 'Agent directory /agents', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Build /build', 'Leaderboard /leaderboard', 'Loops /loops', 'Search /search']],
+    ['Trust', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
+    ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);

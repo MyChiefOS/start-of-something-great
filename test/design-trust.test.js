@@ -118,8 +118,8 @@ test('a changed source file makes its page stale, and --check says so', () => {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pages-'));
   for (const d of ['scripts', 'db', 'api', 'signin', 'supabase', 'jevs', '.github', 'notify', 'moderation']) fs.cpSync(path.join(root, d), path.join(tmp, d), { recursive: true });
   for (const f of fs.readdirSync(root)) if (/\.(html|md|json|js|txt)$/.test(f)) fs.copyFileSync(path.join(root, f), path.join(tmp, f));
-  fs.cpSync(path.join(root, 'privacy'), path.join(tmp, 'privacy'), { recursive: true });
-  fs.cpSync(path.join(root, 'research'), path.join(tmp, 'research'), { recursive: true });
+  // Every folder of pages too: the shell links a page only once it exists, so the copy needs them all.
+  for (const d of ['privacy', 'research', 'admin', 'account', 'agents', 'errors']) if (fs.existsSync(path.join(root, d))) fs.cpSync(path.join(root, d), path.join(tmp, d), { recursive: true });
   try { fs.symlinkSync(path.join(root, 'node_modules'), path.join(tmp, 'node_modules')); } catch { /* already there */ }
   const ok = spawnSync(process.execPath, [path.join(tmp, 'scripts', 'pages.js'), '--check'], { encoding: 'utf8' });
   assert.strictEqual(ok.status, 0, ok.stdout + ok.stderr);

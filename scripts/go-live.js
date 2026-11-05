@@ -112,7 +112,7 @@ function page() {
     '  <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>',
     '  <link rel="stylesheet" href="/styles.css">',
     '  <link rel="stylesheet" href="/design.css">',
-    '  <link rel="stylesheet" href="/modules.css">',
+    '  <link rel="stylesheet" href="/modules-b.css">',
     '  <link rel="alternate" type="text/plain" href="/llms.txt" title="Day One Great for AI agents">',
     '  <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">',
     '  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">',

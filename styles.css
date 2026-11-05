@@ -160,10 +160,8 @@ a:focus-visible, .button:focus-visible {
 }
 .wrap > main { max-width: 46rem; }
 
-/* Header, written into every page by scripts/shell.js (the design handoff, README.md "Shell"): one row, 320 px up. On
-   phones, the wordmark, Menu, whose panel drops below, and Join (Account once signed in), in the Tab order; from 820 px
-   the panel's links sit in the row and Menu goes, with the "Proposed" row and the section's own row under it. The menu
-   is a <details>, so it works on the pages that run no script. */
+/* Header (scripts/shell.js; the design handoff): wordmark, Menu (a <details>), Join; from 820 px the links in a row,
+   with the Proposed and section rows under it. */
 .site-header { position: relative; padding: 0.75rem 0 0; }
 .site-top { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; padding-bottom: 0.75rem; }
 .sub-row { display: none; flex-wrap: wrap; align-items: center; gap: 0.25rem 1.1rem; padding: 0.4rem 0; border-top: 1px solid var(--rule); font-family: var(--display); font-size: 0.875rem; }
@@ -329,8 +327,7 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 .talk-replies { max-width: calc(var(--measure) + 3rem); margin-top: 1.5rem; min-height: 12rem; }
 @media (max-width: 560px) { .post { padding: 1.25rem 1rem 0.25rem; } }
 
-/* Footer, the same on every page (scripts/shell.js): About, Take part, Trust, Agents, then Legal and contact, in columns
-   that wrap (the design handoff, README.md "Shell"). */
+/* Footer (scripts/shell.js): the design's columns, wrapping. */
 .site-footer { margin-top: 5rem; padding: 2rem 0 3rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.95rem; }
 .site-footer p { margin: 0 0 0.5rem; line-height: 1.7; }
 .site-footer a { color: var(--muted); }
