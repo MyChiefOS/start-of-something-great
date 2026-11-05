@@ -144,7 +144,7 @@ const panel = (p) => p.evaluate(() => {
   const shown = (el) => el.checkVisibility({ visibilityProperty: true }) && el.getBoundingClientRect().height > 0;
   const box = document.querySelector('main .signed-out');
   const r = box && box.getBoundingClientRect();
-  const primaries = [...document.querySelectorAll('main .button.primary')].filter(shown)
+  const primaries = [...document.querySelectorAll('main .button.primary, main .btn.p')].filter(shown)
     .map((b) => ({ text: b.textContent.trim(), href: b.getAttribute('href'), bottom: b.getBoundingClientRect().bottom }));
   const other = [...document.querySelector('main').children].filter((c) => c !== box && c.tagName !== 'H1' && shown(c)).map((c) => c.id || c.className || c.tagName);
   return { shown: !!box && shown(box), top: r ? r.top : null, bottom: r ? r.bottom : null, primaries, other, height: innerHeight,

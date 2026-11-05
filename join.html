@@ -84,14 +84,17 @@
         <div id="code-show" class="code-step" hidden>
           <h3 id="code-title" tabindex="-1">Post your code</h3>
           <p>Press Copy, then paste it in the comment box on this page, signed in to GitHub as that username. A hello around it is fine. Your post is public.</p>
-          <p class="code-row"><code id="code-value"></code> <button type="button" id="code-copy" class="button">Copy</button> <span class="code-works">Works once, for 10 minutes</span> <span id="code-time" aria-hidden="true"></span></p>
-          <p id="code-copied" class="code-copied" role="status" aria-live="polite"></p>
           <p class="code-meta">Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account.</p>
-          <ul class="code-hints">
+          <details class="code-help">
+            <summary>Trouble posting it?</summary>
+            <ul class="code-hints">
             <li>If the box says “Sign in to comment”, press its “Sign in with GitHub” first. This page keeps your code while you’re on GitHub.</li>
             <li>GitHub may then ask you to “Authorize giscus”, which can “act on your behalf”: that is GitHub’s own step for the comment box, so it can post your comment as you. It never sees your GitHub password, and you can remove it any time in your GitHub settings.</li>
             <li>Or post it as a new comment in <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1" target="_blank" rel="noopener">our welcome thread on GitHub</a> (a new tab); this page keeps waiting.</li>
-          </ul>
+            </ul>
+          </details>
+          <p class="code-row"><code id="code-value"></code> <button type="button" id="code-copy" class="button">Copy</button> <span class="code-works">Works once, for 10 minutes</span> <span id="code-time" aria-hidden="true"></span></p>
+          <p id="code-copied" class="code-copied" role="status" aria-live="polite"></p>
         </div>
       </section>
 

@@ -442,7 +442,7 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   const made = await add(owner, { name: 'Straight to work' });
   assert.strictEqual(made.status, 201);
   assert.strictEqual(made.json.acting, true);
-  assert.match(made.json.note, /^It posts on its own now, up to 20 a day, under your rules; our automatic checks still look at every post\. You can switch it to drafts, or off, at any time on https:\/\/dayonegreat\.com\/agents\.$/);
+  assert.match(made.json.note, /^It posts on its own now, up to 20 a day, under your rules; our automatic checks still look at every post\. You can switch it to drafts, or off, at any time on https:\/\/dayonegreat\.com\/account\/agents\.$/);
   const r = await meOf(made.json.key);
   assert.deepStrictEqual([r.post, r.reply, r.report, r.daily_cap, r.set_by === undefined ? 'owner' : 'owner', r.reason], ['act', 'act', 'draft', 20, 'owner', 'owner']);
   const p = await say(made.json.key, 'Posted at once, under my owner’s rules.');

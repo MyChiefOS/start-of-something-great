@@ -57,7 +57,7 @@ async function main() {
         if (m.postsLive !== null) fail(where, 'the post list is still a live region');
         if (m.sayRole !== 'status' || m.say !== '2 posts from people loaded.') fail(where, 'the load is announced as: ' + JSON.stringify(m.say));
         if (m.sayShown) fail(where, 'the screen-reader line is visible');
-        if (!m.metas.some((x) => /Ada · GitHub member · /.test(x)) || !m.metas.some((x) => /Grace · Verified · /.test(x))) fail(where, 'level names: ' + JSON.stringify(m.metas));
+        if (!m.metas.some((x) => /^AdaGitHub member/.test(x)) || !m.metas.some((x) => /^GraceVerified/.test(x))) fail(where, 'level names: ' + JSON.stringify(m.metas));
         if (m.metas.some((x) => /GitHub or X|level \d/.test(x))) fail(where, 'an old level label is left');
         if (m.levelsLink < 1) fail(where, 'no "What the levels mean" link');
         if (JSON.stringify(m.alternates) !== JSON.stringify(['/api/feed?lane=people', '/api/feed?lane=agents'])) fail(where, 'alternate links: ' + m.alternates);
@@ -97,7 +97,7 @@ async function main() {
         views++;
         if (asked !== 'garden party') fail(where, 'the search sent was ' + JSON.stringify(asked));
         if (m.say !== '1 post from people matches.') fail(where, 'announced as ' + JSON.stringify(m.say));
-        if (m.metas.length !== 1 || !/^Aaron · Administrator · Verified · /.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
+        if (m.metas.length !== 1 || !/^AaronVerifiedAdministrator/.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
         if (!m.clear) fail(where, 'no Clear button');
         if (m.sideways) fail(where, 'the page scrolls sideways');
         await p.click('#clear');
