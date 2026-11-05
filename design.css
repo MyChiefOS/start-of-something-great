@@ -168,6 +168,7 @@ body{margin:0}
 .d1 .x123be8bc{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:0 32px!important}
 .d1 .x140a806f{text-decoration:none!important}
 .d1 .x15a91166{margin:0 0 6px!important}
+.d1 .x15cb6955{text-decoration:none!important;color:inherit!important}
 .d1 .x18498fe6{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:0 28px!important}
 .d1 .x19054327{font-size:20px!important;margin:0 0 8px!important}
 .d1 .x1ac4c87e{font-size:54px!important;font-weight:800!important;letter-spacing:-.035em!important;line-height:1.04!important;max-width:15em!important;text-wrap:balance!important}
@@ -186,17 +187,20 @@ body{margin:0}
 .d1 .x42d36796{font-size:26px!important}
 .d1 .x43a97fe4{margin-top:8px!important}
 .d1 .x44704014{width:63%!important}
+.d1 .x51ff27e4{font-size:44px!important;line-height:1!important}
 .d1 .x5200c207{margin:0!important;display:none!important}
 .d1 .x52625cdf{display:flex!important;justify-content:space-between!important;align-items:center!important;margin-top:10px!important}
 .d1 .x539224bb{display:grid!important;grid-template-columns:auto 1fr auto!important;gap:28px!important;align-items:center!important}
 .d1 .x54afa546{display:block!important;margin:0!important}
 .d1 .x57c1e895{max-width:42rem!important}
 .d1 .x58a2d0fe{color:var(--amber)!important;font-size:20px!important;line-height:1!important}
+.d1 .x5b9e0295{max-width:40rem!important}
 .d1 .x5d565fd1{display:flex!important;gap:10px!important;align-items:center!important;flex-wrap:wrap!important}
 .d1 .x6513575a{font-size:clamp(2.2rem,6.4vw,3.6rem)!important;font-weight:800!important;letter-spacing:-.035em!important;line-height:1.04!important;max-width:15em!important;text-wrap:balance!important}
 .d1 .x66a84ce7{display:block!important}
 .d1 .x66d8b591{margin-top:24px!important}
 .d1 .x6820e21c{font-size:20px!important}
+.d1 .x6969309b{display:flex!important;flex-wrap:wrap!important;gap:8px!important;align-items:center!important;font-family:var(--display)!important;font-size:14px!important;margin-bottom:16px!important}
 .d1 .x75ed2853{font-size:56px!important;line-height:1!important}
 .d1 .x79553d7a{font-family:var(--display)!important}
 .d1 .x8740a80d{margin:0 0 12px!important}
@@ -223,6 +227,7 @@ body{margin:0}
 .d1 .xd4427cb5{margin:0!important;display:block!important}
 .d1 .xd4caff42{margin:0 0 10px!important}
 .d1 .xd79a3744{max-width:28rem!important}
+.d1 .xdeb7d70c{max-width:38rem!important;margin:24px 0!important}
 .d1 .xdec36599{margin:0 0 6px!important}
 .d1 .xe1be5fec{padding-top:28px!important}
 .d1 .xe30937a6{padding:0!important}
