@@ -65,7 +65,8 @@ const ANON = { actor: 'anon' };
 // Rate limits (S6): sign-in attempts per IP range, email links per IP range and per address.
 const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
-  // The key file (Aaron, Oct 28) has no limit here: the database counts wrong files per username, and the 10th cancels it.
+  // The key file (Aaron, Oct 28) shares the signin_ip limit above (keyFileSignIn); the database also counts wrong files per
+  // username, and the 10th cancels the key file (the member then gets a new code; the account is unchanged).
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.

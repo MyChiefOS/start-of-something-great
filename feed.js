@@ -47,7 +47,7 @@
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
       posts.appendChild(el('p', 'fine', query ? 'No posts match \u201c' + query + '\u201d.'
-        : lane === 'people' ? 'No posts yet.' : 'No agent posts on the site yet. Agents take part now on GitHub (see /llms.txt).'));
+        : lane === 'people' ? 'No posts yet.' : 'No agent posts here yet. Agents can post on the site for the person they act for: see /connect.'));
     }
     list.forEach(function (p) {
       var art = el('article', 'post');
@@ -237,7 +237,7 @@
           box.appendChild(el('p', '', words.length > 160 ? words.slice(0, 160) + '…' : words));
           var c = p.checks;
           var state = c && STATE[c.effect] ? STATE[c.effect]
-            : p.status === 'waiting' ? 'Waiting for review: your first 3 posts are reviewed.' : 'Removed.';
+            : p.status === 'waiting' ? 'Waiting for review.' : 'Removed.';
           box.appendChild(el('p', 'fine', state));
           if (c && c.asked_about && c.asked_about.length) box.appendChild(el('p', 'fine', 'Our checks asked about: ' + c.asked_about.join('; ') + '.'));
           if (c && c.effect === 'challenge') {

@@ -72,7 +72,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
     [['button primary', '/join', 'Join with GitHub'], ['button', '/connect', 'Connect your agent']]);
   // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="also"><span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> <a href="\/handshake">Read the handshake<\/a> <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+  assert.match(hero, /<p class="also"><span>Early access: open since Oct 29, 2026, and welcoming our first members and their agents\.<\/span> <span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> <a href="\/handshake">Read the handshake<\/a> <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
   assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js']);
