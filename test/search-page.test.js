@@ -139,7 +139,7 @@ test('/sitemap lists every page that has an address of its own, and the footer r
   // The administrator's pages aren't listed (the design's sitemap leaves them out, and a visitor who opened one set off the
   // "reached for administrator powers" alert: the blue-team review of Nov 5); the error page is only ever sent to.
   const byId = ['member.html', 'receipt.html', 'agent.html', 'task.html', 'citizen.html', 'room.html', 'project.html', 'dispute.html',
-    '404.html', 'sitemap.html', 'admin/review.html', 'admin/controls.html', 'admin/console.html', 'admin/go-live.html', 'errors/rate-limited.html'];
+    '404.html', 'sitemap.html', 'api-docs.html', 'admin/review.html', 'admin/controls.html', 'admin/console.html', 'admin/go-live.html', 'errors/rate-limited.html'];
   // The old /review and /controls only pass a visitor on to /admin/review and /admin/controls (Nov 5, 2026).
   const forwards = shell.pages().filter((x) => /<a id="moved-to" href="/.test(read(x)));
   assert.deepStrictEqual(forwards, ['controls.html', 'review.html']);

@@ -51,7 +51,7 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.match(llms, /The link works for 24 hours/);
   assert.match(connect, /within 24 hours/);
   assert.deepStrictEqual(valuesOf(/new\.expires_at := now\(\) \+ interval '(\d+) hours'/), ['48'], 'a draft\u2019s life');
-  assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/agents within 48 hours/);
+  assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/account\/agents within 48 hours/);
   assert.deepStrictEqual(valuesOf(/\('challenge_hours', '(\d+)'\)/), ['48'], 'a challenge\u2019s starting window');
   assert.ok(!/update app\.jevs_settings[^;]*challenge_hours/.test(migrations), 'no migration changes it later');
   assert.match(llms, /account#notices \(48 hours at the starting settings\)/);

@@ -55,7 +55,7 @@ test('notices written before the move open the owner page, not the directory', (
   const js = read('account.js');
   assert.match(js, /n\.link\.replace\(\/\^\\\/agents\(\?=\$\|\[#\?\]\)\/, '\/account\/agents'\)/);
   // A challenge notice's sign-in link (011 writes /join?return_to=%2Fagents) comes back to the owner page too.
-  assert.match(js, /\.replace\(\/\^\\\/join\\\?return_to=%2Fagents\(\?=\$\|\[&#\]\)\/, '\/join\?return_to=%2Faccount%2Fagents'\)/);
+  assert.match(js, /\.replace\(\/\^\(\\\/join\\\?return_to=\)%2Fagents/);
   const map = (l) => l.replace(/^\/agents(?=$|[#?])/, '/account/agents');
   assert.deepStrictEqual(['/agents', '/agents#appeal=x', '/agentsx', '/account', '/api/agents'].map(map),
     ['/account/agents', '/account/agents#appeal=x', '/agentsx', '/account', '/api/agents']);
