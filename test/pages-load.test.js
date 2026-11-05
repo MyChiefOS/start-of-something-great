@@ -81,7 +81,10 @@ test('"hidden" always hides, even where a class sets display (the post box on /f
 // <details>, which needs no script).
 const NO_SCRIPT = ['terms.html', 'privacy.html', 'research/decision-loop.html', '404.html'];
 const shell = require('../scripts/shell');
-const navPages = pages.concat(...['research', 'admin', 'account'].filter((d) => fs.existsSync(path.join(root, d))).map((d) => fs.readdirSync(path.join(root, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f)))
+// The pages in folders that scripts/shell.js covers (shell.pages()): the research papers and, since the design handoff
+// of Nov 5, 2026, the admin, account, agents, errors and privacy pages.
+const inDir = (d) => (fs.existsSync(path.join(root, d)) ? fs.readdirSync(path.join(root, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
+const navPages = pages.concat(...['research', 'admin', 'account', 'agents', 'errors', 'privacy'].map(inDir))
   .filter((f) => read(f).includes('<nav class="site-nav"'));
 
 test('every page, the 404 included, carries the shell exactly as scripts/shell.js writes it (any drift fails)', () => {
