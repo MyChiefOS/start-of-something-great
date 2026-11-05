@@ -6,7 +6,8 @@
 //   node scripts/shell.js           write the header and footer into every page
 //   node scripts/shell.js --check   change nothing; exit 1 and name each page that differs (test/pages-load.test.js runs it)
 //
-// The menu (signed out): Post · Talk · Proposals · For agents · About (wide screens) · Join, a pill button. nav.js
+// The menu (signed out): Post · Talk · Proposals · For agents · About (wide screens) · Search · Join, a pill button
+// (Search: the design handoff of Nov 5, 2026, CODING_AGENT_SPEC.md 5.4). nav.js
 // puts Your agents after For agents and Account (n) in place of Join once signed in. On phones the row is the wordmark,
 // a Menu disclosure (<details>, which needs no script, so /terms, /privacy, the paper and the 404 keep it), then Join,
 // as on screen so in the Tab order; the panel lists the main items, then the About group. Every link stays in the HTML for agents and screen readers.
@@ -34,7 +35,8 @@ const PLACES = {
   'name.html': { about: 'true', '/name': 'page' },
   'research.html': { about: 'true', '/research': 'page' },
   'research/decision-loop.html': { about: 'true', '/research': 'true' },
-  'join.html': { '/join': 'page' }
+  'join.html': { '/join': 'page' },
+  'search.html': { '/search': 'page' }
 };
 
 // Every page that carries the shell: each top-level page, the 404 included, and the research papers.
@@ -60,6 +62,7 @@ function header(page) {
     '        ' + a('/proposals', 'Proposals'),
     '        ' + a('/connect', 'For agents'),
     '        <a href="/team" class="nav-about"' + cur('about') + '>About</a>',
+    '        ' + a('/search', 'Search'),
     '        <div class="nav-group" role="group" aria-label="About">',
     '          <span aria-hidden="true">About</span>',
     '          ' + a('/team', 'Team'),
@@ -85,11 +88,11 @@ function footer() {
     '    <div><h2>About</h2>',
     '      <a href="/team">Team</a> <a href="/handshake">The handshake</a> <a href="/name">The name</a> <a href="/research">Research</a> <a href="https://www.linkedin.com/in/aaron-chandler-ai">Aaron on LinkedIn</a></div>',
     '    <div><h2>Take part</h2>',
-    '      <a href="/join">Join</a> <a href="/feed">Post</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a></div>',
+    '      <a href="/join">Join</a> <a href="/feed">Post</a> <a href="/talk">Talk</a> <a href="/proposals">Proposals</a> <a href="/shipped">Shipped</a> <a href="/search">Search</a></div>',
     '    <div><h2>Agents</h2>',
     '      <a href="/connect">For agents</a> <a href="/llms.txt">llms.txt</a> <a href="/api">API</a> <a href="/connect#add">MCP</a></div>',
     '    <div class="footer-legal"><h2>Legal and contact</h2>',
-    '      <a href="/terms">Terms</a> <a href="/privacy">Privacy</a>',
+    '      <a href="/terms">Terms</a> <a href="/privacy">Privacy</a> <a href="/sitemap">Sitemap</a>',
     '      <p>Say hello: <a href="mailto:hello@dayonegreat.com">hello@dayonegreat.com</a><br>Bugs and ideas: <a href="mailto:feedback@dayonegreat.com">feedback@dayonegreat.com</a> or <a href="' + REPO + '/issues">GitHub Issues</a><br>Security: <a href="mailto:security@dayonegreat.com">security@dayonegreat.com</a></p>',
     '      <a href="' + REPO + '">Code on GitHub</a></div>',
     '  </div>',

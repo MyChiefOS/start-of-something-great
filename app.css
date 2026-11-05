@@ -10,14 +10,14 @@
 .lanes [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .compose { display: grid; gap: 0.6rem; margin-bottom: 2rem; }
 .compose label { font-family: var(--display); font-weight: 600; }
-.compose textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.7rem 0.8rem; resize: vertical; }
+.compose textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.7rem 0.8rem; resize: vertical; }
 .compose textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .compose-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .compose button.button { cursor: pointer; }
 .search { display: grid; gap: 0.4rem; margin: 0 0 1.25rem; }
 .search label { font-family: var(--display); font-weight: 600; }
 .search-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.search input { flex: 1 1 12rem; min-width: 0; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.search input { flex: 1 1 12rem; min-width: 0; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .search input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .search button.button { cursor: pointer; }
 .feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
@@ -31,7 +31,7 @@
 .report-link { font: inherit; font-size: 0.9rem; color: var(--muted); background: none; border: 0; padding: 0.25rem 0; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule); }
 .report-link:hover { color: var(--amber); }
 .report-form { display: grid; gap: 0.5rem; margin: 0.5rem 0 0.25rem; max-width: 30rem; }
-.report-form select, .report-form input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.report-form select, .report-form input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .report-form select:focus-visible, .report-form input:focus-visible, .report-link:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0 0.25rem; }
 .review-actions .button { min-height: 3rem; justify-content: center; text-align: center; }
@@ -42,7 +42,7 @@
 .review .note { font-style: italic; }
 
 /* Agents (/agents) */
-.agents input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.6rem 0.75rem; }
+.agents input { font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.6rem 0.75rem; }
 .agents input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .agents h2 { font-size: 1.3rem; margin: 1.5rem 0 0.5rem; }
 .key-once code { display: block; padding: 0.75rem; border: 1px solid var(--amber); border-radius: 0.6rem; overflow-wrap: anywhere; user-select: all; }
@@ -61,13 +61,13 @@
 .controls .stat strong { display: block; font-size: 1.5rem; }
 .brake-form { display: grid; gap: 0.6rem; max-width: var(--measure); }
 .brake-form label { display: grid; gap: 0.25rem; }
-.brake-form input, .brake-form select { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.brake-form input, .brake-form select { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .brake-form input:focus-visible, .brake-form select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* Your account (/account, PR 8) */
 .account-form { display: grid; gap: 0.6rem; max-width: 30rem; }
 .account-form label { display: grid; gap: 0.25rem; }
-.account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.account-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .account-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .inline-form { display: inline; }
 
@@ -78,7 +78,7 @@
 .inbox .one-tap { margin: 0.5rem 0; }
 .rules-form { display: grid; gap: 0.5rem; max-width: 30rem; margin: 0.75rem 0; }
 .rules-form label { display: grid; gap: 0.25rem; }
-.rules-form select, .rules-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
+.rules-form select, .rules-form input { min-height: 2.75rem; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.55rem 0.7rem; }
 .delegation { margin: 0.25rem 0; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; }
 .facts dt { color: var(--muted); }
@@ -120,3 +120,27 @@ a.report-link { display: inline-block; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* /member (UX PR F): a long one-word name wraps instead of being clipped (WCAG 1.4.10). */
 .member h1 { overflow-wrap: anywhere; }
+/* /search (the design handoff of Nov 5, 2026, CODING_AGENT_SPEC.md 5.4): buttons that show one group, the results in
+   groups, and the empty state (a dashed box, as the handoff's components). */
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1rem; }
+.chip { min-height: 44px; padding: 0 1rem; font: inherit; font-family: var(--display); font-size: 0.95rem; color: var(--muted); background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; cursor: pointer; }
+.chip:hover, .chip[aria-pressed="true"] { color: var(--text); border-color: var(--amber); }
+.chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.result-group { border-top: 1px solid var(--rule); padding-top: 1rem; margin-top: 1.5rem; }
+.result-group h2 { font-size: 1.3rem; margin: 0 0 0.5rem; }
+.results { list-style: none; padding: 0; margin: 0; }
+.results li { padding: 0.6rem 0; overflow-wrap: anywhere; }
+.results li p { margin: 0.2rem 0 0; }
+.empty { border: 1px dashed var(--rule-strong); border-radius: 10px; padding: 1.25rem; text-align: center; color: var(--muted); }
+/* Breadcrumbs on detail pages (the design handoff of Nov 5, 2026, 5.4): where this page sits, one step back. */
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; list-style: none; margin: 0 0 1rem; padding: 0; font-family: var(--display); font-size: 0.9rem; color: var(--muted); }
+.crumbs li + li::before { content: "\203A"; margin-right: 0.5rem; }
+.crumbs a { color: var(--muted); display: inline-block; min-height: 24px; }
+.crumbs a:hover { color: var(--amber); }
+@media (max-width: 51.25rem) { .crumbs a { min-height: 44px; padding: 0.6rem 0; } }
+/* /sitemap (the design handoff of Nov 5, 2026): the pages in groups that wrap; each link a 44 px row on phones. */
+.sitemap-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1.75rem; }
+.sitemap-groups h2 { font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 2rem 0 0.5rem; }
+.sitemap-groups ul { list-style: none; padding: 0; margin: 0; }
+.sitemap-groups a { display: inline-block; padding: 0.3rem 0; }
+@media (max-width: 51.25rem) { .sitemap-groups a { min-height: 44px; padding: 0.6rem 0; } }

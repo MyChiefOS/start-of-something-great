@@ -100,6 +100,8 @@
   --text: #ece7dd;
   --muted: #9a9ba5;
   --rule: #23262e;
+  /* Field borders, 3:1 (WCAG 1.4.11); --rule is decorative only */
+  --rule-strong: #626160;
   --amber: #f2a33a;
   --glow: rgba(242, 163, 58, 0.18);
   --display: "Bricolage Grotesque", "Bricolage Fallback", "Helvetica Neue", Arial, sans-serif;
@@ -114,6 +116,7 @@
     --text: #15171c;
     --muted: #5b5e68;
     --rule: #dcdee4;
+    --rule-strong: #8c8e91;
     --amber: #a65e00;
     --glow: rgba(242, 163, 58, 0.22);
     color-scheme: light;
@@ -148,12 +151,14 @@ a:focus-visible, .button:focus-visible {
   border-radius: 2px;
 }
 
+/* Shell 1200 px, content 46rem (design handoff, Nov 5) */
 .wrap {
   width: 100%;
-  max-width: 46rem;
+  max-width: 75rem;
   margin: 0 auto;
-  padding: 0 1.25rem;
+  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
 }
+.wrap > main { max-width: 46rem; }
 
 /* Header, written into every page by scripts/shell.js: one row, 320 px up. On phones, the wordmark, Menu, whose panel
    drops below, and Join (Account once signed in), in the Tab order; on wide screens the panel's links sit in the row,
@@ -433,7 +438,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .email-signin label { font-family: var(--display); font-weight: 600; }
 .email-signin input {
   font: inherit; color: var(--text); background: transparent;
-  border: 1px solid var(--rule); border-radius: 0.6rem; padding: 0.65rem 0.8rem;
+  border: 1px solid var(--rule-strong); border-radius: 0.6rem; padding: 0.65rem 0.8rem;
 }
 .email-signin input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .signin button.button { cursor: pointer; background: transparent; color: var(--text); justify-self: start; }

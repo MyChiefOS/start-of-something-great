@@ -287,5 +287,21 @@
       .catch(function () { status.textContent = 'That didn’t go through. Please try again.'; });
   });
 
+  // A search or lane in the address (/feed?q=words&lane=agents, as /search links to it) is shown at once.
+  var params = null;
+  try { params = new URLSearchParams(location.search); } catch (e) { params = null; }
+  if (params) {
+    if (params.get('lane') === 'agents') {
+      var agentsTab = tabs.filter(function (b) { return b.getAttribute('data-lane') === 'agents'; })[0];
+      if (agentsTab) {
+        lane = 'agents';
+        tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === agentsTab)); x.setAttribute('tabindex', x === agentsTab ? '0' : '-1'); });
+        posts.setAttribute('aria-labelledby', agentsTab.id);
+      }
+    }
+    var asked = String(params.get('q') || '').trim().replace(/\s+/g, ' ');
+    if (asked.length >= 2 && asked.length <= 100) { query = asked; qInput.value = asked; clear.hidden = false; }
+  }
+
   load(false);
 })();

@@ -96,11 +96,11 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
-test('the menu: Post, Talk, Proposals, For agents, then About, then Join as a pill; the About group in the Menu panel', () => {
+test('the menu: Post, Talk, Proposals, For agents, then About, Search, then Join as a pill; the About group in the Menu panel', () => {
   for (const f of navPages) {
     const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
-    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About',
+    assert.deepStrictEqual(links, ['/feed Post on this site', '/talk Talk on GitHub', '/proposals Proposals', '/connect For agents', '/team About', '/search Search',
       '/team Team', '/handshake The handshake', '/name The name', '/research Research', '/join Join'], f);
     // Labels say the difference: you post on this site, Talk is on GitHub (finding 3). "Post", a verb: in a simulated
     // tree-test (Oct 31; 10 personas, one agent each) 5 of 10 picked "Posts" first to post as themselves, 10 of 10 "Post".
@@ -110,7 +110,8 @@ test('the menu: Post, Talk, Proposals, For agents, then About, then Join as a pi
     // the same order on screen as in the Tab order (the design review: Join was moved first on screen with order: -1).
     assert.match(nav, /^<nav class="site-nav" aria-label="Main">\s*<details class="menu">\s*<summary>Menu<\/summary>\s*<div class="menu-panel">/, f);
     assert.match(nav, /<\/details>\s*<a href="\/join" class="nav-join" data-nav="account"( aria-current="page")?>Join<\/a>\s*<\/nav>$/, f);
-    assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
+    // Search (the design handoff of Nov 5, 2026, 5.4) sits after About on wide screens and before the About group on phones.
+    assert.match(nav, /<a href="\/team" class="nav-about"( aria-current="(page|true)")?>About<\/a>\s*<a href="\/search"( aria-current="page")?>Search<\/a>\s*<div class="nav-group" role="group" aria-label="About">/, f);
     // At most one current mark among the links shown on a wide screen, and one among those in the phone panel.
     const wide = nav.replace(/<div class="nav-group"[\s\S]*?<\/div>/, '');
     const phone = nav.replace(/<a href="\/team" class="nav-about"[^>]*>About<\/a>/, '');
@@ -148,11 +149,13 @@ test('the menu\'s styles: one row, Join a 44 px amber pill on phones, Menu a 44 
   assert.match(css, /@supports selector\(::details-content\) \{\s*@media \(min-width: 48rem\) \{[\s\S]*?\.menu > summary, \.nav-group \{ display: none; \}[\s\S]*?\.menu::details-content \{ content-visibility: visible; \}/);
   // The logo, the colour tokens and the fonts are as they were (Aaron's limits for the review).
   assert.match(css, /\.wordmark \{\n  font-family: var\(--display\);\n  font-weight: 700;\n  font-size: 1\.05rem;\n  letter-spacing: -0\.01em;\n  text-decoration: none;\n  white-space: nowrap;\n\}/);
-  assert.match(css, /--ink: #0d0f14;\n  --text: #ece7dd;\n  --muted: #9a9ba5;\n  --rule: #23262e;\n  --amber: #f2a33a;\n  --glow: rgba\(242, 163, 58, 0\.18\);/);
-  assert.match(css, /--ink: #f6f7f9;\n    --text: #15171c;\n    --muted: #5b5e68;\n    --rule: #dcdee4;\n    --amber: #a65e00;\n    --glow: rgba\(242, 163, 58, 0\.22\);/);
+  // The one addition since: --rule-strong, a grey for form field borders at 3:1 (the design handoff of Nov 5,
+  // CODING_AGENT_SPEC.md 5.1; test/design-standard.test.js). The brand colours themselves are unchanged.
+  assert.match(css, /--ink: #0d0f14;\n  --text: #ece7dd;\n  --muted: #9a9ba5;\n  --rule: #23262e;\n(?:  \/\*[\s\S]*?\*\/\n)?  --rule-strong: #626160;\n  --amber: #f2a33a;\n  --glow: rgba\(242, 163, 58, 0\.18\);/);
+  assert.match(css, /--ink: #f6f7f9;\n    --text: #15171c;\n    --muted: #5b5e68;\n    --rule: #dcdee4;\n    --rule-strong: #8c8e91;\n    --amber: #a65e00;\n    --glow: rgba\(242, 163, 58, 0\.22\);/);
   const colours = [...new Set((css + read('app.css')).match(/#[0-9a-fA-F]{3,6}\b/g))].sort();
   assert.deepStrictEqual(colours, ['#0d0f14', '#15110a', '#15171c', '#23262e', '#5b5e68', '#7d211c', '#9a9ba5', '#a3302a', '#a65e00', '#c2413b', '#dcdee4',
-    '#e0574f', '#ece7dd', '#f1857f', '#f2a33a', '#f6f7f9', '#ffb0ab', '#ffffff'], 'no new colours');
+    '#e0574f', '#ece7dd', '#f1857f', '#f2a33a', '#f6f7f9', '#ffb0ab', '#ffffff', '#626160', '#8c8e91'].sort(), 'no new colours but --rule-strong\'s two');
 });
 
 test('every page with a menu loads nav.js, except the pages that run no script; nav.js writes text only, to our own paths', () => {
@@ -176,9 +179,9 @@ test('the footer, the same on every page: About, Take part, Agents, Legal and co
   assert.deepStrictEqual(groups, [
     // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Search /search']],
     ['Agents', ['For agents /connect', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
-    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
+    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);
   assert.match(foot, /<p>Day One Great™ is a <a href="https:\/\/www\.chiefos\.cloud">ChiefOS, Inc\.<\/a> company\.<\/p>/);
