@@ -13,16 +13,26 @@ const served = [
   ...fs.readdirSync(path.join(root, 'api')).filter((f) => f.endsWith('.js')).map((f) => 'api/' + f)
 ];
 
+// The pages scripts/pages.js writes from the record (the design handoff, phase 7) reprint its rows word for word, and a
+// slipped date keeps its original target there (CHARTER.md section 1; ROADMAP.md: "Nothing is quietly edited"). Those
+// rows are history, not promises: they are checked below instead (each Nov 6 row on /roadmap carries its result).
+const RECORD_ROWS = { 'roadmap.html': /^\s*<tr>/, 'status.html': /^\s*<tr>/, 'operations.html': /^\s*<li><p class="when">/ };
+
 test('R-5: no served page, script, API message or llms.txt promises a preview or November 6', () => {
   const bad = [];
   for (const f of served) {
     fs.readFileSync(path.join(root, f), 'utf8').split('\n').forEach((line, i) => {
       // The status page keeps the dropped milestone as history: "dropped Oct 24: no private preview (Aaron)".
       if (/dropped Oct 24: no private preview/.test(line)) return;
+      if (RECORD_ROWS[f] && RECORD_ROWS[f].test(line)) return;
       if (/private preview|with the preview|november 6|nov\.? 6\b/i.test(line)) bad.push(f + ':' + (i + 1));
     });
   }
   assert.deepStrictEqual(bad, []);
+  // Each roadmap row with a Nov 6 target says how it ended: none reads as still open.
+  const rows = fs.readFileSync(path.join(root, 'roadmap.html'), 'utf8').split('\n').filter((l) => RECORD_ROWS['roadmap.html'].test(l) && /nov\.? 6\b/i.test(l));
+  assert.ok(rows.length >= 1);
+  for (const r of rows) assert.match(r, /<span class="pill[^"]*">(Done|Done, late|Dropped|Replaced|Removed|Missed|Built, not proven)<\/span>/, r.slice(0, 120));
 });
 
 test('R-5: the status page doesn\'t call Release 2 done until it is', () => {
