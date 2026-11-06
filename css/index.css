@@ -1,4 +1,4 @@
-/* index.html: its own inline styles from Aaron's design, as classes. Written by tools/design/build.js. */
+/* index.html: its own design styles. tools/design/build.js */
 .d1 .x0d76d828{display:flex!important;gap:10px!important}
 .d1 .x123be8bc{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:0 32px!important}
 .d1 .x43a97fe4{margin-top:8px!important}

@@ -54,11 +54,17 @@ const EXTRA = { 'research/decision-loop.html': ['/paper.css'], 'account.html': [
 const shared = fs.existsSync(path.join(__dirname, 'shared.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'shared.json'), 'utf8')) : {};
 const mine = {};
 for (const [c, d] of Object.entries(styles)) if (!shared[c]) mine[c] = d;
+// Rules a page's script needs that its markup doesn't carry: /decisions' Second Look track, whose fill the design writes
+// inline (width:63%), as classes in steps of 5% that decisions.js sets (no style from a script).
+// A member's or an agent's chosen name is their page's h1, and a long one wraps rather than running off a phone's screen.
+const ADD = { 'decisions.html': Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n',
+  'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n' };
 const slug = target.replace(/\.html$/, '').replace(/\//g, '-');
 const ownCss = path.join(wt, 'css', slug + '.css');
-if (Object.keys(mine).length) {
+if (Object.keys(mine).length || ADD[target]) {
   fs.mkdirSync(path.dirname(ownCss), { recursive: true });
-  fs.writeFileSync(ownCss, '/* ' + target + ': its own inline styles from Aaron\'s design, as classes. Written by tools/design/build.js. */\n' + require("./mkcss").classes(mine));
+  // One short line of comment: these files count toward each page's first-visit weight (SF2).
+  fs.writeFileSync(ownCss, '/* ' + target + ': its own design styles. tools/design/build.js */\n' + require("./mkcss").classes(mine) + (ADD[target] || ''));
   EXTRA[target] = (EXTRA[target] || []).concat('/css/' + slug + '.css');
 } else if (fs.existsSync(ownCss)) fs.unlinkSync(ownCss);
 const sheets = '\n  <link rel="stylesheet" href="/design.css">' + (EXTRA[target] || []).map((h) => '\n  <link rel="stylesheet" href="' + h + '">').join('');

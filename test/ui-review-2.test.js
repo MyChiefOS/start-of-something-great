@@ -10,10 +10,10 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 
 test('item 9: /feed lists your posts that aren\'t live, says which checks asked (names only), and offers an appeal only where Aaron decides', () => {
   const html = read('feed.html');
-  assert.match(html, /<section id="mine" class="inbox" aria-labelledby="mine-heading" hidden>/);
+  assert.match(html, /<section id="mine" aria-labelledby="mine-heading" hidden class="x[0-9a-f]{8}">/);
   const js = read('feed.js');
   assert.match(js, /fetch\('\/api\/feed\?mine=1'/);
-  assert.match(js, /'Our checks asked about: ' \+ c\.asked_about\.join\('; '\)/);
+  assert.match(js, /' ?Our checks asked about: ' \+ c\.asked_about\.join\('; '\)/);
   assert.match(js, /if \(c && c\.can_appeal\)/, 'the appeal button only where the API says so');
   assert.match(js, /JSON\.stringify\(\{ appeal: p\.id \}\)/);
   // Text only: nothing a post or a reason says is ever read as HTML.

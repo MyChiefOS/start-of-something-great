@@ -78,7 +78,7 @@
       $('sl-row').hidden = !shadow;
       if (shadow) {
         text('sl-agree', count(s.agreed_in_a_row) + ' of ' + count(s.needed));
-        // The design's track (static/decisions.html): its fill is one of design.css's widths, in steps of 5%, set as a
+        // The design's track (static/decisions.html): its fill is one of its stylesheet's widths, in steps of 5%, set as a
         // class (no style from the script); the exact figure is in the words beside it and in aria-valuenow.
         var track = $('sl-track'), max = s.needed || 80, now = Math.min(s.agreed_in_a_row || 0, max);
         track.setAttribute('aria-valuemax', String(max));

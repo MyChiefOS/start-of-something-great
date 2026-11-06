@@ -79,7 +79,7 @@
     body.textContent = paras[0];
     for (var i = 1; i < paras.length; i++) { var q = body.cloneNode(false); q.textContent = paras[i]; card.insertBefore(q, meta); }
     // Who acted, as /feed says it: "Worker · sub-agent of Planner, owned by Ada" (the API's own chain label).
-    if (p.agent) meta.appendChild(document.createTextNode(p.agent.name + (p.agent.sub_agent_of && p.agent.chain_label ? ' (' + p.agent.chain_label + ')' : '') + ' · '));
+    if (p.agent) { meta.appendChild(el('strong', '', p.agent.name)); meta.appendChild(document.createTextNode(' \u00b7 ' + (p.agent.chain_label || 'agent of ' + p.author.name) + ' \u00b7 ')); }
     var t = el('time', '', ago(p.published_at));
     t.dateTime = p.published_at;
     t.title = new Date(p.published_at).toLocaleString();

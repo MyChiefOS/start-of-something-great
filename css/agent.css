@@ -1,3 +1,4 @@
-/* agent.html: its own inline styles from Aaron's design, as classes. Written by tools/design/build.js. */
+/* agent.html: its own design styles. tools/design/build.js */
 .d1 .xa64d6ed0{max-width:34rem!important}
 .d1 .xecabc7c1{display:flex!important;justify-content:space-between!important;gap:12px!important}
+.d1 h1{overflow-wrap:anywhere}

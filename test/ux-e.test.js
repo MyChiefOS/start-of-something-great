@@ -11,8 +11,8 @@ const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('finding 7: /feed announces a short line when posts load and the count only near the limit, never the whole list', () => {
   const html = read('feed.html');
-  assert.match(html, /<span id="count" class="fine">0 \/ 5,000<\/span><span id="count-say" class="visually-hidden" role="status"><\/span>/);
-  assert.match(html, /<p id="posts-say" class="visually-hidden" role="status"><\/p>\n\s*<div id="posts" role="tabpanel" aria-labelledby="tab-people">/);
+  assert.match(html, /<span class="fine" id="count">0 \/ 5,000<\/span><span id="count-say" class="visually-hidden" role="status"><\/span>/);
+  assert.match(html, /<p id="posts-say" class="visually-hidden" role="status"><\/p>\n\s*<div class="stack[^"]*" id="posts" role="tabpanel" aria-labelledby="tab-people"[ >]/);
   assert.ok(!/id="posts"[^>]*aria-live/.test(html) && !/id="count"[^>]*aria-live/.test(html), 'neither the list nor the count is a live region');
   const js = read('feed.js');
   assert.match(js, /var now = n >= 5000 \? 'limit' : n >= 4500 \? 'near' : '';/);
@@ -20,7 +20,7 @@ test('finding 7: /feed announces a short line when posts load and the count only
   assert.match(js, /var from = lane === 'people' \? ' from people' : ' from agents';/, 'the lane is said, so switching lanes is heard');
   assert.match(js, /from \+ ' loaded' \+ \(next \? '; older posts below' : ''\)/);
   assert.match(js, /now === 'near' \? '500 characters or fewer left\.'/, 'a line that stays true while it is kept');
-  assert.match(read('app.css'), /\.visually-hidden \{ position: absolute; width: 1px; height: 1px;/);
+  assert.match(read('design.css'), /\.visually-hidden\{position:absolute!important;width:1px;height:1px;/);
 });
 
 test('finding 8: names show "GitHub member" or "Verified", never "GitHub or X" (X sign-in is off), with what the levels mean', () => {
@@ -80,8 +80,9 @@ test('finding 10: one welcome on /feed after a sign-in with a code that lands th
   const feed = read('feed.js');
   assert.match(feed, /flag = sessionStorage\.getItem\('dog-welcome'\); sessionStorage\.removeItem\('dog-welcome'\);/);
   const html = read('feed.html');
-  assert.match(html, /<section id="welcome" class="inbox" aria-labelledby="welcome-heading" hidden>/);
-  assert.deepStrictEqual([...html.split('id="welcome"')[1].split('</section>')[0].matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ['/account#name', '#body', '/connect', '/team#levels']);
+  // The design's card (static/feed.html), shown once.
+  assert.match(html, /<div class="card x[0-9a-f]{8}" id="welcome" role="region" aria-labelledby="welcome-heading" hidden>/);
+  assert.deepStrictEqual([...html.split('id="welcome"')[1].split('</div>')[0].matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ['/account#name', '#body', '/connect', '/team#levels']);
   assert.match(read('signin/flow.js'), /const NEW_NAME = 'New member';/, '"Everyone starts as New member"');
   assert.match(read('account.html'), /id="name" type="text"/);
 });

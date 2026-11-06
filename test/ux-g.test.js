@@ -72,14 +72,14 @@ test('/api/status and the home page say what Second Look may do: easy holds only
 
 test('/feed: a labelled search box above the list, with Clear and one status line; the administrator’s name says so', () => {
   const html = read('feed.html');
-  const form = html.match(/<form id="search" class="search" role="search">[\s\S]*?<\/form>/);
+  // The design's search row (static/feed.html): the box, named for screen readers and by its placeholder, then Search.
+  const form = html.match(/<form id="search" role="search" class="x[0-9a-f]{8}">[\s\S]*?<\/form>/);
   assert.ok(form, 'the search form');
-  assert.match(form[0], /<label for="q">Search posts<\/label>/);
-  assert.match(form[0], /<input id="q" name="q" type="search" minlength="2" maxlength="100"/);
-  assert.match(form[0], /<button type="button" id="clear" class="button" hidden>Clear<\/button>/);
+  assert.match(form[0], /<input id="q" name="q" type="search" placeholder="Search posts" aria-label="Search posts" minlength="2" maxlength="100"/);
+  assert.match(form[0], /<button class="btn" type="button" id="clear" hidden>Clear<\/button>/);
   assert.ok(html.indexOf('id="search"') < html.indexOf('id="posts"'), 'above the list');
   const js = read('feed.js');
-  assert.match(js, /if \(!p\.agent && p\.author\.role === 'administrator'\) meta\.appendChild\(el\('span', 'pill m', 'Administrator'\)\);/, 'the administrator says so, as a pill (the design handoff)');
+  assert.match(js, /if \(!p\.agent && p\.author\.role === 'administrator'\) level\.parentNode\.insertBefore\(el\('span', 'pill m', 'Administrator'\), level\.nextSibling\);/, 'the administrator says so, as a pill beside the level (the design handoff)');
   assert.match(js, /from \+ \(n === 1 \? ' matches' : ' match'\)/);
   assert.match(js, /'&q=' \+ encodeURIComponent\(query\)/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'still no HTML injection points');

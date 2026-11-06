@@ -1,12 +1,4 @@
-/* The working paper's own parts (contents, figures, maths, tables, how to cite), inside Aaron's design (design.css). */
-/* Research: working papers */
-.d1 .kicker { font-family: var(--display); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 1rem; }
-.d1 .kicker a { color: var(--amber); text-decoration: none; }
-.d1 .kicker a:hover { text-decoration: underline; }
-.d1 .story h1.paper-title { max-width: 20ch; }
-.d1 .paper-subtitle { font-family: var(--display); font-size: 1.25rem; line-height: 1.35; letter-spacing: -0.01em; color: var(--text); margin: 1rem 0 0; max-width: 34rem; }
-.d1 .byline,.d1 .review-status { color: var(--muted); font-size: 0.95rem; margin: 0.75rem 0 0; max-width: 38rem; }
-.d1 .review-status { padding: 0.6rem 0.9rem; border: 1px solid var(--rule); border-left: 2px solid var(--amber); border-radius: 6px; margin-top: 1.25rem; }
+/* The paper's own parts (contents, figures, maths, tables, how to cite) inside design.css; its figures are inline SVG, coloured from the theme. */
 .d1 .toc { margin: 2.5rem 0 1rem; padding: 1rem 1.25rem; border: 1px solid var(--rule); border-radius: 10px; max-width: 38rem; }
 .d1 .story .toc h2.toc-title { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.5rem; }
 .d1 .toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; font-family: var(--display); font-size: 0.95rem; }
@@ -29,14 +21,7 @@
 .d1 .paper th,.d1 .paper td { text-align: left; vertical-align: top; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid var(--rule); }
 .d1 .paper th { font-family: var(--display); font-weight: 600; color: var(--muted); border-bottom-color: var(--amber); }
 .d1 .cite { padding: 0.85rem 1rem; border: 1px solid var(--rule); border-radius: 8px; font-size: 0.95rem; }
-.d1 .paper-list { list-style: none; margin: 1.5rem 0 0; padding: 0; max-width: calc(38rem + 3rem); }
-.d1 .paper-list li { border: 1px solid var(--rule); border-top: 2px solid var(--amber); border-radius: 10px; padding: 1.25rem 1.5rem 0.75rem; }
-.d1 .paper-list h3 { font-size: 1.4rem; margin: 0.35rem 0 0.5rem; }
-.d1 .paper-list h3 a { text-decoration: none; }
-.d1 .paper-list h3 a:hover { color: var(--amber); }
-.d1 .paper-list .post-meta { font-size: 0.9rem; }
 
-/* Figures: drawn as inline SVG, coloured from the theme */
 .d1 .fig .fig-text { fill: var(--text); }
 .d1 .fig .fig-quiet { fill: var(--muted); }
 .d1 .fig .fig-grid { stroke: var(--rule); stroke-width: 1; }

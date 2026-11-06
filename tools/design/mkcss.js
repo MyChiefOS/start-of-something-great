@@ -46,8 +46,6 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 .d1 .linkbtn:hover{color:var(--amber)}
 .d1 .report{margin-top:8px;font-size:15px}
 @media(max-width:820px){.d1 .linkbtn{min-height:44px}}
-/* A track's fill (the design's .trk i, its width written inline), in steps of 5%, as classes a script can set. */
-${Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('')}
 /* A card heading the design draws as an h3, kept an h2 where an h3 would skip a level (spec 5.3: one h1, logical
    heading order): the design's .card h3, at h2. */
 .d1 h2.h3,.d1 .story h2.h3,.d1 .card h2.h3{font-size:22px;margin:4px 0 8px}
@@ -59,5 +57,8 @@ html,body{background:#0d0f14}
 @media (prefers-color-scheme: light){html,body{background:#f6f7f9}}
 `;
 // The grid override must come after the inline classes it overrides: move the 820 px block to the end.
-fs.writeFileSync(out, head + css + '\n/* The design\'s inline styles that several pages share; a page\'s own are in /css/<page>.css */\n' + classes(styles));
+// The comments above say why each rule is there; the file the browser fetches carries none of them but the first line
+// (the paper page sits at its page-weight cap, SF2: RK14), and a pointer back here.
+const served = (head + css + '\n' + classes(styles)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
+fs.writeFileSync(out, '/* Day One Great: Aaron\'s design (the handoff of Nov 5, 2026). Built by tools/design/mkcss.js and css.js, which say what changed for production. */\n' + served);
 console.log('wrote', out, Object.keys(styles).length, 'shared inline classes');

@@ -16,7 +16,7 @@ const served = [
 // The pages scripts/pages.js writes from the record (the design handoff, phase 7) reprint its rows word for word, and a
 // slipped date keeps its original target there (CHARTER.md section 1; ROADMAP.md: "Nothing is quietly edited"). Those
 // rows are history, not promises: they are checked below instead (each Nov 6 row on /roadmap carries its result).
-const RECORD_ROWS = { 'roadmap.html': /^\s*<tr>/, 'status.html': /^\s*<tr>/, 'operations.html': /^\s*<li><p class="when">/ };
+const RECORD_ROWS = { 'roadmap.html': /^\s*<tr>/, 'status.html': /^\s*<tr>/, 'operations.html': /^<div class="card"><p class="fine x[0-9a-f]{8}">/ };
 
 test('R-5: no served page, script, API message or llms.txt promises a preview or November 6', () => {
   const bad = [];
@@ -71,19 +71,20 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
   const home = read('index.html');
   const main = home.match(/<main[\s\S]*?<\/main>/)[0];
-  const hero = main.match(/<section class="hero"[\s\S]*?<\/section>/)[0];
+  // The design's home page (static/index.html): its hero, then its sections.
+  const hero = main.match(/<div class="hero">[\s\S]*?See the code<\/a><\/p><\/div>/)[0];
   // A value line, not the name again (the wordmark stays the logo); who builds it, in one sentence.
-  const h1 = hero.match(/<h1 id="title">([^<]+)<\/h1>/)[1];
+  const h1 = hero.match(/<h1[^>]* id="title">([^<]+)<\/h1>/)[1];
   assert.notStrictEqual(h1, 'Day One Great');
   assert.strictEqual(h1, 'Building with trustworthy AI agents.'); // Aaron, Oct 31: "Building with Trustworthy AI Agents"
   assert.match(hero, /<p class="lede">People and their AI agents post side by side, and share what they're building\. Every post is checked\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
   // Join with GitHub first, Connect your agent second; the handshake and the posts as text links.
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
-    [['button primary', '/join', 'Join with GitHub'], ['button', '/connect', 'Connect your agent']]);
+    [['btn p', '/join', 'Join with GitHub'], ['btn', '/connect', 'Connect your agent']]);
   // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="also"><span>Early access: open since Oct 29, 2026, and welcoming our first members and their agents\.<\/span> <span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
-  assert.match(hero, /<p class="kicker">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
+  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. You'll need a GitHub account \(they're free\)\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+  assert.match(hero, /<p class="kick">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
   assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js']);
@@ -91,7 +92,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.ok(!/no AI decides/i.test(home), 'the home page never says "no AI decides"');
 
   // The trust strip: three facts, each with where to check it.
-  const trust = main.match(/<section class="trust"[\s\S]*?<\/section>/)[0];
+  const trust = main.match(/<p class="kick">Why you can trust it<\/p>[\s\S]*?<\/ul>/)[0];
   const facts = [...trust.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
   assert.strictEqual(facts.length, 3);
   assert.deepStrictEqual(facts.map((f) => f.match(/<a href="([^"]+)">/)[1]), ['/team', '/privacy', '/connect#post']);
@@ -113,7 +114,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.match(read('receipt.js'), /row\('Acts for', r\.owner\.name\)/);
 
   // How it works: join; post or connect an agent; see what JEVs did and why.
-  const steps = main.match(/<section class="sec" aria-labelledby="steps">[\s\S]*?<\/section>/)[0];
+  const steps = main.slice(main.indexOf('<h2 id="steps">'), main.indexOf('<h2 id="now">'));
   assert.deepStrictEqual([...steps.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1]),
     ['Join with GitHub.', 'Post, or connect an agent.', 'See what our checks (JEVs) did, and why.']);
   const join = read('join.html');
@@ -125,16 +126,14 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.match(privacy, /on the site, Second Look, below, may publish an easy held post itself/);
   assert.match(privacy, /only posts held just for account age, sign-in, activity, links or region, with no report or appeal open, at most 10 a day/);
   const feed = read('feed.js');
-  assert.ok(feed.includes("'Our checks asked about: '") && feed.includes("'Ask Aaron to look again'") && feed.includes('c.can_appeal'), 'step 3: the checks named, and an appeal where held or hidden');
-  assert.ok(main.indexOf('id="trust"') < main.indexOf('id="steps"') && main.indexOf('id="steps"') < main.indexOf('id="now"'), 'trust, then how it works, then Now');
+  assert.ok(/' ?Our checks asked about: '/.test(feed) && feed.includes("'Ask Aaron to look again'") && feed.includes('c.can_appeal'), 'step 3: the checks named, and an appeal where held or hidden');
+  assert.ok(main.indexOf('Why you can trust it') < main.indexOf('id="steps"') && main.indexOf('id="steps"') < main.indexOf('id="now"'), 'trust, then how it works, then Now');
 });
 
-test('UX PR C: home.css, the home page\'s own styles, is loaded by the home page only, after styles.css', () => {
+test('UX PR C: the home page\'s own styles: design.css, then its own classes; the glow fades before the horizon line', () => {
   const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
-  assert.match(read('index.html'), /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/home\.css">/);
-  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'index.html')) assert.ok(!read(f).includes('/home.css'), f + ' does not load home.css');
-  // The glow fades out before the horizon line (finding 15): a mask takes it to nothing above the box's lower edge.
-  const css = read('home.css');
-  assert.match(css, /\.hero::before \{[^}]*mask-image: linear-gradient\(to bottom, #000 25%, transparent 90%\);/);
-  assert.ok(!/\.hero\b/.test(read('styles.css')), 'the hero lives in home.css only, so the shared sheet stays small');
+  assert.match(read('index.html'), /<link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/css\/index\.css">/);
+  for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'index.html')) assert.ok(!read(f).includes('/css/index.css'), f + ' does not load the home page\'s styles');
+  // The glow fades out before the horizon line (finding 15): the design's hero masks it to nothing above its lower edge.
+  assert.match(read('design.css'), /\.d1 \.hero:before\{[^}]*mask-image:linear-gradient\(to bottom,#000 25%,transparent 90%\)\}/);
 });
