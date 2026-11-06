@@ -350,7 +350,7 @@ export async function verifyBundle(bundle, opts = {}) {
       const covered = seq !== null && w.size > seq;
       push(step('witness', covered ? 'pass' : 'warn', covered
         ? 'Witnessed by GitHub (1 of 1): its copy, a checkpoint of ' + w.size + ' entries, is signed by the same key, consistent with this checkpoint, and includes this entry.'
-        : 'Not yet witnessed: the witness’s latest copy (' + w.size + ' entries) is consistent with this checkpoint but older than this entry. The witness runs every 15 minutes.',
+        : 'Not yet witnessed: the witness’s latest copy (' + w.size + ' entries) is consistent with this checkpoint but older than this entry. The witness runs when GitHub starts it, every few hours.',
         'The witness is GitHub: a scheduled job in our public repository fetches each checkpoint, checks it against the last, and commits it to the branch ' + WITNESS_BRANCH
         + '. Its copy is a record GitHub keeps, not a cryptographic cosignature. Witnesses run by others are not arranged yet.'));
     } catch (err) {

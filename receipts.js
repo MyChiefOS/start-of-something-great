@@ -190,7 +190,7 @@
     $('h-signed').textContent = d.checkpoint ? 'The first ' + d.checkpoint.size.toLocaleString() + ', ' + ago(d.checkpoint.signed_at) + ', by key ' + d.log_key.key_id
       : 'Nothing signed yet: the first checkpoint comes within a minute.';
     var w = d.witnesses[0] && d.witnesses[0].site_reading;
-    $('h-witness').textContent = !w || w.status === 'unknown' ? 'GitHub has no copy yet: its job runs every 15 minutes.'
+    $('h-witness').textContent = !w || w.status === 'unknown' ? 'GitHub has no copy yet: its job runs when GitHub starts it, every few hours.'
       : w.status === 'unverified' ? 'Unverified: ' + w.reason
       : 'GitHub holds a checkpoint of ' + Number(w.witness_size).toLocaleString() + ' entries' + (w.witnessed_at ? ', from its run ' + ago(w.witnessed_at) : '') + (w.status === 'stale' ? ' (its job has stopped running)' : '') + '.';
   }).catch(function () { $('h-size').textContent = 'The log couldn’t be read just now.'; $('h-signed').textContent = '–'; $('h-witness').textContent = '–'; });

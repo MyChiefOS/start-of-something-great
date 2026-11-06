@@ -195,7 +195,7 @@ function status() {
     '<div><p class="kick ' + X('margin:0 0 4px') + '">Monitor</p><span class="pill" id="log-monitor">Not checked</span></div>',
     '</div>',
     '</div>',
-    '<p class="fine" id="log-line" role="status">Entries in the log and the last signed checkpoint load from <a href="/api/log/checkpoint">/api/log/checkpoint</a>; the one witness for now is GitHub (<a href="' + REPO + '/blob/main/.github/workflows/log-witness.yml">log-witness.yml</a>, every 15 minutes), which also re-hashes every entry; <a href="/security#log">Security</a> lists the witnesses.</p>',
+    '<p class="fine" id="log-line" role="status">Entries in the log and the last signed checkpoint load from <a href="/api/log/checkpoint">/api/log/checkpoint</a>; the one witness for now is GitHub (<a href="' + REPO + '/blob/main/.github/workflows/log-witness.yml">log-witness.yml</a>, scheduled every 15 minutes; GitHub has run it every few hours), which also re-hashes every entry; <a href="/security#log">Security</a> lists the witnesses.</p>',
     '<h2>Each role, end to end</h2>',
     '<p class="fine">From the use-case checklist, ' + src('USE-CASES.md') + ' (checked ' + esc(checked) + '). A row is done only when its “done when” passes live. The file has no state field, so each state is read from its “Works today” words, which are printed under it; nothing is called proven live unless the file says live.</p>',
     ...tableOpen('Every role in production, from USE-CASES.md'),

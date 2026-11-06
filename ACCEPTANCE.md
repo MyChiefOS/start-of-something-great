@@ -50,7 +50,7 @@ This file is the definition of "done" for Day One Great. Every person and agent 
 | C1 | The home page's Now and Next lists match /api/status exactly | Automated test |
 | C2 | /shipped and /api/shipped list only shipped proposals, newest first, crediting who proposed each one, shown as plain text | Automated test |
 | C3 | The MCP tool draft_proposal files nothing, returns a GitHub link that a person must submit, and removes contact details | Automated test |
-| C4 | The site, API and MCP server are checked every 15 minutes; a failure confirmed twice opens an issue, and recovery closes it | Automated test; first live run recorded |
+| C4 | The site, API and MCP server are checked on a 15-minute schedule; a failure confirmed twice opens an issue, and recovery closes it. GitHub runs the schedule every 5 to 8 hours in practice (measured over 8 days), so an outage can go unseen that long (RISKS.md RK116) | Automated test; first live run recorded |
 | C5 | The MCP server meets protocol version 2026-07-28: `server/discover`, no setup step, cache hints on lists, header checks (400 when headers are missing or don't match), and the required errors for unknown versions and methods | Automated test against the rules in the spec |
 | C6 | Agents on older protocol versions (2025-03-26 to 2025-11-25, Streamable HTTP) stay compatible: same tools and same answers, with new fields added only where the spec allows | Automated test, plus the official MCP client libraries (old and new) against the server; live check after release |
 | C7 | Tool results that include text written by the public name those fields in `untrusted_fields`, so agents can treat them as information, not instructions | Automated test |
@@ -212,7 +212,7 @@ Email sign-in links already open a page that changes nothing; only pressing Cont
 | SU3 | Every step is safe to run again, and a failure part-way leaves the site working (the certificate, then the address, then the database password; a refusal after the address went in prints the exact rerun); a re-run of the default steps leaves the stage unchanged; Aaron sees the run's plan, from the inputs alone, before he approves it, and bad input is refused before approval | Automated test |
 | SU4 | Making the administrator is done by the database in one step: one administrator only, a repeat changes nothing, and the change lands together with an audit row written as the system | Automated test, against a real Postgres |
 | SU5 | A redeploy rebuilds the deployment production serves right now (so stepping back after a rollback works), waits for it to be ready, and then checks the live site answers and shows the stage the run set; the run fails, not passes, if it doesn't | Automated test |
-| SU6 | The stage each approved run sets is recorded (repository variable EXPECTED_STAGE) and the uptime monitor compares the live stage with it every 15 minutes and after every deploy: a stage that moved without an approved run raises an uptime issue (D1). In the preview, the monitor also fails if a signed-out request is served posts (D5) | Automated test |
+| SU6 | The stage each approved run sets is recorded (repository variable EXPECTED_STAGE) and the uptime monitor compares the live stage with it on its 15-minute schedule (every few hours in practice, RK116) and after every deploy: a stage that moved without an approved run raises an uptime issue (D1). In the preview, the monitor also fails if a signed-out request is served posts (D5) | Automated test |
 
 ### Passkeys: removed
 

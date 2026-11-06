@@ -688,6 +688,28 @@ test('the site reads the witness: a matching copy is "ok"; a copy that disagrees
   assert.strictEqual((await jobs.run(run, { fetchImpl: fetchState(state()) })).witness, 'ok');
 });
 
+test('039: the witness counts as stopped after 12 hours without a run, not 2, since GitHub runs its 15-minute schedule every few hours', async () => {
+  const jobs = require('../db/logjobs');
+  const cp = (await logGet('checkpoint')).json.checkpoint;
+  const read = (hoursAgo) => async () => ({ ok: true, status: 200, json: async () => ({ good: { size: cp.size, root: cp.root }, last_run: new Date(Date.now() - hoursAgo * 3600e3).toISOString() }) });
+  const stale = async () => (await su`select count(*)::int as n from app.notices where dedupe_key like 'log.stale.%'`)[0].n;
+  const before = await stale();
+  for (const h of [3, 8, 11.5]) {
+    jobs._reset();
+    assert.strictEqual((await jobs.run(run, { fetchImpl: read(h) })).witness, 'ok', h + ' hours since its last run is GitHub’s pace, not a stop');
+  }
+  assert.strictEqual(await stale(), before, 'no alert');
+  jobs._reset();
+  assert.strictEqual((await jobs.run(run, { fetchImpl: read(13) })).witness, 'stale');
+  assert.match((await logGet('checkpoint')).json.witnesses[0].site_reading.reason, /^The witness on GitHub last ran /);
+  assert.strictEqual(await stale(), before + 1, 'one alert');
+  jobs._reset();
+  await jobs.run(run, { fetchImpl: read(14) });
+  assert.strictEqual(await stale(), before + 1, 'once a day');
+  jobs._reset();
+  assert.strictEqual((await jobs.run(run, { fetchImpl: read(0.1) })).witness, 'ok', 'a new run puts it back to ok');
+});
+
 test('JEVs’s batch waits for the hour to end, takes at most 250 a call, runs one call at a time, and logs each decision once under a random ID', async () => {
   const ins = (when) => su`insert into app.jevs_decisions (created_at, action, subject_kind, subject_id, member_id, level, mode, effect, applied, error, total, scores)
     values (${when}::timestamptz, 'post.create', 'post', ${crypto.randomUUID()}, ${owner.id}, 'low', 'shadow', 'none', false, false, 0, '{}') returning id`;
