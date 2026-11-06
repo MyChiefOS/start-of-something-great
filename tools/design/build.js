@@ -37,7 +37,11 @@ const file = path.join(wt, target);
 const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : fs.readFileSync(path.join(wt, 'team.html'), 'utf8');
 let head = old.slice(0, old.indexOf('</head>'));
 // A page with parts the design doesn't style (the paper's figures and maths) also loads its own sheet.
-const EXTRA = { 'research/decision-loop.html': ['/paper.css'] };
+// A page with parts the design doesn't style also loads its own sheet: the paper's figures and maths; the signed-in
+// pages' forms and lists (app.css and the page's own), until each is rebuilt from its design page.
+const EXTRA = { 'research/decision-loop.html': ['/paper.css'], 'account.html': ['/app.css', '/account.css'],
+  'account/agents.html': ['/app.css', '/account/agents.css'], 'join.html': ['/join.css'],
+  'admin/review.html': ['/app.css', '/admin/review.css'], 'admin/controls.html': ['/app.css', '/admin/controls.css'] };
 // The page's own inline styles (those design.css doesn't share) go in /css/<page>.css.
 const shared = fs.existsSync(path.join(__dirname, 'shared.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'shared.json'), 'utf8')) : {};
 const mine = {};
@@ -49,7 +53,10 @@ if (Object.keys(mine).length) {
   fs.writeFileSync(ownCss, '/* ' + target + ': its own inline styles from Aaron\'s design, as classes. Written by tools/design/build.js. */\n' + require("./mkcss").classes(mine));
   EXTRA[target] = (EXTRA[target] || []).concat('/css/' + slug + '.css');
 } else if (fs.existsSync(ownCss)) fs.unlinkSync(ownCss);
-head = head.replace(/\s*<link rel="stylesheet"[^>]*>/g, '').replace(/(<link rel="preload"[^>]*>)/, '$1\n  <link rel="stylesheet" href="/design.css">' + (EXTRA[target] || []).map((h) => '\n  <link rel="stylesheet" href="' + h + '">').join(''));
+const sheets = '\n  <link rel="stylesheet" href="/design.css">' + (EXTRA[target] || []).map((h) => '\n  <link rel="stylesheet" href="' + h + '">').join('');
+head = head.replace(/\s*<link rel="stylesheet"[^>]*>/g, '');
+// After the font preload when the page has one; otherwise at the end of the head.
+head = /<link rel="preload"[^>]*>/.test(head) ? head.replace(/(<link rel="preload"[^>]*>)/, '$1' + sheets) : head + sheets.slice(1) + '\n';
 // Scripts the old page ran after the footer (its own behaviour) stay; nav.js always.
 const tail = old.slice(old.lastIndexOf('</footer>'));
 const wasTail = was ? was.slice(was.lastIndexOf('</footer>')) : tail;

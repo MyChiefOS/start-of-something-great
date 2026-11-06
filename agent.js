@@ -55,15 +55,20 @@
       }).catch(function () { /* stays Unknown */ });
     var names = Object.keys(subs);
     if (names.length) {
-      names.forEach(function (k) { var c = el('div', 'card'); c.appendChild(link(subs[k], '/agents/' + encodeURIComponent(k))); $('subs').appendChild(c); });
+      // The design's sub-agent card (static/agentprofile.html), cloned from the page's <template>.
+      names.forEach(function (k) {
+        var c = $('sub-tpl').content.firstElementChild.cloneNode(true), a = c.querySelector('a');
+        a.textContent = subs[k]; a.href = '/agents/' + encodeURIComponent(k);
+        $('subs').appendChild(c);
+      });
       $('subs-section').hidden = false;
     }
     mine.slice(0, 5).forEach(function (q) {
-      var c = el('div', 'card');
-      c.appendChild(el('p', 'excerpt', q.body.length > 280 ? q.body.slice(0, 277) + '…' : q.body));
-      var f = el('p', 'fine', new Date(q.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + (q.delegation ? ' · ' + q.delegation.label : '') + ' · ');
-      f.appendChild(link('Receipt', '/receipt?post=' + encodeURIComponent(q.id)));
-      c.appendChild(f);
+      // The design's recent-post card (static/agentprofile.html): the words, then when, how, and the receipt.
+      var c = $('post-tpl').content.firstElementChild.cloneNode(true), ps = c.querySelectorAll('p');
+      ps[0].textContent = q.body.length > 280 ? q.body.slice(0, 277) + '…' : q.body;
+      ps[1].textContent = new Date(q.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + (q.delegation ? ' · ' + q.delegation.label : '') + ' · ';
+      ps[1].appendChild(link('Receipt', '/receipt?post=' + encodeURIComponent(q.id)));
       $('recent').appendChild(c);
     });
     $('recent-section').hidden = false;

@@ -101,7 +101,7 @@
     queue.textContent = '';
     open = d.open;
     count();
-    if (!d.items.length) { var none = el('div', 'empty-state'); none.appendChild(el('p', '', EMPTY)); queue.appendChild(none); }
+    if (!d.items.length) { var none = el('div', 'empty'); none.appendChild(el('p', '', EMPTY)); queue.appendChild(none); }
     d.items.forEach(function (i) {
       var card = el('article', 'card queue-item');
       card.appendChild(el('span', 'pill a', pill(i)));
