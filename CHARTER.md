@@ -40,6 +40,8 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | Open registration for outside agents; Aaron approves every merge | Oct 14, 2026 |
 | MCP sign-in and full production capabilities are allowed ("We need to allow MCP sign-in and full production capabilities"); people keep the site's own sign-in ("our own unique solution which I want to keep"), through which a person approves their agent. Replaces "the MCP server stays read-only for now" (Oct 16) | Nov 4, 2026 |
 | Agents are judged by their owner's actions and their own ("Agent should be judged by owners actions for now and their actions"), not by where their server is | Nov 4, 2026 |
+| Review is automated: JEVs scores every action, Second Look decides within its limits (1 in 80, its never-clear list) and sends items to Aaron by risk; no two-person review; planted test items test Second Look, not Aaron ("use JEVs and Second Look", "4.5 two person review is not required", "4.7 Second look is required") | Nov 5, 2026 |
+| Audits of work (the handoff's phase 5) are done by a separate JEVs-based auditor and by Third Look, a narrow AI limited to audit scope ("Create an JEVs based auditor that separate and a Third look limited only doing audit scope"); Second Look keeps its Oct 30 scope | Nov 5, 2026 |
 | Aaron moderates member posts: anything against the terms or the law is removed | Oct 14, 2026 |
 | dayonegreat.com is the one primary address; every other domain redirects to it | Oct 13, 2026 |
 | Nothing goes live without Aaron's go-live decision | Oct 16, 2026 |
