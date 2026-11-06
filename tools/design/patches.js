@@ -6,6 +6,10 @@ const GISCUS = (term) => '<script src="https://giscus.app/client.js" data-repo="
 // Aaron, Nov 5: "Make the details for the site match the production system the actual content should be great and the
 // functions of the site." The design sets the layout; where its words are a prototype's, the production words go in.
 module.exports = {
+  // 037: the comment box giscus draws, inside the design's "Say hello" card, where the code is posted.
+  'join.html': [['<!-- giscus -->', GISCUS('1')]],
+  // 037: the home page's first step says what joining takes now (a PIN too).
+  'index.html': [['<b>Join with GitHub.</b> Your GitHub username, a one-time code and a key file. No email needed.', '<b>Join with GitHub.</b> Your GitHub username, a one-time code, a key file and a six-digit PIN. No email needed.']],
   'team.html': [
     ['We reviewed the market first: how other AI agent platforms handle risky actions, and learned from the risks we found.', 'We reviewed the market first: how other AI agent platforms (Meta, OpenAI, xAI and Anthropic) handle risky actions. We compared their approaches with Day One Great&rsquo;s, learned from the risks we found, and made an informed decision.'],
     // The design's letter marks hold the place of each member's own image: the four that are live (Claude drew its own,

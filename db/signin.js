@@ -165,7 +165,8 @@ async function sessionEnd(t, sessionHash) {
 // "Log out everywhere": as the member, through their own row-level security policy.
 async function sessionsEndAll(t) {
   const rows = await t`delete from app.sessions where member_id = app.current_member() returning id`;
-  // The key file goes too (Aaron, Oct 28): the member starts again with a new code, back in the same account.
+  // The key file goes too (Aaron, Oct 28), and since 037 every browser key: the member starts again with a new code,
+  // back in the same account.
   await t`select app.file_key_revoke()`;
   return rows.length;
 }
@@ -212,48 +213,123 @@ async function codeIssue(t, { codeHash, browserHash, loginHash, fileKey }) {
     ${hex('fileKey', fileKey)})`;
 }
 
-// Signing in again with the key file (Aaron, Oct 28). { status: 'ok' | 'no_match' | 'start_again' } or { refused }.
-async function fileSignIn(t, { loginHash, keyHash, displayName, sessionHash, sessionDays, region = null }) {
-  const args = {
-    login: hex('loginHash', loginHash), key: hex('keyHash', keyHash),
-    name: v.text('displayName', displayName, { max: 80 }),
-    session: hex('sessionHash', sessionHash),
-    days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
-    region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
-  };
-  try {
-    const [r] = await t.savepoint((x) => x`select * from app.file_sign_in(${args.login}, ${args.key}, ${args.name}, ${args.session},
-      ${args.days}::integer, ${args.region})`);
-    if (r.status !== 'ok') return { status: r.status };
-    return { status: 'ok', memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
-  } catch (e) {
-    if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
-    throw e;
-  }
+// 037 (Aaron, Nov 5, 2026): a browser key and a PIN at the end of every way in. Byte strings go to the database as
+// bytea; the database checks the browser's signature itself (app.p256_verify) and the PIN (keyed, salted).
+const bytes = (field, b, len) => {
+  if (!Buffer.isBuffer(b) || b.length !== len) throw new v.ValidationError(field, 'must be ' + len + ' bytes');
+  return b;
+};
+const PIN = /^[0-9]{6}$/;
+const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+const ORIGIN_RE = /^https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/;
+const LABEL = /^[A-Za-z ]{3,40}$/;
+const pin = (p) => v.text('pin', p, { min: 6, max: 6, pattern: PIN });
+const proof = ({ challenge, origin, signature }) => ({
+  challenge: v.text('challenge', challenge, { min: 43, max: 43, pattern: CHALLENGE }),
+  origin: v.text('origin', origin, { max: 100, pattern: ORIGIN_RE }),
+  signature: bytes('signature', signature, 64)
+});
+const region = (r) => (r === null ? null : v.text('region', r, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ }));
+const REFUSALS = ['banned', 'disabled', 'taken', 'region'];
+// Since the review of 037 (L1) a refusal by the sign-in itself comes back as a status, not an error, so the challenge
+// stays used up: it reads { refused } as before.
+const out = (r) => (REFUSALS.includes(r.status) ? { refused: r.status }
+  : r.status !== 'ok' ? { status: r.status, triesLeft: r.tries_left === undefined ? null : r.tries_left, waitSeconds: r.wait_seconds === undefined ? null : r.wait_seconds }
+  : { status: 'ok', memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin, keyId: r.key_id || null });
+
+// A one-time challenge for this site's address, good for 2 minutes.
+async function challengeIssue(t, origin) {
+  const [r] = await t`select app.signin_challenge(${v.text('origin', origin, { max: 100, pattern: ORIGIN_RE })}) as c`;
+  return r.c;
 }
 
-// The browser that asked for a code signs in once the JEVs gate has claimed it. The database takes the GitHub account
-// from the claimed code; nothing here names it. { status: 'waiting' | 'expired' } or the sign-in, or { refused }.
-async function codeSignIn(t, { browserHash, displayName, sessionHash, sessionDays, region = null }) {
-  const args = {
-    browser: hex('browserHash', browserHash),
-    name: v.text('displayName', displayName, { max: 80 }),
-    session: hex('sessionHash', sessionHash),
-    days: v.int('sessionDays', sessionDays, { min: 1, max: 30 }),
-    region: region === null ? null : v.text('region', region, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ })
-  };
+// Lane 1's waiting step: { status: 'waiting' | 'claimed' | 'expired', secondsLeft, hasPin, browsers } (the last two once
+// claimed, for the person's own account).
+async function codeStatus(t, browserHash) {
+  const [r] = await t`select status, seconds_left, has_pin, browsers from app.code_status(${hex('browserHash', browserHash)})`;
+  return { status: r.status, secondsLeft: r.seconds_left, hasPin: r.has_pin === true, browsers: r.browsers || 0 };
+}
+
+// The public half of a browser's key, for the site's own check of lane 3's signature (the review of 037, M2), or null.
+async function browserKeyPublic(t, keyId) {
+  let id;
+  try { id = v.uuid('keyId', keyId); } catch { return null; }
+  const [r] = await t`select app.browser_key_public(${id}::uuid) as k`;
+  return r.k ? Buffer.from(r.k) : null;
+}
+
+// Lane 1: the claimed code, then the new PIN and this browser's key. { status: 'ok', ..., keyId } or { status:
+// 'waiting' | 'expired' | 'region' | 'weak_pin' | 'bad_proof' }, or { refused }.
+async function codeSignInPin(t, { browserHash, displayName, sessionHash, sessionDays, region: rg = null, pin: p, publicKey, label, removeOthers = false, ...pr }) {
+  const a = proof(pr);
+  const args = [hex('browserHash', browserHash), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 }), region(rg), pin(p), bytes('publicKey', publicKey, 65),
+    v.text('label', label, { min: 3, max: 40, pattern: LABEL })];
   for (let attempt = 0; ; attempt++) {
     try {
-      const [r] = await t.savepoint((s) => s`select * from app.code_sign_in(${args.browser}, ${args.name}, ${args.session},
-        ${args.days}::integer, ${args.region})`);
-      if (r.status !== 'ok') return { status: r.status };
-      return { status: 'ok', memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
+      const [r] = await t.savepoint((s) => s`select * from app.code_sign_in_pin(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}::integer,
+        ${args[4]}, ${args[5]}, ${args[6]}, ${args[7]}, ${a.challenge}, ${a.origin}, ${a.signature}, ${removeOthers === true})`);
+      return out(r);
     } catch (e) {
-      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region'].includes(e.message)) return { refused: e.message };
+      if (e.code === 'P0001' && REFUSALS.includes(e.message)) return { refused: e.message };
       if (e.code === '23505' && attempt === 0) continue;
       throw e;
     }
   }
+}
+
+// Lane 2: the key file and the PIN, adding this browser. { status: 'ok', ..., keyId } or { status: 'no_match' |
+// 'start_again' | 'wrong_pin' (triesLeft) | 'weak_pin' | 'bad_proof' }, or { refused }.
+async function fileSignInPin(t, { loginHash, keyHash, displayName, sessionHash, sessionDays, region: rg = null, pin: p, pinAgain = null, publicKey, label, ...pr }) {
+  const a = proof(pr);
+  const args = [hex('loginHash', loginHash), hex('keyHash', keyHash), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 }), region(rg), pin(p), bytes('publicKey', publicKey, 65),
+    v.text('label', label, { min: 3, max: 40, pattern: LABEL })];
+  try {
+    const [r] = await t.savepoint((x) => x`select * from app.file_sign_in_pin(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]},
+      ${args[4]}::integer, ${args[5]}, ${args[6]}, ${args[7]}, ${args[8]}, ${a.challenge}, ${a.origin}, ${a.signature},
+      ${typeof pinAgain === 'string' && PIN.test(pinAgain) ? pinAgain : null})`);
+    return out(r);
+  } catch (e) {
+    if (e.code === 'P0001' && REFUSALS.includes(e.message)) return { refused: e.message };
+    throw e;
+  }
+}
+
+// Lane 3: this browser's key and the PIN. { status: 'ok', ... } or { status: 'no_key' | 'wrong_pin' (triesLeft) |
+// 'cancelled' | 'bad_proof' }, or { refused }.
+async function browserSignIn(t, { keyId, displayName, sessionHash, sessionDays, region: rg = null, pin: p, ...pr }) {
+  const a = proof(pr);
+  const args = [v.uuid('keyId', keyId), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 }), region(rg), pin(p)];
+  try {
+    const [r] = await t.savepoint((x) => x`select * from app.browser_sign_in(${args[0]}::uuid, ${args[1]}, ${args[2]}, ${args[3]}::integer,
+      ${args[4]}, ${args[5]}, ${a.challenge}, ${a.origin}, ${a.signature})`);
+    return out(r);
+  } catch (e) {
+    if (e.code === 'P0001' && REFUSALS.includes(e.message)) return { refused: e.message };
+    throw e;
+  }
+}
+
+// The account page, as the signed-in member: { pin: { set_at } | null, key_file: { created_at, used_at } | null,
+// browsers: [{ id, label, created_at, used_at }] }.
+async function signinMethods(t) {
+  const [r] = await t`select app.signin_methods() as m`;
+  return r.m || { pin: null, key_file: null, browsers: [] };
+}
+async function browserKeyRemove(t, keyId) {
+  let id;
+  try { id = v.uuid('keyId', keyId); } catch { return false; }
+  const [r] = await t`select app.browser_key_remove(${id}::uuid) as ok`;
+  return r.ok === true;
+}
+// { status: 'ok' | 'wrong_pin' (tries_left) | 'weak_pin' | 'no_pin' | 'signed_out' }.
+async function pinChange(t, { current, next }) {
+  const cur = typeof current === 'string' && PIN.test(current) ? current : '';
+  const nxt = typeof next === 'string' && PIN.test(next) ? next : '';
+  const [r] = await t`select app.pin_change(${cur}, ${nxt}) as out`;
+  return r.out;
 }
 
 // The JEVs behaviour watch (026): after a sign-in, as the member just signed in. country and net are the site's keyed
@@ -284,4 +360,5 @@ async function watchTravel(t, { sessionHash, place = null, km = null, prev = nul
   return r.alerted === true;
 }
 
-module.exports = { watchSignin, watchReach, watchSession, watchTravel, codeIssue, codeSignIn, fileSignIn, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+module.exports = { watchSignin, watchReach, watchSession, watchTravel, codeIssue, challengeIssue, codeStatus, codeSignInPin, fileSignInPin,
+  browserSignIn, browserKeyPublic, signinMethods, browserKeyRemove, pinChange, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

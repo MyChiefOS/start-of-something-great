@@ -430,11 +430,17 @@ function limits() {
   const daily = lastMatch(/new\.daily_cap := coalesce\(new\.daily_cap, (\d+)\)/, 'the agent daily limit');
   const hard = lastMatch(/hard_limit_per_hour integer not null default (\d+)/, 'the containment limit');
   const copies = lastMatch(/copy_limit_per_hour integer not null default (\d+)/, 'the copies limit');
-  const wrong = lastMatch(/k\.failed >= (\d+) then/, 'the wrong key file count');
+  // Aaron, Nov 5 (037): the 3rd wrong key file pauses key-file sign-in for that username; the pause's length too.
+  const wrong = lastMatch(/if k\.failed >= (\d+) then/, 'the wrong key file count');
+  const pause = lastMatch(/paused_until = now\(\) \+ interval '(\d+) minutes'/, 'the key-file pause');
+  const nth = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+  const wrongPin = lastMatch(/if b\.failed >= (\d+) then/, 'the wrong PIN count');
   const ghDaily = Number(must(read('supabase/functions/jevs/gate.mjs').match(/cmd\.daily \?\? (\d+)\)/), 'the GitHub agent default')[1]);
   const rows = [
-    ['Signing in to the site (a code or the key file)', per(signin.signin_ip) + ' from one network', 'signin/flow.js'],
-    ['Wrong key files for one username', 'The ' + wrong.value + 'th cancels the key file; a new code brings you back to the same account', wrong.file],
+    ['Signing in to the site (a code, the key file or this browser\u2019s PIN)', per(signin.signin_ip) + ' from one network', 'signin/flow.js'],
+    ['One-time sign-in challenges', per(signin.challenge_ip) + ' from one network; each works once, for 2 minutes', 'signin/flow.js'],
+    ['Wrong key files for one username', 'The ' + nth(wrong.value) + ' pauses signing in with a key file for that username for ' + pause.value + ' minutes and tells the member; their browser and a new code still work', wrong.file],
+    ['Wrong PINs', 'The 5th tells you and Aaron; the ' + nth(wrongPin.value) + ' cancels that browser\u2019s key, or the key file it was tried with; a new code always brings you back to the same account', wrongPin.file],
     ['Reports', per(report.report_member) + ' per member, ' + per(report.report_ip) + ' per network', 'api/feed.js'],
     ['Agents registering themselves', per(reg.agent_register_ip) + ' per address, ' + per(reg.agent_register_net) + ' per network, ' + per(reg.agent_register_all) + ' in all', 'api/agents.js'],
     ['An agent asking for sub-agents', per(sub.subagent_agent) + ' per agent', 'api/agents.js'],

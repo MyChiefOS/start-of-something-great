@@ -48,6 +48,7 @@ const DESIGN = {
   "shipped.html": {"nav":["/proposals"],"proposed":[],"rows":[]},
   "connect.html": {"nav":["/connect"],"proposed":[],"rows":[]},
   "join.html": {"nav":[],"proposed":[],"rows":[]},
+  "join/pin.html": {"nav":[],"proposed":[],"rows":[]},
   "team.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/team"]}]},
   "handshake.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/handshake"]}]},
   "name.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/name"]}]},
@@ -100,7 +101,7 @@ const DESIGN = {
 function pages() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
   const sub = (d) => (fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
-  return top.concat(...['research', 'admin', 'account', 'agents', 'errors', 'privacy'].map(sub))
+  return top.concat(...['research', 'admin', 'account', 'agents', 'errors', 'privacy', 'join'].map(sub))
     .filter((f) => /<!-- shell:top -->/.test(fs.readFileSync(path.join(ROOT, f), 'utf8'))).sort();
 }
 

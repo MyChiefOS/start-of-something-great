@@ -14,7 +14,7 @@ const store = require('../db/signin');
 const v1 = require('../secondlook/v1');
 const runner = require('../db/secondlook');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote } = require('./helpers');
+const { trustSystem, promote, asSignin } = require('./helpers');
 
 const CLEAN = { q1: 'no', q2: 'no', q3: 'no', q4: 'no', q5: 'no', q6: 'no', q7: 'no', q8: 'no', q9: 'yes' };
 const TOKEN = 'oidc.' + 'x'.repeat(40);
@@ -197,7 +197,7 @@ function res() {
 }
 async function member(name, { admin = false } = {}) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await promote(su, out.memberId);
   await q(`update app.members set created_at = now() - interval '30 days' where id = '${out.memberId}'`);

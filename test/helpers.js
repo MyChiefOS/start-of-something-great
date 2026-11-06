@@ -98,4 +98,9 @@ async function shadowMode(su) {
   });
 }
 
-module.exports = { fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, TEST_SYSTEM_SECRET };
+// 037, after its independent review (H1): the site's role can no longer make a session without a PIN and a browser
+// key (it can't call app.sign_in). Tests that only need a member make it as the sign-in role itself, over the test's own
+// superuser connection, exactly as app.sign_in does it; the site's rights stay as production has them.
+const asSignin = (su) => (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_signin'); return fn(t); });
+
+module.exports = { asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, TEST_SYSTEM_SECRET };

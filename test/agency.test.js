@@ -1,7 +1,7 @@
 // Release 2, PR 7: agents acting for their owners (criteria A1–A6, approved Oct 16, 2026, R10, R17, R36), against a real Postgres.
 'use strict';
 
-const { promote, shadowMode } = require('./helpers');
+const { promote, shadowMode, asSignin } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -89,7 +89,7 @@ test.after(async () => {
 async function member(level = 2, name = 'Owner', { stale = false } = {}) {
   const token = c.token(32);
   const fp = c.sha256hex(crypto.randomUUID());
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
@@ -99,7 +99,7 @@ async function member(level = 2, name = 'Owner', { stale = false } = {}) {
 // The same member signing in again with the same GitHub account: a new session (fix 3: the proof a person acts with).
 async function signInAgain(m) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1,
     level: m.level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   assert.strictEqual(out.memberId, m.id, 'the same member');
   return { ...m, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: m.id, session: c.sha256hex(token) } };

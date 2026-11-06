@@ -25,7 +25,7 @@ const agentsDb = require('../db/agents');
 const launch = require('../launch');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { promote, shadowMode } = require('./helpers');
+const { promote, shadowMode, asSignin } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -303,7 +303,7 @@ test.after(async () => {
 
 async function member(name) {
   const token = c.token(32);
-  const out = await run(ANON, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: 1, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);

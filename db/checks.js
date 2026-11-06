@@ -35,7 +35,9 @@ const DEFINERS = {
   'app.email_token_redeem(text, text, boolean)': 'dog_signin',
   // PR 12 added the region a traveller confirmed (p_region) to sign-in, and the check for whether a sign-in method
   // already belongs to an account, asked only after the provider has confirmed who the person is.
-  'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid, text)': 'dog_signin',
+  // 037, after its review (H1): no longer the site's to call (it made a session with no PIN and no browser key); the
+  // switched-off GitHub, X and email sign-ins that use it need the browser key and PIN step before they come back.
+  'app.sign_in(text, text[], smallint, smallint, text, text, integer, timestamp with time zone, uuid, text)': { owner: 'dog_signin', callers: '' },
   'app.sign_in_known(text, text[])': 'dog_signin',
   'app.session_resolve(text, integer)': 'dog_signin',
   'app.session_end(text)': 'dog_signin',
@@ -115,9 +117,30 @@ const DEFINERS = {
   'app.code_claim(text, text, text)': { owner: 'dog_signin', callers: 'dog_jevs' },
   'app.code_claim(text, text, text, boolean)': { owner: 'dog_signin', callers: 'dog_jevs' },
   'app.founder_promote(uuid)': { owner: 'dog_owner', callers: 'dog_signin' },
-  'app.code_sign_in(text, text, text, integer, text)': 'dog_signin',
+  // 037 (Aaron, Nov 5, 2026): no longer the site's to call; only the PIN lanes below reach them, as their owner.
+  'app.code_sign_in(text, text, text, integer, text)': { owner: 'dog_signin', callers: '' },
   // The key file (Aaron, Oct 28): signing in again with the username and file, for every account.
-  'app.file_sign_in(text, text, text, text, integer, text)': 'dog_signin',
+  'app.file_sign_in(text, text, text, text, integer, text)': { owner: 'dog_signin', callers: '' },
+  // 037 (Aaron, Nov 5, 2026): the browser key and the PIN. A one-time challenge; lane 1's waiting step; the three ways in,
+  // each ending at the same check (the browser's signature, checked in the database, then the PIN); the account page's
+  // list, removing a browser and changing the PIN. And the sign-in role's own steps, called by nobody else: the PIN's
+  // keyed hash (it reads app.pin_keys), setting and testing a PIN, the proof, adding a browser key and the wrong-PIN count.
+  'app.signin_challenge(text)': 'dog_signin',
+  'app.code_status(text)': 'dog_signin',
+  'app.code_sign_in_pin(text, text, text, integer, text, text, bytea, text, text, text, bytea, boolean)': 'dog_signin',
+  'app.file_sign_in_pin(text, text, text, text, integer, text, text, bytea, text, text, text, bytea, text)': 'dog_signin',
+  // The review of 037 (M2): a browser key's public half, so the site checks lane 3's signature itself too.
+  'app.browser_key_public(uuid)': 'dog_signin',
+  'app.browser_sign_in(uuid, text, text, integer, text, text, text, text, bytea)': 'dog_signin',
+  'app.signin_methods()': 'dog_signin',
+  'app.browser_key_remove(uuid)': 'dog_signin',
+  'app.pin_change(text, text)': 'dog_signin',
+  'app.pin_digest(uuid, bytea, text)': { owner: 'dog_signin', callers: '' },
+  'app.pin_store(uuid, text)': { owner: 'dog_signin', callers: '' },
+  'app.pin_matches(uuid, text)': { owner: 'dog_signin', callers: '' },
+  'app.signin_proof(bytea, text, text, bytea)': { owner: 'dog_signin', callers: '' },
+  'app.browser_key_add(uuid, bytea, text)': { owner: 'dog_signin', callers: '' },
+  'app.pin_wrong(uuid, text, uuid, integer)': { owner: 'dog_signin', callers: '' },
   // "Sign out everywhere" cancels the member's own key file.
   'app.file_key_revoke()': 'dog_signin',
   // 025 (the CSO's review, Oct 29): sign-in's work, called only by the sign-in role's own functions; app.sign_in, for

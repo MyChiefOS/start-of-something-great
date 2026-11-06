@@ -54,7 +54,10 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.doesNotMatch(p + t, /from launch|From launch|when we launch|until the site's own posting opens/);
   assert.match(p, /the file never leaves your device/);
   assert.match(p, /never the file, and never its fingerprint as your browser sends it/);
-  assert.match(p, /after 10 wrong key files for your username, or when you sign out everywhere/);
+  // Aaron, Nov 5 (037): wrong key files pause, never cancel; 10 wrong PINs or signing out everywhere cancel.
+  assert.match(p, /until it is cancelled \(after 10 wrong PINs with it, or when you sign out everywhere\)/);
+  assert.match(p, /Wrong key files never cancel it: after 3 for your username, signing in with a key file pauses for 10 minutes\./);
+  assert.match(t, /After 3 wrong key files for your username, signing in with a key file pauses for 10 minutes and you are told/);
   assert.match(p, /__Host-dog_session<\/code> keeps you signed in/);
   assert.match(p, /It stops working after 30 days/);
   assert.match(p, /__Host-dog_resident<\/code>, marks that session for its 30 days/);
@@ -85,7 +88,16 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   assert.match(read('join.js'), /By continuing, you confirm that you live outside these regions and are using your account lawfully/);
   assert.match(p, /A code works for 10 minutes; its record is deleted the next time anyone asks for a code/);
   assert.match(t, /<strong>Signing in to the site itself\.<\/strong>/);
-  assert.match(t, /Anyone with your key file and your username can sign in as you/);
+  // 037 (Aaron, Nov 5, 2026): two things for every way in, so the file and username alone no longer sign anyone in.
+  assert.match(t, /Anyone with your key file, your username and your PIN, or with your browser and your PIN, can sign in as you/);
+  assert.match(t, /Your GitHub sign-in is never cancelled/);
+  assert.match(p, /<strong>Your PIN<\/strong>: never as you typed it\./);
+  assert.match(p, /<strong>Your browsers' sign-in keys<\/strong>: for each browser you sign in with, the public half of its key \(the private half never leaves your browser\)/);
+  assert.match(p, /each works once, for 2 minutes/);
+  const pin = read('db/migrations/037_signin_pin.sql');
+  assert.match(pin, /now\(\) \+ interval '2 minutes'/, 'a challenge lasts 2 minutes');
+  assert.match(pin, /if b\.failed >= 10 then/, 'the 10th wrong PIN cancels a browser key');
+  assert.match(pin, /if k\.pin_failed >= 10 then/, 'and the key file');
   assert.match(t, /you are back in the same account/);
   // The numbers in the policies are the code's.
   assert.strictEqual(require('../signin/config').SESSION_DAYS, 30);

@@ -11,7 +11,7 @@
 // system working, not an error; the load run still counts every other answer.
 const challenged = (r) => r.statusCode === 202 && (/"challenge":"/.test(r.body) || /our automatic checks \(JEVs\)/.test(r.body));
 
-const { promote } = require('../helpers');
+const { promote, asSignin } = require('../helpers');
 const crypto = require('crypto');
 const postgres = require('postgres');
 const db = require('../../db');
@@ -92,7 +92,7 @@ async function main() {
     const make = async (i) => {
       const token = c.token(32);
       const level = i % 3 === 0 ? 2 : 1;
-      const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('m' + i + NAME)], keyVersion: 1,
+      const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('m' + i + NAME)], keyVersion: 1,
         level: 1, displayName: 'Member ' + i, sessionHash: c.sha256hex(token), sessionDays: 30 }));
       if (level === 2) await promote(su, out.memberId); // phase 1 (021): level 2 is JEVs's promotion
       members[i] = { id: out.memberId, level, cookie: '__Host-dog_session=' + token };
@@ -175,7 +175,7 @@ async function main() {
     const tables = (await su`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind = 'r'`).map((r) => r.name);
     // An outsider who takes no part in the load, so everything they can see should be only their own sign-in rows.
     const otoken = c.token(32);
-    const o = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('outsider' + NAME)], keyVersion: 1,
+    const o = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('outsider' + NAME)], keyVersion: 1,
       level: 1, displayName: 'Outsider', sessionHash: c.sha256hex(otoken), sessionDays: 30 }));
     const outsider = { id: o.memberId };
     // The sub-agent limits (PR 16) are readable by anyone signed in; they are public in the migration.

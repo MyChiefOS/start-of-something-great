@@ -14,7 +14,7 @@ const jevs = require('../db/jevs');
 const { maskSecrets } = require('../api/_secrets');
 const { maskContacts } = require('../api/_proposals');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote } = require('./helpers');
+const { trustSystem, promote, asSignin } = require('./helpers');
 
 // Fixtures are assembled at run time (PK, JWT_IO) so the repository's own secret scan (gitleaks, in CI) doesn't flag
 // these made-up keys and published samples as leaks.
@@ -157,7 +157,7 @@ function res() {
 }
 async function member({ name = 'Member', ageDays = 30 } = {}) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await promote(su, out.memberId);
   if (ageDays) await q(`update app.members set created_at = now() - interval '${ageDays} days' where id = '${out.memberId}'`);

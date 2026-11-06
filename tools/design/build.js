@@ -48,7 +48,7 @@ let head = old.slice(0, old.indexOf('</head>'));
 // A page with parts the design doesn't style also loads its own sheet: the paper's figures and maths; the signed-in
 // pages' forms and lists (app.css and the page's own), until each is rebuilt from its design page.
 const EXTRA = { 'research/decision-loop.html': ['/paper.css'], 'account.html': ['/app.css', '/account.css'],
-  'account/agents.html': ['/app.css', '/account/agents.css'], 'join.html': ['/join.css'],
+  'account/agents.html': ['/app.css', '/account/agents.css'],
   'admin/review.html': ['/app.css', '/admin/review.css'], 'admin/controls.html': ['/app.css', '/admin/controls.css'] };
 // The page's own inline styles (those design.css doesn't share) go in /css/<page>.css.
 const shared = fs.existsSync(path.join(__dirname, 'shared.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'shared.json'), 'utf8')) : {};
@@ -56,9 +56,17 @@ const mine = {};
 for (const [c, d] of Object.entries(styles)) if (!shared[c]) mine[c] = d;
 // Rules a page's script needs that its markup doesn't carry: /decisions' Second Look track, whose fill the design writes
 // inline (width:63%), as classes in steps of 5% that decisions.js sets (no style from a script).
+const SIGNIN = '.d1 main.story{padding-top:4px}.d1 main.story h1{font-size:clamp(1.75rem,7vw,3.25rem)}.d1 main.story .dek{font-size:17px;margin-bottom:8px}'
+  + '.d1 .card .btn,.d1 .card .tabs button{display:inline-flex;align-items:center;justify-content:center;min-height:44px}'
+  + '.d1 .card summary{display:list-item;min-height:44px;padding:8px 0;box-sizing:border-box}'
+  // While a code shows, the comment box sits close under it (finding 1): no empty line, and the cards closer together.
+  + '.d1 #code-copied:empty{display:none}.d1 #code-signin,.d1 #pin-signin-card{margin:12px 0!important}.d1 #code-signin{padding-bottom:8px}.d1 #say-hello{padding-top:8px}.d1 #code-show p.fine:last-of-type{margin-top:6px!important}.d1 main.story>p:not(.dek){margin-bottom:8px}.d1 #post-here{margin-bottom:4px}\n';
 // A member's or an agent's chosen name is their page's h1, and a long one wraps rather than running off a phone's screen.
 const ADD = { 'decisions.html': Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n',
-  'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n' };
+  'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
+  // The sign-in pages (UX PR A, kept with the design): every control at least 44 px at every width, and a shorter top, so
+  // the chosen way's button is in the first screen at 390 by 844 and 1280 by 800 (scripts/check-join-panel.js).
+  'join.html': SIGNIN, 'join/pin.html': SIGNIN };
 const slug = target.replace(/\.html$/, '').replace(/\//g, '-');
 const ownCss = path.join(wt, 'css', slug + '.css');
 if (Object.keys(mine).length || ADD[target]) {

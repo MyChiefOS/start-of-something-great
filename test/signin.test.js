@@ -16,7 +16,7 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, TEST_SYSTEM_SECRET, promote } = require('./helpers');
+const { trustSystem, TEST_SYSTEM_SECRET, promote, asSignin } = require('./helpers');
 // Acting as an administrator straight in the database (the test superuser), with the proof the site gives (fix 3):
 // app.act_as, as db/index.js calls it, with the administrator's own session. Settings set by hand now count for nothing.
 const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
@@ -182,10 +182,11 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn']]);
+    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn'], ['challenge'], ['browserSignIn'], ['pinChange'], ['browserRemove']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
-      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish', 'POST key'],
+      'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish', 'POST key', 'POST challenge', 'POST browser',
+      'POST account/pin', 'POST account/browser/remove'],
     'only these change anything, and all are POSTs');
 });
 
@@ -199,14 +200,23 @@ test('form bodies: read the same whether Vercel has already parsed them or not, 
   assert.strictEqual(await h.form({ headers: { 'content-type': 'application/json' }, body: { t: 'abc' } }), null);
 });
 
-test('SF4, S5: the join page signs people in with GitHub through giscus: two fields at most, no password, no form', () => {
+test('SF4, S5: the join page signs people in with GitHub through giscus: at most 4 fields in any lane, a PIN and no password, no form', () => {
   const html = fs.readFileSync(path.join(root, 'join.html'), 'utf8');
   const fields = html.match(/<(input|select|textarea|form)\b[^>]*>/g) || [];
-  // Phase 1 (Aaron, Oct 23): GitHub users only. Since Oct 28 sign-in asks for two things: the GitHub username and a key
-  // file, which never leaves the device (SF4 allows up to 5 fields and no new password).
-  assert.deepStrictEqual(fields, ['<input id="code-login" class="field" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" aria-describedby="code-login-help">',
-    '<input id="code-file" class="field" name="file" type="file" aria-describedby="code-file-help">']);
-  assert.ok(!/type="password"|autocomplete="(new|current)-password"/.test(html));
+  // Phase 1 (Aaron, Oct 23): GitHub users only. Since Oct 28 the GitHub username and a key file, which never leaves the
+  // device; since Nov 5 (037, Aaron: "Every way in needs two things") a six-digit PIN. Lane 3 shows one field (the PIN),
+  // lane 2 three (username, key file, PIN), lane 1 two and then two (the new PIN, twice). SF4: no form over 5 fields.
+  // No form element: every step is a same-site POST from join.js.
+  assert.deepStrictEqual(fields.map((f) => f.match(/id="([a-z-]+)"/)[1]), ['code-login', 'code-file'], '/join: lane 1, the username and the key file');
+  // The review of 037 (M1): every PIN field is on /join/pin, where no outside script runs. Lane 3 shows one field (the
+  // PIN), lane 2 three or four (username, key file, PIN, and a first PIN again), lane 1's last step two and a box.
+  const pinPage = fs.readFileSync(path.join(root, 'join', 'pin.html'), 'utf8');
+  const pinFields = pinPage.match(/<(input|select|textarea|form)\b[^>]*>/g) || [];
+  assert.deepStrictEqual(pinFields.map((f) => f.match(/id="([a-z-]+)"/)[1]), ['pin-now', 'code-login', 'code-file', 'key-pin', 'key-pin-again', 'pin-new', 'pin-again', 'pin-remove-others']);
+  assert.ok(!/type="password"/.test(html), 'no PIN on /join');
+  assert.ok(!/autocomplete="(new|current)-password"/.test(pinPage), 'no password manager prompts for the PIN');
+  assert.ok(!/autocomplete="(new|current)-password"/.test(html), 'no password: the PIN fields are hidden as typed and never filled in by the browser');
+  for (const f of fields.filter((x) => /type="password"/.test(x))) assert.match(f, /inputmode="numeric" pattern="\[0-9\]\{6\}" maxlength="6" autocomplete="off"/, f);
   assert.match(html, /<script src="https:\/\/giscus\.app\/client\.js"/);
   assert.match(html, /data-repo="MyChiefOS\/start-of-something-great"/);
   assert.ok(!/auth\/(x|email)\//.test(html), 'no X or email sign-in on the page');
@@ -259,7 +269,9 @@ function setup({ keys, accounts = {}, mail = [] } = {}) {
     fingerprintKeys: keys || [{ version: 1, key: crypto.randomBytes(32) }],
     github: { clientId: 'g', clientSecret: 's' }, x: { clientId: 'x', clientSecret: 's' }
   };
-  const flow = make({ config: cfg, run: (ctx, fn) => db.tx(web, ctx, fn), providers: fakeProviders(accounts), sendEmail: async (to, link) => mail.push({ to, link }) });
+  // 037 (the review's H1): these sign-ins are off and the site's role can't make their session; their logic is tested
+  // with that one step run as the sign-in role (runOff). Production passes none (test: "H1" below).
+  const flow = make({ config: cfg, run: (ctx, fn) => db.tx(web, ctx, fn), runOff: (ctx, fn) => asSignin(su)(fn), providers: fakeProviders(accounts), sendEmail: async (to, link) => mail.push({ to, link }) });
   return { flow, cfg, accounts, mail };
 }
 // The email form's sealed time stamp (PR 12 bot check), as /auth/form hands it out, opened ageMs ago.
@@ -546,12 +558,12 @@ test('the sign-in function can\'t attach a method to someone else, or sign in wh
   const victim = (await me(env, a.browser)).member_id;
   const call = (ctx, link) => db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([c.sha256hex('attacker' + Math.random())])}::text[], 1::smallint, 2::smallint,
     'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${link}::uuid, null)`);
-  await assert.rejects(call({ actor: 'anon' }, victim), /bad sign-in request/, 'someone not signed in naming a member to link to');
+  await assert.rejects(call({ actor: 'anon' }, victim), /permission denied for function sign_in/, 'someone not signed in naming a member to link to: since 037 (the review\'s H1) the site\'s role can\'t call it at all');
   const other = await oauth(setup({ accounts: { 'github:9102': { accountId: '9102', level: 1, recheckAfter: null } } }), 'github', '9102');
   const otherId = (await me(env, other.browser)).member_id;
   const asOther = { actor: 'member', memberId: otherId, session: hashOf(other.browser) }; // fix 3: really that member
-  await assert.rejects(call(asOther, victim), /bad sign-in request/, 'one member linking to another');
-  await assert.rejects(call(asOther, null), /bad sign-in request/, 'a plain sign-in while acting as a member');
+  await assert.rejects(call(asOther, victim), /permission denied for function sign_in/, 'one member linking to another');
+  await assert.rejects(call(asOther, null), /permission denied for function sign_in/, 'a plain sign-in while acting as a member');
   const [lvl] = await q(`select trust_level from app.members where id = '${victim}'`);
   assert.strictEqual(lvl.trust_level, 1, 'the victim was not raised to level 2');
 });
@@ -692,7 +704,7 @@ test('PR 15: the database links only from the member\'s own fresh session, and s
   const ctx = { actor: 'member', memberId: id, session: hashOf(a.browser) };
   const fp = () => c.sha256hex('linked' + Math.random());
   await assert.rejects(db.tx(web, ctx, (t) => t`select * from app.sign_in('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint,
-    'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${id}::uuid, null)`), /bad sign-in request/, 'sign-in never links (it would make a fresh session)');
+    'z', ${c.sha256hex('s' + Math.random())}, 30, null, ${id}::uuid, null)`), /permission denied for function sign_in/, 'sign-in never links (it would make a fresh session); since 037 the site\'s role can\'t call it at all');
   const link = (who, sessionHash) => db.tx(web, who, (t) => t`select * from app.identity_link('x', ${t.array([fp()])}::text[], 1::smallint, 1::smallint,
     null::timestamptz, ${sessionHash}, null)`);
   const other = await oauth(setup({ accounts: { 'github:9532': { accountId: '9532', level: 1, recheckAfter: null } } }), 'github', '9532');
@@ -1279,7 +1291,11 @@ test('launch gate: LAUNCH_STAGE=preview keeps sign-in off, exactly as closed, ev
 // by an identity update either.
 test('RK82: a direct sign-in asking for level 2 gets level 1, recorded; JEVs alone makes level 2', async () => {
   const fp = c.sha256hex(crypto.randomUUID());
-  const ask = (level) => runAs({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1, level,
+  // 037 (the review's H1): the site's role can't call app.sign_in at all now (asserted below); the cap still holds for the
+  // sign-in role's own callers, so it is asked as that role.
+  await assert.rejects(runAs({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1, level: 2,
+    displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 })), /permission denied for function sign_in/);
+  const ask = (level) => asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1, level,
     displayName: 'Asks for 2', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   const out = await ask(2);
   const [m] = await q(`select trust_level from app.members where id = '${out.memberId}'`);

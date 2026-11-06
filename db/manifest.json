@@ -143,6 +143,10 @@
     {
       "version": "036_public_decisions",
       "sha256": "04ba696e715d94c7fdfa3ea0ddee9ec3bcab7b49c77a56d3cb0d7773fbf82fe5"
+    },
+    {
+      "version": "037_signin_pin",
+      "sha256": "3fd81320ae1115333e94dcf4977c271b9c440bb74661155e11df15e67cdd8830"
     }
   ]
 }

@@ -29,8 +29,18 @@
     'error=senior': 'Nothing was changed: from this session you can remove only a method added after the one you signed in with. To remove an older one, sign in with your oldest method first.',
     'error=link': 'That sign-in method wasn’t linked: the sign-in was cancelled, took too long, or didn’t start from this page. Please try again from here.',
     'error=taken_method': 'That sign-in method wasn’t linked: it already belongs to another account.',
+    // 037: the PIN and the browsers.
+    'saved=pin': 'Your PIN is changed. Use the new one in every browser from now on.',
+    'saved=browser_removed': 'Removed. That browser no longer signs in with your PIN; it needs your key file and PIN, or a new code.',
+    'error=pin_wrong': 'Nothing was changed: that isn’t your PIN now.',
+    'error=pin_weak': 'Nothing was changed: please choose a PIN that’s harder to guess (not one digit repeated, a run like 123456, or a short pattern repeated).',
+    'error=pin_again': 'Nothing was changed: the two new PINs weren’t the same.',
+    'error=pin_none': 'You don’t have a PIN yet: you set one at your next sign-in.',
+    'error=browser': 'Nothing was removed: that browser isn’t on your account any more.',
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;
+  // How many tries are left before this session is signed out, after a wrong current PIN (a number only).
+  if (q.get('error') === 'pin_wrong' && /^[0-9]$/.test(q.get('left') || '')) note += ' ' + q.get('left') + (q.get('left') === '1' ? ' try is' : ' tries are') + ' left before this session is signed out.';
   var PROVIDER = { github: 'GitHub', x: 'X', email: 'email', linkedin: 'LinkedIn' };
 
   function el(tag, cls, text) {
@@ -96,6 +106,7 @@
         add.appendChild(document.createTextNode(' '));
       });
       add.hidden = !add.childNodes.length;
+      showMethods(d);
       document.getElementById('name').value = d.display_name;
       document.getElementById('sessions').textContent = d.sessions + (d.sessions === 1 ? ' session open' : ' sessions open');
       if (d.deletion_review) {
@@ -114,6 +125,66 @@
       loadNotices();
     })
     .catch(function () { msg.textContent = 'Your account could not be loaded. Please try again.'; });
+
+  // 037: your browsers (this one marked, each with Remove), your PIN (set when, and a form to change it) and your key
+  // file. This browser is the one whose key ID its IndexedDB keeps (join.js); nothing else is read from it.
+  var day = function (t) { return t ? new Date(t).toLocaleDateString() : null; };
+  function thisBrowser() {
+    return new Promise(function (ok) {
+      try {
+        if (!window.indexedDB) { ok(null); return; }
+        var open = indexedDB.open('dog-signin', 1);
+        open.onupgradeneeded = function () { open.result.createObjectStore('keys'); };
+        open.onerror = function () { ok(null); };
+        open.onsuccess = function () {
+          try {
+            var r = open.result.transaction('keys', 'readonly').objectStore('keys').get('signin');
+            r.onsuccess = function () { ok(r.result && typeof r.result.keyId === 'string' ? r.result.keyId : null); };
+            r.onerror = function () { ok(null); };
+          } catch (e) { ok(null); }
+        };
+      } catch (e) { ok(null); }
+    });
+  }
+  function forgetThisBrowser() {
+    try {
+      var open = indexedDB.open('dog-signin', 1);
+      open.onsuccess = function () { try { open.result.transaction('keys', 'readwrite').objectStore('keys').delete('signin'); } catch (e) { /* nothing kept */ } };
+    } catch (e) { /* nothing kept */ }
+  }
+  function showMethods(d) {
+    var pinState = document.getElementById('pin-state');
+    pinState.textContent = d.pin ? 'Set ' + day(d.pin.set_at) + '. It is never shown or stored as you typed it.'
+      : 'You don’t have a PIN yet: you’ll set one at your next sign-in, with a code or with your key file.';
+    document.getElementById('pin-form').hidden = !d.pin;
+    var kf = document.getElementById('key-file-state');
+    kf.textContent = d.key_file ? 'Chosen ' + day(d.key_file.created_at) + (d.key_file.used_at ? ', last used ' + day(d.key_file.used_at) : '')
+      + '. It is your backup for a new browser, with your PIN. To use another file, get a new code on /join and choose it there.'
+      : 'None now (it was cancelled, or you signed out everywhere). Get a new code on /join and choose a key file to have one again.';
+    var list = document.getElementById('browser-list');
+    var browsers = d.browsers || [];
+    thisBrowser().then(function (mine) {
+      if (!browsers.length) { list.appendChild(el('li', '', 'None yet: your next sign-in adds this browser.')); return; }
+      browsers.forEach(function (b) {
+        var here = b.id === mine;
+        var li = el('li', '', b.label + (here ? ' (this browser)' : '') + ': added ' + day(b.added) + (b.used ? ', last signed in ' + day(b.used) : ''));
+        var f = el('form', 'inline-form');
+        f.method = 'post';
+        f.action = '/auth/account/browser/remove';
+        var hid = el('input');
+        hid.type = 'hidden'; hid.name = 'id'; hid.value = b.id;
+        var btn = el('button', 'btn s', 'Remove');
+        btn.type = 'submit';
+        // Removing this browser forgets its key here too, so the join page doesn't offer a PIN it can't use.
+        if (here) f.addEventListener('submit', forgetThisBrowser);
+        f.appendChild(hid);
+        f.appendChild(btn);
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(f);
+        list.appendChild(li);
+      });
+    });
+  }
 
   // The page's parts are hidden until your account loads, so the browser can't jump to /account#notices or #name on
   // its own: once they show, go there (the UI/UX review, finding 11). #name, linked from the welcome on /feed, also
@@ -218,7 +289,7 @@
 
   // The pill on each card names the notice's kind in the design's words; one that needs an answer has the amber edge.
   var KIND = { draft_waiting: 'Draft waiting', act_reconfirm: '90-day check', challenge: 'Held post', signin_keyfile: 'Sign-in',
-    signin_linked: 'Sign-in', signin_unlinked: 'Sign-in', alert: 'Alert' };
+    signin_linked: 'Sign-in', signin_unlinked: 'Sign-in', signin_pin: 'Sign-in', signin_browser: 'Sign-in', alert: 'Alert' };
   var ASKS = { draft_waiting: true, act_reconfirm: true, challenge: true, alert: true };
   // Notices keep the address they were written with, and the database still writes the old ones (011 to 034): /review
   // and /controls moved to /admin/review and /admin/controls on Nov 5, so the link opens the new address, "#" part kept;

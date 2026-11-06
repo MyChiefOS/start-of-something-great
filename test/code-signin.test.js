@@ -14,7 +14,8 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem } = require('./helpers');
+const { trustSystem, asSignin } = require('./helpers');
+const BK = require('./helpers/browser-key');
 
 const root = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -161,13 +162,41 @@ if (!SERVER) {
     const { login = 'someone', file = FILE_A, body = {}, ...rest } = opts;
     const r = res(); await flow.codeStart(req('POST', '/auth/code/start', { cookie: browser.header(), body: { login, file, ...body }, ...rest }), r);
     browser.take(r);
-    return { status: r.statusCode, ...JSON.parse(r.body) };
+    return { status: r.statusCode, ...parsed(r) };
   };
+  // 037: a one-time challenge from the site, asked from a network of its own each time so the tests' many sign-ins
+  // don't run into the challenge limit (its own test covers that).
+  let chN = 0;
+  const challenge = async () => {
+    chN += 1;
+    const r = res(); await flow.challenge(req('POST', '/auth/challenge', { ip: '198.18.' + Math.floor(chN / 250) + '.' + (chN % 250) }), r);
+    return JSON.parse(r.body).challenge;
+  };
+  // Lane 1 as /join runs it (037): ask every 2 seconds; once the code is claimed, the new PIN (opts.pin, or the tests'
+  // usual one) with this browser's new key and its signed challenge. The browser's key and its ID stay on the jar.
   const finish = async (browser, opts = {}) => {
-    const r = res(); await flow.codeFinish(req('POST', '/auth/code/finish', { cookie: browser.header(), ...opts }), r);
+    const { pin = BK.PIN, ...rest } = opts;
+    const r = res(); await flow.codeFinish(req('POST', '/auth/code/finish', { cookie: browser.header(), ...rest }), r);
     browser.take(r);
-    return { status: r.statusCode, ...JSON.parse(r.body) };
+    const first = JSON.parse(r.body);
+    if (!first.claimed) return { status: r.statusCode, ...first };
+    const k = BK.make();
+    const body = { ...(rest.body || {}), pin, pub: k.pub, label: BK.LABEL, ...BK.proof(k, await challenge()) };
+    const r2 = res(); await flow.codeFinish(req('POST', '/auth/code/finish', { cookie: browser.header(), ...rest, body }), r2);
+    browser.take(r2);
+    const out = JSON.parse(r2.body);
+    if (out.key_id) { browser.key = k; browser.keyId = out.key_id; delete out.key_id; }
+    return { status: r2.statusCode, ...out };
   };
+  // Lane 2 as /join sends it (037): the username and key file with the PIN (body.pin, or the tests' usual one), a new
+  // key for this browser and its signed challenge.
+  const keyReq = async (method, url, opts = {}) => {
+    const k = BK.make();
+    const body = { pin: BK.PIN, ...(opts.body || {}), pub: k.pub, label: BK.LABEL, ...BK.proof(k, await challenge()) };
+    return req(method, url, { ...opts, body });
+  };
+  // A reply without the new browser key's ID, which each test that cares reads itself.
+  const parsed = (r) => { const o = JSON.parse(r.body); delete o.key_id; return o; };
   // A comment posted through giscus, as jevs.yml sends it to the gate.
   const post = (id, login, body, extra = {}) => {
     n += 1;
@@ -177,7 +206,7 @@ if (!SERVER) {
       author: { id, login, type: 'User', created_at: '2015-01-01T00:00:00Z' }, ...extra
     }, { key: GATE_KEY });
   };
-  const me = async (browser) => { const r = res(); await flow.me(req('GET', '/auth/me', { cookie: browser.header() }), r); return JSON.parse(r.body); };
+  const me = async (browser) => { const r = res(); await flow.me(req('GET', '/auth/me', { cookie: browser.header() }), r); return parsed(r); };
   // Reading and ageing rows straight in the database, as the test superuser (row-level security doesn't bind it).
   const owner = async (q) => [...await su.unsafe(q)];
 
@@ -394,15 +423,18 @@ if (!SERVER) {
     const who = (await finish(first)).signed_in && await me(first);
     assert.ok(who.signed_in);
     const key = async (browser, body, opts = {}) => {
-      const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { cookie: browser.header(), body, ...opts }), r);
+      const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { cookie: browser.header(), body, ...opts }), r);
       browser.take(r);
-      return { status: r.statusCode, ...JSON.parse(r.body) };
+      return { status: r.statusCode, ...parsed(r) };
     };
     const laptop = jar();
     assert.deepStrictEqual(await key(laptop, { login: 'Keeper', file: FILE_A }), { status: 200, signed_in: true, go: '/feed' }, 'the username in any case');
     assert.strictEqual((await me(laptop)).member_id, who.member_id, 'the same member');
-    const [n] = await owner(`select count(*)::int as n from app.notices where member_id = '${who.member_id}' and kind = 'signin_keyfile'`);
+    // 037: the key file (with the PIN) adds a new browser, and the notice says so, naming the browser.
+    const [n] = await owner(`select count(*)::int as n, min(title) as title, min(body) as body from app.notices where member_id = '${who.member_id}' and kind = 'signin_browser'`);
     assert.strictEqual(n.n, 1, 'an in-app notice each time the key file is used');
+    assert.strictEqual(n.title, 'New browser added');
+    assert.match(n.body, /^Your key file and PIN added a new browser \(Firefox on Linux\) and signed it in\./);
     assert.match((await key(jar(), { login: 'keeper', file: FILE_B })).error, /don’t match/, 'another file');
     assert.match((await key(jar(), { login: 'someone-else', file: FILE_A })).error, /don’t match/, 'another username with the same file');
     assert.strictEqual((await key(jar(), { login: 'keeper' })).error, 'Choose your key file.', 'no file');
@@ -437,7 +469,7 @@ if (!SERVER) {
       assert.match(s.error, /^That isn’t a GitHub username\. Use the username in your GitHub address \(github\.com\/your-username\), not your name or email\. To find it, open github\.com signed in and click your picture/, login);
     }
     assert.match((await start(b, { login: '@Coder2', ip: '192.0.2.61' })).code, /^DOG-/, 'an @ and capitals are still fine');
-    const key = async (body) => { const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body, ip: '192.0.2.62' }), r); return JSON.parse(r.body); };
+    const key = async (body) => { const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body, ip: '192.0.2.62' }), r); return parsed(r); };
     assert.match((await key({ login: 'Doris Whitfield', file: FILE_A })).error, /^That isn’t a GitHub username/);
     assert.strictEqual((await key({ login: 'doris', file: 'not a hash' })).error, 'Choose your key file.');
   });
@@ -472,44 +504,55 @@ if (!SERVER) {
     const later = jar();
     await start(later, { login: 'keyholder', file: FILE_A, ip: '192.0.2.64' });
     assert.ok(codeCookie(later));
-    const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { cookie: later.header(), body: { login: 'keyholder', file: FILE_A }, ip: '192.0.2.64' }), r); later.take(r);
-    assert.strictEqual(JSON.parse(r.body).signed_in, true);
+    const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { cookie: later.header(), body: { login: 'keyholder', file: FILE_A }, ip: '192.0.2.64' }), r); later.take(r);
+    assert.strictEqual(parsed(r).signed_in, true);
     assert.strictEqual(codeCookie(later), false);
   });
 
-  test('the key file: the 10th wrong file cancels it and asks the person to start again (Aaron, Oct 28), the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
+  test('the key file: the 3rd wrong file pauses it for 10 minutes and tells the member (Aaron, Nov 5), never cancels it; the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
     const b = jar();
     const s = await start(b, { login: 'tries', file: FILE_A });
     await post(8021, 'tries', s.code);
     assert.strictEqual((await finish(b)).signed_in, true);
-    const key = async (body, ip) => { const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body, ip }), r); return { status: r.statusCode, ...JSON.parse(r.body) }; };
+    const key = async (body, ip) => { const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body, ip }), r); return { status: r.statusCode, ...parsed(r) }; };
     const tries = jar();
     const memberId = (await me(b)).member_id;
-    // A right file resets the count: 9 wrong, 1 right, then 9 wrong still works.
-    for (let i = 0; i < 9; i++) assert.match((await key({ login: 'tries', file: sha('guess ' + i) }, '198.51.100.' + (i + 1))).error, /don’t match/);
-    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.40')).signed_in, true, 'nine wrong files, then the right one works');
-    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('again ' + i) }, '198.51.100.' + (i + 11));
+    // Aaron, Nov 5: "Send an in-app notification from the user to notify them that 3 failed logins in and lock account for
+    // 10 min before before allowing access again." (It replaces Oct 28's 10 wrong files cancelling the key file.) A right
+    // file resets the count: 2 wrong, 1 right, then 2 wrong still works.
+    const pausedUntil = async () => (await owner(`select paused_until > now() as p from app.file_keys where member_id = '${memberId}'`))[0].p;
+    for (let i = 0; i < 2; i++) assert.match((await key({ login: 'tries', file: sha('guess ' + i) }, '198.51.100.' + (i + 1))).error, /don’t match/);
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.40')).signed_in, true, 'two wrong files, then the right one works');
+    for (let i = 0; i < 2; i++) await key({ login: 'tries', file: sha('again ' + i) }, '198.51.100.' + (i + 11));
     assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.41')).signed_in, true, 'the right file reset the count');
-    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('more ' + i) }, '198.51.100.' + (i + 21));
-    const tenth = await key({ login: 'TRIES', file: sha('more 9') }, '198.51.100.31');
-    assert.strictEqual(tenth.start_again, true, 'the 10th wrong file, in any spelling of the username, from any network');
-    assert.match(tenth.error, /start again: get a new code/);
-    assert.match((await key({ login: 'tries', file: FILE_A }, '198.51.100.42')).error, /don’t match/, 'the key file is cancelled');
-    const [note] = await owner(`select title, link from app.notices where member_id = '${memberId}' and kind = 'signin_keyfile' and dedupe_key like 'signin:keyfile:cancelled:%'`);
-    assert.deepStrictEqual({ ...note }, { title: 'Your key file was cancelled', link: '/join' }, 'the member is told');
-    const s4 = await start(tries, { login: 'tries', file: FILE_B, ip: '203.0.113.72' });
+    for (let i = 0; i < 2; i++) await key({ login: 'tries', file: sha('more ' + i) }, '198.51.100.' + (i + 21));
+    const third = await key({ login: 'TRIES', file: sha('more 2') }, '198.51.100.31');
+    assert.strictEqual(third.paused, true, 'the 3rd wrong file, in any spelling of the username, from any network, pauses it');
+    assert.strictEqual(third.wait_seconds, 600);
+    assert.match(third.error, /paused for this username for 10 minutes, after 3 wrong key files/);
+    assert.strictEqual(await pausedUntil(), true);
+    const during = await key({ login: 'tries', file: FILE_A }, '198.51.100.42');
+    assert.strictEqual(during.paused, true, 'while paused, not even the right file is tried');
+    assert.ok(during.wait_seconds > 0 && during.wait_seconds <= 600);
+    const [note] = await owner(`select title, link from app.notices where member_id = '${memberId}' and kind = 'signin_keyfile' and dedupe_key like 'signin:keyfile:paused:%'`);
+    assert.deepStrictEqual({ ...note }, { title: 'Key-file sign-in paused for 10 minutes', link: '/account' }, 'the member is told in-app');
+    assert.strictEqual((await owner(`select count(*)::int as n from app.file_keys where member_id = '${memberId}'`))[0].n, 1, 'the key file is never cancelled for wrong files');
+    // GitHub still works during the pause.
+    const s4 = await start(tries, { login: 'tries', file: FILE_A, ip: '203.0.113.72' });
     await post(8021, 'tries', s4.code);
-    assert.strictEqual((await finish(tries)).signed_in, true);
-    assert.strictEqual((await me(tries)).member_id, memberId, 'starting again brings back the same account');
-    assert.strictEqual((await key({ login: 'tries', file: FILE_B }, '198.51.100.43')).signed_in, true, 'with the new file');
-    // A new code sign-in starts the count again: 9 wrong, a new code and file, then 1 wrong doesn't cancel the new file.
-    for (let i = 0; i < 9; i++) await key({ login: 'tries', file: sha('late ' + i) }, '198.51.100.' + (i + 50));
+    assert.strictEqual((await finish(tries)).signed_in, true, 'a new code signs in while the key file is paused');
+    assert.strictEqual((await me(tries)).member_id, memberId, 'the same account');
+    // After 10 minutes the right file works again.
+    await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${memberId}'`);
+    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.43')).signed_in, true, 'then it works again');
+    // A new code sign-in with a new file replaces the file and starts the count again.
+    for (let i = 0; i < 2; i++) await key({ login: 'tries', file: sha('late ' + i) }, '198.51.100.' + (i + 50));
     const fresh = jar();
-    const s5 = await start(fresh, { login: 'tries', file: FILE_A, ip: '203.0.113.74' });
+    const s5 = await start(fresh, { login: 'tries', file: FILE_B, ip: '203.0.113.74' });
     await post(8021, 'tries', s5.code);
     assert.strictEqual((await finish(fresh)).signed_in, true);
-    assert.match((await key({ login: 'tries', file: sha('late 9') }, '198.51.100.60')).error, /don’t match/, 'the count started again at the code sign-in');
-    assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.61')).signed_in, true);
+    assert.match((await key({ login: 'tries', file: sha('late 2') }, '198.51.100.60')).error, /don’t match/, 'the count started again at the code sign-in');
+    assert.strictEqual((await key({ login: 'tries', file: FILE_B }, '198.51.100.61')).signed_in, true);
     // A username another GitHub account used before a rename: the newer account's code sign-in takes it, the older key
     // file for that name goes, and wrong tries still count.
     const old = jar();
@@ -530,8 +573,8 @@ if (!SERVER) {
     await post(8022, 'boss', sa.code);
     const boss = (await finish(a)).signed_in && await me(a);
     await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.members set is_admin = true where id = '${boss.member_id}'`); });
-    const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'boss', file: FILE_A }, ip: '192.0.2.50' }), r);
-    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' }, 'the administrator signs in with the key file, no post');
+    const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body: { login: 'boss', file: FILE_A }, ip: '192.0.2.50' }), r);
+    assert.deepStrictEqual(parsed(r), { signed_in: true, go: '/feed' }, 'the administrator signs in with the key file, no post');
     const [adm] = await owner(`select s.member_id from app.sessions s where s.member_id = '${boss.member_id}' order by s.created_at desc limit 1`);
     assert.strictEqual(adm.member_id, boss.member_id, 'into the administrator\'s own account');
     // 025 (the CSO's review, Oct 29): the site's own role can't sign in an administrator by naming the fingerprint, as
@@ -539,7 +582,11 @@ if (!SERVER) {
     const store = require('../db/signin');
     const [idn] = await owner(`select i.fingerprint as fp from app.identities i where i.member_id = '${boss.member_id}' limit 1`);
     const [{ n: before }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
-    const direct = await db.tx(web, { actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [idn.fp], keyVersion: 1, level: 1,
+    // 037 (the review's H1): the site's role can't call app.sign_in at all now; for the sign-in role it still refuses an
+    // administrator.
+    await assert.rejects(db.tx(web, { actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [idn.fp], keyVersion: 1, level: 1,
+      displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 })), /permission denied for function sign_in/);
+    const direct = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [idn.fp], keyVersion: 1, level: 1,
       displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
     assert.deepStrictEqual(direct, { refused: 'admin_code_only' }, 'refused for an administrator');
     const [{ n: after }] = await owner(`select count(*)::int as n from app.sessions where member_id = '${boss.member_id}'`);
@@ -569,7 +616,8 @@ if (!SERVER) {
     const setAdmin = (id) => su.begin(async (x) => { await x.unsafe('set local role dog_owner'); return (await x`select app.set_administrator(${id}::uuid) as r`)[0].r; });
     const unAdmin = (id) => su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = false where id = '${id}'`); });
     const sessions = async (id) => (await owner(`select count(*)::int as n from app.sessions where member_id = '${id}'`))[0].n;
-    const direct = (fp, hash) => db.tx(web, { actor: 'anon' }, (x) => store.signIn(x, { provider: 'github', fingerprints: [fp], keyVersion: 1, level: 1,
+    // 037: a session made by any path before the promotion, here by the sign-in role (the site's can't call app.sign_in).
+    const direct = (fp, hash) => asSignin(su)((x) => store.signIn(x, { provider: 'github', fingerprints: [fp], keyVersion: 1, level: 1,
       displayName: 'x', sessionHash: hash, sessionDays: 30 }));
     // B1: a session the site's role made before the promotion is gone after it.
     const h1 = c.sha256hex(c.token(32));
@@ -597,8 +645,8 @@ if (!SERVER) {
     assert.strictEqual(await setAdmin(pm.member_id), 'set');
     assert.strictEqual((await me(b)).signed_in, false, 'signed out by the promotion');
     const back = jar(); const r = res();
-    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'promoted', file: FILE_A }, ip: '203.0.113.96' }), r); back.take(r);
-    assert.strictEqual(JSON.parse(r.body).signed_in, true, 'Aaron signs straight back in with his key file');
+    await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body: { login: 'promoted', file: FILE_A }, ip: '203.0.113.96' }), r); back.take(r);
+    assert.strictEqual(parsed(r).signed_in, true, 'Aaron signs straight back in with his key file');
     assert.strictEqual((await owner(`select is_admin from app.members where id = '${pm.member_id}'`))[0].is_admin, true);
     await unAdmin(pm.member_id);
   });
@@ -608,8 +656,8 @@ if (!SERVER) {
     const alerts = async (like, about = null) => (await owner(`select title from app.notices where member_id is null and kind = 'alert' and dedupe_key like '${like}'`
       + (about ? ` and subject_id = '${about}'` : '') + ` order by created_at`)).map((r) => r.title);
     const keyIn = async (login, file, { ip = '198.51.100.200', country } = {}) => {
-      const b = jar(); const r = res(); await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login, file }, ip, country }), r); b.take(r);
-      return { b, ...JSON.parse(r.body) };
+      const b = jar(); const r = res(); await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body: { login, file }, ip, country }), r); b.take(r);
+      return { b, ...parsed(r) };
     };
     // A member with a key file, signing in from the United States.
     const first = jar();
@@ -645,12 +693,11 @@ if (!SERVER) {
     const seen = await owner(`select kind, key_hash from app.watch_seen where member_id = '${who.member_id}'`);
     assert.deepStrictEqual([...new Set(seen.map((r) => r.kind))], ['country']);
     assert.ok(!JSON.stringify(seen).includes('US') && !JSON.stringify(seen).includes('CA'), 'no country in readable form');
-    // 4. Failed tries: the 5th wrong file alerts; the 10th cancels it and alerts too.
+    // 4. Failed tries (Aaron, Nov 5): the 3rd wrong file pauses key-file sign-in for 10 minutes and alerts.
     const [{ id: keyId }] = await owner(`select id from app.file_keys where member_id = '${who.member_id}'`);
-    for (let i = 0; i < 5; i++) await keyIn('watched', sha('wrong ' + i), { ip: '198.51.100.' + (130 + i), country: 'US' });
-    assert.deepStrictEqual(await alerts('watch:failed:' + keyId), ['Wrong key files for one account']);
-    for (let i = 5; i < 10; i++) await keyIn('watched', sha('wrong ' + i), { ip: '198.51.100.' + (130 + i), country: 'US' });
-    assert.deepStrictEqual(await alerts('watch:cancelled:' + keyId), ['A member\'s key file was cancelled']);
+    for (let i = 0; i < 3; i++) await keyIn('watched', sha('wrong ' + i), { ip: '198.51.100.' + (130 + i), country: 'US' });
+    assert.deepStrictEqual(await alerts('watch:paused:' + keyId + ':%'), ['Key-file sign-in paused for one account']);
+    await owner(`update app.file_keys set paused_until = null where id = '${keyId}'`);
     // 3. The administrator: a new network alerts; a member's doesn't. And Aaron's own key file cancelled says so.
     const a = jar();
     const sa = await start(a, { login: 'chief', file: FILE_B, ip: '203.0.113.91', country: 'US' });
@@ -666,8 +713,8 @@ if (!SERVER) {
     const [h1] = await owner(`select key_hash from app.watch_seen where member_id = '${who.member_id}' and kind = 'country' order by first_seen limit 1`);
     assert.ok(!(await owner(`select 1 from app.watch_seen where member_id = '${chief.member_id}' and key_hash = '${h1.key_hash}'`)).length);
     const [{ id: chiefKey }] = await owner(`select id from app.file_keys where member_id = '${chief.member_id}'`);
-    for (let i = 0; i < 10; i++) await keyIn('chief', sha('guess ' + i), { ip: '198.51.100.' + (150 + i), country: 'US' });
-    assert.deepStrictEqual(await alerts('watch:cancelled:' + chiefKey), ['Your own key file was cancelled']);
+    for (let i = 0; i < 3; i++) await keyIn('chief', sha('guess ' + i), { ip: '198.51.100.' + (150 + i), country: 'US' });
+    assert.deepStrictEqual(await alerts('watch:paused:' + chiefKey + ':%'), ['Key-file sign-in paused on your own account']);
     // 5. Reaching for administrator powers: a member alerts, once a day per page; the administrator never does.
     const asMember = { actor: 'member', memberId: who.member_id, session: null };
     const whoSession = (await owner(`select token_hash from app.sessions where member_id = '${who.member_id}' order by created_at desc limit 1`))[0].token_hash;
@@ -773,10 +820,12 @@ if (!SERVER) {
       assert.strictEqual(await go(bad, ip), '/feed', 'never another site: ' + bad);
     }
     const r = res();
-    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'returner', file: FILE_A, return_to: '/agents' }, ip: '198.51.100.67' }), r);
-    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/agents' });
+    await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body: { login: 'returner', file: FILE_A, return_to: '/agents' }, ip: '198.51.100.67' }), r);
+    assert.deepStrictEqual(parsed(r), { signed_in: true, go: '/agents' });
     assert.match(read('join.js'), /if \(back\) fb\.return_to = back;/);
-    assert.match(read('join.js'), /if \(back\) body\.return_to = back;/);
+    // The key file and the PIN are sent from /join/pin since the review of 037 (M1); /join passes return_to on to it.
+    assert.match(read('pin.js'), /if \(back\) body\.return_to = back;/);
+    assert.match(read('join.js'), /location\.href = '\/join\/pin\?' \+ extra \+ \(back \? '&return_to=' \+ encodeURIComponent\(back\) : ''\)/);
   });
 
   test('029: Aaron\'s administrator account is made inside the database, tied to MyChiefOS; his code sign-in lands in it and sets his key file (Aaron, Oct 29)', async () => {
@@ -812,8 +861,8 @@ if (!SERVER) {
     assert.strictEqual(Number((await owner(`select count(*) as n from app.audit_log where action = 'admin.set' and detail->>'by' = 'founder code sign-in'`))[0].n), before, 'no promotion was needed');
     // Later, the username and key file sign him in with no post.
     const r = res();
-    await flow.keyFileSignIn(req('POST', '/auth/key', { body: { login: 'MyChiefOS', file: FILE_A }, ip: '198.51.100.72' }), r);
-    assert.deepStrictEqual(JSON.parse(r.body), { signed_in: true, go: '/feed' });
+    await flow.keyFileSignIn(await keyReq('POST', '/auth/key', { body: { login: 'MyChiefOS', file: FILE_A }, ip: '198.51.100.72' }), r);
+    assert.deepStrictEqual(parsed(r), { signed_in: true, go: '/feed' });
     await asOwner(`update app.members set is_admin = false where is_admin`);
   });
 

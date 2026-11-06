@@ -49,8 +49,14 @@ const ROUTES = {
   // 023 (Aaron, Oct 28, 2026): sign in by posting a one-time code through giscus on /join.
   'POST code/start': (f, q, s) => f.codeStart(q, s),
   'POST code/finish': (f, q, s) => f.codeFinish(q, s),
-  // Signing in again with the key file (Aaron, Oct 28): the same username and file, no post.
-  'POST key': (f, q, s) => f.keyFileSignIn(q, s)
+  // Lane 2, a new browser (Aaron, Oct 28; 037): the same username and file, no post, and the PIN.
+  'POST key': (f, q, s) => f.keyFileSignIn(q, s),
+  // 037 (Aaron, Nov 5, 2026): a one-time challenge for the browser key to sign; lane 3, this browser again with its
+  // key and the PIN; and on /account, changing the PIN and removing a browser.
+  'POST challenge': (f, q, s) => f.challenge(q, s),
+  'POST browser': (f, q, s) => f.browserSignIn(q, s),
+  'POST account/pin': (f, q, s) => f.pinChange(q, s),
+  'POST account/browser/remove': (f, q, s) => f.browserRemove(q, s)
 };
 
 function plain(res, status, text) {

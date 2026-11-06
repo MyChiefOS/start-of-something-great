@@ -166,7 +166,8 @@ test('/controls: what each mode does is said beside it, and every number in it i
 // ---- The signed-out panel (finding 6) ----
 
 const PANELS = { 'feed.html': '/feed', 'account/agents.html': '/account/agents', 'account.html': '/account', 'admin/review.html': '/admin/review', 'admin/controls.html': '/admin/controls' };
-const JOIN_LINE = '<p class="fine">Joining needs a free GitHub account and a private file of yours as a key. No new password.</p>';
+// 037 (Aaron, Nov 5, 2026): a six-digit PIN too, so no page says "no new password".
+const JOIN_LINE = '<p class="fine">Joining needs a free GitHub account, a private file of yours as a backup key, and a six-digit PIN you choose.</p>';
 
 test('one panel, the same on each page that needs sign-in: a sentence, one primary button to /join that comes back, one line on joining', () => {
   for (const [file, url] of Object.entries(PANELS)) {
@@ -184,7 +185,7 @@ test('one panel, the same on each page that needs sign-in: a sentence, one prima
     assert.ok(!/<script>|<script [^>]*>[^<]/.test(html), file + ': no inline script');
   }
   // What the join line says is what /join says.
-  assert.match(read('join.html'), /Join Day One Great with your GitHub account and a private file of yours\. No new password to make\./);
+  assert.match(read('join.html'), /Join Day One Great with your GitHub account, a private file of yours as a backup key, and a six-digit PIN\./);
   // Each return_to is one /join will send back to (signin/http.js, returnPath).
   const { returnPath } = require('../signin/http');
   for (const url of Object.values(PANELS)) assert.strictEqual(returnPath(url), url);

@@ -43,4 +43,11 @@ const canReview = (who) => Boolean(who && who.isAdmin === true);
 // reviewing it stays that way: the database allows these to the admin actor alone.
 const canControl = (who) => Boolean(who && who.isAdmin === true);
 
-module.exports = { SESSION, isToken, sessionHash, current, actorFor, strongActorFor, canReview, canControl };
+// 037: the short name a browser gives itself when it adds its sign-in key ("Firefox on Linux"), so a member can tell
+// their browsers apart on the account page. Only these words: never the browser's full details. /join.js makes them
+// from the same two lists (a test keeps the lists the same).
+const BROWSER_NAMES = ['Edge', 'Opera', 'Samsung Internet', 'Firefox', 'Chrome', 'Safari', 'A browser'];
+const DEVICE_NAMES = ['iPhone', 'iPad', 'Android', 'ChromeOS', 'Windows', 'macOS', 'Linux', 'a device'];
+const BROWSER_LABELS = new Set(BROWSER_NAMES.flatMap((b) => DEVICE_NAMES.map((d) => b + ' on ' + d)));
+
+module.exports = { BROWSER_NAMES, DEVICE_NAMES, BROWSER_LABELS, SESSION, isToken, sessionHash, current, actorFor, strongActorFor, canReview, canControl };

@@ -15,6 +15,7 @@
     deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.',
     fast: 'That was quick! Please press the button once more.',
     linked: 'Linked. To keep your account safe, adding a sign-in method signs you out everywhere, here too. Sign in again with any of your sign-in methods.',
+    pin_signed_out: '10 wrong PINs were typed on your account page, so that session was signed out. Sign in again here.',
     disabled: 'This account is disabled while a request to delete it is reviewed. Nothing has been deleted. If it\u2019s restored, you can sign in again.',
     region: 'Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland, so we can\u2019t sign you up. '
       + 'If this address already has an account, we\u2019ve sent it a sign-in link; you\u2019ll be asked to confirm where you live before you\u2019re signed in.'
@@ -51,10 +52,12 @@
 // request at a time, until the JEVs gate has seen the code posted below and the server signs this browser in. From a
 // declined region the page asks where the person lives before any code is made.
 //
-// Signing in to the comment box (giscus) sends this whole tab to GitHub and back to a freshly loaded /join (its "Sign
-// in" link targets the top window). So the waiting code is kept in this tab's sessionStorage until it is used or
-// expires, and a reloaded page shows it again and keeps waiting (the sign-in simulation, Oct 30: 5 of 10 people got a
-// code, signed in to the box, and came back to a page that had forgotten it; posting it then signed nobody in).
+// 037 (Aaron, Nov 5, 2026): every way in ends with this browser's own key signing a one-time challenge, and the PIN.
+// Since the review of 037 (M1; Aaron: "Yes, PIN on its own page") the PIN and the key are used only on /join/pin (pin.js),
+// which runs no outside script; this page runs giscus's comment box for the code, so it never asks for a PIN or touches
+// the key. "I have a key file" goes to /join/pin; a code claimed here goes to /join/pin to set the PIN; and a browser
+// that keeps its key (pin.js leaves a flag in localStorage, never the key) is sent there first, unless it came back
+// here on purpose (?other=1) or is waiting for a code.
 (function () {
   var box = document.getElementById('code-signin');
   if (!box || !window.fetch) return;
@@ -64,7 +67,6 @@
   var fields = document.getElementById('signin-fields');
   var getBtn = document.getElementById('code-get');
   var newBtn = document.getElementById('code-new');
-  var keyBtn = document.getElementById('key-signin');
   var copyBtn = document.getElementById('code-copy');
   var copyLine = document.getElementById('code-copied');
   var helloHead = document.getElementById('hello-head');
@@ -91,7 +93,7 @@
   // the folded line (asLogin) lives only in this page, so it is gone after a reload.
   var PATH = 'dog-path', path = null, ranOut = false, codeShown = false, editing = false, asLogin = '';
   function layout() {
-    var chosen = path === 'new' || path === 'back';
+    var chosen = path === 'new';
     // While a code shows, the fields fold to one line, the username and "Change", so the code step starts high on the
     // page (the design review of PR A, fix 1). "Change" opens them again, to get a code for another name or file.
     var compact = codeShown && path === 'new' && !editing;
@@ -100,9 +102,10 @@
     if (signinAs) signinAs.hidden = !compact;
     getBtn.hidden = path !== 'new' || ranOut || compact;
     document.getElementById('code-again').hidden = path !== 'new' || !ranOut;
-    keyBtn.hidden = path !== 'back';
-    document.getElementById('back-help').hidden = path !== 'back';
     show.hidden = !(codeShown && path === 'new');
+    // The long reading folds away while a code shows, so the comment box sits right under the code.
+    var about = document.getElementById('signin-about');
+    if (about) about.hidden = codeShown && path === 'new';
     // While a code shows, the comment box sits right under it (finding 1): the "Say hello" heading above the box steps
     // aside for "Post your code here", which heading navigation finds (fix 7), and the code's own step says the post is
     // public.
@@ -114,6 +117,9 @@
     }
     document.getElementById('path-new').setAttribute('aria-pressed', String(path === 'new'));
     document.getElementById('path-back').setAttribute('aria-pressed', String(path === 'back'));
+    // The design's tabs: the chosen one drawn "on".
+    document.getElementById('path-new').className = path === 'new' ? 'on' : '';
+    document.getElementById('path-back').className = path === 'back' ? 'on' : '';
   }
   function choose(p) {
     path = p;
@@ -122,7 +128,9 @@
     layout();
   }
   document.getElementById('path-new').addEventListener('click', function () { choose('new'); });
-  document.getElementById('path-back').addEventListener('click', function () { choose('back'); });
+  // "I have a key file": lane 2 is on /join/pin, where the PIN is typed (M1).
+  var toPin = function (extra) { location.href = '/join/pin?' + extra + (back ? '&return_to=' + encodeURIComponent(back) : ''); };
+  document.getElementById('path-back').addEventListener('click', function () { toPin('lane=file'); });
   document.getElementById('code-change').addEventListener('click', function () {
     editing = true;
     layout();
@@ -134,7 +142,15 @@
     return r.ok ? r.json() : null;
   }).then(function (d) {
     if (!d) return;
-    if (d.signed_in === false) { box.hidden = false; restore(); resume(); return; }
+    if (d.signed_in === false) {
+      // A browser that keeps its sign-in key goes straight to its PIN on /join/pin (lane 3), unless a code is on the go
+      // here or the person chose another way.
+      var keyHere = false, kept = null;
+      try { keyHere = localStorage.getItem('dog-signin-key') === '1'; kept = sessionStorage.getItem(KEEP); } catch (e) { keyHere = false; }
+      if (keyHere && !kept && new URLSearchParams(location.search).get('other') !== '1') { location.replace('/join/pin' + location.search); return; }
+      box.hidden = false; restore(); resume();
+      return;
+    }
     forget(); ranOutMark(null); // signed in already: a kept code has nothing left to do
     if (d.signed_in === true) {
       var m = document.getElementById('message');
@@ -144,7 +160,7 @@
   function restore() {
     var p = null;
     try { p = sessionStorage.getItem(PATH); } catch (e) { p = null; }
-    if (p === 'new' || p === 'back') { path = p; layout(); }
+    if (p === 'new') { path = p; layout(); }
   }
 
   // The page that sent the person here (return_to), sent with the sign-in; the server checks it again (signin/http.js
@@ -271,6 +287,8 @@
       if (d.declined) { stop(); forget(); codeShown = false; layout(); say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.', 'declined'); return; }
       if (d.refused) { stop(); forget(); codeShown = false; layout(); say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.', 'refused'); return; }
       if (d.expired) { gone(); return; }
+      // Claimed: the PIN is set on /join/pin (M1), which finishes the sign-in with this browser's new key.
+      if (d.claimed) { stop(); say('Your post was found. Taking you to set your PIN\u2026', 'claimed'); toPin('step=set'); return; }
       say('Waiting for your post in the box below. Press Copy and paste the code there, if you haven\u2019t yet.', 'waiting');
     }).catch(function () { say('Couldn\u2019t reach the site just now. Still trying\u2026', 'problem'); })
       .then(function () { busy = false; });
@@ -290,25 +308,6 @@
     return f.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (d) {
       return Array.prototype.map.call(new Uint8Array(d), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
     });
-  }
-  function keyFileSignIn() {
-    var login = (document.getElementById('code-login').value || '').trim();
-    if (!login) { say('Type your GitHub username first.'); return; }
-    say('Checking your key file\u2026');
-    fileHash().then(function (h) {
-      if (!h) { say('Choose your key file first.'); return null; }
-      var body = { login: login, file: h };
-      if (confirmed) body.confirm = '1';
-      if (back) body.return_to = back;
-      return post('/auth/key', body);
-    }).then(function (d) {
-      if (!d) return;
-      if (d.signed_in) { say('Signed in. Taking you on\u2026'); location.href = d.go || '/'; return; }
-      if (d.region) { askRegion(d.region, 'key'); return; }
-      if (d.declined) { say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.'); return; }
-      if (d.refused) { say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.'); return; }
-      say(d.error || 'Couldn\u2019t sign you in. Please try again.');
-    }).catch(function (e) { say(e && e.message === 'big' ? 'That file is over 100 MB. Choose a smaller one.' : 'Couldn\u2019t read that file or reach the site. Please try again.'); });
   }
   function getCode() {
     say('Getting a code\u2026');
@@ -335,11 +334,10 @@
   document.getElementById('code-region-yes').addEventListener('click', function () {
     confirmed = true;
     ask.hidden = true;
-    if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else if (askedAt === 'key') keyFileSignIn(); else getCode();
+    if (askedAt === 'finish' && deadline) { timer = setInterval(check, 2000); check(); } else getCode();
   });
   getBtn.addEventListener('click', getCode);
   newBtn.addEventListener('click', getCode);
-  keyBtn.addEventListener('click', keyFileSignIn);
   // Copy puts the code on a line of its own, with an empty line above and below it, which is how the gate reads a code
   // posted on purpose (core.mjs signinCodes). Pasted after "Hi" or into a sentence, it still stands alone (the sign-in
   // simulation, Oct 30: 5 of 10 posts put the code in a sentence, after "code:", in backticks or with no empty line).

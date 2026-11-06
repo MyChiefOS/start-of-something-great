@@ -146,7 +146,7 @@ JEVs is the checking layer F6 and the trust levels rely on (Aaron's definition, 
 | SF1 | Main content shows in under 2.5 seconds for 75% of real phone visitors; layout shift under 0.1; response to taps under 200 milliseconds (Google's "good" Core Web Vitals thresholds) | Vercel Speed Insights; a browser test on a simulated phone until there is enough traffic |
 | SF2 | Any page's first visit transfers under 400 KB (measured October 14, 2026: 254 to 381 KB) | Automated browser measurement |
 | SF3 | Cached API answers in under 300 milliseconds and uncached ones in under 1 second, for 95% of requests | Automated timing test |
-| SF4 | No form has more than 5 fields; joining never requires creating a new password | Code review against the pages |
+| SF4 | Every way in needs two things, as Aaron's diagram of Nov 5 draws it (Aaron, Nov 5: "Implement the requirements from the diagram"): no password; a six-digit PIN with this browser's key (every day) or with the key file (a new browser), or GitHub (a posted code) and then a new PIN (first time or a lost file). No form has more than 5 fields | Code review against the pages; test/signin.test.js (SF4) and test/signin-pin.test.js |
 | SF5 | Aaron can approve or decline anything in one action from his phone | Manual check, recorded |
 | SF6 | Everything that needs Aaron for a release (accounts, settings, decisions) is in one checklist, delivered once | Release checklist exists before the release starts |
 
