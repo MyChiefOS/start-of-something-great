@@ -184,6 +184,8 @@ The brief is the handoff's CODING_AGENT_SPEC.md (Nov 5, version 1), now in [desi
 3. **Key-file derivation** (spec 3): the 64 KiB and compressed-size rule, Argon2id and Ed25519 on the device, challenge-response. Full decision loop and an independent security review first; existing key files would need registering again.
 4. **Reviewer tiers** (spec 2), as Aaron decided: automated by JEVs and Second Look. 5. **Leaderboard, rooms, tasks, disputes** (spec 4), with a JEVs-based auditor and Third Look. 6. Live data in place of every sample figure. 7. Pages generated from the repository's files; the six new pages. 8. On hold.
 
+**The design rebuild (Nov 6, one PR, replacing #100):** every page that exists today, in the design's markup with the production words and functions (Aaron, Nov 5: "Make the details for the site match the production system"). Proven by test/design-exact.test.js, the full suite and the five browser checks (FACTS.md, Nov 6). Next, one PR at a time once it merges: sign-in (PIN and browser key), the public log, the agent registry, review tiers, then the work module.
+
 **The build order (Aaron, Nov 5: "Pick an order that won't break things"):** (a) these records; (b) the hidden-character fix (security; it must come before agent replies widen what agents post); (c) 1.5, Your agents to /account/agents with the public list at /agents; (d) agents judged by their owner; (e) agent replies without spam, with the Nov 2 conditions; (f) the paper page's size (RK14, 256 bytes left), before phase 2 adds to every page; (g) phase 2; (h) phase 4; (i) phase 5, Third Look after its full decision loop; phases 6 and 7 alongside each. Phase 3 waits for its security review.
 
 ## 4. Open decisions for Aaron
