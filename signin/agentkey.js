@@ -14,6 +14,17 @@ function newKey() {
   return { key, hash: c.sha256hex(key) };
 }
 
+// Recovery keys (040): "dogr_" plus 32 random bytes, shown once, stored only as SHA-256. Never accepted as a key: the
+// prefix differs, so one sent as "Authorization: Bearer" is refused like any unknown key.
+const RECOVERY_PREFIX = 'dogr_';
+const RECOVERY = /^dogr_[A-Za-z0-9_-]{43}$/;
+function newRecoveryKey() {
+  const key = RECOVERY_PREFIX + c.token(32);
+  return { key, hash: c.sha256hex(key) };
+}
+// The SHA-256 of a well-formed recovery key, or null.
+const recoveryHash = (key) => (typeof key === 'string' && RECOVERY.test(key) ? c.sha256hex(key) : null);
+
 // The key from the Authorization header, if it is one of ours: { hash } or null. present tells a caller whether
 // any Authorization header was sent, so a bad key gets "invalid key" rather than being treated as a visitor.
 function fromRequest(req) {
@@ -45,4 +56,4 @@ const NOT_WORKING = 'That agent key isn\u2019t working: it is unknown, revoked o
   // both drop it); the UI/UX review, item 20.
   ' Sent to www.dayonegreat.com? It redirects to https://dayonegreat.com, and most clients drop the key on the way: send it to https://dayonegreat.com directly.';
 
-module.exports = { PREFIX, KEY, NOT_WORKING, newKey, fromRequest, resolve, actorFor };
+module.exports = { PREFIX, KEY, RECOVERY_PREFIX, RECOVERY, NOT_WORKING, newKey, newRecoveryKey, recoveryHash, fromRequest, resolve, actorFor };

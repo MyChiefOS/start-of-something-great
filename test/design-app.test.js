@@ -20,7 +20,9 @@ const inOrder = (have, want) => { let i = 0; for (const h of have) if (h === wan
 const PAGES = [
   { file: 'account.html', path: '/account', script: '/account.js', css: '/account.css', h1: 'Your account',
     h2: ['Notices', 'Shortcuts', 'Your name', 'How you sign in', 'Signing out', 'Delete your account'] },
-  { file: 'account/agents.html', path: '/account/agents', script: '/account/agents.js', css: '/account/agents.css', h1: 'Your agents',
+  // 040: the design's own markup (static/agents.html), its cards from templates; no stylesheet of its own but the inline
+  // classes the build makes (css/account-agents.css).
+  { file: 'account/agents.html', path: '/account/agents', script: '/account/agents.js', css: '/css/account-agents.css', main: 'story', h1: 'Your agents',
     h2: ['Waiting for your approval', 'Add an agent', 'Your agents'] },
   { file: 'admin/review.html', path: '/admin/review', script: '/admin/review.js', css: '/admin/review.css', h1: 'Review', kicker: true,
     h2: ['Paused owners and appeals'] },
@@ -48,7 +50,7 @@ test('each page is at its design path, carries the shell, and has the design\'s 
     assert.strictEqual(h[0], p.h1, p.file);
     assert.ok(inOrder(h.slice(1), p.h2), p.file + ': ' + h.join(' / '));
     if (p.kicker) assert.match(html, /<p class="kick">Administrator only<\/p>\n<h1>/, p.file + ': the design\'s kicker');
-    assert.match(html, /<main class="story feed [^"]*" id="main" tabindex="-1">/, p.file);
+    assert.match(html, p.main ? new RegExp('<main class="' + p.main + '" id="main" tabindex="-1">') : /<main class="story feed [^"]*" id="main" tabindex="-1">/, p.file);
   }
 });
 
@@ -209,9 +211,10 @@ test('/account/agents: each draft is a card with its exact words, and Approve an
   const { p, posted } = agents([], { agents: [], inbox: [draft], containment: null, unread_notices: 0 });
   await settle();
   assert.strictEqual(p.$('inbox').hidden, false);
-  const card = p.$('drafts').querySelector('article');
-  assert.strictEqual(card.className, 'card agents-draft');
-  assert.strictEqual(card.querySelector('.draft-body').textContent, 'Exact words.');
+  // 040: the design's own card (tools/design/pages/account_agents.main.html, its draft template).
+  const card = p.$('drafts').querySelector('div');
+  assert.match(card.className, /^card x[0-9a-f]{8}$/);
+  assert.strictEqual(card.querySelector('[data-slot="body"]').textContent, 'Exact words.');
   const buttons = card.querySelectorAll('button');
   assert.deepStrictEqual(buttons.map((b) => [b.textContent, b.className]), [['Approve', 'btn s'], ['Reject', 'btn s']]);
   buttons[1].click();
@@ -231,14 +234,17 @@ test('/account/agents: each agent is a card with its name, a mode pill, and Draf
     { id: ID(31), rules: { version: 1, post: 'draft', reply: 'draft', report: 'draft', daily_cap: 5 }, acting_alone: null, last_30_days: null }] };
   const { p, posted } = agents(list, activity);
   await settle();
-  const [scout, helper] = p.$('list').querySelectorAll('article');
-  assert.strictEqual(scout.className, 'card agent-card');
-  assert.strictEqual(helper.className, 'card agent-card sub-agent depth-1');
+  // 040: the design's cards, cloned from the page's templates: a sub-agent from the one a step in for its level.
+  const [scout, helper] = [p.$('agent-' + ID(30)), p.$('agent-' + ID(31))];
+  assert.strictEqual(scout.className, 'card');
+  const step = (n) => p.$('sub-tpl-' + n).firstElementChild.className;
+  assert.strictEqual(helper.className, step(1));
+  assert.notStrictEqual(step(1), step(2), 'each level its own step in');
   assert.strictEqual(scout.querySelector('h3').textContent, 'Scout');
   assert.strictEqual(helper.querySelector('h3').textContent, 'Helper (sub-agent)');
   assert.deepStrictEqual([scout, helper].map((c) => { const s = c.querySelector('.pill'); return [s.className, s.textContent]; }),
     [['pill a', 'Acts on its own · 20 a day'], ['pill', 'Drafts · expires in 6 days']]);
-  const acts = (c) => c.querySelector('.acts').querySelectorAll('button').map((b) => b.textContent);
+  const acts = (c) => c.querySelector('.acts').querySelectorAll('button').filter((b) => !b.hidden).map((b) => b.textContent);
   assert.deepStrictEqual(acts(scout), ['Drafts', 'Change limit', 'New key', 'Revoke, with 1 sub-agent under it']);
   assert.deepStrictEqual(acts(helper), ['Change limit', 'New key', 'Revoke'], 'Drafts only while something acts on its own');
   // Change limit opens the agent's rules (posting, replies, reports and the daily limit).

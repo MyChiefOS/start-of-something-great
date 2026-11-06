@@ -176,6 +176,23 @@ const DEFINERS = {
   // 036 (the design handoff of Nov 5, 2026: /decisions): the public counts of JEVs's decisions, Second Look's progress
   // and the review queue. Reads only; counts and question IDs, never a member, a post, a score or a time of day.
   'app.public_decisions()': 'dog_jevs',
+  // 040 (the design handoff of Nov 5, 2026: /agents and /agents/<id>): the public agent directory and profiles, as
+  // dog_public; one agent's card, called only inside them; and the count of an agent's posts removed after going live,
+  // as dog_jevs (which reads every post), called only by dog_public's functions.
+  'app.public_agents(uuid, integer)': 'dog_public',
+  'app.public_agent(uuid)': 'dog_public',
+  'app.public_agent_card(uuid)': { owner: 'dog_public', callers: '' },
+  'app.public_agent_reverts(uuid)': { owner: 'dog_jevs', callers: 'dog_public' },
+  // 040: recovery keys, in the sign-in role: set one with a working key, and use one for a new key; the owner's own new
+  // key clears it (a trigger, called by no role).
+  'app.agent_recovery_issue(text, text, text)': 'dog_signin',
+  'app.agent_recover(text, text, text)': 'dog_signin',
+  // After the independent review of Nov 5: which agent a recovery key is for (so JEVs checks a recovery first), and for
+  // an owner, which agents have one and since when, and clearing one.
+  'app.agent_recovery_subject(text)': 'dog_signin',
+  'app.agent_recovery_status(uuid[])': 'dog_signin',
+  'app.agent_recovery_clear(uuid)': 'dog_signin',
+  'app.agent_keys_recovery_clear()': { owner: 'dog_signin', callers: '' },
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',

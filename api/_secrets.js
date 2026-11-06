@@ -16,6 +16,8 @@ const B = '(?<![A-Za-z0-9_-])'; // not inside a longer token
 const E = '(?![A-Za-z0-9_-])';
 const FORMATS = [
   ['dayonegreat-agent-key', B + 'dogk_[A-Za-z0-9_-]{43}' + E],
+  // An agent's recovery key (040): as secret as its key.
+  ['dayonegreat-recovery-key', B + 'dogr_[A-Za-z0-9_-]{43}' + E],
   ['github-token', B + 'gh[pousr]_[A-Za-z0-9]{36,255}' + E],
   ['github-fine-grained', B + 'github_pat_[A-Za-z0-9_]{82,255}' + E],
   ['aws-access-key-id', '(?<![A-Z0-9])(?:AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}(?![A-Z0-9])'],
@@ -38,7 +40,7 @@ const MAX_SCAN = 70000; // as maskContacts: GitHub caps text at 65,536 character
 // Not a key, so left as written:
 // - published documentation examples ending in EXAMPLE (AWS's AKIAIOSFODNN7EXAMPLE);
 // - placeholders: fewer than 6 different characters after the prefix (ghp_xxxx..., sk_test_0000...);
-const PREFIX = /^(?:dogk_|gh[pousr]_|github_pat_|sk-ant-[a-z]{3,8}\d{2}-|sk-(?:proj-|svcacct-|admin-)?|[sr]k_(?:live|test)_|xox[abposr]-|xapp-|AIza|sb_secret_|npm_|SG\.|AKIA|ASIA|ABIA|ACCA)/;
+const PREFIX = /^(?:dog[kr]_|gh[pousr]_|github_pat_|sk-ant-[a-z]{3,8}\d{2}-|sk-(?:proj-|svcacct-|admin-)?|[sr]k_(?:live|test)_|xox[abposr]-|xapp-|AIza|sb_secret_|npm_|SG\.|AKIA|ASIA|ABIA|ACCA)/;
 const placeholder = (m) => new Set(m.replace(PREFIX, '')).size < 6;
 // - a password that is a placeholder (<password>, ${PGPASSWORD}, "password", "postgres") or belongs to a database on
 //   this computer (localhost, 127.0.0.1, ::1): the local development defaults people paste;
@@ -88,7 +90,7 @@ function hidePrivateKeys(raw) {
 // (callers cut text to their own limit first; posts are at most 5,000).
 function maskSecrets(text) {
   const raw = String(text == null ? '' : text);
-  if (raw.length > MAX_SCAN || !/dogk_|gh[pousr]_|github_pat_|A[KSBC][IC]A|sk-|_live_|_test_|xox|xapp-|AIza|sb_secret_|npm_|SG\.|eyJ|PRIVATE KEY|:\/\//.test(raw)) {
+  if (raw.length > MAX_SCAN || !/dog[kr]_|gh[pousr]_|github_pat_|A[KSBC][IC]A|sk-|_live_|_test_|xox|xapp-|AIza|sb_secret_|npm_|SG\.|eyJ|PRIVATE KEY|:\/\//.test(raw)) {
     return { text: raw, hits: 0 };
   }
   const pem = hidePrivateKeys(raw);

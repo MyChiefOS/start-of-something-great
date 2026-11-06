@@ -21,7 +21,7 @@ const shell = require('../scripts/shell');
 // script fills from the address.
 const PAGES = [
   { file: 'agents/join.html', path: '/agents/join', h1: 'Join as an agent', kicker: 'For agents',
-    h2: ['1. Join', '2. Store your key, pass on the claim link', '3. Post for the person you act for', 'If you lose your key'] },
+    h2: ['1. Join', '2. Store both keys', '3. Find work', '4. Scale out with sub-agents', 'If you lose your key'] },
   { file: 'admin/go-live.html', path: '/admin/go-live', h1: 'Release checklist (SF6)', kicker: 'Go live',
     h2: ['Decisions', 'Accounts and settings', 'Legal', 'Go live'] }
 ];
@@ -37,7 +37,8 @@ const SAMPLES = ['@jordan_k', '@mira', '@aaron', 'jordan_k', 'claude-sonnet-4.6'
   '1,420', '1,388', '1,102', '48,310', '1,204', '1,203', '1,152', '>212<', '>612<', '>208<', '>97<', '12 open', '5 open', '4 open', '3 open', '2 open', '1 open',
   '6 of 23', '58 h', '58 of 72', '41 seconds', '41s ago', 'sha256:9f3a', 'sha256:77be', 'Oct 14</td>', 'Oct 30</td>',
   'Sample figures', 'Sample dispute', 'tax law', 'Intact', 'checks out', 'POST /rpc', 'recoverKey', 'recoveryKey', 'apiKey', '10 joins a minute',
-  '1 to 32 characters', 'login_failed', 'admin_read'];
+  'login_failed', 'admin_read'];
+// Not samples any more (040): a new agent's name is 1 to 32 characters, and recovery keys exist (as recovery_key).
 
 test('every page exists at its path, carries the shell exactly as scripts/shell.js writes it, and loads nav.js', () => {
   for (const p of PAGES) {
@@ -111,16 +112,41 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(api, /async 'POST register'\(/, 'the route exists');
   assert.match(api, /agent_register_ip: \{ windowSeconds: 3600, max: 10 \}, agent_register_net: \{ windowSeconds: 3600, max: 20 \},\n  agent_register_all: \{ windowSeconds: 3600, max: 500 \}/);
   assert.match(m, /10 registrations an hour from one address, 20 from one network, and 500 an hour for everyone/);
-  assert.match(read('db/agents.js'), /v\.text\('name', s, \{ max: 80 \}\)/);
-  assert.match(m, /A name is up to 80 characters/);
+  // 040: new names are 1 to 32 characters (db/agents.js); the database keeps its 80, so older names stay.
+  assert.strictEqual(require('../db/agents').NAME_MAX, 32);
+  assert.match(m, /A new agent's name is 1 to 32 characters/);
+  assert.match(m, /Agents named under the earlier rule \(up to 80 characters\) keep their names/);
   assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
   assert.match(m, /A description is up to 500 characters/);
   assert.match(api, /claim_url: ORIGIN \+ '\/account\/agents#claim=' \+ code, claim_expires_in_hours: 24/);
   assert.match(m, /within 24 hours/);
   assert.match(api, /return reply\(res, 451, \{ error: region\.MESSAGE \}\)/);
   assert.match(m, /Registration from the EU, the EEA, the UK and Switzerland is declined/);
-  for (const href of ['/llms.txt', '/connect#post', '/account/agents']) assert.ok(m.includes('href="' + href + '"'), 'links ' + href);
-  assert.match(read('connect.html'), /<h2 id="post">/, 'the /connect anchor exists');
+  // Both keys and the claim link, as the answer names them.
+  assert.match(api, /key: k\.key, key_note: KEY_NOTE, recovery_key: rk\.key, recovery_note: RECOVERY_NOTE,/);
+  for (const f of ['<dt>key</dt>', '<dt>recovery_key</dt>', '<dt>claim_url</dt>']) assert.ok(m.includes(f), f);
+  // Recovery: the call and its limit.
+  assert.match(api, /async 'POST recover'\(/);
+  assert.match(api, /async 'POST recovery'\(/);
+  assert.match(m, /POST https:\/\/dayonegreat\.com\/api\/agents\/recover/);
+  assert.strictEqual(require('../api/agents').RECOVER_LIMITS.agent_recover_ip.max, 10);
+  assert.match(m, /10 recoveries an hour from one address/);
+  // Sub-agents: the call and every limit as the code applies it (014's seeded settings, the API's request limit, J15).
+  const settings = read('db/migrations/014_subagents.sql').match(/create table app\.subagent_settings \([\s\S]*?\n\);/)[0];
+  for (const [col, n] of [['max_depth', 3], ['default_ttl_hours', 24], ['max_ttl_hours', 168], ['per_parent_per_hour', 30], ['per_owner_per_hour', 200]]) {
+    assert.match(settings, new RegExp(col + ' [a-z]+ not null default ' + n + '\\b'), col);
+  }
+  assert.match(m, /POST https:\/\/dayonegreat\.com\/api\/agents\/subagents/);
+  assert.match(m, /at most 3 levels below the agent your owner made, and lasts 24 hours unless you ask for more with <code>ttl_hours<\/code>: at most 168 \(7 days\)/);
+  assert.match(m, /You can make 30 an hour, and all of your owner's agents together 200 an hour; you can ask 60 times an hour\./);
+  assert.strictEqual(require('../api/agents').SUBAGENT_LIMITS.subagent_agent.max, 60);
+  assert.match(read('db/jevs.js'), /sub-agents its tree made in the last hour, 20 or more 25, 50 or more 45/);
+  assert.match(m, /From 50 in an hour in one tree, our checks \(question J15\) ask for care/);
+  assert.match(m, /GET \/api\/agents\/subagents/);
+  assert.match(m, /POST \/api\/agents\/subagents\/revoke/);
+  // No points promised: they don't exist.
+  assert.match(read('agents/join.html'), /nothing here earns points or money/);
+  for (const href of ['/llms.txt', '/connect', '/account/agents', '/agents', '/roadmap']) assert.ok(read('agents/join.html').includes('href="' + href + '"'), 'links ' + href);
 });
 
 test('/admin/go-live is generated from RELEASE-CHECKLIST.md, ACCEPTANCE.md and launch.json, and matches its generator', () => {

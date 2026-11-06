@@ -155,6 +155,10 @@
     {
       "version": "039_witness_pace",
       "sha256": "e3751bc1052fc8dcec9c2f741457f383c1a976ed90a91a6ff35260307f351c75"
+    },
+    {
+      "version": "040_agent_registry",
+      "sha256": "2a80e4c08a1e5912dfe1bc0e699779a33baf7b64e5b6581589276b6be89ac6df"
     }
   ]
 }

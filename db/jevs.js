@@ -63,10 +63,14 @@ const ACTIONS = {
   'agent.rules': { impact: 'high' },
   'account.delete': { impact: 'high' },
   // PR 16: an agent making a sub-agent (no human step; medium makes it drafting everything, high holds it).
-  'agent.subagent': { impact: 'high' }
+  'agent.subagent': { impact: 'high' },
+  // 040 (the independent review of Nov 5, conflict 1): an agent using its recovery key for a new key, and setting or
+  // replacing its recovery key. High risk holds either; the owner is told of both.
+  'agent.recover': { impact: 'high' },
+  'agent.recovery_issue': { impact: 'high' }
 };
 const SENSITIVE = { 'agent.rules': 30, 'account.delete': 30, 'agent.key': 20, 'agent.create': 10, 'agent.claim': 10, 'agent.register': 10,
-  'agent.subagent': 10 };
+  'agent.subagent': 10, 'agent.recover': 20, 'agent.recovery_issue': 20 };
 
 // The first band whose floor the value reaches (bands from the highest floor down).
 function band(n, bands) {
@@ -110,7 +114,7 @@ const QUESTIONS = [
     score: (s) => band(num(s.copies), [[5, 90], [2, 60], [1, 30]]) },
   { id: 'J10', title: 'Track record', description: 'Reports upheld against the account in the last 90 days (one 30, two 60, three or more 90) or an emergency brake on it now (40). The highest counts.',
     score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0) },
-  { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key 20, a new, claimed or registered agent or a sub-agent 10.',
+  { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key, a recovery or a recovery key set or replaced 20, a new, claimed or registered agent or a sub-agent 10.',
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
   { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
@@ -153,6 +157,10 @@ const ASKS = {
 for (const a of ['agent.create', 'agent.claim', 'agent.key', 'agent.rules', 'account.delete']) ASKS[a] = [...ACCOUNT, 'J11'];
 // PR 16: the owner's account questions (judged through the acting agent), the action, and where the sub-agent would sit.
 ASKS['agent.subagent'] = [...ACCOUNT, 'J11', 'J15'];
+// 040: as registering: the network, the action and the region. A recovery comes with no session or working key, so no
+// account is acting; an agent's own key works only for a verified, active owner, whose account every post checks.
+ASKS['agent.recover'] = ['J05', 'J06', 'J11', 'J13'];
+ASKS['agent.recovery_issue'] = ['J05', 'J06', 'J11', 'J13'];
 
 // The scores for one action: { J01: 25, ... }, every question it asks, in order.
 function score(action, signals, ctx = {}) {

@@ -70,6 +70,11 @@ html,body{background:#0d0f14}
 // The grid override must come after the inline classes it overrides: move the 820 px block to the end.
 // The comments above say why each rule is there; the file the browser fetches carries none of them but the first line
 // (the paper page sits at its page-weight cap, SF2: RK14), and a pointer back here.
-const served = (head + css + '\n' + classes(styles)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
+// One colour the design draws for its dark theme only: Revoke's red text (static/agents.html), 2.3:1 on the light
+// background. In light mode it takes the darker red the site used before (5.9:1), so the button stays readable.
+const { cls } = require('./port');
+const revoke = cls('border-color:#c2413b;color:#f1857f');
+const lightRevoke = styles[revoke] ? '\n@media (prefers-color-scheme: light){.d1 .' + revoke + '{color:#a3302a!important}}\n' : '';
+const served = (head + css + '\n' + classes(styles) + lightRevoke).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
 fs.writeFileSync(out, '/* Day One Great: Aaron\'s design (the handoff of Nov 5, 2026). Built by tools/design/mkcss.js and css.js, which say what changed for production. */\n' + served);
 console.log('wrote', out, Object.keys(styles).length, 'shared inline classes');

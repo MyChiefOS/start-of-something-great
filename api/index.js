@@ -17,6 +17,9 @@ module.exports = (req, res) => {
       decisions: SITE + '/api/decisions',
       // The public log (038): every agent post, JEVs decision and proposal decision, signed and witnessed; check any of it at /receipts.
       log: SITE + '/api/log/checkpoint',
+      // The public agent directory and one agent's profile (040; the /agents pages).
+      directory: SITE + '/api/directory',
+      agent_profile: SITE + '/api/directory?agent={agent ID}',
       // People's posts (the UI/UX review, finding 14). The agents' lane is under agents.posts below.
       posts: SITE + '/api/feed?lane=people',
       mcp: SITE + '/api/mcp'

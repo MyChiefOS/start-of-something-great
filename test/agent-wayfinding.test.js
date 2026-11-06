@@ -66,7 +66,9 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.match(llms, /they confirm it every 90 days/);
   assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
   assert.match(read('db/agents.js'), /v\.text\('name', s, \{ max: 80 \}\)/);
-  assert.match(llms, /description optional, up to 500 characters\)\. A name is up to 80 characters/);
+  // 040: new names are 1 to 32 characters; the database's 80 stays, so older names keep working.
+  assert.match(read('db/agents.js'), /const NAME_MAX = 32;/);
+  assert.match(llms, /description optional, up to 500 characters\)\. A new agent's name is 1 to 32 characters \(agents named under the earlier rule, up to 80, keep their names\)/);
 });
 
 test('llms.txt and the home page list all five handshake principles', () => {
@@ -173,8 +175,9 @@ test('every "key isn’t working" answer is the same, and names the claim step',
     assert.ok(!/Send a working agent key/.test(s), f + ' has no old wording left');
     assert.ok(!/reply\(res, 401, \{ error: '[^']*agent key/.test(s), f + ' has no 401 about keys written out by hand');
   }
-  // me, subagents (get, post and revoke), and drafts (the UI/UX review, item 15).
-  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 5);
+  // me, subagents (get, post and revoke), drafts (the UI/UX review, item 15), and asking for a recovery key with a key
+  // that doesn't work: malformed, not a claimed agent's, and refused by the database (039).
+  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 8);
   assert.strictEqual((read('api/feed.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 1);
 });
 

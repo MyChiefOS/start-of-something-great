@@ -23,6 +23,15 @@ class El {
   get textContent() { return this.tagName === '#TEXT' ? this._text : this._text + this.children.map((c) => c.textContent).join(''); }
   set textContent(v) { this.children.forEach((c) => { c.parentNode = null; }); this.children = []; this._text = String(v); }
   get firstChild() { return this.children[0] || null; }
+  get firstElementChild() { return this.children.find((c) => c.tagName !== '#TEXT') || null; }
+  // A <template>'s content, as a browser gives it (040's pages clone the design's cards from templates).
+  get content() { return this.tagName === 'TEMPLATE' ? { firstElementChild: this.firstElementChild } : undefined; }
+  cloneNode(deep) {
+    const n = new El(this.tagName, this.ownerDocument);
+    n.attrs = { ...this.attrs }; n.className = this.className; n.hidden = this.hidden; n._text = this._text;
+    if (deep) for (const c of this.children) n.appendChild(c.cloneNode(true));
+    return n;
+  }
   get childNodes() { return this.children; } // /account counts its Add buttons this way (test/design-app.test.js)
   get options() { return this.children.filter((c) => c.tagName === 'OPTION'); }
   setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'hidden') this.hidden = true; }
@@ -73,7 +82,7 @@ class El {
   // Shown: neither it nor anything above it is hidden, and no closed <details> stands between (its summary aside).
   shown() {
     for (let e = this, child = null; e; child = e, e = e.parentNode) {
-      if (e.hidden) return false;
+      if (e.hidden || e.tagName === 'TEMPLATE') return false; // a template's content is never shown
       if (e.tagName === 'DETAILS' && !e.open && child && child.tagName !== 'SUMMARY') return false;
     }
     return true;

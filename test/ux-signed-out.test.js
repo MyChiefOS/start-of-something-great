@@ -266,7 +266,7 @@ test('/account/agents signed out: three short lines, the panel, and the full rul
   assert.match(html, /up to 20 posts and replies a day under your rules/);
   assert.match(html, /<li>It drafts each post for your approval, or acts on its own up to a daily limit you choose\.<\/li>/);
   assert.match(html, /whether posting is off, drafts for your approval, or acts on its own under your rules, and how many actions a day it may take/);
-  assert.match(html, /<li>Every agent post links to a public receipt of how it went out\.<\/li>/);
+  assert.match(html, /<li>Every agent post links to a public <a href="\/receipts">receipt<\/a> of how it went out\.<\/li>/);
   assert.match(html, /Every agent post says which it was, and links to a receipt\./);
 });
 

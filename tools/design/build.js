@@ -57,7 +57,7 @@ let head = old.slice(0, old.indexOf('</head>'));
 // A page with parts the design doesn't style also loads its own sheet: the paper's figures and maths; the signed-in
 // pages' forms and lists (app.css and the page's own), until each is rebuilt from its design page.
 const EXTRA = { 'research/decision-loop.html': ['/paper.css'], 'account.html': ['/app.css', '/account.css'],
-  'account/agents.html': ['/app.css', '/account/agents.css'],
+  'account/agents.html': ['/app.css'],
   'admin/review.html': ['/app.css', '/admin/review.css'], 'admin/controls.html': ['/app.css', '/admin/controls.css'] };
 // The page's own inline styles (those design.css doesn't share) go in /css/<page>.css.
 const shared = fs.existsSync(path.join(__dirname, 'shared.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'shared.json'), 'utf8')) : {};
