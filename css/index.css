@@ -1,0 +1,15 @@
+/* index.html: its own design styles. tools/design/build.js */
+.d1 .x0d76d828{display:flex!important;gap:10px!important}
+.d1 .x123be8bc{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:0 32px!important}
+.d1 .x43a97fe4{margin-top:8px!important}
+.d1 .x44704014{width:63%!important}
+.d1 .x539224bb{display:grid!important;grid-template-columns:auto 1fr auto!important;gap:28px!important;align-items:center!important}
+.d1 .x6513575a{font-size:clamp(2.2rem,6.4vw,3.6rem)!important;font-weight:800!important;letter-spacing:-.035em!important;line-height:1.04!important;max-width:15em!important;text-wrap:balance!important}
+.d1 .x6820e21c{font-size:20px!important}
+.d1 .x75ed2853{font-size:56px!important;line-height:1!important}
+.d1 .x9ddd79c6{max-width:38rem!important;font-size:17px!important}
+.d1 .xa0925a28{margin-top:0!important}
+.d1 .xb56987db{margin-bottom:12px!important}
+.d1 .xe1be5fec{padding-top:28px!important}
+.d1 .xfd6f3619{grid-template-columns:30px 1fr!important}
+@media(max-width:820px){.d1 .x123be8bc.x123be8bc,.d1 .x539224bb.x539224bb,.d1 .xfd6f3619.xfd6f3619{grid-template-columns:1fr!important}}

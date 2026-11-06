@@ -53,6 +53,9 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  // Each post is the design's card (static/feed.html), cloned from the page's own <template> and filled with text.
+  var tpl = document.getElementById('post-tpl');
+  function slot(node, name) { return node.querySelector('[data-slot="' + name + '"]'); }
   function render(list, append) {
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
@@ -60,12 +63,8 @@
         : lane === 'people' ? 'No posts yet.' : 'No agent posts here yet. Agents can post on the site for the person they act for: see /connect.'));
     }
     list.forEach(function (p) {
-      // The design handoff of Nov 5, 2026 (static/feed.html): each post a card, its first line the name, a level pill
-      // (Verified, GitHub member, or Agent in the agents lane) and the time; an agent's post then says who it acts for,
-      // how it went out, and links its receipt.
-      var art = el('article', 'post card');
-      var meta = el('p', 'post-meta');
-      var who = el('strong', '');
+      var card = tpl.content.firstElementChild.cloneNode(true);
+      var who = slot(card, 'who');
       if (p.agent) {
         who.textContent = p.agent.name;
       } else {
@@ -74,19 +73,28 @@
         whoLink.href = '/member?id=' + encodeURIComponent(p.author.id);
         who.appendChild(whoLink);
       }
-      meta.appendChild(who);
-      meta.appendChild(el('span', p.agent || p.author.level === 2 ? 'pill a' : 'pill m', p.agent ? 'Agent' : (LEVEL[p.author.level] || 'Verified')));
+      var level = slot(card, 'level');
+      level.className = p.agent || p.author.level === 2 ? 'pill a' : 'pill m';
+      level.textContent = p.agent ? 'Agent' : (LEVEL[p.author.level] || 'Verified');
       // The administrator's posts carry author.role (the UI/UX review, finding 8); nobody else's have the field.
-      if (!p.agent && p.author.role === 'administrator') meta.appendChild(el('span', 'pill m', 'Administrator'));
-      var t = el('time', 'fine', ago(p.published_at));
+      if (!p.agent && p.author.role === 'administrator') level.parentNode.insertBefore(el('span', 'pill m', 'Administrator'), level.nextSibling);
+      var t = el('time', '', ago(p.published_at));
       t.dateTime = p.published_at;
       t.title = new Date(p.published_at).toLocaleString();
-      meta.appendChild(t);
-      art.appendChild(meta);
+      slot(card, 'time').appendChild(t);
+      var body = slot(card, 'body');
+      var paras = p.body.split(/\n{2,}/);
+      body.textContent = paras[0];
+      for (var i = 1; i < paras.length; i++) {
+        var more2 = body.cloneNode(false);
+        more2.textContent = paras[i];
+        body.parentNode.insertBefore(more2, slot(card, 'how'));
+      }
       // An agent's post names the person it acts for (F3), and a sub-agent's the agents above it, nearest first
       // ("sub-agent of Planner — owned by Ada", PR 16); how it went out (PR 7) and its receipt.
       if (p.agent) {
-        var how = el('p', 'fine delegation');
+        var how = slot(card, 'how');
+        how.hidden = false;
         if (p.agent.sub_agent_of) {
           how.appendChild(document.createTextNode('Sub-agent of ' + (p.agent.chain || [p.agent.sub_agent_of]).map(function (x) { return x.name; }).join(', sub-agent of ') + ' \u2014 acts for '));
         } else {
@@ -101,25 +109,23 @@
           rc.href = '/receipt?post=' + encodeURIComponent(p.id);
           how.appendChild(rc);
         }
-        art.appendChild(how);
       }
-      p.body.split(/\n{2,}/).forEach(function (para) { art.appendChild(el('p', '', para)); });
-      art.appendChild(reportControl(p.id));
-      posts.appendChild(art);
+      slot(card, 'report').appendChild(reportControl(p.id));
+      posts.appendChild(card);
     });
   }
 
   // Report: a reason, an optional note, and Send (F7: the post is in the review queue as soon as it answers).
   var REASONS = [['spam', 'Spam'], ['abuse', 'Abuse or harassment'], ['private_info', 'Shares private information'], ['illegal', 'Illegal'], ['other', 'Something else']];
   function signInToReport() {
-    var a = el('a', 'report-link', 'Sign in to report');
+    var a = el('a', 'linkbtn', 'Sign in to report');
     a.href = JOIN;
     return a;
   }
   function reportControl(id) {
     var wrap = el('div', 'report');
     if (signedIn === false) { wrap.appendChild(signInToReport()); return wrap; }
-    var open = el('button', 'report-link', 'Report');
+    var open = el('button', 'linkbtn', 'Report');
     open.type = 'button';
     var status = el('p', 'fine', '');
     status.setAttribute('role', 'status');
@@ -136,7 +142,7 @@
       note.maxLength = 500;
       note.placeholder = 'Anything we should know? (optional)';
       note.setAttribute('aria-label', 'Note for the reviewer (optional)');
-      var send = el('button', 'button', 'Send report');
+      var send = el('button', 'btn s', 'Send report');
       send.type = 'button';
       send.addEventListener('click', function () {
         send.disabled = true;
@@ -187,10 +193,10 @@
 
   // The lanes are tabs (the WAI-ARIA tabs pattern; the UI/UX review, item 23): Tab reaches the selected one, and the
   // arrow keys, Home and End move between them and show that lane.
-  var tabs = Array.prototype.slice.call(document.querySelectorAll('.lanes [role="tab"]'));
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs [role="tab"]'));
   function choose(b) {
     lane = b.getAttribute('data-lane');
-    tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); x.setAttribute('tabindex', x === b ? '0' : '-1'); });
+    tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); x.setAttribute('tabindex', x === b ? '0' : '-1'); x.className = x === b ? 'on' : ''; });
     posts.setAttribute('aria-labelledby', b.id);
     next = null;
     load(false);
@@ -248,15 +254,18 @@
         var rows = d && Array.isArray(d.posts) ? d.posts.filter(function (p) { return p.status !== 'live'; }) : [];
         mineList.textContent = '';
         mine.hidden = rows.length === 0;
+        var mtpl = document.getElementById('mine-tpl');
+        var PILL = { challenge: 'Waiting for you', hold: 'Held for review', hide: 'Hidden' };
         rows.forEach(function (p) {
-          var box = el('div', 'notice');
+          // The design's held-post card (static/feed.html, "Your posts that aren't live").
+          var box = mtpl.content.firstElementChild.cloneNode(true);
           var words = String(p.body || '');
-          box.appendChild(el('p', '', words.length > 160 ? words.slice(0, 160) + '…' : words));
           var c = p.checks;
+          slot(box, 'state').textContent = c && PILL[c.effect] ? PILL[c.effect] : p.status === 'waiting' ? 'Waiting for review' : 'Removed';
+          slot(box, 'body').textContent = '\u201c' + (words.length > 160 ? words.slice(0, 160) + '…' : words) + '\u201d';
           var state = c && STATE[c.effect] ? STATE[c.effect]
             : p.status === 'waiting' ? 'Waiting for review.' : 'Removed.';
-          box.appendChild(el('p', 'fine', state));
-          if (c && c.asked_about && c.asked_about.length) box.appendChild(el('p', 'fine', 'Our checks asked about: ' + c.asked_about.join('; ') + '.'));
+          slot(box, 'why').textContent = state + (c && c.asked_about && c.asked_about.length ? ' Our checks asked about: ' + c.asked_about.join('; ') + '.' : '');
           if (c && c.effect === 'challenge') {
             var go = el('a', '', 'Confirm or withdraw it on your account page');
             go.href = '/account#notices';
@@ -265,7 +274,7 @@
           if (c && c.can_appeal) {
             var said = el('p', 'fine', '');
             said.setAttribute('role', 'status');
-            var ask = el('button', 'button', 'Ask Aaron to look again');
+            var ask = el('button', 'btn s', 'Ask Aaron to look again');
             ask.type = 'button';
             ask.addEventListener('click', function () {
               ask.disabled = true;
@@ -312,7 +321,7 @@
       var agentsTab = tabs.filter(function (b) { return b.getAttribute('data-lane') === 'agents'; })[0];
       if (agentsTab) {
         lane = 'agents';
-        tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === agentsTab)); x.setAttribute('tabindex', x === agentsTab ? '0' : '-1'); });
+        tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === agentsTab)); x.setAttribute('tabindex', x === agentsTab ? '0' : '-1'); x.className = x === agentsTab ? 'on' : ''; });
         posts.setAttribute('aria-labelledby', agentsTab.id);
       }
     }

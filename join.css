@@ -2,7 +2,7 @@
    every control at least 44 px tall, the code large, and the comment box right under it. Colours from the tokens in
    styles.css only. Its own file, so the shared styles.css, which every page loads, stays within the page-weight budget
    (SF2), as agents.css does for /agents. */
-.signin.story { padding-top: 1.5rem; }
+.signin.story { padding-top: 1rem; } /* the design's header is taller on phones: the panel's button stays in the first screen at 390 by 844 */
 .signin.story h1 { font-size: clamp(2rem, 7vw, 3.25rem); max-width: none; }
 .signin.story .dek { font-size: 1rem; margin: 0.5rem 0 0.6rem; }
 .signin .jump { margin: 0 0 0.75rem; }
@@ -13,7 +13,7 @@
 /* Borders in the existing --muted token (the rule token measured 1.27:1 against the page, too faint to find the
    controls; WCAG 2.2, 1.4.11 needs 3:1; the design review of PR A, fix 6). The panel's plain buttons (Copy, Change) too. */
 .path-choice, .join-panel .field { min-height: 44px; font: inherit; color: var(--text); background: var(--ink); border: 1px solid var(--muted); border-radius: 0.6rem; }
-.join-panel .button:not(.primary) { border-color: var(--muted); }
+.join-panel .btn:not(.p) { border-color: var(--muted); }
 .path-choice { font-family: var(--display); font-weight: 600; font-size: 0.98rem; line-height: 1.25; padding: 0.5rem 0.75rem; text-align: left; cursor: pointer; }
 .path-choice:hover { border-color: var(--amber); }
 .path-choice[aria-pressed="true"] { border-color: var(--amber); background: var(--glow); box-shadow: inset 0 0 0 1px var(--amber); }
@@ -24,8 +24,8 @@
 .path-choice:focus-visible, .join-panel .field:focus-visible, .join-panel button:focus-visible, .join-panel summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .story .join-panel .help { color: var(--muted); font-size: 0.88rem; line-height: 1.4; margin: 0.25rem 0 0; }
 .story .join-panel .act { margin: 0.75rem 0 0; }
-.join-panel .button, .story .join-panel summary { min-height: 44px; }
-.signin .join-panel button.button.primary { background: var(--amber); border-color: var(--amber); color: #15110a; }
+.join-panel .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
+.story .join-panel summary { min-height: 44px; }
 .story .join-panel details { margin: 0.5rem 0 0; }
 .story .join-panel summary { display: list-item; padding: 0.55rem 0; line-height: 1.4; font-size: 0.95rem; }
 .story .join-panel .wait-line { margin: 0.6rem 0 0; scroll-margin-top: 0.5rem; }
@@ -50,10 +50,10 @@
 .story .hello h2 { margin-top: 1.75rem; }
 .story .hello h2.post-here { font-size: 1.25rem; margin: 0.9rem 0 0; }
 .hello .talk-replies { margin-top: 0.75rem; }
-@media (prefers-color-scheme: light) { .signin .join-panel button.button.primary { color: #ffffff; } }
 
 /* The design handoff of Nov 5, 2026 (static/join.html): the two paths as pill tabs (amber edge when chosen), the code
-   in an amber box beside Copy and "Works once, for 10 minutes", and Say hello as a card. */
+   in an amber box beside Copy and "Works once, for 10 minutes", and Say hello as a card. The buttons are the design's
+   own (.btn, .btn.p, .btn.s in design.css), at least 44 px tall. */
 .path-choice { border-radius: 999px; padding: 0.5rem 1.1rem; text-align: center; color: var(--muted); background: transparent; border-color: var(--rule-strong); }
 .path-choice[aria-pressed="true"] { color: var(--text); background: transparent; box-shadow: none; }
 .story .join-panel .code-row code#code-value { font-size: 1.1rem; padding: 0.45rem 0.85rem; border: 1px solid var(--amber); border-radius: 8px; }

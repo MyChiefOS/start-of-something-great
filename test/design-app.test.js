@@ -41,13 +41,14 @@ test('each page is at its design path, carries the shell, and has the design\'s 
     assert.match(html, /<meta name="robots" content="noindex">/, p.file + ': private');
     assert.match(html, new RegExp('<script defer src="' + p.script.replace(/\//g, '\\/').replace('.', '\\.') + '"><\\/script>'), p.file);
     assert.match(html, new RegExp('<link rel="stylesheet" href="' + p.css.replace(/\//g, '\\/').replace('.', '\\.') + '">'), p.file);
-    assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/app\.css">\n  <link rel="stylesheet" href="\/design\.css">/, p.file);
+    // The design's stylesheet, then the app pages' shared one, then the page's own (tools/design/build.js).
+    assert.match(html, new RegExp('<link rel="stylesheet" href="/design\\.css">\\n  <link rel="stylesheet" href="/app\\.css">\\n  <link rel="stylesheet" href="' + p.css.replace('.', '\\.') + '">'), p.file);
     assert.strictEqual((html.match(/<h1\b/g) || []).length, 1, p.file);
     const h = headings(html);
     assert.strictEqual(h[0], p.h1, p.file);
     assert.ok(inOrder(h.slice(1), p.h2), p.file + ': ' + h.join(' / '));
-    if (p.kicker) assert.match(html, /<p class="kicker">Administrator only<\/p>\n\s*<h1>/, p.file + ': the design\'s kicker');
-    assert.match(html, /<main id="main" class="story feed [^"]*" tabindex="-1">/, p.file);
+    if (p.kicker) assert.match(html, /<p class="kick">Administrator only<\/p>\n<h1>/, p.file + ': the design\'s kicker');
+    assert.match(html, /<main class="story feed [^"]*" id="main" tabindex="-1">/, p.file);
   }
 });
 
@@ -278,10 +279,10 @@ test('/admin/review: each item is a card with a pill, the exact words, who wrote
   for (const f of ['admin/review.html', 'admin/review.js']) assert.ok(!/another reviewer/i.test(read(f).replace(/^\s*\/\/.*$/gm, '')), f);
 });
 
-test('/admin/review: an empty queue is the design\'s empty state, saying what happens instead', async () => {
+test('/admin/review: an empty queue is the design\'s empty state (.empty), saying what happens instead', async () => {
   const p = review([]);
   await settle();
-  const box = p.$('queue').querySelector('.empty-state');
+  const box = p.$('queue').querySelector('.empty');
   assert.ok(box);
   assert.strictEqual(box.textContent, 'JEVs checks every post, and owners approve their own agents’ drafts. Anything held, hidden, reported or appealed comes here.');
 });

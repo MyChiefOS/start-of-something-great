@@ -12,7 +12,7 @@ test('/member: a public page made of public answers only, shown as text, never i
   const html = read('member.html');
   assert.match(html, /<meta name="robots" content="noindex">/);
   assert.match(html, /<script defer src="\/member\.js"><\/script>/);
-  assert.match(html, /<p id="summary" class="dek" role="status">/);
+  assert.match(html, /<p id="summary" class="visually-hidden" role="status">/);
   const js = read('member.js');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'text only');
   // Only the three public reads: the profile, and each lane by author.
@@ -38,7 +38,8 @@ test('/member: names on /feed and the person on a receipt open their page', () =
 
 test('/member, after its fresh review: a long name wraps, no total that counts the wrong posts, one request at a time, focus kept, the way back', () => {
   const js = read('member.js');
-  assert.match(read('app.css'), /\.member h1 \{ overflow-wrap: anywhere; \}/);
+  assert.match(read('css/member.css'), /\.d1 h1\{overflow-wrap:anywhere\}/, 'a long name wraps');
+  assert.match(read('member.html'), /<link rel="stylesheet" href="\/css\/member\.css">/);
   assert.ok(!/live_posts/.test(js), 'no total from the profile: it counts agents\' posts with theirs (003, app.profile)');
   assert.match(read('db/migrations/003_posts.sql'), /select m\.id, m\.display_name, m\.trust_level, m\.created_at,/);
   assert.match(js, /more\.disabled = true; \/\/ one request at a time/);

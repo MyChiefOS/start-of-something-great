@@ -45,7 +45,8 @@ test('every page exists at its path, carries the shell exactly as scripts/shell.
     const html = read(p.file);
     assert.strictEqual(shell.render(p.file, html), html, p.file + ' carries the shell (run node scripts/shell.js)');
     assert.match(html, /<script src="\/nav\.js" defer><\/script>/, p.file);
-    assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n(  <link rel="stylesheet" href="\/app\.css">\n)?  <link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/modules-b\.css">/, p.file + ': the site’s tokens, then design.css, then this group’s styles');
+    // The design's own stylesheet, which carries the site's tokens (tools/design/mkcss.js), and no other.
+    assert.deepStrictEqual([...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]), ['/design.css'], p.file + ': design.css only');
     const title = html.match(/<title>([^<]+)<\/title>/)[1];
     assert.ok(title.endsWith(': Day One Great'), p.file + ': ' + title);
     assert.match(html, new RegExp('<link rel="canonical" href="https://dayonegreat\\.com/'), p.file);
@@ -59,15 +60,15 @@ test('the design’s h1, kicker and section headings, in order; one h1 and no sk
     const m = main(p.file);
     assert.strictEqual((m.match(/<h1\b/g) || []).length, 1, p.file + ': one h1');
     assert.strictEqual(m.match(/<h1[^>]*>([^<]*)<\/h1>/)[1], p.h1, p.file + ': h1');
-    if (p.kicker) assert.ok(m.indexOf('<p class="kicker">' + p.kicker + '</p>') >= 0 && m.indexOf('class="kicker"') < m.indexOf('<h1'), p.file + ': kicker above the h1');
+    if (p.kicker) assert.ok(m.indexOf('<p class="kick">' + p.kicker + '</p>') >= 0 && m.indexOf('class="kick"') < m.indexOf('<h1'), p.file + ': kicker above the h1');
     if (p.h2) {
       const h2 = [...m.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((x) => x[1]).filter((t) => p.h2.includes(t));
       assert.deepStrictEqual(h2, p.h2, p.file + ': section headings in order');
     }
     let prev = 1;
     for (const h of m.matchAll(/<h([1-6])\b/g)) { const n = Number(h[1]); assert.ok(n <= prev + 1, p.file + ': h' + prev + ' then h' + n); prev = n; }
-    for (const tag of ['<header class="site-header">', '<nav class="site-nav" aria-label="Main">', '<main id="main"', '<footer class="site-footer">']) assert.ok(read(p.file).includes(tag), p.file + ' has ' + tag);
-    assert.match(read(p.file), /<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/, p.file);
+    for (const tag of ['<header class="hd">', '<nav class="nav dnav" aria-label="Main">', ' id="main" tabindex="-1">', '<footer class="ft ']) assert.ok(read(p.file).includes(tag), p.file + ' has ' + tag);
+    assert.match(read(p.file), /<body>\s*<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*<a class="skip" href="#main">Skip to content<\/a>/, p.file);
   }
 });
 

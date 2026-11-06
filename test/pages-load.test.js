@@ -85,7 +85,10 @@ const shell = require('../scripts/shell');
 // of Nov 5, 2026, the admin, account, agents, errors and privacy pages.
 const inDir = (d) => (fs.existsSync(path.join(root, d)) ? fs.readdirSync(path.join(root, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
 const navPages = pages.concat(...['research', 'admin', 'account', 'agents', 'errors', 'privacy'].map(inDir))
-  .filter((f) => read(f).includes('<nav class="site-nav"'));
+  .filter((f) => read(f).includes('<!-- shell:top -->'));
+// The shell as scripts/shell.js writes it: between its markers.
+const topOf = (f) => read(f).match(/<!-- shell:top -->([\s\S]*?)<!-- \/shell:top -->/)[1];
+const footOf = (f) => read(f).match(/<!-- shell:foot -->([\s\S]*?)<!-- \/shell:foot -->/)[1];
 
 test('every page, the 404 included, carries the shell exactly as scripts/shell.js writes it (any drift fails)', () => {
   assert.deepStrictEqual(navPages.slice().sort(), shell.pages(), 'every page has the menu');
@@ -94,36 +97,43 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   // Only the current-page marks differ: with them taken out, every header is the same, and every footer is identical.
   // The design handoff (Nov 5): the about and trust pages add their own row under the header; the rest is one header.
-  const headers = new Set(shell.pages().map((f) => read(f).match(/<header class="site-header">[\s\S]*?<\/header>/)[0].replace(/ aria-current="(page|true)"/g, '')
-    .replace(/\n *<nav class="sub-row" aria-label="(About|Trust)">[\s\S]*?<\/nav>/, '')));
+  const headers = new Set(shell.pages().map((f) => topOf(f).replace(/ aria-current="(page|true)"/g, '').replace(/class="on"/g, 'class=""')
+    .replace(/\n<div class="sub2" aria-label="(About|Trust)">[\s\S]*?<\/div>/, '')));
   assert.strictEqual(headers.size, 1, 'one header');
-  const footers = new Set(shell.pages().map((f) => read(f).match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0]));
+  const footers = new Set(shell.pages().map((f) => footOf(f)));
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
 test('the menu (the design handoff of Nov 5, 2026, README "Shell"): Post, Talk, Proposals, For agents, About, Search, then Join as a pill', () => {
+  const linksOf = (h) => [...h.matchAll(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
+  const main = shell.MAIN.map(([h, t]) => h + ' ' + t);
+  const proposed = shell.PROPOSED.filter(([h]) => shell.exists(h)).map(([h, t]) => h + ' ' + t);
   for (const f of navPages) {
-    const nav = read(f).match(/<nav class="site-nav"[\s\S]*?<\/nav>/)[0];
-    const links = [...nav.matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
-    const proposed = shell.PROPOSED.filter(([h]) => shell.exists(h)).map(([h, t]) => h + ' ' + t);
-    assert.deepStrictEqual(links, ['/feed Post', '/talk Talk', '/proposals Proposals', '/connect For agents', '/team About', '/search Search', ...proposed, '/join Join'], f);
-    // On phones: the wordmark, Menu, a <details> holding every other link (all of them stay in the HTML), then Join, in
-    // the same order on screen as in the Tab order.
-    assert.match(nav, /^<nav class="site-nav" aria-label="Main">\s*<details class="menu">\s*<summary>Menu<\/summary>\s*<div class="menu-panel">/, f);
-    assert.match(nav, /<\/details>\s*<a href="\/join" class="nav-join" data-nav="account"( aria-current="page")?>Join<\/a>\s*<\/nav>$/, f);
-    assert.ok((nav.match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the menu');
+    const top = topOf(f);
+    // The wide row: the six links, then Join as the pill (the design's .join).
+    const wide = top.match(/<nav class="nav dnav" aria-label="Main">[\s\S]*?<\/nav>/)[0];
+    assert.deepStrictEqual(linksOf(wide), [...main, '/join Join'], f);
+    assert.match(wide, /<a href="\/join" class="join" data-nav="account">Join<\/a><\/nav>$/, f);
+    // On phones: Menu, a <details> holding every link (all of them stay in the HTML), the Proposed group, then Join.
+    const menu = top.match(/<details class="mnav"><summary>Menu<\/summary><div class="mpanel">[\s\S]*?<\/div><\/details>/);
+    assert.ok(menu, f + ': the Menu');
+    assert.deepStrictEqual(linksOf(menu[0]), [...main, ...proposed, '/join Join'], f);
+    // Under the header, from 820 px: the Proposed row, with only the modules that are built.
+    const row = top.match(/<div class="sub2 dnav" aria-label="Proposed modules">[\s\S]*?<\/div>/)[0];
+    assert.deepStrictEqual(linksOf(row), proposed, f);
+    assert.ok((top.match(/<nav class="nav dnav"[\s\S]*?<\/nav>/)[0].match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the row');
   }
-  assert.match(read('team.html'), /<a href="\/team" aria-current="page">About<\/a>/);
+  assert.match(topOf('team.html'), /<a class="on" href="\/team" aria-current="page">About<\/a>/);
   // The about pages carry the About row: Team, The handshake, The name, Research.
   for (const f of ['team.html', 'handshake.html', 'name.html', 'research.html', 'research/decision-loop.html']) {
-    const row = read(f).match(/<nav class="sub-row" aria-label="About">[\s\S]*?<\/nav>/);
+    const row = topOf(f).match(/<div class="sub2" aria-label="About">[\s\S]*?<\/div>/);
     assert.ok(row, f + ' has the About row');
-    assert.deepStrictEqual([...row[0].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]), ['/team', '/handshake', '/name', '/research'], f);
+    assert.deepStrictEqual([...row[0].matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ['/team', '/handshake', '/name', '/research'], f);
   }
-  assert.match(read('handshake.html'), /<a href="\/team" aria-current="true">About<\/a>[\s\S]*<a href="\/handshake" aria-current="page">The handshake<\/a>/);
-  assert.match(read('shipped.html'), /<a href="\/proposals" aria-current="true">Proposals<\/a>/);
+  assert.match(topOf('handshake.html'), /<a class="on" href="\/team" aria-current="true">About<\/a>[\s\S]*<a class="on" href="\/handshake" aria-current="page">The handshake<\/a>/);
+  assert.match(topOf('shipped.html'), /<a class="on" href="\/proposals" aria-current="true">Proposals<\/a>/);
   // No link in the shell points at a page that isn't built.
-  for (const f of shell.pages()) for (const m of read(f).match(/<header class="site-header">[\s\S]*?<\/header>|<footer class="site-footer">[\s\S]*?<\/footer>/g).join('').matchAll(/href="(\/[^"#?]*)/g)) assert.ok(shell.exists(m[1]), f + ' links ' + m[1]);
+  for (const f of shell.pages()) for (const m of (topOf(f) + footOf(f)).matchAll(/href="(\/[^"#?]*)/g)) assert.ok(shell.exists(m[1]), f + ' links ' + m[1]);
   assert.ok(!/<script/.test(read('scripts/shell.js').replace(/^\/\/.*$/gm, '')), 'the shell adds no script: script-src \'self\' and the no-script pages hold');
 });
 
@@ -174,19 +184,20 @@ test('every page with a menu loads nav.js, except the pages that run no script; 
 });
 
 test('the footer, the same on every page (the design\'s columns, each link only once its page is built): About, Take part, Trust, Agents, Legal and contact', () => {
-  const foot = read('index.html').match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0];
-  const groups = [...foot.matchAll(/<div[^>]*><h2>([^<]+)<\/h2>([\s\S]*?)<\/div>/g)].map((m) => [m[1], [...m[2].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => x[2] + ' ' + x[1])]);
+  const foot = footOf('index.html');
+  const groups = [...foot.matchAll(/<div><p class="kick">([^<]+)<\/p>\s*<div class="x[0-9a-f]{8}">([\s\S]*?)<\/div><\/div>/g)].map((m) => [m[1], [...m[2].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => x[2] + ' ' + x[1])]);
   const repo = 'https://github.com/MyChiefOS/start-of-something-great';
+  // The design's five columns, as drawn (README "Shell"), with the pages that aren't built left out.
   assert.deepStrictEqual(groups, [
-    // "Aaron on LinkedIn": the link every page's footer carried before UX PR B, back (the design review).
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
+    // Search and Sitemap: the handoff's spec (CODING_AGENT_SPEC.md 5.4: "Sitemap" and "Search" pages linked from the footer).
     ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Loops /loops', 'Search /search']],
-    ['Trust', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
+    ['Trust (proposed)', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
     ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);
-  assert.match(foot, /<p>Day One Great™ is a <a href="https:\/\/www\.chiefos\.cloud">ChiefOS, Inc\.<\/a> company\.<\/p>/);
+  assert.match(foot, /<p class="x[0-9a-f]{8}">Day One Great™ is a <a href="https:\/\/www\.chiefos\.cloud">ChiefOS, Inc\.<\/a> company\.<\/p><\/footer>/);
   assert.match(read('connect.html'), /<h2 id="add">1\. Add the server<\/h2>/, 'MCP lands on how to add the server');
 });
 
@@ -195,16 +206,16 @@ test('the page map (UX PR B): /talk says it is on GitHub and points to Posts; /p
   assert.match(talk, /<h1>Talk on GitHub<\/h1>\s*<p class="dek">The open conversation, held on GitHub\./);
   assert.match(talk, /To post on this site itself, go to <a href="\/feed">Posts<\/a>, where people and the AI agents that act for them post in separate lanes\./);
   assert.match(read('feed.html'), /People and the AI agents that act for them post in separate lanes/, 'the same words /feed uses');
-  assert.ok(talk.indexOf('href="/feed"') < talk.indexOf('class="card talk-post"'), 'above the thread');
+  assert.ok(talk.indexOf('href="/feed"') < talk.indexOf('giscus.app/client.js'), 'above the thread');
   // The design handoff of Nov 5, 2026 draws these as its pill buttons (design.css .btn).
   const proposals = read('proposals.html').match(/<main[\s\S]*?<\/main>/)[0];
   assert.ok(proposals.indexOf('<a class="btn" href="/shipped">See what shipped</a>') > 0 && proposals.indexOf('href="/shipped"') < proposals.indexOf('<h2'), 'Shipped linked above the first heading');
   assert.match(read('shipped.html'), /<a class="btn" href="\/proposals">See all proposals<\/a>/, 'and back');
   const team = read('team.html').match(/<main[\s\S]*?<\/main>/)[0];
-  assert.match(team, /<p class="kicker">About Day One Great<\/p>\s*<h1>The team<\/h1>/);
-  const hub = team.match(/<ul class="rule3 hub"[\s\S]*?<\/ul>/)[0];
+  assert.match(team, /<p class="kick">About Day One Great<\/p><h1>The team<\/h1>/);
+  const hub = team.match(/<ul class="rule3 x[0-9a-f]{8}">[\s\S]*?<\/ul>/)[0];
   assert.deepStrictEqual([...hub.matchAll(/<a href="([^"]+)">/g)].map((m) => m[1]), ['/handshake', '/name', '/research']);
-  assert.ok(team.indexOf('class="rule3 hub"') < team.indexOf('class="mem"'), 'at the top, before the team');
+  assert.ok(team.indexOf(hub) < team.indexOf('class="mem"'), 'at the top, before the team');
 });
 
 test('every comment in the style sheets is closed before the next one opens (app.css\'s first one ran on; the design review)', () => {
@@ -223,12 +234,14 @@ test('every comment in the style sheets is closed before the next one opens (app
   }
 });
 
-test('app.css, the app pages’ own styles, is loaded straight after styles.css by exactly the pages whose <main> has class "feed" (SF2)', () => {
+test('app.css, the app pages’ own styles, is loaded straight after design.css by exactly the signed-in app pages (SF2)', () => {
+  // The design handoff of Nov 5: the forms and lists these pages' scripts draw keep their app.css styles; every other
+  // page is the design's markup and design.css alone.
+  const APP = ['account.html', 'account/agents.html', 'admin/controls.html', 'admin/review.html'];
   for (const f of navPages) {
     const html = read(f);
-    const app = /<main id="main" class="[^"]*\bfeed\b/.test(html);
-    assert.strictEqual(html.includes('<link rel="stylesheet" href="/app.css">'), app, f);
-    if (app) assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/app\.css">/, f);
+    assert.strictEqual(html.includes('<link rel="stylesheet" href="/app.css">'), APP.includes(f), f);
+    if (APP.includes(f)) assert.match(html, /<link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/app\.css">/, f);
   }
   const css = read('styles.css');
   for (const sel of ['.lanes {', '.compose {', '.report-form {', '.review-actions {', '.brake-form {', '.account-form {', '.rules-form {', '.facts {']) {
@@ -251,21 +264,21 @@ test('/join leads with one compact sign-in panel, the comment box under the code
   // 2 and 3. The fields, each with its label above it and a one-line help, styled (class "field").
   const fields = panel.match(/<div id="signin-fields" hidden>[\s\S]*?<\/details>\s*<\/div>\s*<\/div>/)[0];
   // Once a code shows, the fields fold to one line: the username and "Change" (the design review of PR A, fix 1).
-  assert.match(fields, /^<div id="signin-fields" hidden>\s*<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"><\/span> <button type="button" id="code-change" class="button">Change<\/button><\/p>\s*<div id="field-set">/);
+  assert.match(fields, /^<div id="signin-fields" hidden>\s*<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"><\/span> <button type="button" id="code-change" class="btn s">Change<\/button><\/p>\s*<div id="field-set">/);
   assert.ok(fields.indexOf('<label for="code-login">') < fields.indexOf('id="code-login"'), 'the username label comes first');
   assert.match(fields, /<input id="code-login" class="field"[^>]*aria-describedby="code-login-help">/);
   assert.match(fields, /id="code-login-help" class="help">As in github\.com\/your-username, not your name or email\./, 'the name-or-email help stays');
   assert.match(fields, /<input id="code-file" class="field" name="file" type="file" aria-describedby="code-file-help">/);
   assert.ok(fields.indexOf('id="code-file"') < fields.indexOf('<details>'), 'the key file details are folded below the field');
-  for (const id of ['code-get', 'key-signin']) assert.match(fields, new RegExp('id="' + id + '" class="button primary"'), id + ' is a primary button');
+  for (const id of ['code-get', 'key-signin']) assert.match(fields, new RegExp('id="' + id + '" class="btn p"'), id + ' is a primary button (the design\'s .btn.p)');
   // 4. The code, large, with Copy styled as a button, the time left out of the live region and the takeover warning beside it.
   const step = panel.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
   // The design handoff (static/join.html): the code, Copy, then "Works once, for 10 minutes".
-  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="button">Copy<\/button> <span class="code-works">Works once, for 10 minutes<\/span> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
+  assert.match(step, /<p class="code-row"><code id="code-value"><\/code> <button type="button" id="code-copy" class="btn s">Copy<\/button> <span class="code-works">Works once, for 10 minutes<\/span> <span id="code-time" aria-hidden="true"><\/span><\/p>/);
   assert.match(step, /<span id="code-time" aria-hidden="true"><\/span>/);
   assert.match(step, /Only post a code this page showed you, and never quote or repeat anyone else’s: anyone who asks you to is trying to take over an account\./, 'the takeover warning sits beside the code, never folded away');
   assert.match(step, /for 10 minutes/, 'the same 10 minutes the server gives (signin/flow.js CODE_MINUTES)');
-  assert.match(panel, /<p class="act" id="code-again" hidden><button type="button" id="code-new" class="button primary">Get a new code<\/button><\/p>/);
+  assert.match(panel, /<p class="act" id="code-again" hidden><button type="button" id="code-new" class="btn p">Get a new code<\/button><\/p>/);
   // 5. The waiting line: states in the live region, seconds beside it where screen readers don't go.
   assert.match(panel, /<p class="wait-line"><span id="code-status" role="status" aria-live="polite"><\/span> <span id="code-wait" aria-hidden="true"><\/span><\/p>/);
   // The comment box comes straight after the panel, and the long reading after the box.
@@ -275,12 +288,14 @@ test('/join leads with one compact sign-in panel, the comment box under the code
     assert.ok(html.indexOf('<h2>' + h + '</h2>') > html.indexOf('giscus.app/client.js'), h + ' comes below the comment box');
   }
   // The panel's styles: at least 44 px for every control, colours only from the tokens.
-  // In join.css, which only /join loads, so the shared styles.css stays within the page-weight budget (SF2).
-  assert.match(html, /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/join\.css">/);
+  // In join.css, which only /join loads, after the design's design.css (SF2).
+  assert.match(html, /<link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/join\.css">/);
   const css = read('join.css');
   assert.match(css, /\.path-choice, \.join-panel \.field \{ min-height: 44px;/);
-  assert.match(css, /\.join-panel \.button, \.story \.join-panel summary \{ min-height: 44px; \}/);
-  assert.deepStrictEqual([...new Set(css.match(/#[0-9a-fA-F]{3,6}\b/g))].sort(), ['#15110a', '#ffffff'], 'only the colours .button.primary already uses');
+  assert.match(css, /\.story \.join-panel summary \{ min-height: 44px; \}/);
+  assert.match(css, /\.join-panel \.btn \{ display: inline-flex; align-items: center; justify-content: center; min-height: 44px; \}/, 'its buttons too, at every width');
+  assert.match(read('design.css'), /\.d1 \.btn,\.d1 button\{min-height:44px\}/, 'the design\'s buttons are 44 px');
+  assert.deepStrictEqual(css.match(/#[0-9a-fA-F]{3,6}\b/g), null, 'no colours of its own: the tokens only');
   assert.ok(!/--[a-z]+\s*:/.test(css), 'no new colour tokens: only the ones in styles.css');
   for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'join.html')) assert.ok(!read(f).includes('/join.css'), f + ' does not load join.css');
 });
@@ -305,8 +320,10 @@ function runNav({ path: where = '/feed', me, stored = null, now = 1e12 }) {
     contains: (el) => el === inside };
   const docEvents = [];
   const ctx = {
-    document: { querySelector: (q) => (q === '.site-nav a[data-nav="account"]' ? link : q === '.site-nav a[data-nav="agents"]' ? (added[0] || null)
-      : q === '.site-nav a[href="/connect"]' ? guide : q === '.site-header details' ? menu : null), querySelectorAll: () => forms,
+    // The design's header (scripts/shell.js): the pill in the wide row and in the Menu, For agents in both.
+    document: { querySelector: (q) => (q === '.hd a[data-nav="agents"]' ? (added[0] || null) : q === '.hd details.mnav' ? menu : null),
+      querySelectorAll: (q) => (q === '.hd a[data-nav="account"]' ? [link] : q === '.hd .dnav a[href="/connect"], .hd .mpanel a[href="/connect"]' ? [guide, guide]
+        : q === 'form[action^="/auth/logout"]' ? forms : []),
       addEventListener: (ev, fn) => docEvents.push([ev, fn]),
       createElement: () => ({ attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = String(v); } }) },
     location: { pathname: where },
@@ -328,7 +345,8 @@ test('nav.js, run: a visitor keeps Join; a member sees Account with the unread c
   assert.strictEqual(member.link.textContent, 'Account (3)');
   assert.strictEqual(member.link.attrs.href, '/account#notices', 'Account opens on the notices (finding 11)');
   assert.strictEqual(member.link.attrs['aria-label'], 'Account, 3 unread notices');
-  assert.deepStrictEqual(member.added.map((a) => [a.textContent, a.attrs.href, a.before]), [['Your agents', '/account/agents', 'the link after For agents']], 'and Your agents, just after For agents');
+  assert.deepStrictEqual(member.added.map((a) => [a.textContent, a.attrs.href, a.before]), [['Your agents', '/account/agents', 'the link after For agents'], ['Your agents', '/account/agents', 'the link after For agents']],
+    'and Your agents, just after For agents, in the wide row and in the Menu');
   // Escape closes the open Menu and returns focus to it; other keys, or a closed Menu, change nothing.
   const [ev, onKey] = member.menu.keys[0];
   assert.strictEqual(ev, 'keydown');

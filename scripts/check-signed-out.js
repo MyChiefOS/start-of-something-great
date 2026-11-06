@@ -6,6 +6,9 @@
 //
 //   node scripts/check-signed-out.js [--root DIR] [--shots DIR] [--no-checks]
 //
+// The design handoff of Nov 5, 2026: the panel is #signed-out (on /feed the design's card), the kicker .kick and the
+// review queue's empty state .empty.
+//
 // Checks, at 390 by 844 and 1280 by 800 px, in dark and light:
 //   - signed out, on /feed, /account/agents, /account, /admin/review and /admin/controls: the first screen holds the signed-out panel, with
 //     exactly one primary button in the page, "Sign in with GitHub", to /join?return_to=<the page>; nothing scrolls
@@ -146,7 +149,7 @@ async function open(ctx, base, url, where, fail) {
 // The signed-out panel: whether it shows on the first screen, and every visible primary button in <main>.
 const panel = (p) => p.evaluate(() => {
   const shown = (el) => el.checkVisibility({ visibilityProperty: true }) && el.getBoundingClientRect().height > 0;
-  const box = document.querySelector('main .signed-out');
+  const box = document.getElementById('signed-out');
   const r = box && box.getBoundingClientRect();
   // A primary button is the old .button.primary or the design's amber pill, .btn.p (design.css; the design handoff).
   const primaries = [...document.querySelectorAll('main .button.primary, main .btn.p')].filter(shown)
@@ -195,7 +198,7 @@ async function main() {
             }
             if (m.sideways > 0) fail(where, 'the page scrolls sideways by ' + m.sideways + ' px');
             // The design's kicker and standing line ("Administrator only. ...") are fixed words, never admin data.
-            if (url === '/admin/controls' && m.other.filter((c) => !/^(kicker|dek)$/.test(c)).length) fail(where, 'more than the panel shows: ' + m.other.join(', '));
+            if (url === '/admin/controls' && m.other.filter((c) => !/^(kicker|kick|dek)$/.test(c)).length) fail(where, 'more than the panel shows: ' + m.other.join(', '));
             if (url === '/feed') {
               const links = await p.$$eval('.report a', (as) => as.map((a) => ({ text: a.textContent, href: a.getAttribute('href') })));
               if (links.length !== POSTS.posts.length) fail(where, links.length + ' "Sign in to report" links for ' + POSTS.posts.length + ' posts');
@@ -237,7 +240,7 @@ async function main() {
         let p = await open(admin.ctx, base, '/admin/controls', tag + ' admin /controls', fail);
         if (CHECKS) {
           const where = tag + ' admin /controls';
-          const m = await p.evaluate(() => ({ panel: document.querySelector('.signed-out').checkVisibility(), brake: document.getElementById('brake-form').checkVisibility(),
+          const m = await p.evaluate(() => ({ panel: document.getElementById('signed-out').checkVisibility(), brake: document.getElementById('brake-form').checkVisibility(),
             modes: [...document.querySelectorAll('#sl-modes button')].map((b) => [b.dataset.mode, b.getAttribute('aria-pressed')]),
             now: [...document.querySelectorAll('#sl-modes .sl-now')].filter((x) => x.checkVisibility()).map((x) => x.id + ':' + x.textContent) }));
           if (m.panel) fail(where, 'the signed-out panel shows to the administrator');
@@ -278,7 +281,7 @@ async function main() {
         const empty = await context(browser, base, { width, height, scheme, who: 'admin', queue: { open: 0, items: [] } });
         p = await open(empty.ctx, base, '/admin/review', tag + ' admin /review empty', fail);
         if (CHECKS) {
-          const t = await p.evaluate(() => document.getElementById('summary').textContent + ' | ' + (document.querySelector('#queue .empty-state') || { textContent: '' }).textContent);
+          const t = await p.evaluate(() => document.getElementById('summary').textContent + ' | ' + (document.querySelector('#queue .empty') || { textContent: '' }).textContent);
           if (!/^Nothing is waiting\. \| /.test(t) || !/JEVs checks every post/.test(t)) fail(tag + ' admin /review empty', 'no empty state: ' + t);
         }
         await shot(p, 'admin-review-' + tag + '-admin-empty');
@@ -288,7 +291,7 @@ async function main() {
         p = await open(member.ctx, base, '/feed', tag + ' member /feed', fail);
         if (CHECKS) {
           const where = tag + ' member /feed';
-          if (await p.locator('main .signed-out').isVisible()) fail(where, 'the signed-out panel shows to a member');
+          if (await p.locator('#signed-out').isVisible()) fail(where, 'the signed-out panel shows to a member');
           await p.locator('.report button').first().click();
           if (!(await p.locator('.report-form').count())) fail(where, 'Report no longer opens its form for a member');
         }

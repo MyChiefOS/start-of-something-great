@@ -75,7 +75,15 @@ function list(md, after) {
 const must = (m, what) => { if (!m) throw new Error('Could not read ' + what); return m; };
 
 // ---- The page skeleton (team.html's head; CODING_AGENT_SPEC.md 5.3) ---------------------------------------------------
-function page({ file, heading, description, ogDescription, main, mainClass = 'story', scripts = [] }) {
+// The design's inline styles, as the classes design.css holds for them (tools/design/css.js collects every style the
+// design uses). A declaration the design never uses has no class, so asking for one is an error, not an unstyled page.
+const DESIGN_CSS = fs.readFileSync(path.join(ROOT, 'design.css'), 'utf8');
+function X(decl) {
+  const c = shell.cls(decl);
+  if (!DESIGN_CSS.includes('.' + c + '{')) throw new Error('Not a style the design uses: ' + decl);
+  return c;
+}
+function page({ file, heading, description, ogDescription, main, scripts = [] }) {
   const url = 'https://dayonegreat.com/' + file.replace(/\.html$/, '');
   const html = `<!doctype html>
 <html lang="en">
@@ -88,9 +96,7 @@ function page({ file, heading, description, ogDescription, main, mainClass = 'st
   <link rel="canonical" href="${url}">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/design.css">
-  <link rel="stylesheet" href="/trust.css">
   <link rel="alternate" type="text/plain" href="/llms.txt" title="Day One Great for AI agents">
   <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
@@ -108,25 +114,28 @@ function page({ file, heading, description, ogDescription, main, mainClass = 'st
   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <div class="wrap">
-    <header class="site-header"></header>
-
-    <main id="main" class="${mainClass}" tabindex="-1">
-${main.map((l) => (l ? '      ' + l : '')).join('\n')}
-    </main>
-
-    <footer class="site-footer"></footer>
-  </div>
-  <script src="/nav.js" defer></script>
-${scripts.map((s) => '  <script src="' + s + '" defer></script>\n').join('')}</body>
+<div class="d1"><div class="wrap">
+<!-- shell:top -->
+<!-- /shell:top -->
+<main class="story" id="main" tabindex="-1">
+${main.filter((l) => l !== null).join('\n')}
+</main>
+<!-- shell:foot -->
+<!-- /shell:foot -->
+</div></div>
+<script src="/nav.js" defer></script>
+${scripts.map((s) => '<script src="' + s + '" defer></script>\n').join('')}</body>
 </html>
 `;
   return shell.render(file, html);
 }
 const src = (f, text) => '<a href="' + BLOB + f + '">' + (text || f) + '</a>';
 const pill = (label, kind) => '<span class="pill' + (kind ? ' ' + kind : '') + '">' + esc(label) + '</span>';
-const tableOpen = (caption) => ['<div class="table-wrap" tabindex="0" role="region" aria-label="' + esc(caption) + '"><table class="data">', '  <caption>' + caption + '</caption>'];
+// The design's table: a scroll box (focusable, named, so a keyboard can scroll it: spec 5.6) and a caption for screen
+// readers (the design shows none).
+const tableOpen = (caption) => ['<div class="' + X('overflow-x:auto;max-width:100%') + '" tabindex="0" role="region" aria-label="' + esc(caption) + '"><table class="' + X('min-width:34rem') + '">', '<caption class="visually-hidden">' + caption + '</caption>'];
+// A cell's second line: the words a state was read from, printed under it.
+const sub = (html) => '<br><span class="fine">' + html + '</span>';
 
 // ---- Status -----------------------------------------------------------------------------------------------------
 // A role's state, from USE-CASES.md's "Works today" and "Missing code" cells only (the file has no state field):
@@ -161,19 +170,19 @@ function status() {
   const every = 60 % perHour === 0 ? 'Every ' + 60 / perHour + ' minutes' : perHour + ' times an hour';
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const main = [
-    '<div class="notice"><b>Proposed.</b> Generated from <code>ROADMAP.md</code> and <code>USE-CASES.md</code> before each commit; the values in the card load live from <a href="/api/status">/api/status</a> and <a href="/api/ready">/api/ready</a>. The public log’s health (tree size, checkpoints, witnesses) joins them when the log is built (phase 2); it isn’t yet.</div>',
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>Status</h1>',
     '<p class="dek">What works, what is built but not proven, and what is not built. Dates are the originals; a slipped date keeps its original target beside the new one.</p>',
-    '<div class="card live-card">',
-    '  <div class="live-row">',
-    '    <div><p class="kicker">JEVs mode</p>' + '<span class="pill a big" id="live-jevs">' + esc(cap(mode)) + '</span><p class="fine src">On GitHub, from the repository’s <a href="' + BLOB + 'jevs/mode">jevs/mode</a>. The site’s own mode isn’t in /api/status.</p></div>',
-    '    <div><p class="kicker">Site sign-in</p>' + '<span class="pill" id="live-signin">Not checked</span><p class="fine src">From <a href="/api/ready">/api/ready</a>, when this page’s script runs.</p><p class="fine src" id="live-signin-now" hidden></p></div>',
-    '    <div><p class="kicker">Go-live</p>' + '<span class="pill' + (stage === 'public' ? ' f' : '') + '" id="live-stage">' + (stage === 'public' ? 'Open' : 'Closed') + '</span><p class="fine src">What <a href="' + BLOB + 'launch.json">launch.json</a> says; only Aaron’s merge changes it.</p><p class="fine src" id="live-stage-now" hidden></p></div>',
-    '    <div><p class="kicker">Uptime check</p>' + '<span class="pill" id="live-uptime">' + esc(every) + '</span><p class="fine src">The schedule in <a href="' + BLOB + '.github/workflows/uptime.yml">uptime.yml</a>; a failure opens a <a href="' + REPO + '/issues?q=label%3Auptime">GitHub issue</a>.</p><p class="fine src" id="live-uptime-now" hidden></p></div>',
-    '  </div>',
-    '  <p class="fine live-line" id="live-status" role="status">These are the repository’s values. The live ones load with JavaScript from /api/status and /api/ready.</p>',
+    '<div class="card ' + X('margin-bottom:8px') + '">',
+    '<div class="' + X('display:flex;gap:28px;flex-wrap:wrap;align-items:center') + '">',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">JEVs mode</p><span class="pill a ' + X('font-size:15px') + '" id="live-jevs">' + esc(cap(mode)) + '</span></div>',
+    // Under each pill, what our own API answers right now (status.js fills and shows the line).
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Site sign-in</p><span class="pill" id="live-signin">Not checked</span><p class="fine" id="live-signin-now" hidden></p></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Go-live</p><span class="pill' + (stage === 'public' ? ' f' : '') + '" id="live-stage">' + (stage === 'public' ? 'Open' : 'Closed') + '</span><p class="fine" id="live-stage-now" hidden></p></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Uptime check</p><span class="pill" id="live-uptime">' + esc(every) + '</span><p class="fine" id="live-uptime-now" hidden></p></div>',
     '</div>',
+    '</div>',
+    '<p class="fine" id="live-status" role="status">JEVs mode is the repository’s <a href="' + BLOB + 'jevs/mode">jevs/mode</a>; go-live is <a href="' + BLOB + 'launch.json">launch.json</a>; the uptime check is the schedule in <a href="' + BLOB + '.github/workflows/uptime.yml">uptime.yml</a>. Site sign-in and the live values load from <a href="/api/status">/api/status</a> and <a href="/api/ready">/api/ready</a>.</p>',
     '<h2>Each role, end to end</h2>',
     '<p class="fine">From the use-case checklist, ' + src('USE-CASES.md') + ' (checked ' + esc(checked) + '). A row is done only when its “done when” passes live. The file has no state field, so each state is read from its “Works today” words, which are printed under it; nothing is called proven live unless the file says live.</p>',
     ...tableOpen('Every role in production, from USE-CASES.md'),
@@ -183,14 +192,14 @@ function status() {
   for (const r of t.rows) {
     const [n, use, role, works, missing] = r;
     const [label, kind] = rolePill({ works, missing });
-    main.push('    <tr><td>' + esc(n) + '. ' + inline(use) + '<span class="sub">' + inline(role) + '</span></td><td>' + pill(label, kind) + '<span class="sub">' + inline(works) + '</span></td></tr>');
+    main.push('    <tr><td>' + esc(n) + '. ' + inline(use) + sub(inline(role)) + '</td><td>' + pill(label, kind) + sub(inline(works)) + '</td></tr>');
   }
   main.push('  </tbody>', '</table></div>',
     '<h2>Milestones</h2>',
     '<p class="fine">Full table on <a href="/roadmap">Roadmap</a>.</p>',
-    '<div class="acts flush"><a class="btn" href="/roadmap">Open the roadmap</a><a class="btn" href="/decisions">See JEVs decisions</a></div>',
-    '<p class="fine after">Also available as JSON at <a href="/api/status">/api/status</a>.</p>');
-  return page({ file: 'status.html', heading: 'Status', main, mainClass: 'story noticed', scripts: ['/status.js'],
+    '<div class="acts"><a class="btn" href="/roadmap">Open the roadmap</a><a class="btn" href="/decisions">See JEVs decisions</a></div>',
+    '<p class="fine">Also available as JSON at <a href="/api/status">/api/status</a>.</p>');
+  return page({ file: 'status.html', heading: 'Status', main, scripts: ['/status.js'],
     description: 'What works on Day One Great, what is built but not proven, and what is not built: every role from the use-case checklist, with the live go-live stage and sign-in.',
     ogDescription: 'What works, what is built but not proven, and what is not built.' });
 }
@@ -219,7 +228,7 @@ function roadmap() {
   const done = must(md.split('\n').find((l) => /^"Done" means/.test(l)), 'the "Done" line in ROADMAP.md');
   const how = list(md, /^## How we report/);
   const main = [
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>Roadmap</h1>',
     '<p class="dek">' + inline(dek) + '</p>',
     ...tableOpen('Every milestone, from ROADMAP.md'),
@@ -229,7 +238,7 @@ function roadmap() {
   for (const [name, target, actual, result] of t.rows) {
     const [label, kind] = roadmapPill(result);
     const words = result.replace(/^[✅❌]\s*/u, '');
-    const note = words.toLowerCase() === label.toLowerCase() ? '' : '<span class="sub">' + inline(words) + '</span>';
+    const note = words.toLowerCase() === label.toLowerCase() ? '' : sub(inline(words));
     main.push('    <tr><td>' + inline(name) + '</td><td>' + inline(target) + '</td><td>' + inline(actual) + '</td><td>' + pill(label, kind) + note + '</td></tr>');
   }
   main.push('  </tbody>', '</table></div>',
@@ -263,7 +272,7 @@ async function checks() {
     ['Agent commands on GitHub', '/agent register, subagent and link', union(...Object.keys(gh.ASKS).filter((a) => /^agent\./.test(a)).map((a) => gh.ASKS[a]))]
   ];
   const main = [
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>The checks</h1>',
     '<p class="dek">JEVs asks the same public questions of every account, post and agent action. They are written in code, and no AI decides.</p>',
     '<h2>What happens to the answer</h2>',
@@ -281,12 +290,12 @@ async function checks() {
   for (const [name, when, list_] of families) {
     const qs = uniq(list_);
     if (!qs.length) throw new Error('An empty family: ' + name);
-    main.push('    <tr><td>' + esc(name) + '<span class="sub">' + esc(when) + '</span></td><td>' + esc(qs.map(title).join(', ')) + '</td><td class="id">' + qs.join(', ') + '</td></tr>');
+    main.push('    <tr><td>' + esc(name) + sub(esc(when)) + '</td><td>' + esc(qs.map(title).join(', ')) + '</td><td class="tn">' + qs.join(', ') + '</td></tr>');
   }
   main.push('  </tbody>', '</table></div>',
     '<h2>All ' + ids.length + ' questions</h2>',
     '<p class="fine">Each scores 0 to 100. The site asks one set (' + src('db/jevs.js') + ') and the GitHub gate another (' + src('supabase/functions/jevs/core.mjs', 'core.mjs') + '); where both ask a question, both versions are here. The thresholds that turn scores into low, medium and high are in the database, not here.</p>',
-    '<ul class="questions">');
+    '<ul>');
   for (const id of ids) {
     const s = siteById[id], g = ghById[id];
     const name = s && g && s.title !== g.title ? s.title + ' (on GitHub: ' + g.title + ')' : title(id);
@@ -329,32 +338,31 @@ function risks() {
   const statuses = ['Accepted', 'Fixed', 'Open', 'Not signed off', 'Not in phase 1', 'See the sign-off'].filter((s) => count((r) => r.status === s));
   const bands = ['Critical', 'High', 'Medium', 'Low', 'Unknown'].filter((b) => count((r) => r.band === b));
   const main = [
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>Risk register</h1>',
     '<p class="dek">' + inline(intro) + '</p>',
     '<ul>', ...how.map((h) => '  <li>' + inline(h) + '</li>'), '</ul>',
     '<h2>The register in numbers</h2>',
-    '<div class="stats">',
-    '  <div class="card"><p class="num">' + rows.length + '</p><p class="fine">risks recorded</p></div>',
-    ...statuses.map((s) => '  <div class="card"><p class="num">' + count((r) => r.status === s) + '</p><p class="fine">' + esc(s.toLowerCase()) + '</p></div>'),
+    '<div class="' + X('display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:12px;margin:8px 0 20px') + '">',
+    ...[[rows.length, 'risks recorded']].concat(statuses.map((s) => [count((r) => r.status === s), s.toLowerCase()])).map(([n, w]) => '<div class="card ' + X('padding:14px 18px') + '"><span class="num ' + X('font-size:30px;line-height:1') + '">' + n + '</span><p class="fine ' + X('margin:4px 0 0!important') + '">' + esc(w) + '</p></div>'),
     '</div>',
     '<p class="fine">Counted from ' + src('RISKS.md') + ', last reviewed ' + reviewed + '. Each status is read from the row’s “Aaron’s sign-off” words, which are in the table.</p>',
     '<h2>Every risk</h2>',
     '<nav class="filters" aria-label="Filter the risks">',
-    '  <div><span class="label">Status</span><a class="btn s" href="/risks" data-filter="status" data-value="" aria-current="true">All</a>' + statuses.map((s) => '<a class="btn s" href="/risks?status=' + slug(s) + '" data-filter="status" data-value="' + slug(s) + '">' + esc(s) + '</a>').join('') + '</div>',
-    '  <div><span class="label">Severity</span><a class="btn s" href="/risks" data-filter="severity" data-value="" aria-current="true">All</a>' + bands.map((b) => '<a class="btn s" href="/risks?severity=' + slug(b) + '" data-filter="severity" data-value="' + slug(b) + '">' + esc(b) + '</a>').join('') + '</div>',
+    '<p class="fine ' + X('margin:0 0 4px') + '">Status</p><div class="chips"><a class="on" href="/risks" data-filter="status" data-value="" aria-current="true">All</a>' + statuses.map((s) => '<a href="/risks?status=' + slug(s) + '" data-filter="status" data-value="' + slug(s) + '">' + esc(s) + '</a>').join('') + '</div>',
+    '<p class="fine ' + X('margin:0 0 4px') + '">Severity</p><div class="chips"><a class="on" href="/risks" data-filter="severity" data-value="" aria-current="true">All</a>' + bands.map((b) => '<a href="/risks?severity=' + slug(b) + '" data-filter="severity" data-value="' + slug(b) + '">' + esc(b) + '</a>').join('') + '</div>',
     '</nav>',
-    '<p class="fine shown" id="shown" role="status">All ' + rows.length + ' risks.</p>',
+    '<p class="fine" id="shown" role="status">All ' + rows.length + ' risks.</p>',
     ...tableOpen('The risk register, from RISKS.md'),
     '  <thead><tr><th scope="col">ID</th><th scope="col">Risk and its control</th><th scope="col">Severity (est.)</th><th scope="col">Owner</th><th scope="col">Due</th><th scope="col">Aaron’s sign-off</th><th scope="col">Status</th></tr></thead>',
     '  <tbody id="risk-rows">'
   ];
   for (const r of rows) {
-    main.push('    <tr id="' + esc(r.id.toLowerCase()) + '" data-status="' + slug(r.status) + '" data-severity="' + slug(r.band) + '"><td class="id">' + esc(r.id) + '</td><td>' + inline(r.risk) + '<span class="sub"><strong>Control:</strong> ' + inline(r.control) + '</span></td><td>' + inline(r.severity) + '</td><td>' + inline(r.owner) + '</td><td>' + inline(r.due) + '</td><td>' + (r.signoff ? inline(r.signoff) : '<span class="sub">Blank: not yet accepted</span>') + '</td><td>' + pill(r.status, STATUS_KIND[r.status]) + '</td></tr>');
+    main.push('    <tr id="' + esc(r.id.toLowerCase()) + '" data-status="' + slug(r.status) + '" data-severity="' + slug(r.band) + '"><td class="tn">' + esc(r.id) + '</td><td>' + inline(r.risk) + sub('<strong>Control:</strong> ' + inline(r.control)) + '</td><td>' + inline(r.severity) + '</td><td>' + inline(r.owner) + '</td><td>' + inline(r.due) + '</td><td>' + (r.signoff ? inline(r.signoff) : '<span class="fine">Blank: not yet accepted</span>') + '</td><td>' + pill(r.status, STATUS_KIND[r.status]) + '</td></tr>');
   }
   main.push('  </tbody>', '</table></div>',
     '<p class="fine">Source: ' + src('RISKS.md') + ', with Aaron’s decisions that the rows are measured against. Generated before each commit. See also <a href="/security">Security</a> and <a href="/operations">the operations log</a>.</p>');
-  return page({ file: 'risks.html', heading: 'Risk register', main, mainClass: 'story dash', scripts: ['/risks.js'],
+  return page({ file: 'risks.html', heading: 'Risk register', main, scripts: ['/risks.js'],
     description: 'Every known Day One Great risk and limit, with its compensating control, owner, due date and Aaron’s sign-off, from RISKS.md.',
     ogDescription: 'Every known risk and limit, with its control, owner, due date and sign-off.' });
 }
@@ -372,7 +380,7 @@ function operations() {
   const after = must(md.split('\n').find((l) => /^Those stay with Aaron\./.test(l)), 'the line after the never list');
   const shown = t.rows.slice(-SHOW_OPS).reverse();
   const main = [
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>Operations log</h1>',
     '<p class="dek">' + inline(intro) + '</p>',
     '<h2>How each entry happens</h2>',
@@ -382,12 +390,12 @@ function operations() {
     '<p>' + inline(after) + ' If the site must come off the internet at once, the steps are in <a href="' + BLOB + 'OPERATIONS.md#runbook-close-the-site-now">the runbook</a>.</p>',
     '<h2>Every action, newest first</h2>',
     '<p class="fine">' + (t.rows.length > SHOW_OPS ? 'The ' + SHOW_OPS + ' most recently recorded of ' + t.rows.length + ' entries' : 'All ' + t.rows.length + ' entries') + ', in reverse of the order they were recorded; times are UTC. ' + (t.rows.length > SHOW_OPS ? 'The older ones are in ' : 'The source is ') + src('OPERATIONS.md') + '. Generated before each commit.</p>',
-    '<ol class="timeline" reversed>'
+    '<div class="stack">'
   ];
   for (const [when, action, where, agreed, undo, result] of shown) {
-    main.push('  <li><p class="when">' + inline(when) + '</p><p class="what">' + inline(action) + '</p><dl class="def"><dt>Where</dt><dd>' + inline(where) + '</dd><dt>Agreement</dt><dd>' + inline(agreed) + '</dd><dt>To undo</dt><dd>' + inline(undo) + '</dd><dt>Result</dt><dd>' + inline(result) + '</dd></dl></li>');
+    main.push('<div class="card"><p class="fine ' + X('margin:0 0 4px!important') + '">' + inline(when) + '</p><p class="' + X('margin:0 0 4px!important') + '">' + inline(action) + '</p><dl><dt>Where</dt><dd>' + inline(where) + '</dd><dt>Agreement</dt><dd>' + inline(agreed) + '</dd><dt>To undo</dt><dd>' + inline(undo) + '</dd><dt>Result</dt><dd>' + inline(result) + '</dd></dl></div>');
   }
-  main.push('</ol>');
+  main.push('</div>');
   return page({ file: 'operations.html', heading: 'Operations log', main,
     description: 'Every action Claude takes on Day One Great’s accounts and settings for Aaron, with his recorded agreement, how to undo it and the result, from OPERATIONS.md.',
     ogDescription: 'Every action taken on the accounts and settings, with Aaron’s agreement and the result.' });
@@ -438,7 +446,7 @@ function limits() {
     ['An owner whose agents act far too much', 'Past ' + hard.value + ' actions an hour, or ' + copies.value + ' copies of other owners’ posts, their agents go back to drafting for 24 hours, with a notice and a way to appeal', hard.file]
   ];
   const main = [
-    '<p class="kicker">Trust</p>',
+    '<p class="kick">Trust</p>',
     '<h1>Limits</h1>',
     '<p class="dek">' + inline(crit('F4').replace(/ \(wording approved[^)]*\)/, '')) + '</p>',
     '<h2>Posting</h2>',

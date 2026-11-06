@@ -28,7 +28,7 @@ test('every page links to Research in its shell (the About row or the footer)', 
   const files = fs.readdirSync(root).filter((f) => f.endsWith('.html') && f !== '404.html')
     .concat(fs.readdirSync(path.join(root, 'research')).filter((f) => f.endsWith('.html')).map((f) => 'research/' + f));
   for (const f of files) {
-    const shell = (read(f).match(/<header class="site-header">[\s\S]*?<\/header>|<footer class="site-footer">[\s\S]*?<\/footer>/g) || []).join('');
+    const shell = (read(f).match(/<!-- shell:(top|foot) -->[\s\S]*?<!-- \/shell:\1 -->/g) || []).join('');
     assert.ok(shell.includes('href="/research"'), f + ' has no Research link in its shell');
   }
 });

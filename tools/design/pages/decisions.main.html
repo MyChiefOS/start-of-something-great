@@ -1,0 +1,61 @@
+<div class="notice" style="margin-top:24px"><b style="font-family:var(--display)">Proposed.</b> These numbers are live and public, as counts and question IDs only. A link from each row to its entry in the public log comes with phase 2.</div><main class="story" id="main" tabindex="-1">
+<p class="kick">Trust</p>
+<h1>JEVs decisions</h1>
+<p class="dek">What the automatic checks decided, in public. Counts and question IDs only: never a post's text, an account name or a score.</p>
+<p class="fine"><span class="pill m">Live counts</span> <span id="counted"></span></p>
+<p class="fine" id="status" role="status" aria-live="polite">Loading the counts…</p>
+<p id="retry-row" hidden><button class="btn s" type="button" id="retry">Try again</button></p>
+<noscript><p class="fine">This page counts with a small script. The same numbers are at <a href="/api/decisions">/api/decisions</a>, as JSON.</p></noscript>
+<h2>Last 24 hours</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:12px;margin:8px 0 20px">
+<div class="card" style="padding:14px 18px"><span class="num" style="font-size:30px;line-height:1" id="n-low">–</span><p class="fine" style="margin:4px 0 0!important">low risk, went ahead</p></div>
+<div class="card" style="padding:14px 18px"><span class="num" style="font-size:30px;line-height:1" id="n-medium">–</span><p class="fine" style="margin:4px 0 0!important">medium, waiting for the owner</p></div>
+<div class="card" style="padding:14px 18px"><span class="num" style="font-size:30px;line-height:1" id="n-high">–</span><p class="fine" style="margin:4px 0 0!important">high risk, held</p></div>
+<div class="card" style="padding:14px 18px"><span class="num" style="font-size:30px;line-height:1" id="n-appeals">–</span><p class="fine" style="margin:4px 0 0!important">appeals open</p></div>
+</div>
+<p class="fine" id="day-note" hidden></p>
+<h2>Latest high-risk decisions</h2>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="high-caption">
+<table style="min-width:34rem">
+<caption class="visually-hidden" id="high-caption">The last 7 days, by day (UTC), place and outcome: how many, and the questions that scored 25 or more.</caption>
+<thead><tr><th scope="col">When</th><th scope="col">Where</th><th scope="col">Questions that flagged it</th><th scope="col">Outcome</th><th scope="col">Decisions</th></tr></thead>
+<tbody id="high"></tbody>
+</table>
+</div>
+<div class="empty" id="high-empty" hidden>No high-risk decisions in the last 7 days. When JEVs holds a post or an action, the day, the place and the questions appear here.</div>
+<h2>Second Look</h2>
+<div class="card" style="max-width:42rem" id="sl" hidden>
+<span class="pill a" id="sl-mode"></span>
+<p style="margin:10px 0 8px!important" id="sl-text"></p>
+<div style="display:flex;align-items:center;gap:14px" id="sl-row">
+<span class="num" style="font-size:38px;line-height:1" id="sl-agree"></span>
+<div style="flex:1"><div class="trk" id="sl-track" role="progressbar" aria-labelledby="sl-agree" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0"><i id="sl-bar"></i></div></div>
+</div>
+<p class="fine" style="margin:8px 0 0!important" id="sl-fine"></p>
+</div>
+<p class="fine" id="sl-none" hidden>Second Look isn’t set up in the database yet.</p>
+<h2>Human oversight</h2>
+<p id="means"><strong>What this means:</strong> <span id="means-text">the numbers load with the counts above.</span></p>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="people-caption">
+<table style="min-width:34rem">
+<caption class="visually-hidden" id="people-caption">Decisions a person made on the review queue (held, hidden and reported posts). A rate is given only from 20 decisions.</caption>
+<thead><tr><th scope="col">Measure</th><th scope="col">Last 7 days</th><th scope="col">Last 30 days</th></tr></thead>
+<tbody>
+<tr><th scope="row">Decided (the sample)</th><td id="p7-decided">–</td><td id="p30-decided">–</td></tr>
+<tr><th scope="row">Approval rate (approved or kept)</th><td id="p7-approved">–</td><td id="p30-approved">–</td></tr>
+<tr><th scope="row">Removal rate</th><td id="p7-removed">–</td><td id="p30-removed">–</td></tr>
+<tr><th scope="row">Undone later (override rate)</th><td id="p7-undone">–</td><td id="p30-undone">–</td></tr>
+<tr><th scope="row">Median time to decision</th><td id="p7-median">–</td><td id="p30-median">–</td></tr>
+</tbody>
+</table>
+</div>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="queue-caption">
+<table style="min-width:34rem">
+<caption class="visually-hidden" id="queue-caption">The review queue now.</caption>
+<thead><tr><th scope="col">Waiting</th><th scope="col">Median age</th><th scope="col">Oldest</th></tr></thead>
+<tbody><tr><td id="q-open">–</td><td id="q-median">–</td><td id="q-oldest">–</td></tr></tbody>
+</table>
+</div>
+<p class="fine">Not measured yet: planted test items, which will test Second Look, not Aaron (phase 4), and the hours a person spends reviewing each week, against the 6-hour target (ACCEPTANCE.md, O1). There is no edit-then-approve on the queue, so there is no edit rate.</p>
+<p class="fine" style="margin-top:20px">Read the questions on <a href="checks.html">The checks</a>. How a held post is handled: <a href="moderation.html">Moderation</a>.</p>
+</main>

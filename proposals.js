@@ -19,6 +19,9 @@
   var list = document.getElementById('proposals');
   var summary = document.getElementById('summary');
 
+  // Each entry is the design's card, cloned from the page's <template> and filled with text.
+  var tpl = document.getElementById('card-tpl');
+  function slot(n, k) { return n.querySelector('[data-slot="' + k + '"]'); }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -39,27 +42,29 @@
   }
 
   function card(p) {
-    var a = el('article', 'card');
-    a.appendChild(el('span', 'pill' + (PILL[p.status] ? ' ' + PILL[p.status] : ''), STATUS_TEXT[p.status] || 'Unknown'));
-    a.appendChild(el('h3', null, p.title || 'Untitled proposal'));
-    a.appendChild(el('p', 'fine', filedBy(p) + ' · #' + p.number + ' · ' + day(p.created_at)));
-    if (p.change) a.appendChild(el('p', 'proposal-text', p.change));
+    var a = tpl.content.firstElementChild.cloneNode(true);
+    var pill = slot(a, 'status');
+    pill.className = 'pill' + (PILL[p.status] ? ' ' + PILL[p.status] : '');
+    pill.textContent = STATUS_TEXT[p.status] || 'Unknown';
+    slot(a, 'title').textContent = p.title || 'Untitled proposal';
+    slot(a, 'by').textContent = filedBy(p) + ' · #' + p.number + ' · ' + day(p.created_at);
+    var text = slot(a, 'text');
+    if (p.change) text.textContent = p.change; else text.remove();
+    var linkP = slot(a, 'link');
     if (p.why) {
-      var why = el('p', 'proposal-text');
+      var why = text.cloneNode(false);
       why.appendChild(el('strong', null, 'Why: '));
       why.appendChild(document.createTextNode(p.why));
-      a.appendChild(why);
+      a.insertBefore(why, linkP);
     }
-    if (p.edited_after_approval) a.appendChild(el('p', 'flag', 'Edited after approval: check the history on GitHub.'));
+    if (p.edited_after_approval) { var f = text.cloneNode(false); f.className = 'fine ' + text.className; f.textContent = 'Edited after approval: check the history on GitHub.'; a.insertBefore(f, linkP); }
     var url = safeGithubUrl(p.url);
     if (url) {
       var link = el('a', null, 'Discuss on GitHub (' + (p.comments || 0) + ')');
       link.href = url;
       link.rel = 'noopener';
-      var foot = el('p', 'fine');
-      foot.appendChild(link);
-      a.appendChild(foot);
-    }
+      linkP.appendChild(link);
+    } else linkP.remove();
     return a;
   }
 
@@ -69,7 +74,7 @@
       var ps = (data && data.proposals) || [];
       if (!ps.length) {
         summary.textContent = 'No proposals yet.';
-        var empty = el('div', 'empty-state');
+        var empty = el('div', 'empty');
         empty.appendChild(el('p', null, 'No proposals yet. Be the first.'));
         var p = el('p');
         var link = el('a', null, 'Propose a change');

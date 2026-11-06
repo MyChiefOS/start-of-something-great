@@ -391,5 +391,5 @@ test('the copy on /join promises no time, and says only what the code and the JE
   // The field and path-button borders in --muted (3:1 or more in both schemes; measured in scripts/check-join-panel.js).
   const css = fs.readFileSync(path.join(__dirname, '..', 'join.css'), 'utf8');
   assert.match(css, /\.path-choice, \.join-panel \.field \{[^}]*border: 1px solid var\(--muted\);/);
-  assert.match(css, /\.join-panel \.button:not\(\.primary\) \{ border-color: var\(--muted\); \}/);
+  assert.match(css, /\.join-panel \.btn:not\(\.p\) \{ border-color: var\(--muted\); \}/, 'Copy and Change, the design\'s .btn.s');
 });

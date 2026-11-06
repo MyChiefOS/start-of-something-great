@@ -1,5 +1,6 @@
 // A small stand-in DOM for running a page's real <main> and script without a browser, copied from
-// test/ux-signed-out.test.js (UX PR D) with three additions: removeAttribute, a ?query for location.search, and a
+// test/ux-signed-out.test.js (UX PR D) with three additions (and, for the design's markup of Nov 5, <template> with
+// .content and cloneNode, as the pages' scripts clone their cards): removeAttribute, a ?query for location.search, and a
 // record of every address fetched, every history.replaceState and every location.replace (a hash can be given too). Not a test file itself (test/*.test.js only).
 'use strict';
 const fs = require('fs');
@@ -43,7 +44,17 @@ class El {
   focus() { this.ownerDocument.focused = this; }
   scrollIntoView() {}
   reset() {}
-  all() { return this.children.flatMap((c) => [c, ...c.all()]); }
+  // A <template>'s content is not part of the page (as in a browser): it is reached through .content only.
+  all() { return this.tagName === 'TEMPLATE' ? [] : this.children.flatMap((c) => [c, ...c.all()]); }
+  get firstElementChild() { return this.children.find((c) => c.tagName !== '#TEXT') || null; }
+  get content() { return this.tagName === 'TEMPLATE' ? { firstElementChild: this.firstElementChild } : undefined; }
+  cloneNode(deep) {
+    const c = new El(this.tagName.toLowerCase(), this.ownerDocument);
+    c.attrs = { ...this.attrs }; c.className = this.className; c.hidden = this.hidden; c.open = this.open; c._text = this._text;
+    if (this.tagName === '#TEXT') c.tagName = '#TEXT';
+    if (deep) for (const k of this.children) c.appendChild(k.cloneNode(true));
+    return c;
+  }
   // Selectors these scripts use: tag, .class, tag.class, #id, [attr], [attr="v"], tag[attr], and "A B" (descendant).
   matches(sel) {
     const m = /^([a-z0-9]*)(?:#([\w-]+))?(?:\.([\w-]+))?(?:\[([\w-]+)(?:="([^"]*)")?\])?$/i.exec(sel);
