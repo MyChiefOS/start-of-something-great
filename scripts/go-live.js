@@ -166,7 +166,9 @@ function page() {
 if (require.main === module) {
   const out = page();
   const file = path.join(ROOT, OUT);
-  const now = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+  // One read, no check-then-read (CodeQL: file system race).
+  let now = null;
+  try { now = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (process.argv.includes('--check')) {
     if (now !== out) { console.log(OUT + ' differs from RELEASE-CHECKLIST.md, ACCEPTANCE.md or launch.json. Run: node scripts/go-live.js'); process.exitCode = 1; }
     else console.log(OUT + ' matches its sources.');
