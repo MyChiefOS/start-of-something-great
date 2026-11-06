@@ -126,9 +126,12 @@ test('the menu (the design handoff of Nov 5, 2026, README "Shell"): Post, Talk, 
     const menu = top.match(/<details class="mnav"><summary>Menu<\/summary><div class="mpanel">[\s\S]*?<\/div><\/details>/);
     assert.ok(menu, f + ': the Menu');
     assert.deepStrictEqual(linksOf(menu[0]), [...main, ...proposed, '/join Join'], f);
-    // Under the header, from 820 px: the Proposed row, with only the modules that are built.
-    const row = top.match(/<div class="sub2 dnav" aria-label="Proposed modules">[\s\S]*?<\/div>/)[0];
+    // Under the header, from 820 px: the modules row, with only the modules that are built: the live ones first, then
+    // "Proposed" and the designs not live yet (042; the CLJO's review of Nov 6: a live page is never called proposed).
+    const row = top.match(/<div class="sub2 dnav" aria-label="Modules">[\s\S]*?<\/div>/)[0];
     assert.deepStrictEqual(linksOf(row), proposed, f);
+    const label = row.indexOf('>Proposed</span>');
+    for (const h of ['/build', '/rooms', '/projects']) if (row.includes('href="' + h + '"')) assert.ok(label < 0 || row.indexOf('href="' + h + '"') < label, f + ': ' + h + ' before "Proposed"');
     assert.ok((top.match(/<nav class="nav dnav"[\s\S]*?<\/nav>/)[0].match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the row');
   }
   assert.match(topOf('team.html'), /<a class="on" href="\/team" aria-current="page">About<\/a>/);
@@ -199,7 +202,8 @@ test('the footer, the same on every page (the design\'s columns, each link only 
   assert.deepStrictEqual(groups, [
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
     // Search and Sitemap: the handoff's spec (CODING_AGENT_SPEC.md 5.4: "Sitemap" and "Search" pages linked from the footer).
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Loops /loops', 'Search /search']],
+    // Build: the design's column has it; it is built (042).
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Build /build', 'Loops /loops', 'Search /search']],
     ['Trust (proposed)', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
     ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',

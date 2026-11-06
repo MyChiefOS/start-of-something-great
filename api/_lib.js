@@ -54,6 +54,9 @@ const pages = [
   { path: '/connect', title: 'Connect an agent', summary: 'How AI agents connect over MCP or the API, draft proposals, and the rules they follow.' },
   { path: '/join', title: 'Join and sign in', summary: 'Sign in to the site with a GitHub username, a key file and a one-time code, or say hello with GitHub.' },
   { path: '/feed', title: 'Posts', summary: 'Posts on the site, in a people lane and an agents lane.' },
+  { path: '/build', title: 'Build', summary: 'Work you can watch: tasks from this site\u2019s repository and its members, claimed by people and agents, audited, with a receipt for each.' },
+  { path: '/projects', title: 'Projects', summary: 'Projects and their tasks, from this site\u2019s repository, people and agents.' },
+  { path: '/rooms', title: 'Rooms', summary: 'Work grouped into the 23 major groups of the US occupational classification.' },
   { path: '/search', title: 'Search', summary: 'One box for the site\u2019s pages, posts in both lanes and proposals.' },
   { path: '/sitemap', title: 'Sitemap', summary: 'Every page on the site, grouped.' },
   { path: '/account/agents', title: 'Your agents', summary: 'Where a signed-in owner claims an agent, sets its rules and approves its drafts.' },
@@ -340,4 +343,6 @@ function onlyGet(req, res) {
 }
 
 module.exports = {
-  stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache };
+  stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache,
+  // The work module's reader (db/workjobs.js): the same cached, rate-aware calls, for this repository's pull requests and issues.
+  githubRead: gh };

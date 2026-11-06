@@ -148,6 +148,11 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "build.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "connect.html": {
   "ids": [
    [
@@ -469,6 +474,16 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "project.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
+ "projects.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "proposals.html": {
   "ids": [
    [
@@ -643,6 +658,16 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "room.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
+ "rooms.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "search.html": {
   "ids": [],
   "links": {
@@ -749,6 +774,11 @@
   "scripts": [
    "<script src=\"/nav.js\" defer></script>"
   ]
+ },
+ "task.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
  },
  "team.html": {
   "ids": [

@@ -1,44 +1,44 @@
 /* The paper's own parts (contents, figures, maths, tables, how to cite) inside design.css; its figures are inline SVG, coloured from the theme. */
-.d1 .toc { margin: 2.5rem 0 1rem; padding: 1rem 1.25rem; border: 1px solid var(--rule); border-radius: 10px; max-width: 38rem; }
-.d1 .story .toc h2.toc-title { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.5rem; }
-.d1 .toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; font-family: var(--display); font-size: 0.95rem; }
-.d1 .toc li { margin: 0 0 0.35rem; break-inside: avoid; }
-.d1 .toc a { text-decoration: none; color: var(--text); }
-.d1 .toc a:hover { color: var(--amber); }
-@media (max-width: 34rem) { .d1 .toc ol { columns: 1; } }
-.d1 .paper ol,.d1 .paper ul { max-width: 38rem; padding-left: 1.4rem; }
-.d1 .paper h2 { scroll-margin-top: 1rem; }
-.d1 .math-block { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.25rem; padding: 0.25rem 0; }
-.d1 .math-block math { font-size: 1.15em; }
-.d1 .figure { margin: 2rem 0 2.25rem; }
-.d1 .fig-scroll { max-width: 100%; overflow-x: auto; }
-.d1 .fig-scroll:focus-visible,.d1 .math-block:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.d1 .figure svg.fig { display: block; width: 100%; min-width: 40rem; height: auto; font-family: var(--display); }
-.d1 .figure figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
-.d1 .table-wrap { max-width: 100%; overflow-x: auto; margin: 1rem 0 1.5rem; }
-.d1 .table-wrap:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.d1 .paper table { border-collapse: collapse; font-size: 0.9rem; line-height: 1.45; min-width: 36rem; }
-.d1 .paper th,.d1 .paper td { text-align: left; vertical-align: top; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid var(--rule); }
-.d1 .paper th { font-family: var(--display); font-weight: 600; color: var(--muted); border-bottom-color: var(--amber); }
-.d1 .cite { padding: 0.85rem 1rem; border: 1px solid var(--rule); border-radius: 8px; font-size: 0.95rem; }
+.d1 .toc{margin:2.5rem 0 1rem;padding:1rem 1.25rem;border:1px solid var(--rule);border-radius:10px;max-width:38rem}
+.d1 .story .toc h2.toc-title{font-size:0.95rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--amber);margin:0 0 0.5rem}
+.d1 .toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:2rem;font-family:var(--display);font-size:0.95rem}
+.d1 .toc li{margin:0 0 0.35rem;break-inside:avoid}
+.d1 .toc a{text-decoration:none;color:var(--text)}
+.d1 .toc a:hover{color:var(--amber)}
+@media (max-width: 34rem){.d1 .toc ol{columns:1} }
+.d1 .paper ol,.d1 .paper ul{max-width:38rem;padding-left:1.4rem}
+.d1 .paper h2{scroll-margin-top:1rem}
+.d1 .math-block{max-width:100%;overflow-x:auto;margin:1rem 0 1.25rem;padding:0.25rem 0}
+.d1 .math-block math{font-size:1.15em}
+.d1 .figure{margin:2rem 0 2.25rem}
+.d1 .fig-scroll{max-width:100%;overflow-x:auto}
+.d1 .fig-scroll:focus-visible,.d1 .math-block:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.d1 .figure svg.fig{display:block;width:100%;min-width:40rem;height:auto;font-family:var(--display)}
+.d1 .figure figcaption{color:var(--muted);font-size:0.9rem;margin-top:0.5rem}
+.d1 .table-wrap{max-width:100%;overflow-x:auto;margin:1rem 0 1.5rem}
+.d1 .table-wrap:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.d1 .paper table{border-collapse:collapse;font-size:0.9rem;line-height:1.45;min-width:36rem}
+.d1 .paper th,.d1 .paper td{text-align:left;vertical-align:top;padding:0.5rem 0.75rem 0.5rem 0;border-bottom:1px solid var(--rule)}
+.d1 .paper th{font-family:var(--display);font-weight:600;color:var(--muted);border-bottom-color:var(--amber)}
+.d1 .cite{padding:0.85rem 1rem;border:1px solid var(--rule);border-radius:8px;font-size:0.95rem}
 
-.d1 .fig .fig-text { fill: var(--text); }
-.d1 .fig .fig-quiet { fill: var(--muted); }
-.d1 .fig .fig-grid { stroke: var(--rule); stroke-width: 1; }
-.d1 .fig .fig-zero { stroke: var(--muted); stroke-width: 1.25; }
-.d1 .fig .fig-ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
-.d1 .fig .fig-line path { fill: none; stroke: var(--muted); stroke-width: 1.25; }
-.d1 .fig .fig-axis-fill { fill: var(--muted); }
-.d1 .fig .fig-box { fill: none; stroke: var(--muted); stroke-width: 1.25; }
-.d1 .fig .fig-box-accent { fill: var(--glow); stroke: var(--amber); stroke-width: 2; }
-.d1 .fig .fig-band { fill: var(--glow); stroke: var(--rule); stroke-width: 1; }
-.d1 .fig .fig-accent { fill: var(--amber); }
-.d1 .fig .fig-accent-soft { fill: var(--amber); fill-opacity: 0.4; }
-.d1 .fig .fig-mute { fill: var(--muted); fill-opacity: 0.75; }
-.d1 .fig .fig-mute-soft { fill: var(--muted); fill-opacity: 0.3; }
-.d1 .fig .fig-accent-range { stroke: var(--amber); stroke-opacity: 0.85; stroke-width: 6; }
-.d1 .fig .fig-mute-range { stroke: var(--muted); stroke-opacity: 0.7; stroke-width: 6; }
-.d1 .fig .fig-accent-line { fill: none; stroke: var(--amber); stroke-width: 2.25; }
-.d1 .fig .fig-mute-line { fill: none; stroke: var(--muted); stroke-width: 2.25; }
-.d1 .fig .fig-whisker { stroke: var(--text); stroke-width: 1.25; }
-.d1 .fig .fig-whisker-quiet { stroke: var(--muted); stroke-width: 1; }
+.d1 .fig .fig-text{fill:var(--text)}
+.d1 .fig .fig-quiet{fill:var(--muted)}
+.d1 .fig .fig-grid{stroke:var(--rule);stroke-width:1}
+.d1 .fig .fig-zero{stroke:var(--muted);stroke-width:1.25}
+.d1 .fig .fig-ref{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 4}
+.d1 .fig .fig-line path{fill:none;stroke:var(--muted);stroke-width:1.25}
+.d1 .fig .fig-axis-fill{fill:var(--muted)}
+.d1 .fig .fig-box{fill:none;stroke:var(--muted);stroke-width:1.25}
+.d1 .fig .fig-box-accent{fill:var(--glow);stroke:var(--amber);stroke-width:2}
+.d1 .fig .fig-band{fill:var(--glow);stroke:var(--rule);stroke-width:1}
+.d1 .fig .fig-accent{fill:var(--amber)}
+.d1 .fig .fig-accent-soft{fill:var(--amber);fill-opacity:0.4}
+.d1 .fig .fig-mute{fill:var(--muted);fill-opacity:0.75}
+.d1 .fig .fig-mute-soft{fill:var(--muted);fill-opacity:0.3}
+.d1 .fig .fig-accent-range{stroke:var(--amber);stroke-opacity:0.85;stroke-width:6}
+.d1 .fig .fig-mute-range{stroke:var(--muted);stroke-opacity:0.7;stroke-width:6}
+.d1 .fig .fig-accent-line{fill:none;stroke:var(--amber);stroke-width:2.25}
+.d1 .fig .fig-mute-line{fill:none;stroke:var(--muted);stroke-width:2.25}
+.d1 .fig .fig-whisker{stroke:var(--text);stroke-width:1.25}
+.d1 .fig .fig-whisker-quiet{stroke:var(--muted);stroke-width:1}

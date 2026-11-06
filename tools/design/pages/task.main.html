@@ -1,0 +1,29 @@
+<div class="crumbs"><a href="/build">Build</a> / <a id="crumb-project" href="/projects">Project</a> / <span id="crumb-ref">Task</span></div><main class="story" id="main" tabindex="-1">
+<p class="kick">Task</p><h1 id="title">Task</h1><p class="dek" id="dek"></p>
+<p class="fine" id="status" role="status" aria-live="polite">Loading the task…</p>
+<p id="retry-row" hidden><button class="btn s" type="button" id="retry">Try again</button></p>
+<noscript><p class="fine">This page loads with a small script. The same task is at /api/work/task?id=, as JSON.</p></noscript>
+<div id="task" hidden>
+<div class="steps" id="steps"><span data-step="open">Open</span><span data-step="claimed">Claimed</span><span data-step="submitted">Submitted</span><span data-step="audited">Audited</span><span data-step="approved">Approved</span><span data-step="anchored">Anchored</span></div>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"><span class="pill m" id="class"></span><span class="pill" id="state"></span><span class="pill m" id="size"></span></div>
+<div style="max-width:42rem"><p id="description" style="white-space:pre-wrap"></p></div>
+<dl style="max-width:38rem"><dt>Project</dt><dd><a id="project" href="/projects"></a></dd><dt>Room</dt><dd><a id="room" href="/rooms"></a></dd><dt>Posted by</dt><dd id="poster"></dd><dt>Class</dt><dd id="class-text"></dd><dt>Claim</dt><dd id="claim"></dd><dt>Audit</dt><dd>The JEVs auditor's rules first. What they can't decide, the task's poster checks (never the worker), within limits, and a sample of passes is checked again. Anyone but the worker may dispute a pass while its points are pending. Third Look, the audit AI: not built yet.</dd><dt>On GitHub</dt><dd id="github">–</dd></dl>
+<div class="acts" id="acts"><button class="btn p" type="button" id="claim-btn" hidden>Claim this task</button><button class="btn" type="button" id="release-btn" hidden>Let my claim go</button><button class="btn p" type="button" id="approve-btn" hidden>Approve the audited work</button><button class="btn" type="button" id="cancel-btn" hidden>Close this task</button><a class="btn" href="/build">Back to Build</a></div>
+<p class="fine" id="act-status" role="status" aria-live="polite"></p>
+<div class="card" id="code-card" hidden><p class="fine" style="margin:0 0 6px!important">Your claim code, shown only now</p><p style="margin:0!important"><code id="code"></code></p><p class="fine" style="margin:6px 0 0!important">Put it in the description of the pull request that does this task. When the pull request is merged into main, the site matches it to your claim.</p></div>
+<form class="card" id="submit-form" hidden><h2 style="margin-top:0!important;font-size:22px">Submit your work</h2>
+<label for="kind">What you made</label><select id="kind"><option value="pr">A pull request in this repository</option><option value="link">An https link</option><option value="file">A file, by its SHA-256</option></select>
+<label for="url" id="url-label">Address</label><input id="url" type="url" maxlength="500" placeholder="https://github.com/MyChiefOS/start-of-something-great/pull/123">
+<label for="sha" id="sha-label" hidden>SHA-256 of the file</label><input id="sha" maxlength="64" hidden>
+<label for="note">Note (optional; email addresses, phone numbers and keys are hidden)</label><textarea id="note" maxlength="2000" rows="3"></textarea>
+<p style="margin-top:14px!important"><button class="btn p" type="submit">Submit for audit</button></p></form>
+<form class="card" id="check-form" hidden><h2 style="margin-top:0!important;font-size:22px">Check this work</h2><p class="fine">You posted this task, so you check the work the rules couldn't decide. A pass approves the task; a fail needs a reason, and the worker may submit again while the claim holds. A sample of passes is checked again.</p>
+<label for="check-reason">Reason (needed to fail; email addresses, phone numbers and keys are hidden)</label><input id="check-reason" maxlength="300">
+<p class="acts"><button class="btn p" type="button" id="check-pass">Pass and approve</button><button class="btn" type="button" id="check-fail">Fail, with the reason</button></p></form>
+<h2>Submissions and audits</h2>
+<div id="subs"></div>
+<div class="empty" id="subs-empty" hidden>Nothing submitted yet.</div>
+<h2>Rules that apply</h2><ul><li>Nobody does or audits a task they posted, and no administrator decides work they did or posted.</li><li>A claim holds for 72 hours, then the task reopens if nothing was submitted.</li><li>Points come only from audited work: the task's size, never above what the audit confirms, times the audit's confidence. They have no money value, and are pending for 72 hours before they are final.</li><li>Progress counts only when the approval is in a signed checkpoint of the public log.</li></ul>
+</div>
+<template id="sub-tpl"><div class="card"><p class="fine" style="margin:0 0 6px!important" data-slot="meta"></p><p style="margin:0!important" data-slot="artifact"></p><p style="margin:6px 0 0!important;white-space:pre-wrap" data-slot="note"></p><dl><dt>JEVs auditor</dt><dd data-slot="jevs"></dd><dt>Decided</dt><dd data-slot="decided"></dd><dt>Points</dt><dd data-slot="points"></dd><dt>Seal</dt><dd><code data-slot="seal"></code> <span class="fine" data-slot="seal-check"></span></dd><dt>Log</dt><dd data-slot="log"></dd></dl><div data-slot="disputes"></div><details data-slot="dispute-wrap" hidden><summary>Dispute this pass</summary><p class="fine">Anyone signed in but the worker, while its points are pending. Say what is wrong; Aaron decides, and an upheld dispute reverses the pass.</p><label>What is wrong<textarea data-slot="dispute-reason" maxlength="500" rows="3"></textarea></label><p><button class="btn s" type="button" data-slot="dispute-send">Send the dispute</button></p></details></div></template>
+</main>
