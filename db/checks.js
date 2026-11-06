@@ -269,6 +269,11 @@ const DEFINERS = {
   'app.work_dispute_decide(uuid, text, text)': 'dog_work',
   'app.work_check_decide(uuid, text, text)': 'dog_work',
   'app.work_task_of(uuid)': 'dog_work',
+  // Third Look (044), in shadow: the timer claims and records; an administrator switches it; its figures are public.
+  'app.tl_claim(integer)': 'dog_work',
+  'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': 'dog_work',
+  'app.tl_figures()': 'dog_work',
+  'app.tl_set_mode(text)': 'dog_work',
   'app.work_brake_check(uuid)': { owner: 'dog_work', callers: '' },
   'app.work_approve_as(uuid, text, text)': { owner: 'dog_work', callers: '' },
   'app.work_party(uuid, uuid)': { owner: 'dog_work', callers: '' },

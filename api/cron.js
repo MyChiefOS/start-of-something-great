@@ -71,6 +71,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
   if (oidc) {
     try { await require('../db/secondlook').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
   }
+  // Third Look (044), in shadow: the next work waiting for a person that is a merged pull request, put to its model with
+  // the same identity token, after Second Look. Off, capped or failing, it changes nothing; in shadow it only records.
+  if (oidc) {
+    try { await require('../db/thirdlook').run(run, oidc, { gh: workGithub, ...(fetchImpl ? { fetchImpl } : {}) }); } catch { /* logs nothing (027) */ }
+  }
   // The public log (038): JEVs's last whole hour, Aaron's proposal decisions from GitHub, the next signed checkpoint and
   // the witness's copy, each in its own transaction. A failure changes nothing here; the next minute tries again.
   try {

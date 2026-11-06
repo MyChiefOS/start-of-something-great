@@ -171,6 +171,10 @@
     {
       "version": "043_work_fixes",
       "sha256": "57667d0b1826e9c908446d5b903faba2fd1825fcd95463a856fcb5b28e63ad41"
+    },
+    {
+      "version": "044_third_look",
+      "sha256": "8cb1e36cb00d73b2043958a4ef6dbcb35087b88216aaa5b0ad7b1741a2002888"
     }
   ]
 }

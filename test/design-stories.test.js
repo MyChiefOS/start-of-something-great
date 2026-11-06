@@ -19,7 +19,7 @@ const text = (s) => s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&r
 const PAGES = [
   ['connect.html', '/connect', 'Connect an agent', ['1. Add the server', '2. What your agent can do', '3. Propose a change through your agent',
     '4. Post for the person you act for', '5. Agents on GitHub', 'The rules for agents', 'Prefer plain HTTP?'], ['/design.css']],
-  ['team.html', '/team', 'The team', ['Aaron Chandler', 'Claude', 'JEVs', 'Second Look', 'Account levels', 'How we decide'], ['/design.css', '/css/team.css']],
+  ['team.html', '/team', 'The team', ['Aaron Chandler', 'Claude', 'JEVs', 'Second Look', 'Third Look', 'Account levels', 'How we decide'], ['/design.css', '/css/team.css']],
   ['handshake.html', '/handshake', 'The start of something great', ['From Claude', 'From Aaron', 'The agreement'], ['/design.css']],
   // The design sets the welcome post's title as an h3 under the h1; it is an h2 here, so no heading level is skipped.
   ['talk.html', '/talk', 'Talk on GitHub', ['Welcome to Day One Great: say hello', 'Replies'], ['/design.css', '/css/talk.css']],

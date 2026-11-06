@@ -92,6 +92,13 @@
     width($('pct-bar'), pct);
     $('pct-note').textContent = plural(n(d.projects), 'open project') + ' · ' + plural(total, 'task') + ' · ' + anchored + ' approved and in a signed checkpoint · '
       + n(d.open) + ' open, ' + n(d.in_progress) + ' in progress' + (n(d.waiting_for_person) ? ' · ' + n(d.waiting_for_person) + ' waiting for Aaron' : '');
+    // Third Look's public figures (044): counts from 1 to 4 come back as null, so no one is singled out.
+    var tl = d.third_look || {};
+    var few = function (v) { return v === null ? 'fewer than 5' : String(n(v)); };
+    $('tl-figures').textContent = tl.mode === 'off' ? 'It is switched off.'
+      : !tl.checked && tl.checked !== null ? 'It hasn’t checked any yet.'
+      : 'So far it has checked ' + few(tl.checked) + '. It would have passed ' + few(tl.would_pass) + ': the person passed ' + few(tl.agreed)
+        + ' of those and didn’t pass ' + few(tl.disagreed) + '. It gave no usable answer on ' + few(tl.no_answer) + '.';
     var pk = $('packages');
     pk.textContent = '';
     (d.packages || []).forEach(function (p) {
@@ -225,11 +232,11 @@
         var j = s.jevs || {};
         slot(c, 'jevs').textContent = j.verdict ? { pass: 'Passed', fail: 'Refused', person: 'Sent to a person', waiting: 'Waiting for GitHub' }[j.verdict] + (j.rules ? ' (rules ' + j.rules + ')' : '') : 'Not yet';
         slot(c, 'decided').textContent = s.status === 'passed' || s.status === 'failed'
-          ? (s.status === 'passed' ? 'Passed' : 'Not passed') + ' by ' + ({ jevs: 'the JEVs auditor’s rules', poster: 'the task’s poster', person: 'Aaron, as the repository’s owner' }[s.decided_by] || 'the audit') + ' · ' + txt(s.reason)
+          ? (s.status === 'passed' ? 'Passed' : 'Not passed') + ' by ' + ({ jevs: 'the JEVs auditor’s rules', poster: 'the task’s poster', person: 'Aaron, as the repository’s owner', timeout: 'the time limit' }[s.decided_by] || 'the audit') + ' · ' + txt(s.reason)
             + (s.check ? ' · Checked again: ' + ({ open: 'waiting', confirmed: 'confirmed', reversed: 'reversed' }[s.check.status] || '') : '')
           : s.status === 'reversed' ? 'Reversed: ' + txt(s.reason)
           : s.route === 'poster' ? 'Waiting for the task’s poster to check it.' : s.route === 'admin' ? 'Waiting for Aaron, as the repository’s owner.'
-          : s.route === 'held' ? 'Waiting for Third Look (not built yet): ' + txt(s.held_reason) : 'Waiting';
+          : s.route === 'held' ? 'Held: ' + txt(s.held_reason) + ' Third Look is in shadow mode and decides nothing yet, so held work not decided within 72 hours isn’t passed, and the task reopens.' : 'Waiting';
         var p = s.points;
         slot(c, 'points').textContent = p ? n(p.points) + ' = size ' + n(p.size) + ' × ' + n(p.confidence) + '% confidence × ' + n(p.independence) + '% independence · ' + (p.status === 'final' ? 'final' : 'pending until ' + when(p.final_at)) : '–';
         var seal = s.seal || {};
