@@ -35,6 +35,7 @@
     a.textContent = txt(item.ref) + ' · ' + txt(item.title);
     if (isId(item.id)) a.href = '/tasks/' + item.id;
     slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by)) + (item.reason ? ': ' + txt(item.reason) : '.')
+      : item.held_reason ? 'Sent to you: ' + txt(item.held_reason)
       : item.dispute_reason ? 'Passed by ' + (item.decided_by === 'poster' ? 'the task\u2019s poster' : item.decided_by === 'jevs' ? 'the JEVs auditor\u2019s rules' : 'an administrator') + '. The dispute:' : 'The rules that sent it here: ' + txt(item.jevs_rules || 'none');
     slot(c, 'artifact').appendChild(artifact(item.artifact));
     slot(c, 'text').textContent = txt(item.dispute_reason || item.note);
