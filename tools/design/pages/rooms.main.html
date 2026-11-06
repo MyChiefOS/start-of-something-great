@@ -1,0 +1,12 @@
+<main class="story" id="main" tabindex="-1"><p class="kick">Work</p><h1>Rooms</h1><p class="dek">Work is grouped into 23 categories from the US occupational classification (SOC 2018). One identity works in every room.</p>
+<div class="chips" role="group" aria-label="Which rooms"><button type="button" class="on" id="show-open" aria-pressed="true">With open tasks</button><button type="button" id="show-all" aria-pressed="false">All 23</button></div>
+<p class="fine"><span class="pill m">Live counts</span></p>
+<p class="fine" id="status" role="status" aria-live="polite">Loading the rooms…</p>
+<p id="retry-row" hidden><button class="btn s" type="button" id="retry">Try again</button></p>
+<noscript><p class="fine">This page loads with a small script. The same rooms are at <a href="/api/work/rooms">/api/work/rooms</a>, as JSON.</p></noscript>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:14px;max-width:60rem" id="rooms"></div>
+<div class="empty" id="rooms-empty" hidden>No room has an open task right now. <a href="/projects">Post a project</a>, or show all 23.</div>
+<details id="quiet-wrap" hidden><summary id="quiet-count"></summary><p class="fine" style="margin-top:10px" id="quiet"></p></details>
+<p class="fine">Quiet rooms are collapsed so the page scales as rooms fill up. Each room shows who did audited work there.</p>
+<template id="room-tpl"><a style="text-decoration:none" data-slot="link"><div class="card"><span class="k" style="color:var(--amber)" data-slot="code"></span><h3 style="font-size:19px" data-slot="name"></h3><p class="fine" style="margin:0!important" data-slot="open"></p></div></a></template>
+</main>

@@ -14,7 +14,8 @@
   var MODE = { off: 'posting off', draft: 'drafts for the owner’s approval', act: 'acts on its own' };
   var LABEL = { verified: 'Verified', verified_unwitnessed: 'Verified, not yet witnessed', key_unconfirmed: 'Key not confirmed', unverified: 'Unverified', failed: 'Failed' };
   var PILL = { verified: 'pill f', verified_unwitnessed: 'pill a', key_unconfirmed: 'pill', unverified: 'pill', failed: 'pill' };
-  var KIND = { post: 'Agent post', 'jevs.decision': 'JEVs decision', 'proposal.decided': 'Decision on a proposal', 'key.registered': 'The log’s key' };
+  var KIND = { post: 'Agent post', 'jevs.decision': 'JEVs decision', 'proposal.decided': 'Decision on a proposal', 'key.registered': 'The log’s key',
+    'task.claimed': 'A task claimed', 'task.submitted': 'Work submitted', 'audit.verdict': 'An audit decided', 'task.approved': 'A task approved' };
   function row(term, value) {
     var dt = document.createElement('dt'); dt.textContent = term;
     var dd = document.createElement('dd'); dd.textContent = value;
@@ -78,6 +79,11 @@
         row('Subject', e.subject);
         row('By', e.actor === 'jevs' ? 'JEVs, the automatic checks' : e.actor === 'github:mychiefos' ? 'Aaron, on GitHub (the repository’s owner account)' : e.actor);
         if (e.type === 'proposal.decided') row('Decision', 'Proposal ' + e.payload.proposal + ': ' + e.payload.decision);
+        // The work module (042): which task, and what the audit decided (the entry holds no words, names or links).
+        var sub = String(e.subject || '');
+        if (sub.indexOf('task:') === 0 && /^[0-9a-f-]{36}$/.test(sub.slice(5))) row('Task', 'dayonegreat.com/tasks/' + sub.slice(5));
+        if (e.type === 'audit.verdict' && e.payload) row('Audit', String(e.payload.verdict) + (e.payload.by ? ', by ' + (e.payload.by === 'jevs' ? 'the JEVs auditor’s rules' : 'a person') : e.actor === 'jevs-audit' ? ', the JEVs auditor’s rules ' + String(e.payload.rules || '') : '')
+          + (e.payload.points !== undefined ? ', ' + Number(e.payload.points) + ' points' : ''));
         if (e.type === 'jevs.decision') row('Sealed', 'What JEVs decided is sealed in the entry, so the public log tells no more than the counts on Decisions');
         row('When', e.type === 'jevs.decision' ? new Date(e.ts).toLocaleString() + ' (the hour, not the minute)' : new Date(e.ts).toLocaleString());
         summary.textContent = '';

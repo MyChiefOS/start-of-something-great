@@ -15,7 +15,7 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -26,7 +26,9 @@ const TIMERS = 'dog_timers';
 // JEVs's signals and records and carries out its decisions, inside the JEVs functions.
 // dog_log (038) only adds to the public log and signs its checkpoints, inside the log functions; it alone reads the
 // log's signing key.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log'];
+// dog_work (042) only reads and writes the work module's tables (rooms, projects, tasks, claims, submissions, points),
+// inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -79,7 +81,7 @@ const DEFINERS = {
   // owner; any role that runs checks of who is acting may test one; only the site's role may ask to act as someone.
   // 027: and dog_timers, whose one function (app.timers_run) stamps the site itself around the timers.
   'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner,dog_timers' },
-  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_public' },
+  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_public,dog_work' },
   'app.act_as(text, uuid, uuid, boolean, text, text, text)': 'dog_signin',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
@@ -236,7 +238,54 @@ const DEFINERS = {
   // (H4, L1), and clearing an alarm, in a reviewed migration only (M3).
   'app.log_name(text, uuid)': { owner: 'dog_log', callers: '' },
   'app.log_queue_decision()': { owner: 'dog_log', callers: '' },
-  'app.log_clear_alarm(text)': { owner: 'dog_log', callers: 'dog_owner' }
+  'app.log_clear_alarm(text)': { owner: 'dog_log', callers: 'dog_owner' },
+  // 042 (phase 5, the work module): the public work pages' reads, people's and agents' work (claim, submit, approve),
+  // the timer's GitHub reading and tick, and the administrator's decisions, all as dog_work; the internal pieces they
+  // share, called by none of them directly; and the log's work entries, which only dog_work may add.
+  'app.work_summary()': 'dog_work',
+  'app.work_tasks(text, text, uuid, text, uuid, integer)': 'dog_work',
+  'app.work_task(uuid)': 'dog_work',
+  'app.work_rooms_list()': 'dog_work',
+  'app.work_room(text)': 'dog_work',
+  'app.work_projects_list(text, text, text, uuid, integer)': 'dog_work',
+  'app.work_project(uuid)': 'dog_work',
+  'app.work_mine()': 'dog_work',
+  'app.work_project_create(text, text, text)': 'dog_work',
+  'app.work_task_create(uuid, text, text, text, integer)': 'dog_work',
+  'app.work_claim(uuid, text)': 'dog_work',
+  'app.work_release(uuid)': 'dog_work',
+  'app.work_handoff(uuid, uuid, text)': 'dog_work',
+  'app.work_submit(uuid, text, text, text, text, integer)': 'dog_work',
+  'app.work_approve(uuid)': 'dog_work',
+  'app.work_cancel(uuid)': 'dog_work',
+  'app.work_github_wanted(integer)': 'dog_work',
+  'app.work_github_sync(jsonb)': 'dog_work',
+  'app.work_tick()': 'dog_work',
+  'app.work_admin()': 'dog_work',
+  'app.work_person_decide(uuid, text, integer, text)': 'dog_work',
+  'app.work_remove(text, uuid)': 'dog_work',
+  'app.work_poster_decide(uuid, text, text)': 'dog_work',
+  'app.work_dispute(uuid, text)': 'dog_work',
+  'app.work_dispute_decide(uuid, text, text)': 'dog_work',
+  'app.work_check_decide(uuid, text, text)': 'dog_work',
+  'app.work_task_of(uuid)': 'dog_work',
+  'app.work_brake_check(uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_approve_as(uuid, text, text)': { owner: 'dog_work', callers: '' },
+  'app.work_party(uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_reverse(uuid, text, text)': { owner: 'dog_work', callers: '' },
+  'app.work_who()': { owner: 'dog_work', callers: '' },
+  'app.work_cap(uuid, uuid, text, boolean)': { owner: 'dog_work', callers: '' },
+  'app.work_display(uuid, uuid, text)': { owner: 'dog_work', callers: '' },
+  'app.work_facts(uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_confirmed_size(uuid, text)': { owner: 'dog_work', callers: '' },
+  'app.work_finish(uuid, text, text, integer, text)': { owner: 'dog_work', callers: '' },
+  'app.work_jevs_run(uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_card(uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_anchored_through()': { owner: 'dog_work', callers: '' },
+  'app.work_project_card(uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_record(uuid, uuid, text, uuid, uuid, text, text, text, text, text, integer, text, integer)': { owner: 'dog_work', callers: '' },
+  'app.log_work(text, text, text, text, jsonb)': { owner: 'dog_log', callers: 'dog_work' },
+  'app.log_work_name(text)': { owner: 'dog_log', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -331,7 +380,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -363,7 +412,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

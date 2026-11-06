@@ -24,6 +24,8 @@ test('R-5: no served page, script, API message or llms.txt promises a preview or
     fs.readFileSync(path.join(root, f), 'utf8').split('\n').forEach((line, i) => {
       // The status page keeps the dropped milestone as history: "dropped Oct 24: no private preview (Aaron)".
       if (/dropped Oct 24: no private preview/.test(line)) return;
+      // The legal pages' dates of change (042): the day Terms and Privacy were updated for the work module, not a promise.
+      if (/Updated November 6, 2026 \(the work module: tasks, audits, points and disputes\)/.test(line)) return;
       if (RECORD_ROWS[f] && RECORD_ROWS[f].test(line)) return;
       if (/private preview|with the preview|november 6|nov\.? 6\b/i.test(line)) bad.push(f + ':' + (i + 1));
     });

@@ -37,7 +37,7 @@ function reply(res, code, body) {
 
 const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.headers['user-agent']) || ''));
 
-async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, proposals = null, logFetch = null } = {}) {
+async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, proposals = null, logFetch = null, workGithub = null } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
   if (!run) return reply(res, 503, { ok: false });
   if (now() - lastAsked < SKIP_MS) return reply(res, 200, { ok: true });
@@ -76,6 +76,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
   try {
     await require('../db/logjobs').run(run, { getProposals: proposals, fetchImpl: logFetch });
   } catch { /* logs nothing (027) */ }
+  // The work module (042): its timer, and this repository's pull requests and issues from GitHub (at most every 15
+  // minutes), each in its own transaction. A failure changes nothing here; a later minute tries again.
+  try {
+    await require('../db/workjobs').run(run, { gh: workGithub });
+  } catch { /* logs nothing (027); before 042 is applied the functions aren't there */ }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 
@@ -85,7 +90,8 @@ module.exports = async (req, res) => {
     const oidc = require('../db/sitekeys').peekToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     // The log's two reads from GitHub (the proposals and the witness's copy) happen only here, in production.
-    await handle(req, res, db.configured() ? db.run : null, { oidc, proposals: require('./_lib').getProposals, logFetch: globalThis.fetch });
+    await handle(req, res, db.configured() ? db.run : null, { oidc, proposals: require('./_lib').getProposals, logFetch: globalThis.fetch,
+      workGithub: require('./_lib').githubRead });
   } catch {
     if (!res.headersSent) reply(res, 500, { ok: false });
   }

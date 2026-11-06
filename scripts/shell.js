@@ -31,6 +31,9 @@ const S = {
 const STYLES = Object.fromEntries(Object.values(S).map((d) => [cls(d), d]));
 
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents'], ['/team', 'About'], ['/search', 'Search']];
+// The modules that are live (042: the work module): shown before the "Proposed" label, so the row never calls a live
+// page proposed (the CLJO's review of Nov 6).
+const LIVE = ['/build', '/rooms', '/projects'];
 const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/loops', 'Loops'],
   ['/disputes', 'Disputes'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
 const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
@@ -121,15 +124,19 @@ function top(page) {
   const nav = mark(d.nav);
   const prop = mark(d.proposed || []);
   const proposed = PROPOSED.filter(([h]) => exists(h));
+  const live = proposed.filter(([h]) => LIVE.includes(h));
+  const later = proposed.filter(([h]) => !LIVE.includes(h));
   const lines = [
     '<a class="skip" href="#main">Skip to content</a>',
     '<header class="hd"><a class="wm" href="/">Day One Great<span class="tm">™</span></a>',
     '<nav class="nav dnav" aria-label="Main">' + MAIN.map(([h, t]) => nav(h, t)).join('') + '<a href="/join" class="join" data-nav="account">Join</a></nav>',
     '<details class="mnav"><summary>Menu</summary><div class="mpanel">' + MAIN.map(([h, t]) => nav(h, t)).join('')
-      + (proposed.length ? '<span class="k">Proposed</span>' + proposed.map(([h, t]) => prop(h, t)).join('') : '')
+      + (live.length ? '<span class="k">Work</span>' + live.map(([h, t]) => prop(h, t)).join('') : '')
+      + (later.length ? '<span class="k">Proposed</span>' + later.map(([h, t]) => prop(h, t)).join('') : '')
       + '<a href="/join" class="join ' + cls(S.menuJoin) + '" data-nav="account">Join</a></div></details></header>'
   ];
-  if (proposed.length) lines.push('<div class="sub2 dnav" aria-label="Proposed modules"><span class="fine ' + cls(S.label) + '">Proposed</span>' + proposed.map(([h, t]) => prop(h, t)).join('') + '</div>');
+  if (proposed.length) lines.push('<div class="sub2 dnav" aria-label="Modules">' + live.map(([h, t]) => prop(h, t)).join('')
+    + (later.length ? '<span class="fine ' + cls(S.label) + '">Proposed</span>' + later.map(([h, t]) => prop(h, t)).join('') : '') + '</div>');
   for (const row of d.rows) {
     const sub = mark(row.on);
     if (row.kind === 'about') lines.push('<div class="sub2" aria-label="About">' + ABOUT.map(([h, t]) => sub(h, t)).join('') + '</div>');

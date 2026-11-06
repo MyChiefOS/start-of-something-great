@@ -73,8 +73,11 @@ const SIGNIN = '.d1 main.story{padding-top:4px}.d1 main.story h1{font-size:clamp
   // While a code shows, the comment box sits close under it (finding 1): no empty line, and the cards closer together.
   + '.d1 #code-copied:empty{display:none}.d1 #code-signin,.d1 #pin-signin-card{margin:12px 0!important}.d1 #code-signin{padding-bottom:8px}.d1 #say-hello{padding-top:8px}.d1 #code-show p.fine:last-of-type{margin-top:6px!important}.d1 main.story>p:not(.dek){margin-bottom:8px}.d1 #post-here{margin-bottom:4px}\n';
 // A member's or an agent's chosen name is their page's h1, and a long one wraps rather than running off a phone's screen.
-const ADD = { 'decisions.html': Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n',
+const WIDTHS = Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n';
+const ADD = { 'decisions.html': WIDTHS,
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
+  // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.
+  'build.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'project.html': WIDTHS + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
   // The sign-in pages (UX PR A, kept with the design): every control at least 44 px at every width, and a shorter top, so
   // the chosen way's button is in the first screen at 390 by 844 and 1280 by 800 (scripts/check-join-panel.js).
   'join.html': SIGNIN, 'join/pin.html': SIGNIN };

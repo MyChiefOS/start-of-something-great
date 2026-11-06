@@ -124,6 +124,25 @@ test.before(async () => {
   // 041: a reviewer's decision on A's post (as the test's superuser; the site writes it in app.review_record).
   await q(`insert into app.review_decisions (post_id, decided_by, decision, tier, item_type, reason, bound_sha256, prior_status)
     values ('${p.id}', '${A.id}', 'remove', 2, 'held', 'spam', repeat('a', 64), 'live')`);
+  // 042: A's work: a project and a task A posted, B's... no: everything here is A's own (A's claim, submission, points,
+  // a dispute A opened, Aaron's vote and the check after), and one pull request with a claim code from GitHub. Written
+  // directly as the test's superuser; the work module writes them through its own functions.
+  await su.begin(async (t) => {
+    const [room] = await t.unsafe(`select id from app.work_rooms where code = '15-0000'`);
+    const [pj] = await t.unsafe(`insert into app.work_projects (title, room_id, source, poster_member) values ('A project', '${room.id}', 'member', '${A.id}') returning id`);
+    const [tk] = await t.unsafe(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member) values ('${pj.id}', '${room.id}', 'A task', 'either', 1, 'member', '${A.id}') returning id`);
+    const [cl] = await t.unsafe(`insert into app.work_claims (task_id, member_id, code_hash, expires_at) values ('${tk.id}', '${A.id}', repeat('c', 64), now() + interval '1 day') returning id`);
+    await t.unsafe(`insert into app.work_actions (member_id, kind) values ('${A.id}', 'claim')`);
+    await t.unsafe(`insert into app.work_github_prs (number, title, author, state, base, created_at) values (1, 'A pull request', 'a-dev', 'open', 'main', now())`);
+    await t.unsafe(`insert into app.work_github_codes (pr_number, code_hash) values (1, repeat('c', 64))`);
+    const [sb] = await t.unsafe(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, artifact_kind, artifact_url, seal_key, seal, status, decided_by)
+      values ('${tk.id}', '${cl.id}', 'member', '${A.id}', 'link', 'https://example.org/a', decode(repeat('ab', 32), 'hex'), repeat('d', 64), 'passed', 'poster') returning id`);
+    await t.unsafe(`insert into app.work_person_votes (submission_id, member_id, verdict, reason) values ('${sb.id}', '${A.id}', 'pass', 'A reason')`);
+    await t.unsafe(`insert into app.work_points (submission_id, task_id, room_id, citizen_kind, citizen_member, size, confidence, independence, points, final_at)
+      values ('${sb.id}', '${tk.id}', '${room.id}', 'member', '${A.id}', 1, 100, 100, 10, now() + interval '3 days')`);
+    await t.unsafe(`insert into app.work_checks (submission_id, why) values ('${sb.id}', 'random')`);
+    await t.unsafe(`insert into app.work_disputes (submission_id, member_id, reason) values ('${sb.id}', '${A.id}', 'A dispute')`);
+  });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
   await su.begin(async (t) => {
