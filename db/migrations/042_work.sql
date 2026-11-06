@@ -84,6 +84,7 @@ create table app.work_settings (
   member_active_claims integer not null default 10 check (member_active_claims between 1 and 1000),
   tree_active_claims integer not null default 50 check (tree_active_claims between 1 and 10000),
   member_daily_posts integer not null default 20 check (member_daily_posts between 1 and 1000),
+  member_daily_claims integer not null default 20 check (member_daily_claims between 1 and 1000),  -- a person's claims a day
   points_cap integer not null default 100 check (points_cap between 1 and 1000),
   -- The poster's check (Aaron, Nov 6: banks' and software companies' practice, simulated): limits on a poster's pass,
   -- the check after on a sample, and disputes.
@@ -254,11 +255,12 @@ create table app.work_submissions (
   -- yet (held for Third Look: a limit was reached, or the only one who could decide is a party to it).
   route text check (route = any (array['poster', 'admin', 'held'])),
   held_reason text check (char_length(held_reason) <= 200),
+  routed_at timestamptz,  -- when it reached whoever decides it: each has audit_hours, then it moves on (below)
   jevs_verdict text check (jevs_verdict = any (array['pass', 'fail', 'person', 'waiting'])),
   jevs_rules text not null default '' check (char_length(jevs_rules) <= 200 and jevs_rules ~ '^[A-Z0-9,]*$'),
   confidence smallint check (confidence between 0 and 100),
   final_size smallint check (final_size = any (array[1, 2, 3, 5, 8])),
-  decided_by text check (decided_by = any (array['jevs', 'poster', 'person'])),
+  decided_by text check (decided_by = any (array['jevs', 'poster', 'person', 'timeout'])),
   reason text check (char_length(reason) <= 300),
   created_at timestamptz not null default now(),
   decided_at timestamptz,
@@ -460,7 +462,8 @@ revoke create on schema app from dog_log;
 -- The JEVs auditor (db/work-audit.js has the same rules, in the same order; test/work.test.js keeps them the same).
 -- facts: class, worker_kind, own (worker and poster share an owner), late (submitted after the claim's hold), reused
 -- (the artifact was submitted for another task), artifact (pr, link or file), github_task (pr or issue, or null),
--- issue (the task's issue number or null), task_source (member or github), claim_open (a claim that still holds), pr (null if GitHub hasn't been read yet: {merged, state, base, code_ok,
+-- issue (the task's issue number or null), task_source (member or github), claim_open (a claim that still holds), wait_over
+-- (the claim's hold and the audit's hours after it have run out), pr (null if GitHub hasn't been read yet: {merged, state, base, code_ok,
 -- author_ok, refs_issue}), url_https, url_ip, url_short, note_hits.
 -- Returns {verdict: pass | fail | person | waiting, rules: [...]}: the rules that fired, in order.
 create function app.work_jevs_rules(f jsonb) returns jsonb
@@ -508,6 +511,12 @@ begin
         machine := true;
       end if;
     end if;
+  end if;
+  -- W13: a pull request still not merged into main (or not found) when the claim's hold and the audit's time after it
+  -- have both run out: it fails, so the task reopens (the fresh review of #110, H1).
+  if f ->> 'artifact' = 'pr' and coalesce((f ->> 'wait_over')::boolean, false)
+     and (pr is null or jsonb_typeof(pr) <> 'object' or not coalesce((pr ->> 'merged')::boolean, false)) then
+    fired := fired || 'W13'::text; hard := true;
   end if;
   -- W09: a link that isn't https, points at a bare address, or goes through a link shortener: refused, with how to fix it
   -- (an https link to the page itself).
@@ -677,6 +686,7 @@ begin
     'own', poster is not null and worker is not null and poster = worker,
     'late', c.id is not null and s.created_at > c.expires_at,
     'claim_open', c.id is not null and c.expires_at > now(),
+    'wait_over', c.id is not null and c.expires_at + make_interval(hours => (select x.audit_hours from app.work_settings x where x.singleton)) <= now(),
     'reused', exists (select 1 from app.work_submissions o where o.id <> s.id and o.task_id <> s.task_id and o.status <> 'failed'
                        and ((s.artifact_url is not null and o.artifact_url = s.artifact_url) or (s.artifact_sha256 is not null and o.artifact_sha256 = s.artifact_sha256))),
     'artifact', s.artifact_kind,
@@ -838,15 +848,18 @@ begin
     -- Nov 6: "Use logic to determine the flow based on simulation and industry best practices"). The repository's own
     -- tasks were posted by its owner account, so an administrator decides those, unless an administrator did the work;
     -- then it waits for Third Look.
-    if (select t.source from app.work_tasks t where t.id = s.task_id) = 'member' then
-      update app.work_submissions x set status = 'review', route = 'poster' where x.id = p_sub;
+    if (select t.source = 'member' and coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) is not null
+        from app.work_tasks t where t.id = s.task_id) then
+      update app.work_submissions x set status = 'review', route = 'poster', routed_at = now() where x.id = p_sub;
       perform app.notify((select coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) from app.work_tasks t where t.id = s.task_id),
         'work_submitted', 'Work on your task waits for your check', 'The JEVs auditor''s rules couldn''t decide the work submitted on your task (rules ' || rules
         || '), so you do, as its poster: pass it, or fail it with a reason. A sample of passes is checked again.', '/tasks/' || s.task_id, 'task', s.task_id, 'work:check:' || p_sub);
     elsif exists (select 1 from app.members m where m.id = s.worker_member and m.is_admin) then
-      update app.work_submissions x set status = 'review', route = 'held', held_reason = 'An administrator did this work, so none decides it: it waits for Third Look.' where x.id = p_sub;
+      update app.work_submissions x set status = 'review', route = 'held', routed_at = now(),
+        held_reason = 'An administrator did this work, so none decides it: it waits for Third Look.' where x.id = p_sub;
     else
-      update app.work_submissions x set status = 'review', route = 'admin' where x.id = p_sub;
+      -- The repository's own tasks, and a member's task whose poster deleted their account: an administrator decides.
+      update app.work_submissions x set status = 'review', route = 'admin', routed_at = now() where x.id = p_sub;
       perform app.notify(null, 'alert', 'Work on the repository''s task waits for you', 'The JEVs auditor''s rules couldn''t decide work on one of the repository''s own tasks (rules '
         || rules || '). Decide it on Review, as the repository''s owner.', '/admin/review#work', 'submission', p_sub, 'work:person:' || p_sub);
     end if;
@@ -1257,6 +1270,11 @@ begin
     raise exception 'work_own' using errcode = 'P0001', hint = 'You (or your agents) posted this task, so you can''t claim it: nobody does or audits their own task.';
   end if;
   if w.agent_id is null then
+    -- A person's claims a day (the fresh review of #110, M4: each is a public log entry and a notice to the poster).
+    select count(*) into n from app.work_actions x where x.member_id = w.member_id and x.agent_id is null and x.kind = 'claim' and x.created_at > now() - interval '1 day';
+    if n >= st.member_daily_claims then
+      raise exception 'work_cap' using errcode = 'P0001', hint = 'You have claimed ' || n || ' tasks today, the most for one day.';
+    end if;
     select count(*) into n from app.work_claims c where c.member_id = w.member_id and c.agent_id is null and c.status = 'active';
     if n >= st.member_active_claims then
       raise exception 'work_cap' using errcode = 'P0001', hint = 'You already hold ' || n || ' live claims, the most one person may hold.';
@@ -1551,7 +1569,9 @@ begin
   -- Merged pull requests with their detail: finished work. A pull request whose description carries a live claim's
   -- code is that claim's submission; any other is submitted by its author, as the repository's history.
   for pr in select g.* from app.work_github_prs g where g.merged_at is not null and g.detail_at is not null and g.base = 'main'
-             and not exists (select 1 from app.work_submissions s where s.pr_number = g.number) order by g.number limit 100 loop
+             and not exists (select 1 from app.work_submissions s where s.pr_number = g.number and s.status not in ('failed', 'reversed'))
+             and not exists (select 1 from app.work_tasks t where t.github_kind = 'pr' and t.github_number = g.number)
+             order by g.number limit 100 loop
     select c.* into cl from app.work_claims c join app.work_github_codes k on k.code_hash = c.code_hash and k.pr_number = pr.number
      where c.status = 'active' limit 1;
     if cl.id is not null then
@@ -1647,10 +1667,36 @@ begin
   -- Work the worker could fix (W07, W08) that wasn't fixed while the claim held: the rules decide it again, and it fails.
   for x in select s.id from app.work_submissions s join app.work_claims c on c.id = s.claim_id
            where s.status = 'waiting' and s.jevs_verdict = 'waiting' and c.expires_at <= now()
-             and (s.jevs_rules like '%W07%' or s.jevs_rules like '%W08%') order by s.created_at limit 100 loop
+             and (s.jevs_rules like '%W07%' or s.jevs_rules like '%W08%' or c.expires_at + make_interval(hours => st.audit_hours) <= now())
+           order by s.created_at limit 100 loop
     perform app.work_jevs_run(x.id);
     n_fixed := n_fixed + 1;
   end loop;
+  -- Nothing waits for a person forever (the fresh review of #110, M1). A poster who hasn't checked within audit_hours
+  -- is passed over: an administrator decides, unless one is a party. Whatever an administrator, or no one (held), hasn't
+  -- decided within audit_hours of reaching them fails: it isn't passed to clear a backlog; the task reopens and the
+  -- worker may try again.
+  for x in select s.id, s.route, s.worker_member, t.poster_member, t.poster_agent from app.work_submissions s join app.work_tasks t on t.id = s.task_id
+           where s.status = 'review' and coalesce(s.routed_at, s.created_at) + make_interval(hours => st.audit_hours) <= now() order by s.created_at limit 100 loop
+    if x.route = 'poster' and not exists (select 1 from app.members m where m.is_admin
+         and m.id in (x.worker_member, coalesce(x.poster_member, (select g.owner_id from app.agents g where g.id = x.poster_agent)))) then
+      update app.work_submissions y set route = 'admin', routed_at = now(), held_reason = 'The task''s poster didn''t check it within ' || st.audit_hours || ' hours.' where y.id = x.id;
+      perform app.notify(null, 'alert', 'Work a poster didn''t check waits for you', 'A poster didn''t check work on their task in time. Decide it on Review.', '/admin/review#work',
+        'submission', x.id, 'work:escalated:' || x.id);
+    else
+      perform app.work_finish(x.id, 'fail', 'timeout', 100, 'No one could decide it within ' || st.audit_hours || ' hours, so it isn''t passed. You may claim the task again.');
+    end if;
+    n_fixed := n_fixed + 1;
+  end loop;
+  -- Tasks left without their work by an account's deletion (the review, M2): a claimed or submitted task with no live
+  -- claim and nothing waiting reopens (a pull request of the repository's history closes); an open task whose poster
+  -- deleted their account closes, since no one is left to approve it.
+  update app.work_tasks t set status = case when t.source = 'github' and t.github_kind = 'pr' then 'closed' else 'open' end, updated_at = now()
+   where t.status in ('claimed', 'submitted')
+     and not exists (select 1 from app.work_claims c where c.task_id = t.id and c.status in ('active', 'submitted'))
+     and not exists (select 1 from app.work_submissions s where s.task_id = t.id and s.status in ('waiting', 'review'));
+  update app.work_tasks t set status = 'closed', updated_at = now()
+   where t.status = 'open' and t.source = 'member' and t.poster_member is null and t.poster_agent is null;
   -- Points become final after the dispute window, unless a dispute or the check after is still open on them.
   update app.work_points p set status = 'final' where p.status = 'pending' and p.final_at <= now()
     and not exists (select 1 from app.work_disputes d where d.submission_id = p.submission_id and d.status = 'open')
@@ -1681,7 +1727,7 @@ begin
   -- Each item says whether the administrator reading it is a party to it (did the work, posted the task or opened the
   -- dispute): those wait for Third Look, and the page doesn't offer to decide them.
   return jsonb_build_object('generated_at', now(),
-    'waiting', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('submission', s.id, 'jevs_rules', s.jevs_rules, 'note', s.note,
+    'waiting', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('submission', s.id, 'jevs_rules', s.jevs_rules, 'note', s.note, 'held_reason', s.held_reason,
                            'artifact', jsonb_build_object('kind', s.artifact_kind, 'url', s.artifact_url, 'sha256', s.artifact_sha256), 'party', app.work_party(s.id, me))
                          order by s.created_at)
                         from app.work_submissions s where s.status = 'review' and s.route = 'admin'), '[]'::jsonb),
@@ -1698,13 +1744,17 @@ end
 $$;
 
 -- Whether a member is a party to a submission: did the work (or owns the agent that did) or posted the task (or owns
--- the agent that did).
+-- the agent that did); for an administrator, also the repository's own tasks and the GitHub accounts credited to them.
 create function app.work_party(p_sub uuid, p_member uuid)
 returns boolean
 language sql stable security definer set search_path = pg_catalog
 as $$
   select exists (select 1 from app.work_submissions s join app.work_tasks t on t.id = s.task_id where s.id = p_sub
-                 and (s.worker_member = p_member or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member))
+                 and (s.worker_member = p_member or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member
+                      -- The repository's own tasks and pull requests are its owner's (Aaron's account on GitHub), and so is
+                      -- any GitHub account credited to him: an administrator is a party to them (the fresh review of #110, M3).
+                      or (exists (select 1 from app.members m where m.id = p_member and m.is_admin)
+                          and (t.source = 'github' or exists (select 1 from app.work_github_names n where n.login = s.worker_github)))))
 $$;
 
 -- An administrator decides work on the repository's own tasks that the rules couldn't, with a reason.
@@ -1722,8 +1772,10 @@ begin
   end if;
   select * into s from app.work_submissions x where x.id = p_sub for update;
   if s.id is null or s.status <> 'review' or s.route <> 'admin' then return 'not_waiting'; end if;
-  if app.work_party(p_sub, app.current_member()) then
-    raise exception 'work_own' using errcode = 'P0001', hint = 'You did or posted this work, so you can''t decide its audit: it waits for Third Look.';
+  -- He decides the repository's own tasks as their poster (the maker-checker's checker), never work he did: his own
+  -- member account, or a GitHub account credited to him.
+  if s.worker_member = app.current_member() or exists (select 1 from app.work_github_names n where n.login = s.worker_github) then
+    raise exception 'work_own' using errcode = 'P0001', hint = 'You did this work, so you can''t decide its audit: it waits for Third Look.';
   end if;
   insert into app.work_person_votes (submission_id, member_id, verdict, size, reason) values (p_sub, app.current_member(), p_verdict, p_size, btrim(p_reason));
   perform app.work_finish(p_sub, p_verdict, 'person', 100, btrim(p_reason));
@@ -1748,6 +1800,9 @@ begin
   select * into t from app.work_tasks x where x.id = s.task_id for update;
   update app.work_points x set status = 'removed' where x.submission_id = p_sub;
   update app.work_submissions x set status = 'reversed', reason = left(p_reason, 300) where x.id = p_sub;
+  -- A check or dispute still open on it has nothing left to decide.
+  update app.work_checks k set status = 'reversed', reason = 'The pass was reversed (' || p_by || ').', decided_at = now() where k.submission_id = p_sub and k.status = 'open';
+  update app.work_disputes d set status = 'upheld', decision = 'The pass was reversed (' || p_by || ').', decided_at = now() where d.submission_id = p_sub and d.status = 'open';
   perform app.log_work('audit.verdict', 'work-audit', null, 'submission:' || p_sub::text,
     jsonb_build_object('task', s.task_id::text, 'verdict', 'reversed', 'by', p_by, 'points', 0));
   update app.work_tasks x set status = case when t.source = 'github' and t.github_kind = 'pr' then 'closed' else 'open' end,
@@ -1821,7 +1876,14 @@ begin
     held := 'This worker has ' || today || ' points from posters'' passes today; this would pass ' || st.poster_daily_points || ', so it waits for Third Look.';
   end if;
   if held is not null then
-    update app.work_submissions x set route = 'held', held_reason = held where x.id = p_sub;
+    -- Past a poster's limit, as a bank escalates past an approver's: to an administrator, unless one is a party; then it
+    -- waits for Third Look. Either way it has audit_hours before it fails (app.work_tick).
+    if exists (select 1 from app.members m where m.is_admin and m.id in (poster, s.worker_member)) then
+      update app.work_submissions x set route = 'held', held_reason = held, routed_at = now() where x.id = p_sub;
+      return 'held';
+    end if;
+    update app.work_submissions x set route = 'admin', held_reason = held, routed_at = now() where x.id = p_sub;
+    perform app.notify(null, 'alert', 'Work past a poster''s limit waits for you', held || ' Decide it on Review.', '/admin/review#work', 'submission', p_sub, 'work:held:' || p_sub);
     return 'held';
   end if;
   perform app.work_finish(p_sub, 'pass', 'poster', 100, coalesce(nullif(btrim(p_reason), ''), 'Passed by the task''s poster.'));

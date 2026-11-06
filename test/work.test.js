@@ -43,7 +43,10 @@ function* allFacts() {
       for (const own of [false, true]) for (const late of [false, true]) for (const hits of [0, 2]) {
         const base = { class: cls, worker_kind: wk, own, late, reused: false, artifact, github_task: gt, issue: gt === 'issue' ? 7 : null, note_hits: hits,
           task_source: gt === null ? 'member' : 'github' };
-        if (artifact === 'pr') for (const pr of prs) for (const open of [false, true]) { yield { ...base, pr, claim_open: open }; if (gt === null) yield { ...base, task_source: 'github', pr, claim_open: open }; }
+        if (artifact === 'pr') for (const pr of prs) for (const [open, over] of [[false, false], [true, false], [false, true]]) {
+          yield { ...base, pr, claim_open: open, wait_over: over };
+          if (gt === null) yield { ...base, task_source: 'github', pr, claim_open: open, wait_over: over };
+        }
         else if (artifact === 'link') for (const [h, ip, sh] of [[true, false, false], [false, false, false], [true, true, false], [true, false, true]]) yield { ...base, url_https: h, url_ip: ip, url_short: sh };
         else yield base;
       }
@@ -62,6 +65,9 @@ test('the JEVs auditor’s rules in JavaScript: what they decide on plain cases'
   assert.deepStrictEqual(r({ claim_open: true, pr: { ...merged, code_ok: false } }), { verdict: 'waiting', rules: ['W07'] });
   assert.deepStrictEqual(r({ claim_open: false, pr: { ...merged, code_ok: false } }), { verdict: 'fail', rules: ['W07'] });
   assert.deepStrictEqual(r({ claim_open: true, github_task: 'issue', pr: { ...merged, refs_issue: false } }), { verdict: 'waiting', rules: ['W08'] });
+  // A pull request not merged (or not found) once the claim's hold and the audit's hours after it have run out: refused.
+  assert.deepStrictEqual(r({ wait_over: true, pr: null }), { verdict: 'fail', rules: ['W13'] });
+  assert.deepStrictEqual(r({ wait_over: true, pr: { ...merged, merged: false, state: 'open' } }), { verdict: 'fail', rules: ['W13'] });
   // A link that isn't https, is a bare address or is shortened: refused, with how to fix it.
   assert.deepStrictEqual(audit.rules({ class: 'either', worker_kind: 'member', artifact: 'link', url_https: true, url_short: true }), { verdict: 'fail', rules: ['W09'] });
   assert.deepStrictEqual(r({ own: true, pr: merged }), { verdict: 'fail', rules: ['W02'] });
@@ -282,8 +288,10 @@ test('a poster’s fail needs a reason and lets the worker try again; a poster�
   for (const sid of passes) results.push((await work('POST', 'check', { cookie: ada.cookie, json: { submission: sid, verdict: 'pass' } })).json.result);
   assert.deepStrictEqual(results, ['pass', 'pass', 'pass', 'held']);
   const [held] = await q(`select route, held_reason from app.work_submissions where id = '${passes[3]}'`);
-  assert.strictEqual(held.route, 'held');
-  assert.match(held.held_reason, /3 times in 30 days.*Third Look/);
+  // Past a poster's limit it goes to an administrator, as a bank escalates past an approver's limit (neither is one here).
+  assert.strictEqual(held.route, 'admin');
+  assert.match(held.held_reason, /3 times in 30 days/);
+  assert.ok((await work('GET', 'admin', { cookie: aaron.cookie })).json.waiting.some((x) => x.submission === passes[3]));
   // A pair at its limit is picked for the check after.
   assert.strictEqual((await q(`select why from app.work_checks where submission_id = '${passes[2]}'`))[0].why, 'pair');
   // A worker not yet at JEVs's level 2: a poster's pass waits too.
@@ -519,4 +527,138 @@ test('public reads: the Build summary, lists, rooms and projects; contact detail
   assert.strictEqual((await work('POST', 'remove', { cookie: ada.cookie, json: { kind: 'task', id: tid } })).status, 403);
   assert.strictEqual((await work('POST', 'remove', { cookie: aaron.cookie, json: { kind: 'task', id: tid } })).status, 200);
   assert.strictEqual((await work('GET', 'task', { search: '?id=' + tid })).status, 404);
+});
+
+const tick = async () => { await asWork('update app.work_settings set last_tick_at = null'); return workjobs.run(run); };
+const stateOf = async (task) => (await q(`select t.status as task, (select string_agg(c.status, ',' order by c.created_at) from app.work_claims c where c.task_id = t.id) as claims,
+  (select string_agg(s.status || '/' || coalesce(s.route, '-'), ',' order by s.created_at) from app.work_submissions s where s.task_id = t.id) as subs
+  from app.work_tasks t where t.id = '${task}'`))[0];
+const erase = async (m) => run({ actor: 'member', memberId: m.id, session: c.sha256hex(m.cookie.split('=')[1]), fresh: true }, (t) => t`select * from app.delete_account()`);
+
+test('the fresh review of #110, H1: a pull request that never merges, or doesn’t exist, can’t freeze a task: once the claim’s hold and the audit’s hours run out it fails and the task reopens', async () => {
+  const ada = await member('AdaH1');
+  const bo = await member('BoH1');
+  const pj = await project(ada, 'H1 project');
+  const t1 = await task(ada, pj), t2 = await task(ada, pj);
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t1 } });
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t2 } });
+  assert.strictEqual((await work('POST', 'submit', { cookie: bo.cookie, json: { task: t1, kind: 'pr', url: REPO_PR(9999999) } })).json.status, 'waiting');
+  assert.strictEqual((await work('POST', 'submit', { cookie: bo.cookie, json: { task: t2, kind: 'pr', url: REPO_PR(9201) } })).json.status, 'waiting');
+  await sync({ prs: [pr(9201, { merged_at: null, state: 'open', author: 'bo-dev' })] });
+  // Inside the claim's hold and the 72 hours after it, both still wait.
+  await asWork(`update app.work_claims set expires_at = now() - interval '1 hour' where task_id in ('${t1}', '${t2}')`);
+  await tick();
+  assert.deepStrictEqual([(await stateOf(t1)).subs, (await stateOf(t2)).subs], ['waiting/-', 'waiting/-']);
+  // Past them, both fail with W13, the claims expire and the tasks reopen for someone else.
+  await asWork(`update app.work_claims set expires_at = now() - interval '73 hours' where task_id in ('${t1}', '${t2}')`);
+  await tick();
+  for (const t of [t1, t2]) assert.deepStrictEqual(await stateOf(t), { task: 'open', claims: 'expired', subs: 'failed/-' }, t);
+  assert.match((await q(`select jevs_rules from app.work_submissions where task_id = '${t1}'`))[0].jevs_rules, /W13/);
+  assert.strictEqual((await work('POST', 'claim', { cookie: (await member('CyH1')).cookie, json: { task: t1 } })).status, 201);
+});
+
+test('the review, M1: nothing waits for a person forever: a poster who doesn’t check in time is passed to an administrator, and what no one decides in time fails, never passes', async () => {
+  const ada = await member('AdaM1');
+  const bo = await member('BoM1');
+  const pj = await project(ada, 'M1 project');
+  const id = await task(ada, pj);
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
+  const sub = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/m1' } })).json.submission;
+  await asWork(`update app.work_submissions set routed_at = now() - interval '73 hours' where id = '${sub}'`);
+  await tick();
+  const [s1] = await q(`select route, held_reason from app.work_submissions where id = '${sub}'`);
+  assert.strictEqual(s1.route, 'admin');
+  assert.match(s1.held_reason, /didn't check it within 72 hours/);
+  await asWork(`update app.work_submissions set routed_at = now() - interval '73 hours' where id = '${sub}'`);
+  await tick();
+  const [s2] = await q(`select status, decided_by from app.work_submissions where id = '${sub}'`);
+  assert.deepStrictEqual([s2.status, s2.decided_by], ['failed', 'timeout']);
+  assert.strictEqual((await q(`select count(*)::int as n from app.work_points where submission_id = '${sub}'`))[0].n, 0, 'nothing passed to clear a backlog');
+  // Work held because an administrator is a party waits for Third Look, then fails the same way.
+  const apj = await project(aaron, 'M1 Aaron project');
+  const at = await task(aaron, apj, { size: 1 });
+  const cy = await member('CyM1', { level: 1 });
+  await work('POST', 'claim', { cookie: cy.cookie, json: { task: at } });
+  const as = (await work('POST', 'submit', { cookie: cy.cookie, json: { task: at, kind: 'link', url: 'https://example.org/m1b' } })).json.submission;
+  assert.strictEqual((await work('POST', 'check', { cookie: aaron.cookie, json: { submission: as, verdict: 'pass' } })).json.result, 'held');
+  assert.strictEqual((await q(`select route from app.work_submissions where id = '${as}'`))[0].route, 'held');
+  await asWork(`update app.work_submissions set routed_at = now() - interval '73 hours' where id = '${as}'`);
+  await tick();
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${as}'`))[0].status, 'failed');
+});
+
+test('the review, M2: deleting an account leaves no task stuck: the worker’s tasks reopen, and a gone poster’s open tasks close and work on their claimed ones goes to an administrator', async () => {
+  const ada = await member('AdaM2');
+  const bo = await member('BoM2');
+  const pj = await project(ada, 'M2 project');
+  const t1 = await task(ada, pj), t2 = await task(ada, pj);
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t1 } });
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t2 } });
+  await work('POST', 'submit', { cookie: bo.cookie, json: { task: t2, kind: 'link', url: 'https://example.org/m2' } });
+  await erase(bo);
+  await tick();
+  for (const t of [t1, t2]) assert.strictEqual((await stateOf(t)).task, 'open', t);
+  assert.strictEqual((await work('POST', 'claim', { cookie: (await member('CyM2')).cookie, json: { task: t1 } })).status, 201);
+  // The poster goes: their unclaimed task closes; work on a claimed one is decided by an administrator, with no error.
+  const dee = await member('DeeM2');
+  const t3 = await task(ada, pj);
+  const t4 = await task(ada, pj);
+  await work('POST', 'claim', { cookie: dee.cookie, json: { task: t4 } });
+  await erase(ada);
+  await tick();
+  assert.strictEqual((await stateOf(t3)).task, 'closed');
+  const s4 = await work('POST', 'submit', { cookie: dee.cookie, json: { task: t4, kind: 'link', url: 'https://example.org/m2b' } });
+  assert.deepStrictEqual([s4.status, s4.json.status], [201, 'review']);
+  assert.strictEqual((await q(`select route from app.work_submissions where id = '${s4.json.submission}'`))[0].route, 'admin');
+});
+
+test('the review, M3 and M4: Aaron never decides a dispute on a pull request credited to him; a person’s claims are limited to 20 a day', async () => {
+  await sync({ prs: [pr(9211, { author: 'mychiefos' })] });
+  await sync({ details: [{ number: 9211, additions: 5, deletions: 0, merged_by: 'mychiefos' }] });
+  const [t] = (await work('GET', 'tasks', { search: '?q=PR%209211' })).json.tasks;
+  const sub = (await page(t.id)).submissions[0].id;
+  const cy = await member('CyM3');
+  const d = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: sub, reason: 'Not real work.' } })).json.id;
+  const item = (await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d);
+  assert.strictEqual(item.party, true);
+  const r = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d, decision: 'dismiss', reason: 'It is real.' } });
+  assert.deepStrictEqual([r.status, r.json.reason], [403, 'work_own']);
+  // M4: claim and let go, 20 times in a day; the 21st claim is refused.
+  const ada = await member('AdaM4');
+  const bo = await member('BoM4');
+  const id = await task(ada, await project(ada, 'M4 project'));
+  for (let i = 0; i < 20; i++) {
+    assert.strictEqual((await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } })).status, 201, String(i));
+    await work('POST', 'release', { cookie: bo.cookie, json: { task: id } });
+  }
+  const last = await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
+  assert.deepStrictEqual([last.status, last.json.reason], [429, 'work_cap']);
+});
+
+test('the review, L1 and the reversal: a failed submission of someone’s pull request doesn’t block its author’s credit; a reversed pass leaves no check or dispute open', async () => {
+  const ada = await member('AdaL1');
+  const bo = await member('BoL1');
+  const id = await task(ada, await project(ada, 'L1 project'));
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
+  const s = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'pr', url: REPO_PR(9221) } })).json.submission;
+  await sync({ prs: [pr(9221, { author: 'real-author' })] });
+  await sync({ details: [{ number: 9221, additions: 5, deletions: 0, merged_by: 'mychiefos' }] });
+  // W07: it doesn't carry Bo's claim code, so it waits for him to add it while the claim holds, then fails.
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${s}'`))[0].status, 'waiting');
+  await asWork(`update app.work_claims set expires_at = now() - interval '1 minute' where task_id = '${id}'`);
+  await tick();
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${s}'`))[0].status, 'failed');
+  await sync({});
+  const [credited] = (await work('GET', 'tasks', { search: '?q=PR%209221' })).json.tasks;
+  assert.deepStrictEqual(credited && credited.done_by, { kind: 'github', name: '@real-author', github: 'real-author' });
+  // A pass picked for the check after and disputed too: upholding the dispute closes the check.
+  const t2 = await task(ada, await project(ada, 'L1 second project'), { size: 8 });
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t2 } });
+  const s2 = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: t2, kind: 'link', url: 'https://example.org/l1' } })).json.submission;
+  await work('POST', 'check', { cookie: ada.cookie, json: { submission: s2, verdict: 'pass' } });
+  const cy = await member('CyL1');
+  const d = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: s2, reason: 'Copied.' } })).json.id;
+  await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d, decision: 'uphold', reason: 'Copied from elsewhere.' } });
+  const [k] = await q(`select status from app.work_checks where submission_id = '${s2}'`);
+  assert.strictEqual(k.status, 'reversed');
 });
