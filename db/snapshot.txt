@@ -211,6 +211,71 @@ constraint app.jevs_settings jevs_settings_key_check CHECK ((key = ANY (ARRAY['m
 constraint app.jevs_settings jevs_settings_key_key UNIQUE (key)
 constraint app.jevs_settings jevs_settings_pkey PRIMARY KEY (id)
 constraint app.jevs_settings jevs_settings_value_check CHECK (((char_length(value) >= 1) AND (char_length(value) <= 16)))
+constraint app.log_checkpoints log_checkpoints_note_check CHECK ((char_length(note) <= 400))
+constraint app.log_checkpoints log_checkpoints_pkey PRIMARY KEY (id)
+constraint app.log_checkpoints log_checkpoints_root_check CHECK ((octet_length(root) = 32))
+constraint app.log_checkpoints log_checkpoints_signature_check CHECK ((octet_length(signature) = 64))
+constraint app.log_checkpoints log_checkpoints_size_check CHECK ((size > 0))
+constraint app.log_checkpoints log_checkpoints_size_key UNIQUE (size)
+constraint app.log_entries log_entries_actor_check CHECK ((char_length(actor) <= 80))
+constraint app.log_entries log_entries_entry_check CHECK (((jsonb_typeof(entry) = 'object'::text) AND (octet_length((entry)::text) <= 4096)))
+constraint app.log_entries log_entries_entry_jcs_check CHECK ((char_length(entry_jcs) <= 4096))
+constraint app.log_entries log_entries_leaf CHECK ((leaf_hash = sha256(('\x00'::bytea || convert_to(entry_jcs, 'UTF8'::name)))))
+constraint app.log_entries log_entries_leaf_hash_check CHECK ((octet_length(leaf_hash) = 32))
+constraint app.log_entries log_entries_leaf_hash_key UNIQUE (leaf_hash)
+constraint app.log_entries log_entries_pkey PRIMARY KEY (id)
+constraint app.log_entries log_entries_same CHECK (((entry_jcs)::jsonb = entry))
+constraint app.log_entries log_entries_seq_check CHECK (((seq >= 0) AND (seq < '1000000000000000'::bigint)))
+constraint app.log_entries log_entries_seq_key UNIQUE (seq)
+constraint app.log_entries log_entries_subject_check CHECK ((char_length(subject) <= 80))
+constraint app.log_entries log_entries_type_check CHECK ((type = ANY (ARRAY['key.registered'::text, 'post'::text, 'jevs.decision'::text, 'proposal.decided'::text, 'log.alarm_cleared'::text])))
+constraint app.log_head log_head_pkey PRIMARY KEY (id)
+constraint app.log_head log_head_singleton_check CHECK (singleton)
+constraint app.log_head log_head_singleton_key UNIQUE (singleton)
+constraint app.log_head log_head_size_check CHECK ((size >= 0))
+constraint app.log_keys log_keys_key_id_check CHECK ((octet_length(key_id) = 4))
+constraint app.log_keys log_keys_name_check CHECK (((char_length(name) <= 64) AND (name = 'dayonegreat.com/log'::text)))
+constraint app.log_keys log_keys_pkey PRIMARY KEY (id)
+constraint app.log_keys log_keys_public_key_check CHECK ((octet_length(public_key) = 32))
+constraint app.log_keys log_keys_seed_check CHECK ((octet_length(seed) = 32))
+constraint app.log_keys log_keys_singleton_check CHECK (singleton)
+constraint app.log_keys log_keys_singleton_key UNIQUE (singleton)
+constraint app.log_names log_names_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.log_names log_names_agent_id_key UNIQUE (agent_id)
+constraint app.log_names log_names_check CHECK ((num_nonnulls(member_id, agent_id) = 1))
+constraint app.log_names log_names_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.log_names log_names_member_id_key UNIQUE (member_id)
+constraint app.log_names log_names_name_key UNIQUE (name)
+constraint app.log_names log_names_pkey PRIMARY KEY (id)
+constraint app.log_nodes log_nodes_hash_check CHECK ((octet_length(hash) = 32))
+constraint app.log_nodes log_nodes_idx_check CHECK ((idx >= 0))
+constraint app.log_nodes log_nodes_level_check CHECK (((level >= 0) AND (level <= 62)))
+constraint app.log_nodes log_nodes_level_idx_key UNIQUE (level, idx)
+constraint app.log_nodes log_nodes_pkey PRIMARY KEY (id)
+constraint app.log_openings log_openings_check CHECK ((num_nonnulls(post_id, decision_id, gh_decision_id) = 1))
+constraint app.log_openings log_openings_decision_id_fkey FOREIGN KEY (decision_id) REFERENCES app.jevs_decisions(id) ON DELETE CASCADE
+constraint app.log_openings log_openings_facts_check CHECK (((jsonb_typeof(facts) = 'object'::text) AND (octet_length((facts)::text) <= 2048)))
+constraint app.log_openings log_openings_gh_decision_id_fkey FOREIGN KEY (gh_decision_id) REFERENCES app.gh_decisions(id) ON DELETE CASCADE
+constraint app.log_openings log_openings_key_check CHECK ((octet_length(key) = 32))
+constraint app.log_openings log_openings_pkey PRIMARY KEY (id)
+constraint app.log_openings log_openings_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
+constraint app.log_openings log_openings_seq_check CHECK ((seq >= 0))
+constraint app.log_openings log_openings_seq_key UNIQUE (seq)
+constraint app.log_proposals_seen log_proposals_seen_decision_check CHECK ((decision = ANY (ARRAY['approved'::text, 'declined'::text, 'shipped'::text])))
+constraint app.log_proposals_seen log_proposals_seen_number_check CHECK (((number >= 1) AND (number <= 10000000)))
+constraint app.log_proposals_seen log_proposals_seen_number_key UNIQUE (number)
+constraint app.log_proposals_seen log_proposals_seen_pkey PRIMARY KEY (id)
+constraint app.log_proposals_seen log_proposals_seen_seq_check CHECK ((seq >= 0))
+constraint app.log_queue log_queue_pkey PRIMARY KEY (id)
+constraint app.log_queue log_queue_place_check CHECK ((place = ANY (ARRAY['site'::text, 'github'::text])))
+constraint app.log_queue log_queue_place_decision_id_key UNIQUE (place, decision_id)
+constraint app.log_witness log_witness_pkey PRIMARY KEY (id)
+constraint app.log_witness log_witness_reason_check CHECK ((char_length(reason) <= 300))
+constraint app.log_witness log_witness_singleton_check CHECK (singleton)
+constraint app.log_witness log_witness_singleton_key UNIQUE (singleton)
+constraint app.log_witness log_witness_status_check CHECK ((status = ANY (ARRAY['unknown'::text, 'ok'::text, 'stale'::text, 'unverified'::text])))
+constraint app.log_witness log_witness_witness_root_check CHECK ((octet_length(witness_root) = 32))
+constraint app.log_witness log_witness_witness_size_check CHECK ((witness_size >= 0))
 constraint app.members members_display_name_check CHECK (((char_length(display_name) >= 1) AND (char_length(display_name) <= 80)))
 constraint app.members members_level_set_by_admin_check CHECK (((level_set_by_admin >= 0) AND (level_set_by_admin <= 3)))
 constraint app.members members_pkey PRIMARY KEY (id)
@@ -487,6 +552,28 @@ default app.jevs_prints.created_at = now()
 default app.jevs_prints.id = app.uuid_v7()
 default app.jevs_settings.id = app.uuid_v7()
 default app.jevs_settings.updated_at = now()
+default app.log_checkpoints.created_at = now()
+default app.log_checkpoints.id = app.uuid_v7()
+default app.log_entries.created_at = now()
+default app.log_entries.id = app.uuid_v7()
+default app.log_head.id = app.uuid_v7()
+default app.log_head.singleton = true
+default app.log_head.size = 0
+default app.log_keys.created_at = now()
+default app.log_keys.id = app.uuid_v7()
+default app.log_keys.singleton = true
+default app.log_names.id = app.uuid_v7()
+default app.log_names.name = gen_random_uuid()
+default app.log_nodes.id = app.uuid_v7()
+default app.log_openings.id = app.uuid_v7()
+default app.log_proposals_seen.id = app.uuid_v7()
+default app.log_queue.id = app.uuid_v7()
+default app.log_witness.alarm = false
+default app.log_witness.id = app.uuid_v7()
+default app.log_witness.reason = ''::text
+default app.log_witness.self_ok = true
+default app.log_witness.singleton = true
+default app.log_witness.status = 'unknown'::text
 default app.members.created_at = now()
 default app.members.id = app.uuid_v7()
 default app.members.is_admin = false
@@ -690,13 +777,38 @@ function app.jevs_settings_audit() owner=dog_jevs execute=dog_jevs,dog_app langu
 function app.jevs_settings_check() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4f113a63318a0d99676f2c3b9913183f
 function app.jevs_signals(p_action text, p_subject uuid, p_net text, p_domains text[], p_simhash bigint) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=498361afa2c39e3f0b8bc3545c6125b2
 function app.jevs_sweep() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=fcf45a36dd33160bf4095eafa579a5bb
+function app.log_append(p_type text, p_ts timestamp with time zone, p_actor text, p_on_behalf_of text, p_subject text, p_payload jsonb) owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=aa00dde2e0b64448220e394310dc48d5
+function app.log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=a52b176841d42b39134f0d6977c3ca01
+function app.log_checkpoint() owner=dog_log execute=dog_log,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=8f46743ccaca2d0b8a1f917c6600121b
+function app.log_clear_alarm(p_note text) owner=dog_log execute=dog_log,dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=e28adce5ad1b96cc01a19f8ddddcbbce
+function app.log_ed25519_public(seed bytea) owner=dog_owner execute=dog_owner,dog_log language=sql volatile=i definer=false config= returns=bytea body_md5=0698f907d3a7da6fc4eb684169a1f00d
+function app.log_ed25519_sign(seed bytea, msg bytea) owner=dog_owner execute=dog_owner,dog_log language=plpgsql volatile=i definer=false config= returns=bytea body_md5=8dd26d9a1a14a0495721a34de06cd9ab
+function app.log_ed_base_mul(s bytea) owner=dog_owner execute=dog_owner,dog_log language=plpgsql volatile=i definer=false config= returns=bytea body_md5=a43a1dd1bef45b0f4fde36593a386386
+function app.log_ed_scalar(seed bytea) owner=dog_owner execute=dog_owner,dog_log language=plpgsql volatile=i definer=false config= returns=bytea body_md5=a38158cc33d1aa156820a9759a994708
+function app.log_head_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b2eb55d5a80ce5c0f078385926727f0f
+function app.log_jcs(j jsonb) owner=dog_owner execute=dog_owner,dog_log,dog_app language=plpgsql volatile=i definer=false config= returns=text body_md5=cc04ddbb401ccc0f0b9b7afd76bc5296
+function app.log_jevs_hours() owner=dog_log execute=dog_log,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=7318d03b61d4d8df700ac440439cf928
+function app.log_le_num(b bytea) owner=dog_owner execute=dog_owner,dog_log language=plpgsql volatile=i definer=false config= returns=numeric body_md5=95be6702a08e66ea51af6fe44aee3c89
+function app.log_name(p_kind text, p_id uuid) owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=b5a3fffadb5c688d45cb02594dcf0d79
+function app.log_num_le32(n numeric) owner=dog_owner execute=dog_owner,dog_log language=plpgsql volatile=i definer=false config= returns=bytea body_md5=2ea9cdbe269bcb22823ba5c25189bb38
+function app.log_opening(p_seq bigint) owner=dog_log execute=dog_log,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(key bytea, facts jsonb) body_md5=5851e6afe6f9efdebfc930709351c900
+function app.log_post(p_id uuid, p_agent uuid, p_owner uuid, p_delegation text, p_rules_version integer, p_body text, p_published_at timestamp with time zone) owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=29a40c9824fbe300a17a8bda581eb6b7
+function app.log_post_live() owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=09d505c8d51be15ecae41bba39c2c92f
+function app.log_proposal(p_number integer, p_decision text) owner=dog_log execute=dog_log,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=9dd5ab006ec8a95db43e8f4871826907
+function app.log_queue_decision() owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=8c13406d6fbd7eafe37b42e92fb23cd8
+function app.log_random32() owner=dog_owner execute=dog_owner,dog_log language=sql volatile=v definer=false config= returns=bytea body_md5=34913078f58160e0e47f5614d66a5d29
+function app.log_root(p_size bigint) owner=dog_owner execute=dog_owner,dog_log,dog_app language=plpgsql volatile=s definer=false config= returns=bytea body_md5=be7e2f12ab81a378d8c49e7d812aff85
+function app.log_seal(p_key bytea, p_facts jsonb) owner=dog_log execute=dog_log language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=8de3fba4b782d3a2d95d986f44d6f9b4
+function app.log_ts(p timestamp with time zone) owner=dog_owner execute=dog_owner,dog_log language=sql volatile=i definer=false config= returns=text body_md5=ef92b997f726aaaf0c4d44035446eb60
+function app.log_unverified(p_reason text) owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=f20c0078b7f3c553f6c9ffd309df9aeb
+function app.log_witness_report(p_size bigint, p_root bytea, p_witnessed_at timestamp with time zone, p_alarm text) owner=dog_log execute=dog_log,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=a05c0a92ff2e87de3da4500fa2794ad0
 function app.members_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7a7ccf71109b288f31e841949299a0c9
 function app.members_ban_cleanup() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=30c82a1e7dc5fcc67ae9e180dd5c8859
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4053e4545be8fc6e00edef3e669f9d8a
 function app.members_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=df7acce5fec3c9fb400da637cab87fcf
 function app.notices_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=864fc9753cca81b5a55d5228869a732c
 function app.notices_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=72ac586cf0c69c98fb4dbd0a62ba77ad
-function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid, p_dedupe text) owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_signin language=plpgsql volatile=v definer=false config= returns=boolean body_md5=1d7e0fc1202fc5f18ad0357446da847d
+function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid, p_dedupe text) owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_signin,dog_log language=plpgsql volatile=v definer=false config= returns=boolean body_md5=1d7e0fc1202fc5f18ad0357446da847d
 function app.p256_add(x1 numeric, y1 numeric, z1 numeric, x2 numeric, y2 numeric, z2 numeric, OUT rx numeric, OUT ry numeric, OUT rz numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=record body_md5=6a5bf920470998cf153d1936d3bfd870
 function app.p256_double(x numeric, y numeric, z numeric, OUT rx numeric, OUT ry numeric, OUT rz numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=record body_md5=ef5a2f58358805fe87ae948e434c92ea
 function app.p256_int(b bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=024624c201d4e1af019cbfd21486e2f0
@@ -763,7 +875,7 @@ function app.stamp_ok() owner=dog_signin execute=dog_signin,dog_app,dog_public,d
 function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=7dce1c744a0223cc4fc6cc86736c162e
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
 function app.timers_run(p_from_cron boolean) owner=dog_timers execute=dog_timers,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=1473d52d6f5a59053efeea81941dfefc
-function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
+function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs,dog_log language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
 function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
@@ -1037,6 +1149,17 @@ grant app.gh_agents dog_jevs SELECT
 grant app.gh_agents dog_jevs UPDATE
 grant app.gh_decisions dog_jevs INSERT
 grant app.gh_decisions dog_jevs SELECT
+grant app.gh_decisions.action dog_log SELECT
+grant app.gh_decisions.agent_id dog_log SELECT
+grant app.gh_decisions.applied dog_log SELECT
+grant app.gh_decisions.at dog_log SELECT
+grant app.gh_decisions.effect dog_log SELECT
+grant app.gh_decisions.id dog_log SELECT
+grant app.gh_decisions.member_id dog_log SELECT
+grant app.gh_decisions.mode dog_log SELECT
+grant app.gh_decisions.post_id dog_log SELECT
+grant app.gh_decisions.risk dog_log SELECT
+grant app.gh_decisions.total dog_log SELECT
 grant app.gh_erasures dog_jevs INSERT
 grant app.gh_erasures dog_jevs SELECT
 grant app.gh_post_domains dog_jevs DELETE
@@ -1097,9 +1220,20 @@ grant app.jevs_decisions dog_app SELECT
 grant app.jevs_decisions dog_erase DELETE
 grant app.jevs_decisions dog_jevs INSERT
 grant app.jevs_decisions dog_jevs SELECT
+grant app.jevs_decisions.action dog_log SELECT
 grant app.jevs_decisions.agent_id dog_erase SELECT
+grant app.jevs_decisions.applied dog_log SELECT
+grant app.jevs_decisions.created_at dog_log SELECT
+grant app.jevs_decisions.effect dog_log SELECT
+grant app.jevs_decisions.error dog_log SELECT
 grant app.jevs_decisions.id dog_erase SELECT
+grant app.jevs_decisions.id dog_log SELECT
+grant app.jevs_decisions.level dog_log SELECT
 grant app.jevs_decisions.member_id dog_erase SELECT
+grant app.jevs_decisions.mode dog_log SELECT
+grant app.jevs_decisions.subject_id dog_log SELECT
+grant app.jevs_decisions.subject_kind dog_log SELECT
+grant app.jevs_decisions.total dog_log SELECT
 grant app.jevs_marks dog_erase DELETE
 grant app.jevs_marks dog_jevs DELETE
 grant app.jevs_marks dog_jevs INSERT
@@ -1127,6 +1261,46 @@ grant app.jevs_settings.updated_at dog_app SELECT
 grant app.jevs_settings.updated_at dog_delegate SELECT
 grant app.jevs_settings.value dog_app SELECT
 grant app.jevs_settings.value dog_delegate SELECT
+grant app.log_checkpoints dog_app SELECT
+grant app.log_checkpoints dog_log INSERT
+grant app.log_checkpoints dog_log SELECT
+grant app.log_entries dog_app SELECT
+grant app.log_entries dog_log INSERT
+grant app.log_entries dog_log SELECT
+grant app.log_head dog_log INSERT
+grant app.log_head dog_log SELECT
+grant app.log_head dog_log UPDATE
+grant app.log_head.size dog_app SELECT
+grant app.log_keys dog_log INSERT
+grant app.log_keys dog_log SELECT
+grant app.log_keys.created_at dog_app SELECT
+grant app.log_keys.key_id dog_app SELECT
+grant app.log_keys.name dog_app SELECT
+grant app.log_keys.public_key dog_app SELECT
+grant app.log_names dog_log INSERT
+grant app.log_names dog_log SELECT
+grant app.log_nodes dog_app SELECT
+grant app.log_nodes dog_log INSERT
+grant app.log_nodes dog_log SELECT
+grant app.log_openings dog_log INSERT
+grant app.log_openings dog_log SELECT
+grant app.log_proposals_seen dog_log INSERT
+grant app.log_proposals_seen dog_log SELECT
+grant app.log_proposals_seen dog_log UPDATE
+grant app.log_queue dog_log DELETE
+grant app.log_queue dog_log INSERT
+grant app.log_queue dog_log SELECT
+grant app.log_witness dog_log INSERT
+grant app.log_witness dog_log SELECT
+grant app.log_witness dog_log UPDATE
+grant app.log_witness.alarm dog_app SELECT
+grant app.log_witness.checked_at dog_app SELECT
+grant app.log_witness.reason dog_app SELECT
+grant app.log_witness.self_ok dog_app SELECT
+grant app.log_witness.status dog_app SELECT
+grant app.log_witness.witness_root dog_app SELECT
+grant app.log_witness.witness_size dog_app SELECT
+grant app.log_witness.witnessed_at dog_app SELECT
 grant app.members dog_app SELECT
 grant app.members dog_erase DELETE
 grant app.members dog_signin SELECT
@@ -1166,32 +1340,40 @@ grant app.notices dog_app SELECT
 grant app.notices dog_erase DELETE
 grant app.notices.body dog_app INSERT
 grant app.notices.body dog_jevs INSERT
+grant app.notices.body dog_log INSERT
 grant app.notices.body dog_signin INSERT
 grant app.notices.dedupe_key dog_app INSERT
 grant app.notices.dedupe_key dog_jevs INSERT
+grant app.notices.dedupe_key dog_log INSERT
 grant app.notices.dedupe_key dog_signin INSERT
 grant app.notices.id dog_erase SELECT
 grant app.notices.kind dog_app INSERT
 grant app.notices.kind dog_jevs INSERT
+grant app.notices.kind dog_log INSERT
 grant app.notices.kind dog_signin INSERT
 grant app.notices.link dog_app INSERT
 grant app.notices.link dog_jevs INSERT
+grant app.notices.link dog_log INSERT
 grant app.notices.link dog_signin INSERT
 grant app.notices.member_id dog_app INSERT
 grant app.notices.member_id dog_erase SELECT
 grant app.notices.member_id dog_jevs INSERT
+grant app.notices.member_id dog_log INSERT
 grant app.notices.member_id dog_signin INSERT
 grant app.notices.read_at dog_app UPDATE
 grant app.notices.subject_id dog_app INSERT
 grant app.notices.subject_id dog_erase SELECT
 grant app.notices.subject_id dog_jevs INSERT
+grant app.notices.subject_id dog_log INSERT
 grant app.notices.subject_id dog_signin INSERT
 grant app.notices.subject_kind dog_app INSERT
 grant app.notices.subject_kind dog_erase SELECT
 grant app.notices.subject_kind dog_jevs INSERT
+grant app.notices.subject_kind dog_log INSERT
 grant app.notices.subject_kind dog_signin INSERT
 grant app.notices.title dog_app INSERT
 grant app.notices.title dog_jevs INSERT
+grant app.notices.title dog_log INSERT
 grant app.notices.title dog_signin INSERT
 grant app.pin_keys dog_signin SELECT
 grant app.post_search dog_public DELETE
@@ -1203,17 +1385,20 @@ grant app.posts dog_erase DELETE
 grant app.posts.agent_id dog_delegate INSERT
 grant app.posts.agent_id dog_jevs SELECT
 grant app.posts.agent_id dog_limits SELECT
+grant app.posts.agent_id dog_log SELECT
 grant app.posts.agent_id dog_public SELECT
 grant app.posts.author_id dog_delegate INSERT
 grant app.posts.author_id dog_delegate SELECT
 grant app.posts.author_id dog_erase SELECT
 grant app.posts.author_id dog_jevs SELECT
 grant app.posts.author_id dog_limits SELECT
+grant app.posts.author_id dog_log SELECT
 grant app.posts.author_id dog_public SELECT
 grant app.posts.body dog_app INSERT
 grant app.posts.body dog_delegate INSERT
 grant app.posts.body dog_erase UPDATE
 grant app.posts.body dog_jevs SELECT
+grant app.posts.body dog_log SELECT
 grant app.posts.body dog_public SELECT
 grant app.posts.body_fp dog_jevs SELECT
 grant app.posts.created_at dog_jevs SELECT
@@ -1221,6 +1406,7 @@ grant app.posts.created_at dog_limits SELECT
 grant app.posts.delegation dog_delegate INSERT
 grant app.posts.delegation dog_jevs SELECT
 grant app.posts.delegation dog_limits SELECT
+grant app.posts.delegation dog_log SELECT
 grant app.posts.delegation dog_public SELECT
 grant app.posts.draft_id dog_delegate INSERT
 grant app.posts.draft_id dog_jevs SELECT
@@ -1229,20 +1415,25 @@ grant app.posts.first_published_at dog_jevs SELECT
 grant app.posts.id dog_delegate SELECT
 grant app.posts.id dog_erase SELECT
 grant app.posts.id dog_jevs SELECT
+grant app.posts.id dog_log SELECT
 grant app.posts.id dog_public SELECT
 grant app.posts.lane dog_delegate INSERT
 grant app.posts.lane dog_jevs SELECT
 grant app.posts.lane dog_limits SELECT
+grant app.posts.lane dog_log SELECT
 grant app.posts.lane dog_public SELECT
 grant app.posts.published_at dog_delegate SELECT
 grant app.posts.published_at dog_jevs SELECT
+grant app.posts.published_at dog_log SELECT
 grant app.posts.published_at dog_public SELECT
 grant app.posts.rules_version dog_delegate INSERT
+grant app.posts.rules_version dog_log SELECT
 grant app.posts.rules_version dog_public SELECT
 grant app.posts.status dog_app UPDATE
 grant app.posts.status dog_delegate SELECT
 grant app.posts.status dog_jevs SELECT
 grant app.posts.status dog_jevs UPDATE
+grant app.posts.status dog_log SELECT
 grant app.posts.status dog_public SELECT
 grant app.rate_limits dog_signin DELETE
 grant app.rate_limits dog_signin SELECT
@@ -1506,6 +1697,7 @@ policy app.file_keys file_keys_signin_update cmd=w permissive=true to=dog_signin
 policy app.gh_accounts gh_accounts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_agents gh_agents_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_decisions gh_decisions_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.gh_decisions gh_decisions_log_select cmd=r permissive=true to=dog_log using=true check=
 policy app.gh_erasures gh_erasures_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_post_domains gh_post_domains_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_posts gh_posts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
@@ -1532,6 +1724,7 @@ policy app.jevs_decisions jevs_decisions_erase_delete cmd=d permissive=true to=d
 policy app.jevs_decisions jevs_decisions_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.jevs_decisions jevs_decisions_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true
 policy app.jevs_decisions jevs_decisions_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
+policy app.jevs_decisions jevs_decisions_log_select cmd=r permissive=true to=dog_log using=true check=
 policy app.jevs_decisions jevs_decisions_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) check=
 policy app.jevs_marks jevs_marks_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.jevs_marks jevs_marks_erase_select cmd=r permissive=true to=dog_erase using=true check=
@@ -1552,6 +1745,26 @@ policy app.jevs_settings jevs_settings_owner_insert cmd=a permissive=true to=dog
 policy app.jevs_settings jevs_settings_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.jevs_settings jevs_settings_owner_update cmd=w permissive=true to=dog_owner using=true check=true
 policy app.jevs_settings jevs_settings_select cmd=r permissive=true to=dog_app,dog_delegate using=((key = 'mode'::text) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
+policy app.log_checkpoints log_checkpoints_log_insert cmd=a permissive=true to=dog_log using= check=true
+policy app.log_checkpoints log_checkpoints_log_select cmd=r permissive=true to=dog_log using=true check=
+policy app.log_checkpoints log_checkpoints_read cmd=r permissive=true to=dog_app using=true check=
+policy app.log_entries log_entries_log_insert cmd=a permissive=true to=dog_log using= check=true
+policy app.log_entries log_entries_log_select cmd=r permissive=true to=dog_log using=true check=
+policy app.log_entries log_entries_read cmd=r permissive=true to=dog_app using=true check=
+policy app.log_head log_head_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_head log_head_read cmd=r permissive=true to=dog_app using=true check=
+policy app.log_keys log_keys_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_keys log_keys_public cmd=r permissive=true to=dog_app using=true check=
+policy app.log_names log_names_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_nodes log_nodes_log_insert cmd=a permissive=true to=dog_log using= check=true
+policy app.log_nodes log_nodes_log_select cmd=r permissive=true to=dog_log using=true check=
+policy app.log_nodes log_nodes_read cmd=r permissive=true to=dog_app using=true check=
+policy app.log_openings log_openings_log_insert cmd=a permissive=true to=dog_log using= check=true
+policy app.log_openings log_openings_log_select cmd=r permissive=true to=dog_log using=true check=
+policy app.log_proposals_seen log_proposals_seen_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_queue log_queue_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_witness log_witness_log cmd=* permissive=true to=dog_log using=true check=true
+policy app.log_witness log_witness_read cmd=r permissive=true to=dog_app using=true check=
 policy app.members members_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.members members_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.members members_erase_select cmd=r permissive=true to=dog_erase using=true check=
@@ -1572,6 +1785,7 @@ policy app.notices notices_erase_delete cmd=d permissive=true to=dog_erase using
 policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))
 policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text, 'post_published'::text]))
+policy app.notices notices_log_insert cmd=a permissive=true to=dog_log using= check=((member_id IS NULL) AND (kind = 'alert'::text))
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
 policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'signin_pin'::text, 'signin_browser'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
@@ -1587,6 +1801,7 @@ policy app.posts posts_insert cmd=a permissive=true to=dog_app using= check=((au
 policy app.posts posts_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.posts posts_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
 policy app.posts posts_limits_select cmd=r permissive=true to=dog_limits using=true check=
+policy app.posts posts_log_select cmd=r permissive=true to=dog_log using=(lane = 'agents'::text) check=
 policy app.posts posts_public_select cmd=r permissive=true to=dog_public using=(status = 'live'::text) check=
 policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (author_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.posts posts_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
@@ -1710,13 +1925,25 @@ trigger app.containments enabled=A CREATE TRIGGER containments_start AFTER INSER
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_guard BEFORE DELETE OR UPDATE ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_guard()
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_notify AFTER INSERT ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_notify()
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_guard BEFORE UPDATE ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.gh_decisions_guard()
+trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_log AFTER INSERT ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.log_queue_decision()
 trigger app.identities enabled=A CREATE TRIGGER identities_level_cap BEFORE INSERT OR UPDATE OF level ON app.identities FOR EACH ROW EXECUTE FUNCTION app.identities_level_cap()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_guard BEFORE DELETE OR UPDATE ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_guard()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_notify BEFORE INSERT ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_notify()
 trigger app.jevs_decisions enabled=A CREATE TRIGGER jevs_decisions_alert AFTER INSERT ON app.jevs_decisions FOR EACH ROW EXECUTE FUNCTION app.jevs_decisions_alert()
 trigger app.jevs_decisions enabled=A CREATE TRIGGER jevs_decisions_guard BEFORE DELETE OR UPDATE ON app.jevs_decisions FOR EACH ROW EXECUTE FUNCTION app.jevs_decisions_guard()
+trigger app.jevs_decisions enabled=A CREATE TRIGGER jevs_decisions_log AFTER INSERT ON app.jevs_decisions FOR EACH ROW EXECUTE FUNCTION app.log_queue_decision()
 trigger app.jevs_settings enabled=A CREATE TRIGGER jevs_settings_audit AFTER UPDATE ON app.jevs_settings FOR EACH ROW EXECUTE FUNCTION app.jevs_settings_audit()
 trigger app.jevs_settings enabled=A CREATE TRIGGER jevs_settings_check BEFORE INSERT OR UPDATE ON app.jevs_settings FOR EACH ROW EXECUTE FUNCTION app.jevs_settings_check()
+trigger app.log_checkpoints enabled=A CREATE TRIGGER log_checkpoints_no_change BEFORE DELETE OR UPDATE ON app.log_checkpoints FOR EACH ROW EXECUTE FUNCTION app.log_append_only()
+trigger app.log_checkpoints enabled=A CREATE TRIGGER log_checkpoints_no_truncate BEFORE TRUNCATE ON app.log_checkpoints FOR EACH STATEMENT EXECUTE FUNCTION app.log_append_only()
+trigger app.log_entries enabled=A CREATE TRIGGER log_entries_no_change BEFORE DELETE OR UPDATE ON app.log_entries FOR EACH ROW EXECUTE FUNCTION app.log_append_only()
+trigger app.log_entries enabled=A CREATE TRIGGER log_entries_no_truncate BEFORE TRUNCATE ON app.log_entries FOR EACH STATEMENT EXECUTE FUNCTION app.log_append_only()
+trigger app.log_head enabled=A CREATE TRIGGER log_head_guard BEFORE UPDATE ON app.log_head FOR EACH ROW EXECUTE FUNCTION app.log_head_guard()
+trigger app.log_head enabled=A CREATE TRIGGER log_head_no_delete BEFORE DELETE ON app.log_head FOR EACH ROW EXECUTE FUNCTION app.log_append_only()
+trigger app.log_keys enabled=A CREATE TRIGGER log_keys_no_change BEFORE DELETE OR UPDATE ON app.log_keys FOR EACH ROW EXECUTE FUNCTION app.log_append_only()
+trigger app.log_keys enabled=A CREATE TRIGGER log_keys_no_truncate BEFORE TRUNCATE ON app.log_keys FOR EACH STATEMENT EXECUTE FUNCTION app.log_append_only()
+trigger app.log_nodes enabled=A CREATE TRIGGER log_nodes_no_change BEFORE DELETE OR UPDATE ON app.log_nodes FOR EACH ROW EXECUTE FUNCTION app.log_append_only()
+trigger app.log_nodes enabled=A CREATE TRIGGER log_nodes_no_truncate BEFORE TRUNCATE ON app.log_nodes FOR EACH STATEMENT EXECUTE FUNCTION app.log_append_only()
 trigger app.members enabled=A CREATE TRIGGER members_audit AFTER UPDATE ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_audit()
 trigger app.members enabled=A CREATE TRIGGER members_ban_cleanup AFTER UPDATE ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_ban_cleanup()
 trigger app.members enabled=A CREATE TRIGGER members_guard BEFORE UPDATE ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_guard()
@@ -1733,6 +1960,7 @@ trigger app.posts enabled=A CREATE TRIGGER posts_delegation BEFORE INSERT ON app
 trigger app.posts enabled=A CREATE TRIGGER posts_first_published BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_first_published()
 trigger app.posts enabled=A CREATE TRIGGER posts_flag_waiting AFTER INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_flag_waiting()
 trigger app.posts enabled=A CREATE TRIGGER posts_limit BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_limit()
+trigger app.posts enabled=A CREATE TRIGGER posts_log AFTER INSERT OR UPDATE OF status ON app.posts FOR EACH ROW EXECUTE FUNCTION app.log_post_live()
 trigger app.posts enabled=A CREATE TRIGGER posts_review_guard BEFORE UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_review_guard()
 trigger app.posts enabled=A CREATE TRIGGER posts_tree_cap BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.agent_tree_cap()
 trigger app.posts enabled=A CREATE TRIGGER sl_after_post_change AFTER UPDATE OF status ON app.posts FOR EACH ROW WHEN (((old.status = ANY (ARRAY['live'::text, 'waiting'::text])) AND (new.status = 'removed'::text))) EXECUTE FUNCTION app.sl_after_post_change()

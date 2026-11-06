@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "The public log verifier: the browser page, the CLI (tools/verify) and the witness all run these files."
+}

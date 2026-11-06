@@ -182,6 +182,8 @@ async function main() {
     const allowed = { members: 1, identities: 1, sessions: 1, subagent_settings: 1 };
     // Rows everyone may read: JEVs's mode (shadow or enforce) is public on purpose (PR 12); its thresholds are not.
     const PUBLIC_ROWS = { jevs_settings: 1, timer_slot: 1, invariant_slot: 1 }; // timer_slot (027) and invariant_slot (032): heartbeat rows, readable by anyone
+    // The public log (038): all of its tree, checkpoints, head, key (public half) and witness reading are public by design.
+    const PUBLIC_LOG = new Set(['log_entries', 'log_nodes', 'log_checkpoints', 'log_head', 'log_keys', 'log_witness']);
     let breakinRuns = 0;
     const violations = [];
     const stopAt = Date.now() + SECONDS * 1000;
@@ -191,7 +193,7 @@ async function main() {
           for (const t of tables) {
             try {
               const [{ n }] = await run(ctx, (x) => x.unsafe(`select count(*)::int as n from app.${t}`));
-              const may = (label === 'member' ? (allowed[t] || 0) : 0) + (PUBLIC_ROWS[t] || 0);
+              const may = PUBLIC_LOG.has(t) ? Infinity : (label === 'member' ? (allowed[t] || 0) : 0) + (PUBLIC_ROWS[t] || 0);
               if (n > may) violations.push(label + ' saw ' + n + ' rows of ' + t);
             } catch (e) { if (e.code !== '42501') violations.push(label + ' ' + t + ': ' + e.message); }
           }

@@ -12,6 +12,15 @@ const src = fs.readFileSync(path.join(dir, page), 'utf8');
 // roles and templates its script needs. Every other page is the design's markup as written.
 const own = path.join(__dirname, 'pages', target.replace(/\.html$/, '').replace(/\//g, '_') + '.main.html');
 let { body, styles } = fs.existsSync(own) ? convert(fs.readFileSync(own, 'utf8')) : port(src);
+// <!-- sha256:path --> in a page's own markup: that repository file's SHA-256, so a published hash is always the file's.
+body = body.replace(/<!-- sha256:([A-Za-z0-9._/-]+) -->/g, (m, f) => require('crypto').createHash('sha256').update(fs.readFileSync(path.join(wt, f))).digest('hex'));
+// <!-- pinned-key -->: what verifier/log-key.js pins today, so /security never says more than the file does.
+body = body.replace(/<!-- pinned-key -->/g, () => {
+  const m = fs.readFileSync(path.join(wt, 'verifier/log-key.js'), 'utf8').match(/^export const PINNED_VKEY = (null|"[^"]+");$/m);
+  if (!m) throw new Error('verifier/log-key.js has no PINNED_VKEY line');
+  return m[1] === 'null' ? 'Not pinned in the repository yet: the key is made when the log is switched on in production, and then pinned by a reviewed pull request. Until then, verifiers use the witness’s pin.'
+    : 'Pinned in the repository: <code>' + JSON.parse(m[1]).replace(/[<>&"]/g, '') + '</code>.';
+});
 for (const [a, b] of PATCHES[target] || []) {
   if (typeof a === 'string' ? !body.includes(a) : !a.test(body)) throw new Error(target + ': patch text not found: ' + a);
   body = body.replace(a, b);

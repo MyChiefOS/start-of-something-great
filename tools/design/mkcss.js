@@ -52,6 +52,14 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 /* A card heading the design draws as an h3, kept an h2 where an h3 would skip a level (spec 5.3: one h1, logical
    heading order): the design's .card h3, at h2. */
 .d1 h2.h3,.d1 .story h2.h3,.d1 .card h2.h3{font-size:22px;margin:4px 0 8px}
+/* The Verify page's checklist rows (CODING_AGENT_SPEC.md 1.5), drawn by receipts.js as the design's cards. */
+.d1 .checks .check{padding:14px 18px 10px}
+.d1 .checks .check-title{font-family:var(--display)}
+.d1 .story .checks .check-text{margin:8px 0 6px}
+/* Focus moves to the result when the checks end (spec 1.5): the design's focus ring, not the browser's. */
+.d1 #banner:focus{outline:2px solid var(--amber);outline-offset:2px}
+/* Keys and hashes are long unbroken strings: they wrap inside their box instead of running out of it. */
+.d1 dd code,.d1 td code,.d1 .fine code{overflow-wrap:anywhere}
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 ${fonts}
 .d1{${dark};--rule-strong:#626160}

@@ -15,7 +15,7 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -24,7 +24,9 @@ const TIMERS = 'dog_timers';
 // two emergency-brake checks; dog_erase (PR 8) only deletes, inside the one account-deletion function.
 // dog_delegate (PR 7) only turns an approved draft into a post, inside app.approve_draft. dog_jevs (PR 12) only gathers
 // JEVs's signals and records and carries out its decisions, inside the JEVs functions.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs'];
+// dog_log (038) only adds to the public log and signs its checkpoints, inside the log functions; it alone reads the
+// log's signing key.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -184,7 +186,26 @@ const DEFINERS = {
   // 027 (the CSO's control 6): the timers, at most once every 50 seconds, with no timer secret on the site.
   'app.timers_run(boolean)': 'dog_timers',
   // 027 (the CSO's review, B1): the 90-day clock of an agent's tree, which an agent can't read for itself.
-  'app.act_clock_expired(uuid)': 'dog_signin'
+  'app.act_clock_expired(uuid)': 'dog_signin',
+  // 038 (the design handoff of Nov 5, 2026, phase 2): the public log. Adding an entry, sealing facts and logging a post
+  // are called only by the log's own functions and the post trigger; the site may run the hourly JEVs batch, log a
+  // proposal decision it read on GitHub, sign the next checkpoint, report the witness's copy and read a live post's
+  // opening. Only these read the signing key or write the tree.
+  'app.log_append(text, timestamp with time zone, text, text, text, jsonb)': { owner: 'dog_log', callers: '' },
+  'app.log_seal(bytea, jsonb)': { owner: 'dog_log', callers: '' },
+  'app.log_post(uuid, uuid, uuid, text, integer, text, timestamp with time zone)': { owner: 'dog_log', callers: '' },
+  'app.log_post_live()': { owner: 'dog_log', callers: '' },
+  'app.log_unverified(text)': { owner: 'dog_log', callers: '' },
+  'app.log_jevs_hours()': 'dog_log',
+  'app.log_proposal(integer, text)': 'dog_log',
+  'app.log_checkpoint()': 'dog_log',
+  'app.log_witness_report(bigint, bytea, timestamp with time zone, text)': 'dog_log',
+  'app.log_opening(bigint)': 'dog_log',
+  // The review of 038: a random name for each account in the log (M2), the queue's trigger on each new JEVs decision
+  // (H4, L1), and clearing an alarm, in a reviewed migration only (M3).
+  'app.log_name(text, uuid)': { owner: 'dog_log', callers: '' },
+  'app.log_queue_decision()': { owner: 'dog_log', callers: '' },
+  'app.log_clear_alarm(text)': { owner: 'dog_log', callers: 'dog_owner' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -279,7 +300,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -311,7 +332,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

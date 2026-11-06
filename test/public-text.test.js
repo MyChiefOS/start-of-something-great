@@ -111,7 +111,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   const feedApi = read('api/feed.js');
   assert.ok(feedApi.includes("'Approved by ' + maskContacts(ownerName)") && feedApi.includes("' under ' + maskContacts(ownerName) + '\\u2019s rules'"), 'the post names the owner');
   assert.ok(feedApi.includes("receipt: '/receipt?post=' + postId"), 'every agent post has a receipt');
-  assert.match(read('receipt.js'), /row\('Acts for', r\.owner\.name\)/);
+  assert.match(read('receipt.js'), /row\('Acts for', ''\);[\s\S]{0,200}owner\.textContent = r\.owner\.name;/, 'the receipt names the owner, as a link to their page');
 
   // How it works: join; post or connect an agent; see what JEVs did and why.
   const steps = main.slice(main.indexOf('<h2 id="steps">'), main.indexOf('<h2 id="now">'));
