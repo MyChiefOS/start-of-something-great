@@ -5,9 +5,15 @@
 //   GET  ?profile=<member id>                         a member's public profile
 //   GET  ?mine=1                                      your own posts in every state (signed in only)
 //   GET  ?queue=1                                     the review queue (Aaron only; PR 4)
+//   GET  ?reveal=<post id>                            a queued post's words with nothing masked, recorded in the audit
+//                                                     log (Aaron only; 041's review, L3)
 //   POST {"body": "..."}                              write a post (signed in, from our own pages only)
 //   POST {"report": "<post id>", "reason": "spam"}    report someone else's live post (signed in; rate limited, S6)
-//   POST {"review": "<post id>", "decision": "..."}  approve, keep, remove or restore a post (Aaron only; SF5)
+//   POST {"review": "<post id>", "decision": "...", "reason": "...", "sha256": "<hex>", "seen_ms": n, "note": "..."}
+//                                                     approve, keep, remove or restore a post, naming a reason and
+//                                                     binding the SHA-256 of its words (Aaron only; SF5; 041)
+//   POST {"review_settings": {"daily_budget": n}}     the daily review budget, 1 to 500 (Aaron only; 041)
+//   POST {"review_settings": {"sample": "on" | "off"}}  Second Look's 5% sample of low-risk posts (Aaron only; 041)
 //   POST {"body": "..."} with Authorization: Bearer <agent key>   an agent posts in the agents lane (PR 5, F3)
 //   GET  ?receipt=<post id>                          the public receipt for an agent's post (PR 7, A4)
 //   GET  ?controls=1                                  owner controls: the numbers, brakes, bans and JEVs (Aaron only; PR 6, F4, PR 12)
@@ -34,6 +40,7 @@
 const db = require('../db');
 const posts = require('../db/posts');
 const review = require('../db/review');
+const tiers = require('../db/review-tiers');
 const controls = require('../db/controls');
 const delegation = require('../db/delegation');
 const jevs = require('../db/jevs');
@@ -143,9 +150,9 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'author', 'q', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
+const PARAMS = ['lane', 'before', 'limit', 'author', 'q', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal'];
 // author and q filter the lanes only; with any other kind of answer they would be ignored, so they are refused there.
-const NOT_WITH_FILTERS = ['profile', 'mine', 'queue', 'controls', 'receipt', 'challenges'];
+const NOT_WITH_FILTERS = ['profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -158,6 +165,7 @@ function canonical(q) {
   if (q.controls !== undefined && q.controls !== '1') return false;
   if (q.receipt !== undefined && !UUID.test(q.receipt)) return false;
   if (q.challenges !== undefined && q.challenges !== '1') return false;
+  if (q.reveal !== undefined && !UUID.test(q.reveal)) return false;
   if (q.author !== undefined && !UUID.test(q.author)) return false;
   // The search's own rules (its length, and what it may not look for) are checked where it is used, to say why.
   if ((q.author !== undefined || q.q !== undefined) && NOT_WITH_FILTERS.some((k) => q[k] !== undefined)) return false;
@@ -320,8 +328,18 @@ function shapeQueued(i) {
     appealed: i.appeals > 0,
     // The one-tap choices for this item (SF5).
     // A removed post is here only if a report arrived as it was removed: Remove closes the leftover flags.
-    actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'] };
+    actions: i.status === 'waiting' ? ['approve', 'remove'] : i.status === 'live' ? ['keep', 'remove'] : ['remove', 'restore'],
+    // 041 (phase 4 of the design handoff): its tier (3 sensitive, 2 held; null before 041 is applied), its kind, the
+    // SHA-256 of its stored words (what a decision binds; the words above are masked where they hold contact details,
+    // so the page says when they differ), its author's record here, and the reasons each decision may give.
+    tier: i.tier, item_type: i.itemType, sha256: i.sha256, history: i.history,
+    // ("The report isn't upheld" only where there is a report.)
+    decision_reasons: i.tier === null ? null : Object.fromEntries(Object.entries(review.DECISION_REASONS)
+      .map(([k, v]) => [k, v.filter((r) => r !== 'undo' && (r !== 'not_upheld' || i.reports > 0))])),
+    // Which automated reviewer flagged it, in words, for classifiers other than JEVs (a sample's re-read).
+    classifier_labels: Object.fromEntries((i.classifiers || []).filter((c) => CLASSIFIER_LABELS[c]).map((c) => [c, CLASSIFIER_LABELS[c]])) };
 }
+const CLASSIFIER_LABELS = { secondlook: 'Second Look, re-reading a 5% sample of low-risk posts after they went live' };
 
 // The JEVs behaviour watch (026): a signed-in member who isn't the administrator asking for the review queue or the
 // owner controls alerts Aaron, once a day per member and page. Alerts only; a failure never changes the answer.
@@ -330,18 +348,47 @@ async function reach(run, who, what) {
   try { await run(session.actorFor(who), (t) => store.watchReach(t, what)); } catch (e) { jevs.logFailure('behaviour watch', e); }
 }
 
-// A reviewer's decision (SF5: one tap from the queue). Recorded in the audit log by the database (O3).
+// A reviewer's decision (SF5: one tap from the queue, each button a decision with its reason). Recorded in the audit
+// log by the database (O3), and since 041 in app.review_decisions with its tier, reason and the hash of the words.
+const DECIDE_USAGE = 'Send {"review": "<post id>", "decision": "approve" | "keep" | "remove" | "restore", "reason": "<one of the item\u2019s reasons>", '
+  + '"sha256": "<the SHA-256 of the post\u2019s words, from the queue>", "seen_ms": <optional, time on the item>, "note": "<for reason other, 1 to 300 characters>"}.';
 async function decide(req, res, run, who, body) {
   if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can decide on posts.' }); }
   try {
-    const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision }));
+    const out = await run(session.actorFor(who), (t) => review.decide(t, { post: body.review, decision: body.decision, reason: body.reason,
+      note: body.note === undefined ? null : body.note, sha256: body.sha256, seenMs: body.seen_ms === undefined ? null : body.seen_ms }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such post.' });
-    if (out.refused === 'stale') return reply(res, 409, { error: 'That post has already been decided.' });
+    if (out.refused === 'stale') return reply(res, 409, { error: 'That post has already been decided, or there is nothing to undo.' });
+    if (out.refused === 'changed') return reply(res, 409, { error: 'The post\u2019s words aren\u2019t the ones you read. Refresh to read them again.' });
+    if (out.refused === 'reason') return reply(res, 400, { error: 'That reason doesn\u2019t fit this decision. ' + DECIDE_USAGE });
+    if (out.refused === 'read') return reply(res, 409, { error: 'This one is sensitive: it needs 10 seconds on screen before you decide. Read it through, then decide again.' });
     return reply(res, 200, { id: body.review, decision: body.decision, status: out.status });
   } catch (e) {
-    if (e instanceof ValidationError) return reply(res, 400, { error: 'Send {"review": "<post id>", "decision": "approve" | "keep" | "remove" | "restore"}.' });
+    if (e instanceof ValidationError) return reply(res, 400, { error: DECIDE_USAGE });
     throw e;
   }
+}
+
+// The daily review budget and the sample (041): Aaron only. The budget is a measure, never a lock: over it, items
+// wait with their age shown. The sample starts off, until the privacy policy says what it reads.
+const SETTINGS_USAGE = 'Send {"review_settings": {"daily_budget": <a whole number from 1 to 500>}} or {"review_settings": {"sample": "on" | "off"}}.';
+async function reviewSettings(req, res, run, who, body) {
+  if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can change the review settings.' }); }
+  const b = body.review_settings;
+  const key = b && typeof b === 'object' && !Array.isArray(b) && Object.keys(b).length === 1 ? Object.keys(b)[0] : null;
+  if (Object.keys(body).length !== 1 || !key) return reply(res, 400, { error: SETTINGS_USAGE });
+  if (key === 'daily_budget') {
+    const n = b.daily_budget;
+    if (!Number.isInteger(n) || n < 1 || n > 500) return reply(res, 400, { error: SETTINGS_USAGE });
+    const [r] = await run(session.actorFor(who), (t) => t`select app.review_set_budget(${n}) as daily_budget`);
+    return reply(res, 200, { daily_budget: r.daily_budget, message: 'Your daily review budget is now ' + r.daily_budget + ' items.' });
+  }
+  if (key === 'sample' && ['on', 'off'].includes(b.sample)) {
+    const [r] = await run(session.actorFor(who), (t) => t`select app.review_set_sample(${b.sample === 'on'}) as rate`);
+    return reply(res, 200, { sample: Number(r.rate) > 0 ? 'on' : 'off', message: Number(r.rate) > 0
+      ? 'The sample is on: Second Look re-reads 5% of low-risk posts, at most 100 a day, while it runs.' : 'The sample is off.' });
+  }
+  return reply(res, 400, { error: SETTINGS_USAGE });
 }
 
 // A member reports someone else's live post (F7: it is in the queue as soon as this answers).
@@ -512,6 +559,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
     if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     if (Object.hasOwn(body, 'second_look')) return secondLook(req, res, run, who, body, oidc);
+    if (Object.hasOwn(body, 'review_settings')) return reviewSettings(req, res, run, who, body);
     try {
       const f = jevs.facts(req, config.load().ipKey);
       const p = await run(session.actorFor(who), async (t) => {
@@ -562,7 +610,24 @@ async function handle(req, res, run, { oidc = null } = {}) {
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see the review queue.' }); }
     const qd = await run(session.actorFor(who), (t) => review.queue(t, {}));
-    return reply(res, 200, { open: qd.open, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
+    return reply(res, 200, { open: qd.open, budget: qd.budget, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
+  }
+
+  // 041's review, L3: a queued post's words with nothing masked, for Aaron only, each time recorded in the audit log.
+  if (q.reveal !== undefined) {
+    if (!run) return reply(res, 404, { error: 'No such post.' });
+    const who = await session.current(req, run);
+    if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
+    if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see a post\u2019s hidden details.' }); }
+    const body = await run(session.actorFor(who), async (t) => {
+      const [p] = await t`select p.body from app.posts p where p.id = ${q.reveal}
+        and exists (select 1 from app.review_flags f where f.post_id = p.id and f.resolved_at is null)`;
+      if (!p) return null;
+      await t`insert into app.audit_log (action, subject_kind, subject_id, detail) values ('review.reveal', 'post', ${q.reveal}, '{}'::jsonb)`;
+      return p.body;
+    });
+    if (body === null) return reply(res, 404, { error: 'That post isn\u2019t in the queue.' });
+    return reply(res, 200, { id: q.reveal, body, untrusted_fields: ['body'], note: UNTRUSTED_NOTE });
   }
 
   if (q.controls !== undefined) {
@@ -573,8 +638,11 @@ async function handle(req, res, run, { oidc = null } = {}) {
     const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
       deletion_reviews: await controls.deletionReviews(t),
       // Second Look's report (034): counts only. Best effort, so the controls still load before 034 is applied.
-      second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null) }));
-    return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs, second_look: d.second_look,
+      second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null),
+      // The review budget, the sample and the canaries (041), with each revealed canary checked against the audit log.
+      // Best effort, so the controls still load before 041 is applied.
+      review: await tiers.adminView(t).catch(() => null) }));
+    return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs, second_look: d.second_look, review: d.review,
       deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),

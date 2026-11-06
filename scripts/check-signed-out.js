@@ -291,7 +291,8 @@ async function main() {
         const empty = await context(browser, base, { width, height, scheme, who: 'admin', queue: { open: 0, items: [] } });
         p = await open(empty.ctx, base, '/admin/review', tag + ' admin /review empty', fail);
         if (CHECKS) {
-          const t = await p.evaluate(() => document.getElementById('summary').textContent + ' | ' + (document.querySelector('#queue .empty') || { textContent: '' }).textContent);
+          // The design's empty state (static/review.html's .empty), shown when nothing waits (phase 4, Nov 5).
+          const t = await p.evaluate(() => { const e = document.getElementById('empty'); return document.getElementById('summary').textContent + ' | ' + (e && !e.hidden ? e.textContent : ''); });
           if (!/^Nothing is waiting\. \| /.test(t) || !/JEVs checks every post/.test(t)) fail(tag + ' admin /review empty', 'no empty state: ' + t);
         }
         await shot(p, 'admin-review-' + tag + '-admin-empty');

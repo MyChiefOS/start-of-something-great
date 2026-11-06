@@ -24,9 +24,10 @@ const PAGES = [
   // classes the build makes (css/account-agents.css).
   { file: 'account/agents.html', path: '/account/agents', script: '/account/agents.js', css: '/css/account-agents.css', main: 'story', h1: 'Your agents',
     h2: ['Waiting for your approval', 'Add an agent', 'Your agents'] },
-  { file: 'admin/review.html', path: '/admin/review', script: '/admin/review.js', css: '/admin/review.css', h1: 'Review', kicker: true,
+  // Built from the design's own markup by tools/design (phase 4, Nov 5): design.css, then the page's own sheets.
+  { file: 'admin/review.html', path: '/admin/review', script: '/admin/review.js', css: '/admin/review.css', h1: 'Review', kicker: true, design: ['/approval.css', '/admin/review.css'],
     h2: ['Paused owners and appeals'] },
-  { file: 'admin/controls.html', path: '/admin/controls', script: '/admin/controls.js', css: '/admin/controls.css', h1: 'Owner controls', kicker: true,
+  { file: 'admin/controls.html', path: '/admin/controls', script: '/admin/controls.js', css: '/admin/controls.css', h1: 'Owner controls', kicker: true, design: ['/admin/controls.css'],
     h2: ['Deletion reviews', 'Emergency brake', 'Owners', 'JEVs, the automated checks', 'Second Look, the narrow AI', 'Same text, many posts'] }
 ];
 // The design's sample figures and names (static/account.html, agents.html, review.html, controls.html): none may show.
@@ -43,14 +44,17 @@ test('each page is at its design path, carries the shell, and has the design\'s 
     assert.match(html, /<meta name="robots" content="noindex">/, p.file + ': private');
     assert.match(html, new RegExp('<script defer src="' + p.script.replace(/\//g, '\\/').replace('.', '\\.') + '"><\\/script>'), p.file);
     assert.match(html, new RegExp('<link rel="stylesheet" href="' + p.css.replace(/\//g, '\\/').replace('.', '\\.') + '">'), p.file);
-    // The design's stylesheet, then the app pages' shared one, then the page's own (tools/design/build.js).
-    assert.match(html, new RegExp('<link rel="stylesheet" href="/design\\.css">\\n  <link rel="stylesheet" href="/app\\.css">\\n  <link rel="stylesheet" href="' + p.css.replace('.', '\\.') + '">'), p.file);
+    // The design's stylesheet, then (phase 4's pages) their own, or (the other app pages) the shared one and their own.
+    if (p.design) assert.ok(html.includes(['/design.css', ...p.design].map((h) => '<link rel="stylesheet" href="' + h + '">').join('\n  ')), p.file);
+    else assert.match(html, new RegExp('<link rel="stylesheet" href="/design\\.css">\\n  <link rel="stylesheet" href="/app\\.css">\\n  <link rel="stylesheet" href="' + p.css.replace('.', '\\.') + '">'), p.file);
     assert.strictEqual((html.match(/<h1\b/g) || []).length, 1, p.file);
     const h = headings(html);
     assert.strictEqual(h[0], p.h1, p.file);
     assert.ok(inOrder(h.slice(1), p.h2), p.file + ': ' + h.join(' / '));
-    if (p.kicker) assert.match(html, /<p class="kick">Administrator only<\/p>\n<h1>/, p.file + ': the design\'s kicker');
-    assert.match(html, p.main ? new RegExp('<main class="' + p.main + '" id="main" tabindex="-1">') : /<main class="story feed [^"]*" id="main" tabindex="-1">/, p.file);
+    if (p.kicker && p.design) assert.match(html, /<p class="kick">Administrator only<\/p><h1>/, p.file + ': the design\'s kicker');
+    else if (p.kicker) assert.match(html, /<p class="kick">Administrator only<\/p>\n<h1>/, p.file + ': the design\'s kicker');
+    if (p.design) assert.match(html, /<main class="story" id="main" tabindex="-1">/, p.file);
+    else assert.match(html, p.main ? new RegExp('<main class="' + p.main + '" id="main" tabindex="-1">') : /<main class="story feed [^"]*" id="main" tabindex="-1">/, p.file);
   }
 });
 
@@ -265,32 +269,79 @@ test('/account/agents: each agent is a card with its name, a mode pill, and Draf
 
 const ITEM = (o) => ({ id: ID(60), lane: 'people', status: 'waiting', body: 'Words.', author: { name: 'Ada', level: 1, status: 'active', live_posts: 0 },
   flagged_at: '2026-11-05T09:00:00Z', first_posts: false, reports: 0, reasons: [], notes: [], classifiers: ['jevs'], appealed: false, questions: [], actions: ['approve', 'remove'], ...o });
-const review = (items) => page('admin/review.html', 'admin/review.js', (url) => (url === '/api/notify/appeals' ? [200, { containments: [] }] : [200, { open: items.length, items }]));
+const review = (items, extra = {}) => page('admin/review.html', ['approval.js', 'admin/review.js'], (url) => (url === '/api/notify/appeals' ? [200, { containments: [] }] : [200, { open: items.length, items, ...extra }]));
+const REASONS = { approve: ['ordinary', 'checked', 'other'], keep: ['not_upheld', 'ordinary', 'checked', 'other'], remove: ['spam', 'abuse', 'private_info', 'illegal', 'other'], restore: ['mistake', 'other'] };
 
-test('/admin/review: each item is a card with a pill, the exact words, who wrote it, why by question ID, and its decisions drawn alike', async () => {
-  const p = review([ITEM({ questions: ['J01', 'J05'] }), ITEM({ id: ID(61), status: 'live', reports: 2, reasons: ['spam'], classifiers: [], actions: ['keep', 'remove'] }),
-    ITEM({ id: ID(62), status: 'removed', appealed: true, actions: ['remove', 'restore'] }), ITEM({ id: ID(63), first_posts: true, classifiers: [] })]);
+test('/admin/review: each item is the approval screen: a pill, the exact words, who wrote it, why by question ID and family, the hash, and decisions drawn alike', async () => {
+  const H = 'ab'.repeat(32);
+  const p = review([ITEM({ questions: ['J01', 'J05'], tier: 2, item_type: 'held', sha256: H, decision_reasons: REASONS, history: { decided: 3, approved: 2, removed: 1 } }),
+    ITEM({ id: ID(61), status: 'live', reports: 2, reasons: ['private_info'], decision_reasons: REASONS, classifiers: [], actions: ['keep', 'remove'], tier: 3, item_type: 'reported', sha256: H }),
+    ITEM({ id: ID(62), status: 'removed', appealed: true, actions: ['remove', 'restore'], tier: 2, item_type: 'appealed', sha256: H, decision_reasons: REASONS }),
+    ITEM({ id: ID(63), first_posts: true, classifiers: [], tier: 2, item_type: 'held', sha256: H, decision_reasons: REASONS })]);
   await settle();
   const cards = p.$('queue').querySelectorAll('article');
-  assert.deepStrictEqual(cards.map((c) => c.querySelector('.pill').textContent), ['Held · account age', 'Reported', 'Hidden · appealed', 'Held · first posts']);
+  assert.deepStrictEqual(cards.map((c) => c.querySelector('.pill').textContent), ['Held · account age', 'Sensitive · Reported', 'Hidden · appealed', 'Held · first posts']);
   assert.strictEqual(cards[0].querySelector('blockquote').textContent, 'Words.');
   assert.match(cards[0].textContent, /Ada · GitHub member \(level 1\) · 0 live posts/);
-  assert.match(cards[0].querySelector('.asked').textContent, /^Our checks asked about: Account age \(J01\), Clusters \(J05\)\.$/);
+  assert.match(cards[0].textContent, /Our checks asked about: Account age \(J01\), Clusters \(J05\)\./);
+  assert.match(cards[0].textContent, /Question families: the account \(J01, J05\)\./);
+  // The hash in short form, with the full one a tap away (2.2).
+  assert.match(cards[0].querySelector('.ap-hash').textContent, /^SHA-256 of the exact words this decision binds: abababab…abababab\. Copy full hash/);
+  // Base rates with the sample size: under 20, no rate.
+  assert.strictEqual(cards[0].querySelector('.ap-rates').textContent, 'Not enough history yet: 3 earlier decisions on this member’s posts (a rate needs 20).');
   for (const c of cards) {
-    const b = c.querySelector('.decide').querySelectorAll('button');
-    assert.deepStrictEqual(b.map((x) => x.className), b.map(() => 'btn'), 'every decision drawn alike (2.2: equal weight, no colour bias)');
+    const b = c.querySelector('.ap-decide').querySelectorAll('button');
+    assert.deepStrictEqual(b.map((x) => x.className), b.map(() => 'btn ap-choice'), 'every decision drawn alike (2.2: equal weight, no colour bias)');
   }
-  assert.deepStrictEqual(cards[0].querySelectorAll('button').map((b) => b.textContent), ['Publish', 'Remove']);
+  // One button per decision and reason: no generic "OK" (2.1, tier 2).
+  assert.deepStrictEqual(cards[0].querySelectorAll('.ap-decide button').map((b) => b.textContent),
+    ['Publishan ordinary post', 'PublishI checked what it flags', 'Publishother reason…', 'Removespam', 'Removeabuse', 'Removeprivate information', 'Removeillegal', 'Removeother reason…']);
+  // A sensitive item (tier 3) can't be decided until it has been on screen 10 seconds.
+  assert.ok(cards[1].querySelectorAll('.ap-decide button').every((b) => b.disabled));
+  assert.match(cards[1].querySelector('.ap-gate').textContent, /^Sensitive: read it through first\. The buttons work after 10 more seconds on screen\.$/);
   // Phase 4 (Aaron, Nov 5): no two-person review, so no "Ask another reviewer".
-  for (const f of ['admin/review.html', 'admin/review.js']) assert.ok(!/another reviewer/i.test(read(f).replace(/^\s*\/\/.*$/gm, '')), f);
+  for (const f of ['admin/review.html', 'admin/review.js', 'approval.js']) assert.ok(!/another reviewer/i.test(read(f).replace(/^\s*\/\/.*$/gm, '')), f);
+});
+
+test('/admin/review: Publish waits 30 seconds for Undo and sends nothing if undone; Remove is sent at once with its reason, the hash and the time on screen', async () => {
+  const H = 'cd'.repeat(32);
+  const p = review([ITEM({ tier: 2, item_type: 'held', sha256: H, decision_reasons: REASONS }), ITEM({ id: ID(64), tier: 2, item_type: 'held', sha256: H, decision_reasons: REASONS })],
+    { budget: { daily: 25, used: 3 } });
+  await settle();
+  assert.strictEqual(p.$('budget').textContent, 'Today: 3 of your 25 held items decided.');
+  const [a, b] = p.$('queue').querySelectorAll('article');
+  a.querySelector('.ap-decide button').click();
+  await settle();
+  assert.deepStrictEqual(p.sent, [], 'nothing sent yet');
+  assert.match(a.querySelector('.ap-status').textContent, /^Publishing in 30 seconds\. Undo$/);
+  assert.match(p.$('ap-toast').textContent, /^Publishing in 30 seconds\. Undo$/);
+  const wait = p.timers.find((t) => t.ms === 30000 && t.f);
+  a.querySelector('.ap-undo').click();
+  await settle();
+  assert.strictEqual(a.querySelector('.ap-status').textContent, 'Undone: nothing was sent.');
+  if (wait.f) wait.f();
+  await settle();
+  assert.deepStrictEqual(p.sent, [], 'undone: never sent');
+  // Remove: sent at once.
+  b.querySelectorAll('.ap-decide button').find((x) => x.textContent === 'Removespam').click();
+  await settle();
+  assert.strictEqual(p.sent.length, 1);
+  assert.deepStrictEqual({ ...p.sent[0].body, seen_ms: typeof p.sent[0].body.seen_ms }, { review: ID(64), decision: 'remove', reason: 'spam', sha256: H, seen_ms: 'number' });
+  // "Other reason" asks for the words first.
+  const c = review([ITEM({ tier: 2, item_type: 'held', sha256: H, decision_reasons: REASONS })]);
+  await settle();
+  const card = c.$('queue').querySelector('article');
+  card.querySelectorAll('.ap-decide button').find((x) => x.textContent === 'Removeother reason…').click();
+  assert.deepStrictEqual(c.sent, []);
+  assert.strictEqual(card.querySelector('.ap-other').querySelector('label').textContent, 'Your reason to remove (1 to 300 characters)');
 });
 
 test('/admin/review: an empty queue is the design\'s empty state (.empty), saying what happens instead', async () => {
   const p = review([]);
   await settle();
-  const box = p.$('queue').querySelector('.empty');
-  assert.ok(box);
-  assert.strictEqual(box.textContent, 'JEVs checks every post, and owners approve their own agents’ drafts. Anything held, hidden, reported or appealed comes here.');
+  assert.strictEqual(p.$('empty').hidden, false);
+  assert.strictEqual(p.$('empty').textContent, 'Nothing waiting. JEVs checks every post, Second Look (when the sample is on) re-reads 5% of low-risk posts after they go live, and owners approve their own agents’ drafts. Anything held, hidden, reported, appealed or flagged by the sample comes here.');
+  assert.strictEqual(p.$('summary').textContent, 'Nothing is waiting.');
 });
 
 // ---- Owner controls ----

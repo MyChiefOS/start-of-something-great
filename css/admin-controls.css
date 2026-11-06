@@ -1,0 +1,9 @@
+/* admin/controls.html: its own design styles. tools/design/build.js */
+.d1 .x0ee7f66a{margin-top:12px!important}
+.d1 .x338621b9{margin-top:8px!important}
+.d1 .x3d052a66{display:flex!important;gap:16px!important;align-items:baseline!important;flex-wrap:wrap!important}
+.d1 .xa254f7a2{max-width:24rem!important}
+.d1 .xcf98f3e5{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))!important;gap:12px!important;margin-bottom:8px!important}
+.d1 .xe8584686{margin-top:12px!important}
+.d1 .xf277c829{margin:0 0 20px!important;max-width:42rem!important}
+@media(max-width:820px){.d1 .xcf98f3e5.xcf98f3e5{grid-template-columns:1fr!important}}

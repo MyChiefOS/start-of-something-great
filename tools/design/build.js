@@ -58,7 +58,9 @@ let head = old.slice(0, old.indexOf('</head>'));
 // pages' forms and lists (app.css and the page's own), until each is rebuilt from its design page.
 const EXTRA = { 'research/decision-loop.html': ['/paper.css'], 'account.html': ['/app.css', '/account.css'],
   'account/agents.html': ['/app.css'],
-  'admin/review.html': ['/app.css', '/admin/review.css'], 'admin/controls.html': ['/app.css', '/admin/controls.css'] };
+  // The administrator's pages (040, in the design's markup): the shared approval screen's sheet (approval.js) and their
+  // own, for the parts their scripts build.
+  'admin/review.html': ['/approval.css', '/admin/review.css'], 'admin/controls.html': ['/admin/controls.css'] };
 // The page's own inline styles (those design.css doesn't share) go in /css/<page>.css.
 const shared = fs.existsSync(path.join(__dirname, 'shared.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'shared.json'), 'utf8')) : {};
 const mine = {};

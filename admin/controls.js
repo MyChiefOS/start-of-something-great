@@ -10,6 +10,10 @@
 // review), each from the live answer, never the design's sample figures; deletion reviews as cards that give the
 // reasons by question ID, never a score (CODING_AGENT_SPEC.md 2.2); owners as rows; JEVs's day as pills by risk level;
 // Second Look's three modes; repeated text as a table.
+// Phase 4 of the handoff (CODING_AGENT_SPEC.md 2.1 and 2.5, as Aaron decided it on Nov 5): the review budget (held items
+// a day; no overflow reviewer, since there is no second reviewer), the 5% sample and Second Look's planted tests, each
+// revealed test checked against the audit log by the server (db/review-tiers.js), and the oversight alerts. Allowing a
+// flagged deletion can't be undone (tier 3), so its button works only after 10 seconds on screen, then takes two taps.
 (function () {
   var summary = document.getElementById('summary');
   var scope = document.getElementById('brake-scope');
@@ -146,6 +150,8 @@
     var row = el('div', 'acts');
     var status = el('p', 'fine', '');
     status.setAttribute('role', 'status');
+    var READ = 10; // seconds on screen before an irreversible decision works (tier 3)
+    var gateLine = el('p', 'fine', 'Allow deletion works after ' + READ + ' seconds on screen: read the record first.');
     [['delete', 'Allow deletion', 'Tap again to delete the account and everything about it'],
       ['keep_disabled', 'Keep disabled', null], ['restore', 'Restore', null]].forEach(function (a) {
       if (a[0] === 'keep_disabled' && r.state === 'kept_disabled') return;
@@ -159,8 +165,13 @@
         }).catch(function () { status.textContent = 'That didn’t go through. Please try again.'; b.disabled = false; });
       };
       if (a[2]) twoTap(b, a[2], act); else b.addEventListener('click', act);
+      if (a[0] === 'delete') {
+        b.disabled = true;
+        setTimeout(function () { b.disabled = false; gateLine.textContent = 'Read. Allow deletion takes two taps.'; }, READ * 1000);
+      }
       row.appendChild(b);
     });
+    card.appendChild(gateLine);
     card.appendChild(row);
     card.appendChild(status);
     return card;
@@ -175,11 +186,11 @@
     summary.textContent = t.brakes_on ? t.brakes_on + (t.brakes_on === 1 ? ' brake is on.' : ' brakes are on.') : 'No brakes are on.';
     // The design's four cards, each a live figure: active members, active agents, posts in the last 24 hours (people
     // and agents), and what the review queue holds (its own answer, asked once the controls have loaded).
-    var totals = clear('totals');
-    stat(totals, 'people', t.active_members);
-    stat(totals, 'agents', t.active_agents);
-    stat(totals, 'posts in 24 hours', t.people_posts_24h + t.agent_posts_24h);
-    held(stat(totals, 'held for review', '…'));
+    document.getElementById('n-people').textContent = String(t.active_members);
+    document.getElementById('n-agents').textContent = String(t.active_agents);
+    document.getElementById('n-posts').textContent = String(t.people_posts_24h + t.agent_posts_24h);
+    document.getElementById('n-held').textContent = '\u2026';
+    held(document.getElementById('n-held'));
     document.getElementById('totals-more').textContent = 'People are active members; agents are active agents. In 24 hours: ' + plural(t.people_posts_24h, 'people post', 'people posts')
       + ' and ' + plural(t.agent_posts_24h, 'agent post', 'agent posts') + '. In 7 days: ' + plural(t.posts_7d, 'post', 'posts') + ', ' + t.repeats_7d + ' of them repeats. '
       + plural(t.banned_members, 'member', 'members') + ' banned, ' + t.disabled_members + ' disabled by a deletion review.';
@@ -262,6 +273,8 @@
       sl.appendChild(el('p', 'fine', '95% upper bound on its error rate in shadow: ' + s.shadow_error_upper_95 + ' (1 in 80 is 0.0125).'));
     }
 
+    reviewPart(d.review);
+
     // Repeated text as the design's table, in a scroll box that takes focus on a narrow screen (5.6).
     var rep = clear('repeated');
     if (!d.repeated_texts.length) { rep.appendChild(el('p', 'fine', 'No repeated text in the last 7 days.')); return; }
@@ -287,13 +300,85 @@
 
   // "Held for review": what the queue holds now, from the queue's own answer (GET /api/feed?queue=1, which only the
   // administrator gets). Asked only once the controls have loaded, so a visitor never sends it. Unknown if it fails.
-  function held(card) {
-    var n = card.querySelector('.num');
+  function held(n) {
     fetch('/api/feed?queue=1', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (q) { n.textContent = q && Number.isInteger(q.open) ? String(q.open) : 'Unknown'; })
       .catch(function () { n.textContent = 'Unknown'; });
   }
+
+  // Review (041): the budget, today's count, the planted tests and their check, the alerts, the sample's switch, and
+  // Aaron's own figures (for him only; never in a public answer).
+  var sampleOn = false;
+  function reviewPart(r) {
+    document.getElementById('review-settings').hidden = !r;
+    document.getElementById('review-none').hidden = Boolean(r);
+    if (!r) return;
+    var input = document.getElementById('r-budget');
+    if (document.activeElement !== input) input.value = String(r.daily_budget);
+    var out = clear('review-stats');
+    out.appendChild(el('p', '', 'Today: ' + r.decided_today + ' of your ' + r.daily_budget + ' held items decided. Overflow reviewer: none; items past the budget wait on Review with their age shown.'));
+    var c = r.canaries;
+    out.appendChild(el('p', 'fine', 'Planted tests for Second Look (' + Math.round(r.canary_rate * 100) + '% chance with each held post it is handed; never posts): '
+      + (c.revealed ? c.revealed + ' decided of the newest 200: it kept back ' + c.bad_caught + ' of ' + c.bad + ' known-bad and cleared ' + c.good_cleared + ' of '
+        + c.good + ' known-good; ' + c.no_answer + ' got no usable answer.' : 'none decided yet.') + ' ' + plural(r.canaries_waiting, 'test is', 'tests are') + ' made and waiting.'));
+    out.appendChild(el('p', 'fine', c.check.ok
+      ? (c.check.checked ? 'Each of the ' + c.check.checked + ' revealed tests hashes to the commitment the audit log recorded before it was used.' : 'No revealed tests to check yet.')
+      : 'A planted test’s record doesn’t check out: ' + c.check.problems.join('; ') + '.'));
+    if (r.alerts.length) r.alerts.forEach(function (a) { out.appendChild(el('p', '', a.title + '. ' + a.text)); });
+    else out.appendChild(el('p', 'fine', 'No review alerts: your approval speed, queue age and weekly hours, Second Look’s planted tests and the sample are within their limits.'));
+    sampleOn = r.sample_on;
+    document.getElementById('sample-state').textContent = r.sample_on
+      ? 'On: ' + plural(r.samples_today, 'post', 'posts') + ' drawn today, of at most ' + r.sample_daily_cap + '.' : 'Off: no low-risk post is re-read.';
+    document.getElementById('sample-toggle').textContent = r.sample_on ? 'Switch the sample off' : 'Switch the sample on';
+    var mine = clear('review-mine');
+    var wrap = el('div', 'table-wrap');
+    wrap.tabIndex = 0;
+    var table = el('table', 'data');
+    table.appendChild(el('caption', '', 'Your decisions on Review, last 7 and 30 days'));
+    var head = el('tr');
+    ['Measure', 'Last 7 days', 'Last 30 days'].forEach(function (h) { var th = el('th', '', h); th.setAttribute('scope', 'col'); head.appendChild(th); });
+    var thead = el('thead'); thead.appendChild(head); table.appendChild(thead);
+    var body = el('tbody');
+    var secs = function (x) { return x === null ? 'None yet' : x + ' seconds'; };
+    [['Decided', 'decided', String], ['Published or kept', 'approved', String], ['Removed', 'removed', String], ['Undone', 'undone', String],
+      ['Median time on an item', 'median_seconds', secs], ['10th-percentile time', 'p10_seconds', secs], ['Hours on items (target: 6 a week)', 'hours', function (x) { return x === null ? '0' : String(x); }],
+      ['Median wait before your decision', 'median_wait_minutes', function (x) { return x === null ? 'None yet' : x + ' minutes'; }]].forEach(function (m) {
+      var tr = el('tr');
+      var th = el('th', '', m[0]); th.setAttribute('scope', 'row'); tr.appendChild(th);
+      tr.appendChild(el('td', 'tn', m[2](r.mine.d7[m[1]])));
+      tr.appendChild(el('td', 'tn', m[2](r.mine.d30[m[1]])));
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    wrap.appendChild(table);
+    mine.appendChild(wrap);
+  }
+  document.getElementById('sample-toggle').addEventListener('click', function () {
+    var b = document.getElementById('sample-toggle');
+    var out = document.getElementById('sample-result');
+    b.disabled = true;
+    out.textContent = 'Saving…';
+    post({ review_settings: { sample: sampleOn ? 'off' : 'on' } }).then(function (x) {
+      b.disabled = false;
+      out.textContent = x.d.message || x.d.error || '';
+      if (x.ok) load();
+    }).catch(function () { b.disabled = false; out.textContent = 'That didn’t go through. Please try again.'; });
+  });
+  document.getElementById('budget-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var out = document.getElementById('budget-result');
+    var n = Number(document.getElementById('r-budget').value);
+    if (!(n >= 1 && n <= 500 && Math.floor(n) === n)) { out.textContent = 'The budget is a whole number from 1 to 500.'; return; }
+    var go = document.getElementById('budget-go');
+    go.disabled = true;
+    out.textContent = 'Saving\u2026';
+    post({ review_settings: { daily_budget: n } }).then(function (x) {
+      go.disabled = false;
+      out.textContent = x.d.message || x.d.error || '';
+      if (x.ok) load();
+    }).catch(function () { go.disabled = false; out.textContent = 'That didn\u2019t go through. Please try again.'; });
+  });
 
   function num(id) {
     var v = document.getElementById(id).value.trim();

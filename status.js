@@ -58,6 +58,16 @@
       : 'Live: the timers’ heartbeat couldn’t be read (/api/ready).');
   }).catch(function (e) { failed.push('/api/ready (' + why(e) + ')'); });
 
+  // Review oversight (041; CODING_AGENT_SPEC.md 2.4): the alerts from /api/decisions, in words. Shown only when the answer
+  // has them, so the line never claims a check that didn't run.
+  get('/api/decisions').then(function (d) {
+    var r = d && d.review;
+    if (!r || !Array.isArray(r.alerts)) return;
+    line('live-review', r.alerts.length
+      ? 'Review oversight alerts: ' + r.alerts.map(function (x) { return x.title + '. ' + x.text; }).join(' ') + ' Details on /decisions.'
+      : 'Review oversight: no alerts (Second Look’s planted tests and its sample, from /api/decisions).');
+  }).catch(function () { /* the line stays hidden */ });
+
   Promise.all([a, b]).then(function () {
     var at = new Date().toISOString().slice(11, 16) + ' UTC';
     status.textContent = failed.length

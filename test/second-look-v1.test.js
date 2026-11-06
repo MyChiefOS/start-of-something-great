@@ -14,7 +14,9 @@ const store = require('../db/signin');
 const v1 = require('../secondlook/v1');
 const runner = require('../db/secondlook');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote, asSignin } = require('./helpers');
+const { trustSystem, promote, asSignin, reviewWithReasons } = require('./helpers');
+// 041: a reviewer's decision goes through app.review_record, with a reason and the hash of the words (the helper adds them).
+const review = reviewWithReasons(require('../db/review'), () => su);
 
 const CLEAN = { q1: 'no', q2: 'no', q3: 'no', q4: 'no', q5: 'no', q6: 'no', q7: 'no', q8: 'no', q9: 'yes' };
 const TOKEN = 'oidc.' + 'x'.repeat(40);
@@ -309,7 +311,7 @@ test('the re-check: a post that changed while the model was asked is left', asyn
   await fresh();
   // The model "answers" after Aaron has already removed the post.
   const slow = async (url, opts) => {
-    await run(aaron.ctx, (t) => t`select app.review_decide(${p}::uuid, 'remove')`);
+    await run(aaron.ctx, (t) => review.decide(t, { post: p, decision: 'remove' }));
     return gateway(answer())(url, opts);
   };
   await runner.run(run, TOKEN, { fetchImpl: slow, n: 1 });
@@ -330,7 +332,7 @@ test('a report on a post it published puts it back on hold for Aaron; his remova
   assert.strictEqual(await status(p), 'waiting', 'back on hold');
   assert.strictEqual(await notices('alert', p), 2, 'published, then reported');
   // Aaron removes it: the first removal, under 80 published, is above 1 in 80: it pauses.
-  await run(aaron.ctx, (t) => t`select app.review_decide(${p}::uuid, 'remove')`);
+  await run(aaron.ctx, (t) => review.decide(t, { post: p, decision: 'remove' }));
   const [s] = await q('select mode, paused_reason from app.sl_settings');
   assert.strictEqual(s.mode, 'shadow');
   assert.match(s.paused_reason, /above 1 in 80/);
@@ -376,7 +378,7 @@ test('the gate refuses a held post with an appeal open, and his decisions on its
   await fresh();
   await runner.run(run, TOKEN, { fetchImpl: gateway(answer()), n: 1 });
   assert.strictEqual((await decision(p2)).decision, 'clear');
-  await run(aaron.ctx, (t) => t`select app.review_decide(${p2}::uuid, 'approve')`);
+  await run(aaron.ctx, (t) => review.decide(t, { post: p2, decision: 'approve' }));
   const after = await q('select approved from app.sl_outcomes order by decided_at desc, id desc limit 1');
   assert.deepStrictEqual([(await q('select count(*)::int as n from app.sl_outcomes'))[0].n, after[0].approved], [before + 1, true]);
 });

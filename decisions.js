@@ -15,18 +15,6 @@
   var K = 5;
   // A count of 1 to 4 comes back null (036): say "fewer than 5", so no number on the page describes one person.
   function count(n) { return n === null ? 'Fewer than ' + K : new Intl.NumberFormat().format(n); }
-  function rate(part, whole, min) {
-    if (whole === null || whole < min) return 'Not enough history yet';
-    if (part === null) return 'Fewer than ' + K + ' of ' + count(whole);
-    return Math.round((100 * part) / whole) + '% of ' + count(whole);
-  }
-  function minutes(m) {
-    if (m === null) return 'Not shown under ' + K + ' decisions';
-    if (m < 90) return (Math.round(m * 10) / 10) + ' minutes';
-    return (Math.round((m / 60) * 10) / 10) + ' hours';
-  }
-  function hours(h) { return h === null ? 'Not shown under ' + K + ' items' : h < 1 ? Math.round(h * 60) + ' minutes' : (Math.round(h * 10) / 10) + ' hours'; }
-
   function render(d) {
     if (!d.available) {
       status.textContent = d.message || 'There are no decisions to count here.';
@@ -90,21 +78,47 @@
       $('sl').hidden = false;
     }
 
-    var p = d.oversight.people, q = d.oversight.queue, min = d.min_sample;
-    [['p7', p.d7], ['p30', p.d30]].forEach(function (w) {
-      text(w[0] + '-decided', count(w[1].decided));
-      text(w[0] + '-approved', rate(w[1].approved, w[1].decided, min));
-      text(w[0] + '-removed', rate(w[1].removed, w[1].decided, min));
-      text(w[0] + '-undone', rate(w[1].undone, w[1].decided, min));
-      text(w[0] + '-median', minutes(w[1].median_minutes));
+    review(d.review, d.min_sample);
+  }
+
+  // Human oversight (041; Aaron, Nov 5: "I gave guidance to use JEVs, and Second Look"): what the automated reviewers
+  // passed on to a person, what Second Look decided, its sample and its planted tests. Never the person's own figures.
+  // Before 041 is applied the API sends null and the page says the counts aren't switched on yet.
+  var IDS = ['r-held', 'r-github', 'r-flagged', 'r-sl', 'r-clears', 'r-published', 's-reread', 's-none', 's-missed', 's-drawn', 'c-used', 'c-bad', 'c-good', 'c-none'];
+  function total(sm) { return sm.other === null ? count(sm.shown) + ' and fewer than 5 more' : count(sm.shown); }
+  function part(sm, i) { return count(sm.parts[i] === undefined ? 0 : sm.parts[i]); }
+  function review(r, min) {
+    if (!r) {
+      IDS.forEach(function (id) { text(id + '-7', 'Not counted yet'); text(id + '-30', 'Not counted yet'); });
+      text('means-text', 'these counts are being switched on.');
+      text('alerts', 'not counted yet.');
+      return;
+    }
+    text('counted-through', r.counted_through ? ' (through ' + day.format(new Date(r.counted_through + 'T00:00:00Z')) + ', UTC)' : '');
+    [['7', r.d7], ['30', r.d30]].forEach(function (w) {
+      var x = w[1], n = w[0], c = x.canaries, sm = x.sample;
+      text('r-held-' + n, count(x.jevs_held));
+      text('r-github-' + n, count(x.github_hidden));
+      text('r-flagged-' + n, count(x.sample_flagged));
+      text('r-sl-' + n, count(x.sl_decisions));
+      text('r-clears-' + n, count(x.sl_clears));
+      text('r-published-' + n, count(x.sl_published));
+      text('s-reread-' + n, part(sm, 0));
+      text('s-none-' + n, part(sm, 1));
+      text('s-missed-' + n, part(sm, 2));
+      text('s-drawn-' + n, total(sm));
+      text('c-used-' + n, String(c.used));
+      text('c-bad-' + n, c.bad < min ? 'Not enough history yet: ' + c.bad_caught + ' of ' + c.bad : Math.round((100 * c.bad_caught) / c.bad) + '% of ' + c.bad);
+      text('c-good-' + n, c.good_cleared + ' of ' + c.good);
+      text('c-none-' + n, String(c.no_answer));
     });
-    text('q-open', count(q.open));
-    text('q-median', hours(q.median_hours));
-    text('q-oldest', hours(q.oldest_hours));
-    var means = 'JEVs and Second Look take the first look; a person decides what they hold. In the last 30 days a person decided '
-      + count(p.d30.decided) + ' items' + (p.d30.decided === null || p.d30.decided < min ? ', too few to give rates yet' : '') + '. '
-      + (q.open === 0 ? 'Nothing is waiting now.' : count(q.open) + (q.open === 1 ? ' is' : ' are') + ' waiting now' + (q.oldest_hours === null ? '.' : ', the oldest for ' + hours(q.oldest_hours) + '.'));
-    text('means-text', means);
+    var w = r.d30;
+    var passed = [w.jevs_held, w.github_hidden, w.sample_flagged];
+    text('means-text', 'in the last ' + w.days + ' counted days, JEVs and Second Look passed on ' + (passed.some(function (v) { return v === null; })
+      ? 'a few posts (some counts are under 5)' : (passed[0] + passed[1] + passed[2]) + ' posts') + ' to a person, and Second Look published '
+      + count(w.sl_published) + ' held posts with no person. Planted tests: it kept back ' + w.canaries.bad_caught + ' of ' + w.canaries.bad + ' known-bad ones.');
+    text('sample-state', r.limits.sample_on ? 'The sample is on: 5% of low-risk posts, at most ' + r.limits.sample_daily_cap + ' a day.' : 'The sample is off: no low-risk post is re-read.');
+    text('alerts', r.alerts.length ? r.alerts.map(function (a) { return a.title + '. ' + a.text; }).join(' ') : 'none now.');
   }
 
   function load() {

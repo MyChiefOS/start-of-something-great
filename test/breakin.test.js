@@ -107,6 +107,11 @@ test.before(async () => {
     await t.unsafe(`insert into app.sl_releases (post_id, decision_id) values ('${p.id}', '${d.id}')`);
     // Aaron's decision on a shadow clear, kept as an outcome (it names no post or person; nobody but him reads it).
     await t.unsafe(`insert into app.sl_outcomes (approved) values (true)`);
+    // 041: A's post drawn for the sample, and a planted test (canary), made ahead of time as the timer makes them.
+    await t.unsafe(`insert into app.review_samples (post_id) values ('${p.id}')`);
+    await t.unsafe(`select app.review_canary_make()`);
+    // And one day of the public oversight figures, counted as the timer counts them (counts only, no member's row).
+    await t.unsafe(`select app.review_count_day((now() at time zone 'UTC')::date - 3)`);
   });
   // The public log (038): an entry for A's post with its opening (the key of its keyed hash), a signed checkpoint and a
   // proposal decision, written by the log's own functions in its own role.
@@ -116,6 +121,9 @@ test.before(async () => {
     await t.unsafe(`select app.log_proposal(1, 'approved')`);
     await t.unsafe(`select app.log_checkpoint()`);
   });
+  // 041: a reviewer's decision on A's post (as the test's superuser; the site writes it in app.review_record).
+  await q(`insert into app.review_decisions (post_id, decided_by, decision, tier, item_type, reason, bound_sha256, prior_status)
+    values ('${p.id}', '${A.id}', 'remove', 2, 'held', 'spam', repeat('a', 64), 'live')`);
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
   await su.begin(async (t) => {

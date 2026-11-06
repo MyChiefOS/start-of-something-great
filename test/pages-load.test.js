@@ -245,7 +245,8 @@ test('every comment in the style sheets is closed before the next one opens (app
 test('app.css, the app pages’ own styles, is loaded straight after design.css by exactly the signed-in app pages (SF2)', () => {
   // The design handoff of Nov 5: the forms and lists these pages' scripts draw keep their app.css styles; every other
   // page is the design's markup and design.css alone.
-  const APP = ['account.html', 'account/agents.html', 'admin/controls.html', 'admin/review.html'];
+  // The administrator's pages (041) are the design's markup, with the shared approval screen's sheet and their own.
+  const APP = ['account.html', 'account/agents.html'];
   for (const f of navPages) {
     const html = read(f);
     assert.strictEqual(html.includes('<link rel="stylesheet" href="/app.css">'), APP.includes(f), f);

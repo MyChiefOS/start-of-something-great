@@ -153,8 +153,10 @@ test('/api/decisions: read-only, no parameters (so the edge cache can’t be ski
   assert.strictEqual(on.status, 200);
   assert.strictEqual(on.json.last_24h.decisions, 7, 'numbers are numbers');
   assert.deepStrictEqual(on.json.high_7d[0].questions, ['J16', 'region'], 'only question IDs pass');
-  // A count the database keeps back (1 to 4, 036's k) stays null: "fewer than 5", never a 0.
-  assert.deepStrictEqual(on.json.oversight.people.d7, { decided: 3, approved: null, removed: null, undone: null, median_minutes: null });
+  // Aaron, Nov 5 (041): his own review figures (036's oversight: his decisions, times and queue) aren't published, even
+  // though the database still counts them for his controls.
+  assert.strictEqual(on.json.oversight, undefined, 'no person\u2019s own figures in public');
+  assert.ok(!JSON.stringify(on.json).includes('median_minutes'));
   assert.strictEqual(on.json.min_sample, 20);
   // This copy keeps its answer a minute: a second visit doesn't ask the database.
   const again = await api('/api/decisions', () => assert.fail('the database is not asked again within the minute'));
@@ -206,8 +208,13 @@ const DAY = (over = {}) => ({ available: true, min_sample: 20, generated_at: new
     { day: '2026-11-04', place: 'site_post', outcome: 'held', decisions: 2, questions: ['J07', 'J08'] },
     { day: '2026-11-03', place: 'signup', outcome: 'declined', decisions: 3, questions: ['region'] }],
   second_look: { mode: 'shadow', paused: false, agreed_in_a_row: 12, needed: 80, daily_clear_cap: 10, shadow_clears_decided: 14, shadow_clears_removed: 1 },
-  oversight: { people: { d7: { decided: 3, approved: 2, removed: 1, undone: 0, median_minutes: 12 }, d30: { decided: 25, approved: 20, removed: 4, undone: 1, median_minutes: 95 } },
-    queue: { open: 2, median_hours: 3, oldest_hours: 5 } },
+  // 041: JEVs's and Second Look's figures by counted day, never a person's own (Aaron, Nov 5).
+  review: { counted_through: '2026-11-03', limits: { sample_on: false, sample_rate: 0, sample_daily_cap: 100, canary_rate: 0.02 },
+    d7: { days: 7, jevs_held: 6, github_hidden: 0, sample_flagged: 0, sl_decisions: 5, sl_clears: 4, sl_published: 1, sample: { parts: [0, 0, 0], other: 0, shown: 0 },
+      canaries: { used: 0, no_answer: 0, bad: 0, bad_caught: 0, good: 0, good_cleared: 0 } },
+    d30: { days: 30, jevs_held: 25, github_hidden: null, sample_flagged: 0, sl_decisions: 20, sl_clears: 15, sl_published: 6, sample: { parts: [0, 0, 0], other: 0, shown: 0 },
+      canaries: { used: 22, no_answer: 0, bad: 21, bad_caught: 20, good: 1, good_cleared: 1 } },
+    alerts: [] },
   questions: { J07: 'Links and new domains', J08: 'Contact details', J16: 'Hidden instructions' }, ...over });
 
 test('/decisions, run: the four counts, the 7-day rows in words, Second Look’s progress, and rates only from 20 decisions', async () => {
@@ -227,12 +234,15 @@ test('/decisions, run: the four counts, the 7-day rows in words, Second Look’s
   assert.deepStrictEqual([p.$('sl-track').getAttribute('aria-valuenow'), p.$('sl-track').getAttribute('aria-valuemax'), p.$('sl-bar').className], ['12', '80', 'w15']);
   assert.match(text(p.$('sl-text')), /after Aaron agrees with its last 80 decisions\.$/);
   assert.match(text(p.$('sl-fine')), /^Agreement so far\. At most 10 easy posts a day once on\. It pauses itself if Aaron removes more than 1 in 80\.$/);
-  // 3 decisions in 7 days: no rate; 25 in 30 days: rates with their sample size.
-  assert.deepStrictEqual(['p7-decided', 'p7-approved', 'p7-removed', 'p7-undone'].map((id) => text(p.$(id))), ['3', 'Not enough history yet', 'Not enough history yet', 'Not enough history yet']);
-  assert.deepStrictEqual(['p30-decided', 'p30-approved', 'p30-removed', 'p30-undone', 'p30-median'].map((id) => text(p.$(id))), ['25', '80% of 25', '16% of 25', '4% of 25', '1.6 hours']);
-  assert.strictEqual(text(p.$('p7-median')), '12 minutes');
-  assert.deepStrictEqual(['q-open', 'q-median', 'q-oldest'].map((id) => text(p.$(id))), ['2', '3 hours', '5 hours']);
-  assert.match(text(p.$('means-text')), /a person decided 25 items\. 2 are waiting now, the oldest for 5 hours\.$/);
+  // What JEVs and Second Look passed on and decided; a count of 1 to 4 is "fewer than 5"; a catch rate from 20 known-bad tests.
+  assert.deepStrictEqual(['r-held-7', 'r-held-30', 'r-github-30', 'r-published-30', 'c-bad-30', 'c-good-30'].map((id) => text(p.$(id))),
+    ['6', '25', 'Fewer than 5', '6', '95% of 21', '1 of 1']);
+  assert.match(text(p.$('counted-through')), /through .*2026|through .*Nov/);
+  assert.match(text(p.$('means-text')), /^in the last 30 counted days, JEVs and Second Look passed on a few posts \(some counts are under 5\) to a person, and Second Look published 6 held posts with no person\. Planted tests: it kept back 20 of 21 known-bad ones\.$/);
+  assert.strictEqual(text(p.$('sample-state')), 'The sample is off: no low-risk post is re-read.');
+  assert.strictEqual(text(p.$('alerts')), 'none now.');
+  // Never a person's own figures (Aaron, Nov 5).
+  for (const id of ['p7-decided', 'p30-median', 'q-open']) assert.strictEqual(p.$(id), null, id + ' is gone');
   assert.strictEqual(text(p.$('status')), '');
 });
 

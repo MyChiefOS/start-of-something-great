@@ -193,6 +193,20 @@ const DEFINERS = {
   'app.agent_recovery_status(uuid[])': 'dog_signin',
   'app.agent_recovery_clear(uuid)': 'dog_signin',
   'app.agent_keys_recovery_clear()': { owner: 'dog_signin', callers: '' },
+  // 041 (the design handoff of Nov 5, 2026, phase 4: review for a limited, fallible human): the timer that draws the
+  // 5% sample for Second Look and sends the oversight alerts (once every 10 minutes at most, whoever calls it); the
+  // public oversight counts (counts only, never per person); the administrator's view of the budget and the canaries'
+  // reveals; and the alerts themselves, called by nobody directly.
+  'app.review_tick()': 'dog_jevs',
+  'app.public_oversight()': 'dog_jevs',
+  'app.review_admin()': 'dog_jevs',
+  'app.review_alerts_core(timestamp with time zone, boolean)': { owner: 'dog_jevs', callers: '' },
+  // After 041's independent review: an Undo's flags put back and Second Look's count taken back (called by
+  // app.review_record, for a reviewer only, inside an Undo); one day's public figures, counted once; a canary made
+  // ahead of time from a template. The last two are called by the timer function only.
+  'app.review_reopen(uuid, timestamp with time zone)': 'dog_jevs',
+  'app.review_count_day(date)': { owner: 'dog_jevs', callers: '' },
+  'app.review_canary_make()': { owner: 'dog_jevs', callers: '' },
   // 030 (Aaron, Oct 29): the watch's web indicators. A signed-in request, the site's place comparison, the audit log's
   // and the settings' triggers (no role calls them directly) and the hourly sweep, callable by whoever may run the timers.
   'app.watch_session(text, text, text)': 'dog_signin',

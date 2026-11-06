@@ -150,7 +150,10 @@ function page(file, script, answers, search, hash) {
     }
   };
   sandbox.window = sandbox;
-  vm.runInNewContext(read(script), sandbox);
+  // One script, or several run in order in the same window (a page with a shared component, such as /admin/review
+  // with /approval.js).
+  vm.createContext(sandbox);
+  for (const s of [].concat(script)) vm.runInContext(read(s), sandbox);
   return { main, doc, sent, timers, asked, history, replaced, $: doc.getElementById };
 }
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };

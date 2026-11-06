@@ -15,7 +15,8 @@ const c = require('../signin/crypto');
 const store = require('../db/signin');
 const delegation = require('../db/delegation');
 const controls = require('../db/controls');
-const review = require('../db/review');
+// 041: decisions carry a reason and the hash of the words (test/helpers.js, reviewWithReasons).
+const review = require('./helpers').reviewWithReasons(require('../db/review'), () => su);
 const notices = require('../db/notify');
 const ncfg = require('../notify/config');
 const { logTransport } = require('../notify/transport');

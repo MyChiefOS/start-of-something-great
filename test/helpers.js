@@ -103,4 +103,18 @@ async function shadowMode(su) {
 // superuser connection, exactly as app.sign_in does it; the site's rights stay as production has them.
 const asSignin = (su) => (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_signin'); return fn(t); });
 
-module.exports = { asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, TEST_SYSTEM_SECRET };
+// 041 (phase 4 of the design handoff): a review decision names a reason and binds the SHA-256 of the post's words, as
+// the review page sends them. For tests whose subject is something else, this gives db/review.js the reason a reviewer
+// most often gives and the hash of the stored words (read by the test's superuser, su()).
+const USUAL_REASON = { approve: 'ordinary', keep: 'not_upheld', remove: 'spam', restore: 'mistake' };
+function reviewWithReasons(review, su) {
+  return { ...review, decide: async (t, a) => {
+    if (a.reason) return review.decide(t, a);
+    const [r] = await su()`select encode(sha256(convert_to(body, 'UTF8')), 'hex') as h from app.posts where id = ${a.post}::uuid`;
+    // And 10 seconds on screen, as a reviewer reading a sensitive item would (041's tier 3); test/review-tiers.test.js
+    // tests the rule itself.
+    return review.decide(t, { seenMs: 10000, ...a, reason: USUAL_REASON[a.decision], sha256: r ? r.h : 'a'.repeat(64) });
+  } };
+}
+
+module.exports = { asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, reviewWithReasons, TEST_SYSTEM_SECRET };
