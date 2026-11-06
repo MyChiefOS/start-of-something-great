@@ -37,26 +37,40 @@
 <p class="fine" id="sl-none" hidden>Second Look isn’t set up in the database yet.</p>
 <h2>Human oversight</h2>
 <p id="means"><strong>What this means:</strong> <span id="means-text">the numbers load with the counts above.</span></p>
-<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="people-caption">
+<p class="fine">JEVs and Second Look do the reviewing, and a person decides only what they pass on. These figures are theirs: what they passed on to a person, what Second Look decided, and how it did on planted tests. The person’s own decisions, times and hours aren’t published; they are on his controls. Counted once a day, for days that ended at least a day ago<span id="counted-through"></span>.</p>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="passed-caption">
 <table style="min-width:34rem">
-<caption class="visually-hidden" id="people-caption">Decisions a person made on the review queue (held, hidden and reported posts). A rate is given only from 20 decisions.</caption>
+<caption class="visually-hidden" id="passed-caption">What JEVs and Second Look passed on to a person, and what Second Look decided, in the last 7 and 30 counted days.</caption>
 <thead><tr><th scope="col">Measure</th><th scope="col">Last 7 days</th><th scope="col">Last 30 days</th></tr></thead>
 <tbody>
-<tr><th scope="row">Decided (the sample)</th><td id="p7-decided">–</td><td id="p30-decided">–</td></tr>
-<tr><th scope="row">Approval rate (approved or kept)</th><td id="p7-approved">–</td><td id="p30-approved">–</td></tr>
-<tr><th scope="row">Removal rate</th><td id="p7-removed">–</td><td id="p30-removed">–</td></tr>
-<tr><th scope="row">Undone later (override rate)</th><td id="p7-undone">–</td><td id="p30-undone">–</td></tr>
-<tr><th scope="row">Median time to decision</th><td id="p7-median">–</td><td id="p30-median">–</td></tr>
+<tr><th scope="row">Site posts JEVs held or hid for a person</th><td id="r-held-7">–</td><td id="r-held-30">–</td></tr>
+<tr><th scope="row">GitHub posts JEVs hid for a person</th><td id="r-github-7">–</td><td id="r-github-30">–</td></tr>
+<tr><th scope="row">Low-risk posts Second Look’s sample passed on</th><td id="r-flagged-7">–</td><td id="r-flagged-30">–</td></tr>
+<tr><th scope="row">Held posts Second Look looked at</th><td id="r-sl-7">–</td><td id="r-sl-30">–</td></tr>
+<tr><th scope="row">Of those, ones it would clear</th><td id="r-clears-7">–</td><td id="r-clears-30">–</td></tr>
+<tr><th scope="row">Published by Second Look, with no person</th><td id="r-published-7">–</td><td id="r-published-30">–</td></tr>
 </tbody>
 </table>
 </div>
-<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="queue-caption">
+<h3 style="margin-top:24px">Second Look’s sample and planted tests</h3>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="sl-tests-caption">
 <table style="min-width:34rem">
-<caption class="visually-hidden" id="queue-caption">The review queue now.</caption>
-<thead><tr><th scope="col">Waiting</th><th scope="col">Median age</th><th scope="col">Oldest</th></tr></thead>
-<tbody><tr><td id="q-open">–</td><td id="q-median">–</td><td id="q-oldest">–</td></tr></tbody>
+<caption class="visually-hidden" id="sl-tests-caption">Second Look’s re-read of a sample of low-risk posts and its planted tests, in the last 7 and 30 counted days.</caption>
+<thead><tr><th scope="col">Measure</th><th scope="col">Last 7 days</th><th scope="col">Last 30 days</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sampled posts re-read within 24 hours</th><td id="s-reread-7">–</td><td id="s-reread-30">–</td></tr>
+<tr><th scope="row">Re-read, with no usable answer</th><td id="s-none-7">–</td><td id="s-none-30">–</td></tr>
+<tr><th scope="row">Not re-read within 24 hours</th><td id="s-missed-7">–</td><td id="s-missed-30">–</td></tr>
+<tr><th scope="row">Sampled, in all</th><td id="s-drawn-7">–</td><td id="s-drawn-30">–</td></tr>
+<tr><th scope="row">Planted tests it was handed</th><td id="c-used-7">–</td><td id="c-used-30">–</td></tr>
+<tr><th scope="row">Known-bad tests it kept back (catch rate)</th><td id="c-bad-7">–</td><td id="c-bad-30">–</td></tr>
+<tr><th scope="row">Known-good tests it cleared</th><td id="c-good-7">–</td><td id="c-good-30">–</td></tr>
+<tr><th scope="row">Planted tests with no usable answer</th><td id="c-none-7">–</td><td id="c-none-30">–</td></tr>
+</tbody>
 </table>
 </div>
-<p class="fine">Not measured yet: planted test items, which will test Second Look, not Aaron (phase 4), and the hours a person spends reviewing each week, against the 6-hour target (ACCEPTANCE.md, O1). There is no edit-then-approve on the queue, so there is no edit rate.</p>
+<p class="fine" id="sample-state"></p>
+<p id="alerts-line"><strong>Alerts:</strong> <span id="alerts">the alerts load with the counts above.</span></p>
+<p class="fine">Planted tests test Second Look, not a person: about 2% of the held posts it is handed bring one, a known-bad or known-good post made from a template with random words, which it can’t tell apart from the rest. Its truth is committed in the audit log before Second Look decides and revealed after, and it is never a post. A catch rate is given from 20 known-bad tests. The sample re-reads a random 5% of low-risk posts, at most 100 a day, only when it is switched on; a post its re-read rejects goes to a person and stays up meanwhile. A count from 1 to 4 is shown as “fewer than 5”, and the sample’s total is the parts shown plus any “fewer than 5”, so no number points to one post. Alerts: Second Look catching under 90% of known-bad planted tests over 20 or more in 30 days; the sample reaching its daily cap; a sampled post not re-read within 24 hours. Each also goes to Aaron in the app.</p>
 <p class="fine" style="margin-top:20px">Read the questions on <a href="checks.html">The checks</a>. How a held post is handled: <a href="moderation.html">Moderation</a>.</p>
 </main>

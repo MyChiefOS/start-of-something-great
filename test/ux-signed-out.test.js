@@ -39,7 +39,7 @@ test('/admin/controls, given a 401: only the kicker, the heading, the standing l
   await settle();
   assert.deepStrictEqual(showing(p.main), ['p', 'h1', 'p', 'signed-out']);
   assert.deepStrictEqual(p.main.children.filter((c) => c.shown() && c.tagName === 'P').map((c) => c.textContent),
-    ['Administrator only', 'Administrator only. The site\'s numbers, the emergency brake, bans and Second Look.'], 'fixed words only');
+    ['Administrator only', 'Administrator only. The site\'s numbers, the emergency brake, bans, Second Look and review.'], 'fixed words only');
   assert.strictEqual(p.$('admin').hidden, true, 'the brake, owners, JEVs and Second Look stay hidden');
   const button = p.$('signed-out').querySelector('a.btn');
   assert.strictEqual(button.textContent, 'Sign in with GitHub');
@@ -138,10 +138,11 @@ test('/controls: what each mode does is said beside it, and every number in it i
   const html = read('admin/controls.html');
   const mig = read('db/migrations/034_second_look_v1.sql');
   for (const m of ['off', 'shadow', 'on']) assert.match(html, new RegExp('data-mode="' + m + '" aria-pressed="false" aria-describedby="sl-' + m + '-what"'));
+  // The design's markup since phase 4 (tools/design/pages/admin_controls.main.html): each mode's words in a span, "Now." in bold.
   assert.match(html, /role="group" aria-labelledby="sl-modes-label"/);
   // "Off: It looks at no posts. You can still ask it questions below." 034: off, it claims no post; the questions
   // route on /controls doesn't ask the mode (the design review of PR D, finding 2).
-  assert.match(html, /<p id="sl-off-what" class="fine"><span class="sl-now" id="sl-off-now" hidden>Now\. <\/span>It looks at no posts\. You can still ask it questions below\.<\/p>/);
+  assert.match(html, /<span class="fine" id="sl-off-what"><b class="sl-now" id="sl-off-now" hidden>Now\. <\/b>It looks at no posts\. You can still ask it questions below\.<\/span>/);
   assert.match(mig, /if not found or s\.mode = 'off' or \(s\.last_claim_at is not null/);
   const askRoute = read('api/feed.js').split("if (body.second_look === 'ask') {")[1].split('\n  }\n')[0];
   assert.ok(askRoute && !/\.mode\b|sl_settings|sl_set_mode/.test(askRoute), 'asking works in every mode');
@@ -157,6 +158,11 @@ test('/controls: what each mode does is said beside it, and every number in it i
   assert.match(mig, /update app\.sl_settings set mode = 'shadow', counted_since = now\(\), paused_reason/);
   // "Switching here starts its count of 80 again."
   assert.match(html, /Switching here starts its count of 80 again\. On takes a second tap\./);
+  // "In shadow ... it publishes nothing" (not the design's "nothing changes": since 041 a sample it rejects goes to Review).
+  assert.match(html, /It logs what it would do; it publishes nothing\./);
+  // 041: only once Aaron switches the sample on (it starts off until the privacy text is live).
+  assert.match(html, /In shadow and on, when you switch the sample on \(below\), it also re-reads 5% of low-risk posts; a post it rejects goes to Review and stays up\./);
+  assert.match(read('db/migrations/041_review_tiers.sql'), /if coalesce\(v_mode, 'off'\) <> 'off' and s\.sample_rate > 0 then/, 'the sample is drawn only in shadow and on, and only once switched on');
   assert.match(mig, /update app\.sl_settings set mode = p_mode, paused_reason = null, counted_since = now\(\)/);
   // "Only the administrator can use them": the server's rule, not the page's.
   assert.match(read('signin/session.js'), /const canControl = \(who\) => Boolean\(who && who\.isAdmin === true\);/);
@@ -194,8 +200,9 @@ test('one panel, the same on each page that needs sign-in: a sentence, one prima
 test('the panel\'s style lives in app.css (the app pages only), so the shared styles.css keeps its page-weight budget', () => {
   assert.match(read('app.css'), /\.story \.signed-out \{/);
   assert.ok(!/\.(signed-out|sl-mode|agent-rules|agents-intro)\b/.test(read('styles.css')));
-  // /feed's panel is the design's card (design.css), so /feed needs no app.css.
-  for (const file of Object.keys(PANELS)) assert.strictEqual(/<link rel="stylesheet" href="\/app\.css">/.test(read(file)), file !== 'feed.html', file);
+  // /feed's panel is the design's card (design.css), and so are the administrator's pages' (041), so they need no app.css.
+  const DESIGN_ONLY = ['feed.html', 'admin/review.html', 'admin/controls.html'];
+  for (const file of Object.keys(PANELS)) assert.strictEqual(/<link rel="stylesheet" href="\/app\.css">/.test(read(file)), !DESIGN_ONLY.includes(file), file);
 });
 
 // ---- /feed (finding 6) ----
@@ -290,7 +297,7 @@ test('/account signed out: only the heading and the panel', async () => {
 
 // ---- /review (findings 6 and 12) ----
 
-const review = (status, body) => page('admin/review.html', 'admin/review.js', (url) => (url === '/api/notify/appeals' ? [status === 200 ? 200 : status, { containments: [] }] : [status, body]));
+const review = (status, body) => page('admin/review.html', ['approval.js', 'admin/review.js'], (url) => (url === '/api/notify/appeals' ? [status === 200 ? 200 : status, { containments: [] }] : [status, body]));
 const item = (o) => ({ id: 'i', lane: 'people', status: 'waiting', body: 'Text.', author: { name: 'A', level: 1, status: 'active', live_posts: 0 },
   flagged_at: '2026-10-31T09:00:00Z', first_posts: false, reports: 0, reasons: [], notes: [], classifiers: [], appealed: false, actions: ['approve', 'remove'], ...o });
 
@@ -304,7 +311,11 @@ test('/review: nothing waiting says what happens instead; JEVs checks every post
   const p = review(200, { open: 0, items: [] });
   await settle();
   assert.strictEqual(p.$('summary').textContent, 'Nothing is waiting.');
-  assert.strictEqual(p.$('queue').textContent, 'JEVs checks every post, and owners approve their own agents’ drafts. Anything held, hidden, reported or appealed comes here.');
+  assert.strictEqual(p.$('queue').textContent, '');
+  assert.strictEqual(p.$('empty').shown(), true);
+  assert.match(p.$('empty').textContent, /^Nothing waiting\. JEVs checks every post, Second Look \(when the sample is on\) re-reads 5% of low-risk posts after they go live, and owners approve their own agents’ drafts\./);
+  // The sample's re-read happens only while Second Look runs (041, app.review_tick).
+  assert.match(read('db/migrations/041_review_tiers.sql'), /random\(\) < s\.sample_rate/);
   // Second Look's part is said once, in the page's static note, never beside an item: the queue stays blind to its
   // suggestions, so Aaron's decisions stay his own (test/second-look.test.js; the design review of PR D, finding 4).
   assert.match(read('admin/review.html'), /When Second Look is on, it may publish easy held posts before they reach you, and you get a notice for each\.<\/p>/);
@@ -314,7 +325,7 @@ test('/review: nothing waiting says what happens instead; JEVs checks every post
   assert.match(read('db/migrations/032_guardrails.sql'), /when p_action in \('post\.create', 'post\.approved'\) then/);
 });
 
-test('/review: an item with several reasons lists them oldest first, says when it joined the queue, and keeps one-tap buttons and Undo', async () => {
+test('/review: an item with several reasons lists them oldest first, says when it joined the queue, and keeps one-tap buttons, each with its reason', async () => {
   // The order the database allows (review.js, why()): a first-post flag comes with the post; reports need a live post;
   // an open JEVs flag beside reports came from a report; an appeal needs JEVs's hold first.
   const p = review(200, { open: 3, items: [
@@ -331,8 +342,10 @@ test('/review: an item with several reasons lists them oldest first, says when i
   assert.match(cards[0].textContent, /In the queue since .+\./);
   const when = cards[0].querySelector('time');
   assert.ok(when && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(when.getAttribute('datetime')), 'a machine-readable time for agents');
-  // The design's words (static/review.html): Publish, Keep, Remove; Undo after a removal.
-  assert.deepStrictEqual(cards.map((c) => c.querySelectorAll('button').map((b) => b.textContent)), [['Publish', 'Remove'], ['Remove', 'Undo'], ['Keep', 'Remove']]);
+  // The design's words (static/review.html): Publish, Keep, Remove, each with its reason (041: one tap, never a generic
+  // "OK", CODING_AGENT_SPEC.md 2.1); a removed post can be restored. Undo comes after a decision (approval.js).
+  assert.deepStrictEqual(cards.map((c) => [...new Set(c.querySelectorAll('.ap-decide button').map((b) => b.querySelector('.ap-verb').textContent))]),
+    [['Publish', 'Remove'], ['Restore', 'Remove'], ['Keep', 'Remove']]);
   // These are the rules the order rests on.
   assert.match(read('db/migrations/010_jevs.sql'), /p\.status in \('waiting', 'removed'\)\s+and exists \(select 1 from app\.jevs_decisions d where d\.subject_id = p\.id and d\.applied and d\.effect in \('hold', 'hide'\)\)/);
   assert.match(read('db/migrations/032_guardrails.sql'), /if subj_kind = 'post' and eff in \('challenge', 'hold'\) and post_status = 'live' then\s+update app\.posts p set status = 'waiting'/);

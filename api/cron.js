@@ -58,6 +58,12 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
     // it opens an issue if the checks haven't finished for 3 hours (the fresh review of round 1). This route logs
     // nothing (027).
   }
+  // Review oversight (041): the 5% sample of low-risk posts for Second Look to re-read, and the alerts to Aaron (in-app,
+  // once a day each while they hold). The database runs it at most once every 10 minutes, in its own transaction; a
+  // failure here changes nothing else and this reply stays the same.
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.review_tick()`);
+  } catch { /* logs nothing (027); before 041 is applied the function isn't there */ }
   // Second Look v1 (034): the next eligible held posts put to the model, in their own transactions after the timers'
   // and the rules', with the site's Vercel identity token for the AI Gateway (read before sitekeys removes it from the
   // request, and passed only to the gateway). Off, paused, capped or failing, it changes nothing and this reply is the

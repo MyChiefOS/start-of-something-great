@@ -9,12 +9,14 @@
 
 const db = require('../db');
 const decisions = require('../db/decisions');
+const tiers = require('../db/review-tiers');
 const { send, onlyGet } = require('./_lib');
 
 const CACHE = 60; // seconds fresh at the edge, then as long again while it refreshes
 const MIN_SAMPLE = 20;
 const NOTE = 'Counts and question IDs only: never a post’s text, an account name, a score or a time of day. Counted to the start '
-  + 'of the hour; a count from 1 to 4 is null (fewer than 5) and a smaller group isn’t listed, so no number points to one person. '
+  + 'of the hour (review: once a day, for days that ended at least a day ago); a count from 1 to 4 is null (fewer than 5) and a smaller group isn’t listed, so no number points to one person. '
+  + 'The figures describe the automated reviewers, JEVs and Second Look, not the person who reviews what they pass on. '
   + 'Rates are given only from ' + MIN_SAMPLE + ' decisions up. The questions are listed in https://dayonegreat.com/llms.txt.';
 let kept = null; // { at, body }: this copy's last answer
 
@@ -30,13 +32,21 @@ async function handle(req, res, run) {
   if (kept && Date.now() - kept.at < CACHE * 1000) return send(res, 200, kept.body, CACHE, CACHE);
   let d;
   try {
-    d = await run({ actor: 'anon' }, (t) => decisions.summary(t));
+    d = await run({ actor: 'anon' }, async (t) => ({ ...(await decisions.summary(t)),
+      // 041 (phase 4): review oversight by role and kind of item, Second Look's planted tests and sample, and the alerts.
+      // Best effort: before 041 is applied it is null and the page says it isn't counted yet.
+      review: await (async () => { try { return await t.savepoint((x) => tiers.oversight(x)); } catch { return null; } })() }));
   } catch (e) {
     // The site reached production before migration 036: not cached, so it clears itself once 036 is applied.
     if (e && e.code === '42883') return send(res, 503, { error: 'The public counts are being switched on. Please try again in a few minutes.' });
     throw e;
   }
-  const body = { available: true, min_sample: MIN_SAMPLE, ...d, questions: decisions.titles(), note: NOTE };
+  // Aaron, Nov 5: the public figures describe the automated reviewers ("I gave guidance to use JEVs, and Second Look"),
+  // so his own review figures (036's oversight: his decisions, their times, his queue) aren't published; they are on
+  // /admin/controls for him. What JEVs and Second Look passed on, decided and caught is in "review" (041).
+  const { oversight, ...rest } = d;
+  void oversight;
+  const body = { available: true, min_sample: MIN_SAMPLE, ...rest, questions: decisions.titles(), note: NOTE };
   kept = { at: Date.now(), body };
   return send(res, 200, body, CACHE, CACHE);
 }

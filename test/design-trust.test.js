@@ -83,7 +83,9 @@ test('no inline style, no inline script, no on* handler; scripts are our own fil
     // Every fetch goes through get(path), and get() is called with our own /api paths only (below).
     for (const m of code.matchAll(/fetch\(([^,)]+)/g)) assert.strictEqual(m[1].trim(), 'path', js + ': fetch(' + m[1] + ')');
   }
-  assert.deepStrictEqual([...read('status.js').matchAll(/get\('([^']+)'\)/g)].map((m) => m[1]), ['/api/status', '/api/ready']);
+  // 041: and the public review alerts (Second Look's planted tests and sample), from /api/decisions.
+  assert.deepStrictEqual([...read('status.js').matchAll(/get\('([^']+)'\)/g)].map((m) => m[1]), ['/api/status', '/api/ready', '/api/decisions']);
+  assert.ok(read('status.html').includes('id="live-review"'), '#live-review');
   assert.ok(!/fetch\(/.test(read('risks.js')), 'risks.js fetches nothing');
   // The live lines status.js reveals are on the page.
   for (const id of ['live-status', 'live-stage', 'live-signin', 'live-stage-now', 'live-signin-now', 'live-uptime-now']) assert.ok(read('status.html').includes('id="' + id + '"'), '#' + id);

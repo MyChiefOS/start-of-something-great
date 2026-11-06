@@ -14,7 +14,8 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const posts = require('../db/posts');
-const review = require('../db/review');
+// 041: decisions carry a reason and the hash of the words (test/helpers.js, reviewWithReasons).
+const review = require('./helpers').reviewWithReasons(require('../db/review'), () => su);
 const jevs = require('../db/jevs');
 const region = require('../signin/region');
 const { make, LIMITS, MIN_FILL_MS } = require('../signin/flow');
