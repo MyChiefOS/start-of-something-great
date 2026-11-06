@@ -21,7 +21,15 @@ const V = require('./fixtures/transparency-dev-merkle.json');
 const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 let L, W, CLI, WIT;
-const lib = async () => (L = L || (await import(pathToFileURL(path.join(root, 'verifier/lib.js')).href)));
+// The verifier as these tests use it: their logs have keys of their own, so the repository's pin of the production key
+// (verifier/log-key.js) is left out (repoPin: null) unless a test passes it; the last test below checks the pin itself.
+let REAL;
+const lib = async () => {
+  if (L) return L;
+  REAL = await import(pathToFileURL(path.join(root, 'verifier/lib.js')).href);
+  L = { ...REAL, verifyBundle: (b, o = {}) => REAL.verifyBundle(b, { repoPin: null, ...o }) };
+  return L;
+};
 const sha = (b) => crypto.createHash('sha256').update(b).digest();
 const RFC8032_1 = { seed: '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60', pub: 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a',
   sig: 'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b' };
@@ -566,17 +574,17 @@ test('offline: a bundle verifies with the network off (steps 1 to 5) only agains
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dog-verify-'));
   fs.writeFileSync(path.join(dir, 'a.dogproof.json'), JSON.stringify(b));
   const out = [];
-  assert.strictEqual(await CLI.main([path.join(dir, 'a.dogproof.json'), '--offline'], { out: (s) => out.push(s) }), 1);
+  assert.strictEqual(await CLI.main([path.join(dir, 'a.dogproof.json'), '--offline'], { repoPin: null, out: (s) => out.push(s) }), 1);
   assert.match(out[0], /^Key not confirmed/);
   out.length = 0;
-  assert.strictEqual(await CLI.main([path.join(dir, 'a.dogproof.json'), '--offline', '--key', vk], { out: (s) => out.push(s) }), 1);
+  assert.strictEqual(await CLI.main([path.join(dir, 'a.dogproof.json'), '--offline', '--key', vk], { repoPin: null, out: (s) => out.push(s) }), 1);
   assert.match(out[0], /^Verified, not yet witnessed/);
   const bad = JSON.parse(JSON.stringify(b)); bad.inclusion.path[0] = Buffer.alloc(32).toString('base64');
   fs.writeFileSync(path.join(dir, 'b.dogproof.json'), JSON.stringify(bad));
-  assert.strictEqual(await CLI.main([path.join(dir, 'b.dogproof.json'), '--offline', '--key', vk], { out: () => {} }), 2);
+  assert.strictEqual(await CLI.main([path.join(dir, 'b.dogproof.json'), '--offline', '--key', vk], { repoPin: null, out: () => {} }), 2);
   // Online, by ID, with the witness's pin and copy covering it: exit 0.
   const cp = (await logGet('checkpoint')).json;
-  assert.strictEqual(await CLI.main([postId, '--remember', path.join(dir, 'max.json')], { fetchImpl: network({ copy: cp.checkpoint.note, state: { key: vk } }), out: () => {} }), 0);
+  assert.strictEqual(await CLI.main([postId, '--remember', path.join(dir, 'max.json')], { repoPin: null, fetchImpl: network({ copy: cp.checkpoint.note, state: { key: vk } }), out: () => {} }), 0);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'max.json'), 'utf8')).size, cp.checkpoint.size);
   // The site's key isn't the witness's pin: step 5 fails (a site serving another key).
   const other = await l.vkey('dayonegreat.com/log', nodePub(crypto.randomBytes(32)));
@@ -593,17 +601,17 @@ test('the witness keeps each checkpoint, re-hashes the entries, and raises the a
   WIT = WIT || (await import(pathToFileURL(path.join(root, 'tools/verify/witness.mjs')).href));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'log-witness-'));
   const site = network();
-  let out = await WIT.witness({ dir, site: '', fetchImpl: site, cap: 3 });
+  let out = await WIT.witness({ dir, pinned: null, site: '', fetchImpl: site, cap: 3 });
   assert.strictEqual(out.alarm, null, JSON.stringify(out.state));
   const cp = (await logGet('checkpoint')).json.checkpoint;
   assert.strictEqual(fs.readFileSync(path.join(dir, 'checkpoint'), 'utf8'), cp.note);
   assert.strictEqual(out.state.rehashed, 3, 'capped runs re-hash part, and prove that part starts the signed tree');
-  out = await WIT.witness({ dir, site: '', fetchImpl: site });
+  out = await WIT.witness({ dir, pinned: null, site: '', fetchImpl: site });
   assert.deepStrictEqual([out.alarm, out.state.rehashed], [null, cp.size]);
   // The log grows: still consistent.
   await say(bot, 'a third post, after the witness');
   await checkpointNow();
-  out = await WIT.witness({ dir, site: '', fetchImpl: site });
+  out = await WIT.witness({ dir, pinned: null, site: '', fetchImpl: site });
   assert.strictEqual(out.alarm, null);
   const good = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')).good;
   // A second, validly signed checkpoint of the same size with another root (the log's key used to lie).
@@ -612,14 +620,14 @@ test('the witness keeps each checkpoint, re-hashes the entries, and raises the a
   const [s] = await su`select app.log_ed25519_sign(${k.seed}, ${Buffer.from(body)}) as sig`;
   const forged = body + '\n— dayonegreat.com/log ' + Buffer.concat([k.key_id, s.sig]).toString('base64') + '\n';
   const lying = async (url) => (String(url) === '/api/log/checkpoint' ? { ok: true, status: 200, json: async () => ({ ...(await (await site(url)).json()), checkpoint: { ...cp, size: good.size, note: forged } }) } : site(url));
-  out = await WIT.witness({ dir, site: '', fetchImpl: lying });
+  out = await WIT.witness({ dir, pinned: null, site: '', fetchImpl: lying });
   assert.match(String(out.alarm), /^Split view: two different signed checkpoints of \d+ entries\.$/);
   const st = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
   assert.deepStrictEqual(st.good, good, 'the last good checkpoint is kept');
   assert.strictEqual(st.alarm.seen, forged, 'with the checkpoint it saw');
   // A site that doesn't answer is not an alarm.
   const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'log-witness-'));
-  out = await WIT.witness({ dir: dir2, site: '', fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) });
+  out = await WIT.witness({ dir: dir2, pinned: null, site: '', fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) });
   assert.deepStrictEqual([out.alarm, Boolean(out.state.last_error)], [null, true]);
 });
 
@@ -892,4 +900,19 @@ test('a corrupted inner node fails every receipt under it in the verifier; one t
   assert.deepStrictEqual([w.status, w.tree_matches_checkpoints], ['unverified', false]);
   assert.match(w.reason, /no longer reaches the root of signed checkpoint/);
   assert.strictEqual((await su`select count(*)::int as n from app.notices where member_id is null and title = 'The public log is unverified' and body like '%no longer reaches%'`)[0].n, 1);
+});
+
+test('the production key is pinned (verifier/log-key.js, by tools/verify/pin-key.mjs after 038 made it): a log with any other key fails at step 5, with or without a witness', async () => {
+  const { PINNED_VKEY } = await import(pathToFileURL(path.join(root, 'verifier/log-key.js')).href);
+  assert.strictEqual(PINNED_VKEY, 'dayonegreat.com/log+54880135+AYTmrGBbZMMDtCc57uZ/T40AM/Aklvh4+owep85+eWl8');
+  await lib();
+  const other = await memoryLog(crypto.randomBytes(32), 4);
+  for (const opts of [{}, { fetch: gh({ copy: (await other.cp(4)).note, state: { key: other.vkey } }), site: '' }]) {
+    const r = await REAL.verifyBundle(await other.bundle(2, 4), opts);
+    assert.deepStrictEqual([r.status, r.firstFailure], ['failed', 'checkpoint']);
+    assert.match(r.steps.find((x) => x.id === 'checkpoint').text, /but the log’s key is/);
+  }
+  // The pin parses, and its key ID is the one in its name.
+  const k = REAL.parseVkey(PINNED_VKEY);
+  assert.strictEqual(REAL.hex(await REAL.keyId(k.name, k.pub)), '54880135');
 });
