@@ -35,6 +35,8 @@ if (!SERVER) {
   const asApp = (fn) => web.begin(async (t) => { await t.unsafe('set local role dog_app'); return fn(t); });
   const asRole = (role, fn) => su.begin(async (t) => { await t.unsafe('set local role ' + role); return fn(t); });
   const core = (t, fp, sess) => t.unsafe(`select * from app.sign_in_core('github', array['${fp}'], 1::smallint, 1::smallint, 'n', '${sess}', 30, null, null, null)`);
+  // 037 (the review's H1): the site's role can no longer call app.sign_in, so a session made before a promotion is made
+  // here as the sign-in role, by the same function; what the promotion does to it is unchanged.
   const wrap = (t, fp, sess) => t.unsafe(`select * from app.sign_in('github', array['${fp}'], 1::smallint, 1::smallint, 'n', '${sess}', 30, null, null, null)`);
   const setAdmin = (id) => asRole('dog_owner', async (t) => (await t.unsafe(`select app.set_administrator('${id}') as r`))[0].r);
   const demote = (id) => asRole('dog_owner', (t) => t.unsafe(`update app.members set is_admin = false where id = '${id}'`));
@@ -44,10 +46,11 @@ if (!SERVER) {
     const f = hex();
     const [m] = await asRole('dog_signin', (t) => core(t, f, hex()));
     const s = hex();
-    await asApp((t) => wrap(t, f, s));
+    await asRole('dog_signin', (t) => wrap(t, f, s));
     assert.strictEqual(await setAdmin(m.member_id), 'set');
     await assert.rejects(actAdmin(s, m.member_id), /not_acting/);
-    await assert.rejects(asApp((t) => wrap(t, f, hex())), /admin_code_only/, 'and no new one can be made');
+    await assert.rejects(asRole('dog_signin', (t) => wrap(t, f, hex())), /admin_code_only/, 'and no new one can be made');
+    await assert.rejects(asApp((t) => wrap(t, f, hex())), /permission denied/, 'and the site\'s role can\'t call it at all (037)');
     const [back] = await asRole('dog_signin', (t) => core(t, f, hex()));
     assert.strictEqual(back.is_admin, true, 'Aaron signs in by code afterwards');
     await demote(m.member_id);
@@ -55,7 +58,7 @@ if (!SERVER) {
 
   test('an account someone linked Aaron\'s GitHub to can\'t be made administrator, even after unlinking its own method (B2)', async () => {
     const fAaron = hex(), fAtk = hex(), s = hex();
-    const [x] = await asApp((t) => wrap(t, fAtk, s));
+    const [x] = await asRole('dog_signin', (t) => wrap(t, fAtk, s));
     await asApp(async (t) => { await t.unsafe(`select app.act_as('member', '${x.member_id}', null, true, '${s}', null, null)`);
       return t.unsafe(`select * from app.identity_link('github', array['${fAaron}'], 1::smallint, 1::smallint, null, '${s}', null)`); });
     const [b] = await asRole('dog_signin', (t) => core(t, fAaron, hex()));
@@ -69,7 +72,7 @@ if (!SERVER) {
     const s = hex();
     let release; const gate = new Promise((r) => { release = r; });
     let started; const startedP = new Promise((r) => { started = r; });
-    const inflight = asApp(async (t) => { const r = await wrap(t, f, s); started(); await gate; return r; });
+    const inflight = asRole('dog_signin', async (t) => { const r = await wrap(t, f, s); started(); await gate; return r; });
     await startedP;
     const promoted = setAdmin(c.member_id);
     await new Promise((r) => setTimeout(r, 300));
@@ -84,7 +87,7 @@ if (!SERVER) {
     const f = hex(), s = hex();
     const [d] = await asRole('dog_signin', (t) => core(t, f, hex()));
     await jevs2(su, d.member_id);
-    await asApp((t) => wrap(t, f, s));
+    await asRole('dog_signin', (t) => wrap(t, f, s));
     const key = hex(), claim = hex();
     const [ag] = await asApp((t) => t.unsafe(`select app.agent_register('mine', 'x', '${key}', '${claim}') as id`));
     await asApp(async (t) => { await t.unsafe(`select app.act_as('member', '${d.member_id}', null, true, '${s}', null, null)`);

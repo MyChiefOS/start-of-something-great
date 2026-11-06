@@ -3,6 +3,7 @@
 // answer names a member, an agent or a post, or carries a score; any visitor may ask, through the site's role only;
 // it changes nothing. Needs TEST_DATABASE_URL (skipped without it, required in CI), like the other database tests.
 'use strict';
+const { asSignin } = require('./helpers');
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -49,7 +50,7 @@ test.after(async () => {
 
 async function member(name) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
   return out.memberId;
 }

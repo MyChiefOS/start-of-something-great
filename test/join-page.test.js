@@ -11,15 +11,39 @@ const { webcrypto } = require('crypto');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'join.js'), 'utf8');
 const IDS = ['message', 'code-signin', 'code-status', 'code-show', 'code-value', 'code-region', 'code-region-text',
-  'code-region-yes', 'code-get', 'key-signin', 'code-copy', 'code-login', 'code-file', 'path-new', 'path-back', 'signin-fields',
-  'code-new', 'code-again', 'back-help', 'hello-head', 'code-wait', 'code-time', 'code-copied', 'post-here', 'say-hello', 'field-set',
-  'signin-as', 'signin-as-text', 'code-change', 'code-title'];
+  'code-region-yes', 'code-get', 'code-copy', 'code-login', 'code-file', 'path-new', 'path-back', 'signin-fields',
+  'code-new', 'code-again', 'hello-head', 'code-wait', 'code-time', 'code-copied', 'post-here', 'say-hello', 'field-set',
+  'signin-as', 'signin-as-text', 'code-change', 'code-title',
+  'paths', 'signin-about'];
 // The ids join.html starts hidden (test/pages-load.test.js holds the page to the same list).
-const HIDDEN = ['code-signin', 'code-show', 'code-region', 'message', 'signin-fields', 'code-get', 'key-signin', 'code-again', 'back-help', 'post-here', 'signin-as'];
+const HIDDEN = ['code-signin', 'code-show', 'code-region', 'message', 'signin-fields', 'code-get', 'code-again', 'post-here', 'signin-as'];
 const CODE = 'DOG-7K4M-Q2XH';
 
 // Loads join.js with stand-ins for the page, storage, the network and timers. answers(path) gives each reply.
-function page({ stored, answers, path, clipboard = 'ok', now, ranOut }) {
+// A stand-in for IndexedDB (037): one object store, values kept as given (a real browser keeps a CryptoKey the same way).
+function fakeIndexedDB(keys) {
+  const later = (f) => setTimeout(f, 0);
+  return {
+    open() {
+      const req = {};
+      later(() => {
+        req.result = { createObjectStore() {}, transaction() {
+          const tx = {};
+          const done = () => later(() => tx.oncomplete && tx.oncomplete());
+          tx.objectStore = () => ({
+            get(k) { const r = {}; later(() => { r.result = keys.get(k); done(); }); return r; },
+            put(v, k) { keys.set(k, v); done(); },
+            delete(k) { keys.delete(k); done(); }
+          });
+          return tx;
+        } };
+        if (req.onsuccess) req.onsuccess();
+      });
+      return req;
+    }
+  };
+}
+function page({ stored, answers, path, clipboard = 'ok', now, ranOut, keys = new Map(), userAgent = 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0', local = new Map(), search = '' }) {
   const el = {};
   const said = []; // every write to the live region, in order
   const copySaid = []; // every write to the copy line, in order
@@ -47,9 +71,11 @@ function page({ stored, answers, path, clipboard = 'ok', now, ranOut }) {
       createRange: () => ({ selectNodeContents(n) { this.node = n; } }), readyState: 'complete' },
     getSelection: () => ({ removeAllRanges() {}, addRange(r) { selected.push(r.node && r.node.id); } }),
     innerHeight: 844, history: { scrollRestoration: 'auto' },
-    location: { search: '', pathname: '/join', href: '' },
+    location: { search, pathname: '/join', href: '', origin: 'https://dayonegreat.com', replace(u) { this.replaced = u; } },
+    localStorage: { getItem: (k) => (local.has(k) ? local.get(k) : null), setItem: (k, v) => local.set(k, String(v)), removeItem: (k) => local.delete(k) },
+    indexedDB: fakeIndexedDB(keys), TextEncoder, btoa: (x) => Buffer.from(x, 'binary').toString('base64'),
     sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
-    navigator: clipboard === 'none' ? {} : { clipboard: { writeText: (t) => { clip.push(t); return clipboard === 'ok' ? Promise.resolve() : Promise.reject(new Error('refused')); } } },
+    navigator: clipboard === 'none' ? { userAgent } : { userAgent, clipboard: { writeText: (t) => { clip.push(t); return clipboard === 'ok' ? Promise.resolve() : Promise.reject(new Error('refused')); } } },
     fetch: (url, opts) => {
       calls.push({ url, method: (opts && opts.method) || 'GET', body: opts && opts.body });
       return Promise.resolve({ ok: true, json: () => Promise.resolve(answers(url)) });
@@ -60,7 +86,7 @@ function page({ stored, answers, path, clipboard = 'ok', now, ranOut }) {
   };
   sandbox.window = sandbox;
   vm.runInNewContext(SRC, sandbox);
-  return { el, store, calls, clip, timers, sandbox, said, selected, clock, copySaid, focus, scrolled };
+  return { el, store, calls, clip, timers, sandbox, said, selected, clock, copySaid, focus, scrolled, keys };
 }
 // Lets the page's promises (and Web Crypto's digest, which runs off the main thread) finish.
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 10)); };
@@ -181,19 +207,22 @@ test('the panel shows its fields only once a path is chosen, and keeps only the 
   assert.strictEqual(p.el['signin-fields'].hidden, true, 'nothing to fill in before choosing');
   p.el['path-new'].on.click();
   assert.strictEqual(p.el['signin-fields'].hidden, false);
-  assert.deepStrictEqual([p.el['code-get'].hidden, p.el['key-signin'].hidden], [false, true], 'first time: one primary button, Get a sign-in code');
+  assert.strictEqual(p.el['code-get'].hidden, false, 'first time: one primary button, Get a sign-in code');
   assert.deepStrictEqual([p.el['path-new'].attrs['aria-pressed'], p.el['path-back'].attrs['aria-pressed']], ['true', 'false']);
-  p.el['path-back'].on.click();
-  assert.deepStrictEqual([p.el['code-get'].hidden, p.el['key-signin'].hidden, p.el['back-help'].hidden], [true, false, false], 'coming back: Sign in with my key file');
   assert.deepStrictEqual([...p.store.keys()], ['dog-path'], 'only the choice is kept');
-  assert.strictEqual(p.store.get('dog-path'), 'back');
+  assert.strictEqual(p.store.get('dog-path'), 'new');
+  // "I have a key file" (lane 2) is on /join/pin, where the PIN is typed (the review of 037, M1).
+  p.el['path-back'].on.click();
+  assert.strictEqual(p.sandbox.location.href, '/join/pin?lane=file');
   // A reload in the same tab opens on the same path; anything else kept there is ignored.
-  const again = page({ stored: undefined, answers: signedOut, path: 'back' });
+  const again = page({ stored: undefined, answers: signedOut, path: 'new' });
   await settle();
-  assert.strictEqual(again.el['key-signin'].hidden, false);
-  const odd = page({ stored: undefined, answers: signedOut, path: '<img>' });
-  await settle();
-  assert.strictEqual(odd.el['signin-fields'].hidden, true);
+  assert.strictEqual(again.el['signin-fields'].hidden, false);
+  for (const odd of ['back', '<img>']) {
+    const o = page({ stored: undefined, answers: signedOut, path: odd });
+    await settle();
+    assert.strictEqual(o.el['signin-fields'].hidden, true, odd);
+  }
   // Signed in already, or sign-in switched off: no panel at all.
   const member = page({ stored: undefined, answers: (u) => (u === '/auth/me' ? { signed_in: true } : {}) });
   await settle();
@@ -371,13 +400,18 @@ test('the copy on /join promises no time, and says only what the code and the JE
   const p = await withCode({});
   p.timers.find((t) => t.kind === 'interval' && t.ms === 1000).f();
   assert.match(p.el['code-wait'].textContent, /^\d+ s so far\. This page keeps checking and signs you in once GitHub passes your post on\.$/);
-  // The simulation's wording.
-  assert.match(main, /<p class="dek">A free GitHub account, no new password to make here\./);
-  assert.match(main, /id="path-back" class="path-choice"[^>]*>I have a key file<\/button>/);
-  assert.match(main, /id="code-file-help" class="help">Any private file only you have, of any type, that you have never sent or uploaded anywhere\. A file that syncs to a cloud service counts as shared, so pick another\. We never see the file, only its fingerprint, and never your password\.<\/p>/);
+  // The wording (the simulation's, and since 037 the production sign-in's, in the design's layout: tools/design/pages/join.main.html).
+  assert.match(main, /<p class="dek">A free GitHub account, a private file of yours and a six-digit PIN\. By continuing you agree to our <a href="\/terms">terms<\/a>/);
+  assert.match(main, /<div class="tabs[^"]*" id="paths" role="group" aria-label="Which is you\?">/, 'the design\'s tabs are the two lanes');
+  assert.match(main, /id="path-new" aria-pressed="false" aria-controls="signin-fields">First time here, or a new key file<\/button>/);
+  assert.match(main, /id="path-back" aria-pressed="false">I have a key file<\/button>/, "a button that opens /join/pin");
+  assert.match(main, /id="code-file-help" class="fine[^"]*">Any private file only you have, of any type, never sent or uploaded anywhere\. We never see the file, only its fingerprint, and never your password\.<\/p>/);
+  assert.doesNotMatch(main, /64 KiB|varied content|derived public key|a photo/, 'nothing of the phase-3 key file, which isn\u2019t built, and no photo (spec 3.4)');
   assert.ok(!/nothing to fill in/.test(html), 'the meta description no longer says there is nothing to fill in');
-  const step = main.match(/<div id="code-show" class="code-step" hidden>[\s\S]*?<\/div>/)[0];
-  assert.match(step, /<h3 id="code-title" tabindex="-1">Post your code<\/h3>/);
+  // The code step: its heading, the posting help (folded, above the code since the design rebuild, so the comment box
+  // sits close under Copy), the code and its warning.
+  const step = main.slice(main.indexOf('<div id="code-show" hidden>'), main.indexOf('<details id="signin-about">'));
+  assert.match(step, /<h3 id="code-title" tabindex="-1"[^>]*>Post your code<\/h3>/);
   assert.match(step, /If the box says “Sign in to comment”, press its “Sign in with GitHub” first\./);
   assert.match(step, /“Authorize giscus”, which can “act on your behalf”: that is GitHub’s own step for the comment box/);
   // The other place to post: the same welcome thread, and the gate reads new comments only there (gate.mjs).
@@ -385,11 +419,46 @@ test('the copy on /join promises no time, and says only what the code and the JE
   const n = Number(/const SIGNIN_DISCUSSION = (\d+);/.exec(gate)[1]);
   assert.match(gate, /ev\.event === 'discussion_comment' && ev\.action === 'created' && ev\.discussion === SIGNIN_DISCUSSION/, 'a new comment in that thread');
   assert.match(step, new RegExp('Or post it as a new comment in <a href="https://github\\.com/MyChiefOS/start-of-something-great/discussions/' + n + '" target="_blank" rel="noopener">our welcome thread on GitHub</a>'));
-  assert.match(html, new RegExp('data-mapping="number"\\s+data-term="' + n + '"'), 'the same thread the comment box shows');
-  assert.match(main, /<h2 id="post-here" class="post-here" hidden>Post your code here<\/h2>\s*<div class="talk-replies">/);
-  assert.match(step, /<p id="code-copied" class="code-copied" role="status" aria-live="polite"><\/p>/, 'Copy\'s own line, under the code');
-  // The field and path-button borders in --muted (3:1 or more in both schemes; measured in scripts/check-join-panel.js).
-  const css = fs.readFileSync(path.join(__dirname, '..', 'join.css'), 'utf8');
-  assert.match(css, /\.path-choice, \.join-panel \.field \{[^}]*border: 1px solid var\(--muted\);/);
-  assert.match(css, /\.join-panel \.btn:not\(\.p\) \{ border-color: var\(--muted\); \}/, 'Copy and Change, the design\'s .btn.s');
+  assert.match(html, new RegExp('data-mapping="number" data-term="' + n + '"'), 'the same thread the comment box shows');
+  assert.match(main, /<h2 class="h3" id="post-here" hidden>Post your code here<\/h2><div class="talk-replies"><script src="https:\/\/giscus\.app\/client\.js"/);
+  assert.match(step, /<p id="code-copied" class="fine" role="status" aria-live="polite"><\/p>/, 'Copy\'s own line, under the code');
+  // The review of 037 (M1): no PIN is typed here and the browser key is never used here: that is /join/pin's.
+  assert.doesNotMatch(main, /type="password"|id="pin-|id="key-pin/);
+  for (const t of ['indexedDB', 'generateKey', 'subtle.sign', '/auth/browser', '/auth/key', '/auth/challenge']) assert.ok(!SRC.includes(t), 'join.js never uses ' + t);
+  // The fields' borders are the design's --rule-strong (3:1 or more in both schemes; spec 5.1, design.css).
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'design.css'), 'utf8'), /\.d1 input\{[^}]*border:1px solid var\(--rule-strong\)/);
+});
+
+// ---- 037: /join hands the PIN and the browser key to /join/pin (the review of 037, M1) ----
+test('037: once the code is claimed, /join takes the person to /join/pin to set their PIN, with where to go after', async () => {
+  let finish = { waiting: true };
+  const p = page({ search: '?return_to=%2Fagents', answers: (u) => (u === '/auth/me' ? { signed_in: false } : u === '/auth/code/start' ? { code: CODE, expires_in: 600 } : u === '/auth/code/finish' ? finish : {}) });
+  await settle();
+  p.el['path-new'].on.click();
+  p.el['code-login'].value = 'coder';
+  p.el['code-file'].files = [{ size: 3, arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer) }];
+  p.el['code-get'].on.click();
+  await settle();
+  finish = { claimed: true, expires_in: 400, has_pin: false, browsers: 0 };
+  p.timers.filter((t) => t.kind === 'interval' && t.ms === 2000).pop().f();
+  await settle();
+  assert.strictEqual(p.sandbox.location.href, '/join/pin?step=set&return_to=%2Fagents');
+  assert.strictEqual(p.el['code-status'].textContent, 'Your post was found. Taking you to set your PIN…');
+});
+
+test('037: a browser that keeps its sign-in key goes to /join/pin first; one that chose another way, or waits for a code, stays', async () => {
+  const flagged = () => new Map([['dog-signin-key', '1']]);
+  const p = page({ local: flagged(), search: '?return_to=%2Ffeed', answers: signedOut });
+  await settle();
+  assert.strictEqual(p.sandbox.location.replaced, '/join/pin?return_to=%2Ffeed');
+  const other = page({ local: flagged(), search: '?other=1', answers: signedOut });
+  await settle();
+  assert.strictEqual(other.sandbox.location.replaced, undefined);
+  assert.strictEqual(other.el['code-signin'].hidden, false);
+  const waiting = page({ local: flagged(), stored: JSON.stringify({ code: CODE, until: Date.now() + 300000 }), answers: signedOut });
+  await settle();
+  assert.strictEqual(waiting.sandbox.location.replaced, undefined, 'a code on the go keeps the page');
+  const none = page({ answers: signedOut });
+  await settle();
+  assert.strictEqual(none.sandbox.location.replaced, undefined);
 });

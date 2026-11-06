@@ -16,7 +16,7 @@ const controls = require('../db/controls');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { agentCtx, promote, shadowMode } = require('./helpers');
+const { agentCtx, promote, shadowMode, asSignin } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -100,7 +100,7 @@ test.after(async () => {
 async function member(level = 2, name = 'Member') {
   const token = c.token(32);
   const fp = c.sha256hex(crypto.randomUUID());
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
@@ -176,9 +176,9 @@ test('F8: deleting an account removes the member and all their personal data at 
   // A hand-set level (only ever lower since Oct 16, 2026: no level is raised by hand), with a note naming them.
   await run({ ...aaron.ctx, note: 'Leaving slowed down for now' }, (t) => t`update app.members set trust_level = 1 where id = ${m.id}`);
   // The ban ended their sessions; they sign in again.
-  m.cookie = SESSION + '=' + await (async () => { const tok = c.token(32); await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github',
+  m.cookie = SESSION + '=' + await (async () => { const tok = c.token(32); await asSignin(su)((t) => store.signIn(t, { provider: 'github',
     fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x', sessionHash: c.sha256hex(tok), sessionDays: 30 })); return tok; })();
-  await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
+  await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(await everything(m.id), { member: 1, identities: 1, sessions: 2, posts: 2, reports: 1, agents: 1, brakes: 1 });
 
@@ -207,7 +207,7 @@ test('F8: deleting an account removes the member and all their personal data at 
   assert.strictEqual(after.statusCode, 401);
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, m.id)), null);
   // They can come back with the same account, as a new member.
-  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1,
+  const back = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1,
     displayName: 'New member', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.ok(back.isNew && back.memberId !== m.id);
 });
@@ -305,7 +305,8 @@ test('F8: a report or a sign-in already under way when the deletion starts is wa
   // A sign-in in flight with the same account.
   const n = await member(2, 'Signing in as I leave');
   gate = new Promise((r) => { release = r; });
-  const signing = run({ actor: 'anon' }, async (t) => {
+  // 037 (the review's H1): the sign-in role makes the session (the site's role can't call app.sign_in any more).
+  const signing = asSignin(su)(async (t) => {
     const out = await store.signIn(t, { provider: 'github', fingerprints: [n.fp], keyVersion: 1, level: 1, displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
     await gate;
     return out;
@@ -329,7 +330,7 @@ test('F8: a sign-in that starts while a deletion is waiting can\'t deadlock with
   await new Promise((r) => setTimeout(r, 150));
   const deleting = del(m);
   await new Promise((r) => setTimeout(r, 150));
-  const signing = run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
+  const signing = asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1, level: 1, displayName: 'x',
     sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 })).then((x) => x, (e) => ({ error: e.code }));
   await new Promise((r) => setTimeout(r, 150));
   release();

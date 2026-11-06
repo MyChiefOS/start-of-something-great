@@ -14,7 +14,7 @@ const agents = require('../db/agents');
 const watch = require('../signin/watch');
 const session = require('../signin/session');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, shadowMode, promote } = require('./helpers');
+const { trustSystem, shadowMode, promote, asSignin } = require('./helpers');
 
 // The site's first fingerprint key, as the key broker hands it over (route B). A stand-in.
 const GATE_KEY = Buffer.from('w'.repeat(40), 'utf8');
@@ -88,14 +88,14 @@ if (!SERVER) {
   // A member signed in in one browser: its session token, as the cookie carries it.
   async function member(name) {
     const token = c.token(32);
-    const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
+    const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
       keyVersion: 1, level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
     return { id: out.memberId, token, hash: c.sha256hex(token) };
   }
   async function browser(m) {
     const token = c.token(32);
     const [{ fingerprint }] = await owner(`select fingerprint from app.identities where member_id = '${m.id}'`);
-    await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fingerprint],
+    await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fingerprint],
       keyVersion: 1, level: 1, displayName: 'x', sessionHash: c.sha256hex(token), sessionDays: 30 }));
     return { ...m, token, hash: c.sha256hex(token) };
   }
@@ -268,11 +268,23 @@ if (!SERVER) {
     const fp = (await owner(`select fingerprint from app.identities where member_id = '${m.id}'`))[0].fingerprint;
     const login = c.sha256hex('login forgetful'), file = c.sha256hex('file forgetful');
     await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.file_keys (member_id, fingerprint, login_hash, key_hash) values ('${m.id}', '${fp}', '${login}', '${file}')`); });
-    const tryFile = (key) => run({ actor: 'anon' }, (t) => store.fileSignIn(t, { loginHash: login, keyHash: key, displayName: 'Forgetful', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
+    // 037: the key file signs in with the PIN and a new browser key's signed challenge (lane 2); the first one sets the
+    // PIN, as for any member from before 037.
+    const BK = require('./helpers/browser-key');
+    const tryFile = async (key) => {
+      const k = BK.make();
+      const ch = await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
+      return run({ actor: 'anon' }, (t) => store.fileSignInPin(t, { loginHash: login, keyHash: key, displayName: 'Forgetful', sessionHash: c.sha256hex(c.token(32)),
+        sessionDays: 30, pin: BK.PIN, pinAgain: BK.PIN, publicKey: k.raw, label: BK.LABEL, challenge: ch, origin: 'https://dayonegreat.com',
+        signature: Buffer.from(BK.proof(k, ch).sig, 'base64url') }));
+    };
     for (let i = 0; i < 2; i++) assert.strictEqual((await tryFile(c.sha256hex('wrong ' + i))).status, 'no_match');
     assert.strictEqual((await tryFile(file)).status, 'ok');
     assert.deepStrictEqual(await alerts('watch:afterfail:%', m.id), [], 'two wrong ones: an ordinary mistake');
+    // Aaron, Nov 5: the 3rd wrong one pauses key-file sign-in for 10 minutes; the right file after the pause alerts.
     for (let i = 0; i < 3; i++) await tryFile(c.sha256hex('wrong again ' + i));
+    assert.strictEqual((await tryFile(file)).status, 'paused');
+    await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${m.id}'`);
     assert.strictEqual((await tryFile(file)).status, 'ok', 'signed in');
     assert.deepStrictEqual(await alerts('watch:afterfail:%', m.id), ['A sign-in after wrong key files']);
     assert.strictEqual((await owner(`select failed from app.file_keys where member_id = '${m.id}'`))[0].failed, 0);

@@ -3,7 +3,7 @@
 // an author filter over live posts (035). The parts that need a database are below the first few checks.
 'use strict';
 
-const { promote, shadowMode, fresh, call } = require('./helpers');
+const { promote, shadowMode, fresh, call, asSignin } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -179,7 +179,7 @@ test.after(async () => {
 
 async function member(level = 2, name = 'Member') {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);

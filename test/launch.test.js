@@ -1,6 +1,7 @@
 // The go-live gate (launch.js): setting up the database never opens Release 2 by itself, and LAUNCH_STAGE=preview
 // (no longer a stage, Aaron, Oct 24: "NO preview systems") answers exactly as closed.
 'use strict';
+const { asSignin } = require('./helpers');
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -132,7 +133,7 @@ test.before(async () => {
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: 1, displayName: 'Alice', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   alice = { id: out.memberId, cookie: '__Host-dog_session=' + token };
 });

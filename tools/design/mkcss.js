@@ -25,13 +25,16 @@ css = css.replace(/^\/\*[^*]*\*\/\n/, '');
 // Inputs, selects and textareas: --rule-strong (3:1), the handoff's token for interactive borders.
 css = css.replace(/(\.d1 input\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)')
   .replace(/(\.d1 textarea\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)')
-  .replace(/(\.d1 select\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)');
+  .replace(/(\.d1 select\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)')
+  // Aaron, Nov 5 (no preference, so the coordinator's call): an unselected tab's border is --rule-strong too (3:1), on every
+  // page, so a tab reads as a control in both schemes (WCAG 2.2, 1.4.11). The selected tab keeps the amber.
+  .replace(/(\.d1 \.tabs button\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)');
 // The one rule that reads inline styles: under 820 px, any grid written inline becomes one column.
 const styles = JSON.parse(fs.readFileSync(stylesJson, 'utf8'));
 css = css.replace('.d1 [style*="grid-template-columns"]{grid-template-columns:1fr!important}', '');
 
 const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, static/css/styles.css), as written. Changes for production
-   only: the site's own font files, the theme from the visitor's system setting, --rule-strong on form fields (spec 5.1),
+   only: the site's own font files, the theme from the visitor's system setting, --rule-strong on form fields (spec 5.1) and unselected tabs,
    and the design's inline styles as classes (x...) with the same values, since the security policy allows no inline style. */
 [hidden]{display:none!important}
 /* The search filters are buttons (so they can be pressed), drawn as the design's chips. */

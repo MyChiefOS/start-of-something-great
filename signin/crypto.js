@@ -53,4 +53,21 @@ function fingerprints(keys, provider, accountId) {
   return keys.map((k) => hmacHex(k.key, provider + ':' + String(accountId)));
 }
 
-module.exports = { token, sha256hex, hmacHex, same, pkce, subkey, seal, open, fingerprints };
+// 037 (Aaron, Nov 5, 2026): what a browser key signs at every sign-in, the same bytes as app.signin_message in the
+// database: a fixed label, this site's address and the one-time challenge, one per line.
+const signinMessage = (origin, challenge) => Buffer.from('dayonegreat-signin-v1\n' + origin + '\n' + challenge, 'utf8');
+
+// Whether sig (r || s, 64 bytes, as Web Crypto gives it) is an ECDSA P-256 SHA-256 signature of msg by pub (the raw
+// uncompressed point, 65 bytes). Node's own crypto; the database checks the same signature again itself
+// (app.p256_verify), and only its answer signs anyone in.
+function p256Verify(pub, msg, sig) {
+  try {
+    if (!Buffer.isBuffer(pub) || pub.length !== 65 || pub[0] !== 4 || !Buffer.isBuffer(sig) || sig.length !== 64) return false;
+    const key = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64url(pub.subarray(1, 33)), y: b64url(pub.subarray(33)) }, format: 'jwk' });
+    return crypto.verify('sha256', msg, { key, dsaEncoding: 'ieee-p1363' }, sig);
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { token, sha256hex, hmacHex, same, pkce, subkey, seal, open, fingerprints, signinMessage, p256Verify };

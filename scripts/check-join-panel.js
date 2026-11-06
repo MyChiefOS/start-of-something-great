@@ -128,9 +128,13 @@ async function main() {
           if (sideways > 0) fail(where, 'the page scrolls sideways by ' + sideways + ' px');
           await p.click('#code-change');
           if (!(await p.isVisible('#code-login')) || !(await p.isVisible('#code-get'))) fail(where, '"Change" does not open the fields again');
-          await p.click('#path-back');
+          // "I have a key file" is lane 2, on /join/pin since the review of 037 (M1: no PIN typed where giscus runs).
+          await Promise.all([p.waitForURL(/\/join\/pin\?lane=file/), p.click('#path-back')]);
+          await p.waitForTimeout(200);
           await inFirstScreen(p, ['#code-login', '#key-signin'], where + ', has a key file', fail);
-          await tallEnough(p, where + ', has a key file', fail);
+          await tallEnough(p, where + ', has a key file', fail, '#pin-signin-card');
+          await p.goBack();
+          await p.waitForTimeout(200);
           await p.click('#path-new');
         }
         // The server says the code is gone: "Get a new code" takes its place, with focus.
@@ -267,10 +271,10 @@ async function noPromisedTime(p, where, fail) {
 }
 
 // Every control a person can tap in the panel: buttons, fields and disclosures, wherever they show.
-async function tallEnough(p, where, fail) {
-  const small = await p.evaluate(() => [...document.querySelectorAll('#code-signin button, #code-signin input, #code-signin summary')]
+async function tallEnough(p, where, fail, card = '#code-signin') {
+  const small = await p.evaluate((c) => [...document.querySelectorAll(c + ' button, ' + c + ' input, ' + c + ' summary')]
     .filter((e) => e.getClientRects().length).map((e) => ({ id: e.id || e.textContent.trim().slice(0, 30), h: e.getBoundingClientRect().height }))
-    .filter((x) => x.h < 44));
+    .filter((x) => x.h < 44), card);
   for (const s of small) fail(where, '"' + s.id + '" is ' + s.h.toFixed(1) + ' px tall (at least 44)');
 }
 

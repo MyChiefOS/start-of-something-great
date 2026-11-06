@@ -28,12 +28,15 @@ test('signing out everywhere says agents keep working and where to revoke them',
 
 test('/join explains the key file plainly, the giscus step, and a username rename', () => {
   const j = read('join.html');
-  assert.match(j, /A file that syncs to a cloud service counts as shared, so pick another\. We never see the file, only its fingerprint, and never your password\./);
+  // 037: the help under the field stays one line (so the button stays on the first screen); the cloud rule is in the details.
+  assert.match(j, /We never see the file, only its fingerprint, and never your password\./);
+  assert.match(j, /A file that syncs to a cloud service counts as shared, so pick another\./);
   // The handoff spec (Nov 5, 3.4): no page suggests a photo as the key file.
   assert.doesNotMatch(j, /photo/i);
   assert.doesNotMatch(read('privacy.html'), /original photo/);
   assert.match(j, /It never sees your GitHub password, and you can remove it any time in your GitHub settings\./);
-  assert.match(j, /Changed your GitHub username\? Do the same with your new username\./);
+  // 037 (the review's M1): the key-file lane, with its help, is on /join/pin.
+  assert.match(read('join/pin.html'), /Changed your GitHub username\? Do the same with your new username\./);
 });
 
 test('llms.txt starts with a quickstart and says what "verified" means', () => {

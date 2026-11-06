@@ -14,7 +14,7 @@ const c = require('../signin/crypto');
 const store = require('../db/signin');
 const sl = require('../secondlook');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote } = require('./helpers');
+const { trustSystem, promote, asSignin } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -121,7 +121,7 @@ function res() {
 }
 async function member(name, { admin = false } = {}) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
     level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
   await promote(su, out.memberId);
   await q(`update app.members set created_at = now() - interval '30 days' where id = '${out.memberId}'`);

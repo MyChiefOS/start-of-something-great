@@ -20,7 +20,7 @@ const region = require('../signin/region');
 const { make, LIMITS, MIN_FILL_MS } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { trustSystem, promote } = require('./helpers');
+const { trustSystem, promote, asSignin } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -231,7 +231,7 @@ async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale
   // Phase 1 (021): a sign-in gives level 1 at most; level 2 is JEVs's promotion, as in production.
   const prov = provider || (level === 0 ? 'email' : 'github');
   const fp = c.sha256hex(crypto.randomUUID());
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: prov, fingerprints: [fp], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: prov, fingerprints: [fp], keyVersion: 1,
     level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
@@ -551,7 +551,7 @@ test('automatic level 2, with no wait: JEVs promotes an account as soon as every
   assert.ok(rec.detail.decision);
   // They can own an agent now, and a later sign-in keeps the level (sign-in counts JEVs's level as verified).
   assert.strictEqual((await agentsApi('POST', '', { cookie: brandNew.cookie, json: { name: 'First agent' } })).status, 201);
-  const again = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: brandNew.provider, fingerprints: [brandNew.fp], keyVersion: 1,
+  const again = await asSignin(su)((t) => store.signIn(t, { provider: brandNew.provider, fingerprints: [brandNew.fp], keyVersion: 1,
     level: 1, displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.strictEqual(again.trustLevel, 2, 'GitHub verifies level 1, and JEVs\'s level 2 still counts');
   // Not promoted: an email-only account (J02 30), a disposable address (J03), a hand-lowered level.
@@ -987,7 +987,9 @@ function signinSetup(mail = [], more = {}) {
   });
   const cfg = { ready: true, sessionKey: crypto.randomBytes(32).toString('base64'), ipKey: crypto.randomBytes(32),
     fingerprintKeys: [{ version: 1, key: crypto.randomBytes(32) }], github: { clientId: 'g', clientSecret: 's' }, x: { clientId: 'x', clientSecret: 's' } };
-  const flow = make({ config: cfg, run, providers: { github: fake('github'), x: fake('x') }, sendEmail: async (to, link) => mail.push({ to, link }) });
+  // 037 (the review's H1): GitHub, X and email sign-in are off and the site's role can't make their session; their logic
+  // is tested with that one step run as the sign-in role (runOff).
+  const flow = make({ config: cfg, run, runOff: (ctx, fn) => asSignin(su)(fn), providers: { github: fake('github'), x: fake('x') }, sendEmail: async (to, link) => mail.push({ to, link }) });
   return { flow, cfg, mail };
 }
 function formReq(url, body, { country = 'US', ip = '192.0.2.77', cookie = '' } = {}) {
@@ -1063,7 +1065,7 @@ test('regional gate, new sign-ups: declined politely after the provider confirms
   assert.deepStrictEqual(Object.keys((await q(`select * from app.region_declines limit 1`))[0]).sort(), ['country', 'day', 'declines', 'id'], 'nothing but the count');
   assert.strictEqual((await run({ ...aaron.ctx, actor: 'member' }, (t) => t`select * from app.region_declines`)).length, 0, 'only Aaron reads the counts');
   // The database itself refuses to make an account for a confirmed traveller.
-  const refused = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('never seen')], keyVersion: 1, level: 1,
+  const refused = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('never seen')], keyVersion: 1, level: 1,
     displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30, region: 'FR' }));
   assert.deepStrictEqual(refused, { refused: 'region' });
   // Elsewhere, sign-up carries on.

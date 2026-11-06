@@ -30,6 +30,12 @@
 //   lives before any code is made (the CLJO's review, B1), and a new person is declined at sign-in, which deletes the
 //   claimed code and the fingerprint it held. The JEVs gate still records every GitHub post, from anywhere, as it
 //   always has (it can't know where a poster is): the gap between the Oct 24 and Oct 16 decisions, put to Aaron.
+//   037 (Aaron, Nov 5, 2026): every way in ends at the same check. The browser makes a key pair it can't export (Web
+//   Crypto, P-256, kept in this site's IndexedDB) and signs a one-time challenge from /auth/challenge with this site's
+//   address; the database checks that signature itself and the member's six-digit PIN. Lane 1 (a code posted through
+//   giscus) sets the PIN; lane 2 (/auth/key: the key file and the PIN) adds a new browser; lane 3 (/auth/browser: the
+//   PIN alone) is this browser again. A wrong PIN counts against the browser key or key file it was tried with: the
+//   5th alerts, the 10th cancels it. The GitHub lane is never closed.
 'use strict';
 
 const nodeCrypto = require('crypto');
@@ -67,6 +73,8 @@ const LIMITS = {
   signin_ip: { windowSeconds: 600, max: 30 },
   // The key file (Aaron, Oct 28) shares the signin_ip limit above (keyFileSignIn); the database also counts wrong files per
   // username, and the 10th cancels the key file (the member then gets a new code; the account is unchanged).
+  // 037: one-time challenges, one per sign-in try; a network that asks for more than this in 10 minutes waits.
+  challenge_ip: { windowSeconds: 600, max: 60 },
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
@@ -82,6 +90,11 @@ const ALL = '0'.repeat(64);
 
 function make(deps) {
   const { config, run, providers, sendEmail } = deps;
+  // 037, after its independent review (H1): the switched-off GitHub, X and email sign-ins end in app.sign_in, which made a
+  // session with no PIN and no browser key; the site's role can no longer call it, so in production (no runOff) those
+  // sign-ins can't make a session at all. Switching one on needs the browser key and PIN step first (db/README.md).
+  // Tests of their logic pass a runner that acts as the sign-in role.
+  const runOff = deps.runOff || run;
   const stateKey = config.sessionKey ? c.subkey(config.sessionKey, 'oauth state') : null;
   const formKey = config.sessionKey ? c.subkey(config.sessionKey, 'form time') : null;
   const regionKey = config.sessionKey ? c.subkey(config.sessionKey, 'region confirmation') : null;
@@ -105,6 +118,33 @@ function make(deps) {
     return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(l) ? l : null;
   };
   const fileOf = (form) => (typeof form.file === 'string' && /^[0-9a-f]{64}$/.test(form.file) ? form.file : null);
+  // 037: the browser's proof and the PIN, as /join sends them (base64url without padding). Checked character by
+  // character against a fixed set, after the length, so no pattern ever runs over what a visitor sent.
+  const B64URL = new Set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_');
+  const HEX = new Set('0123456789abcdef');
+  const onlyOf = (x, set) => { for (const ch of x) if (!set.has(ch)) return false; return true; };
+  const isUuid = (x) => typeof x === 'string' && x.length === 36
+    && [8, 13, 18, 23].every((i) => x[i] === '-') && onlyOf(x.replace(/-/g, ''), HEX) && x.replace(/-/g, '').length === 32;
+  const b64 = (x, len) => {
+    if (typeof x !== 'string' || x.length === 0 || x.length > 100 || !onlyOf(x, B64URL)) return null;
+    const b = Buffer.from(x, 'base64url');
+    return b.length === len && b.toString('base64url') === x ? b : null;
+  };
+  const pinOf = (form) => (typeof form.pin === 'string' && /^[0-9]{6}$/.test(form.pin) ? form.pin : null);
+  // The browser's proof: its public key (65 bytes) where one is being added, the challenge and the signature over the
+  // challenge and this site's address. Node's crypto checks it first; the database checks it again and decides.
+  const proofOf = (form, pub) => {
+    const challenge = typeof form.challenge === 'string' && form.challenge.length === 43 && onlyOf(form.challenge, B64URL) ? form.challenge : null;
+    const signature = b64(form.sig, 64);
+    if (!challenge || !signature) return null;
+    // Always checked here, in every lane (the review of 037, M2: lane 3 used to leave it to the database alone).
+    if (!pub || !c.p256Verify(pub, c.signinMessage(ORIGIN, challenge), signature)) return null;
+    return { challenge, origin: ORIGIN, signature };
+  };
+  const labelOf = (form) => (typeof form.label === 'string' && session.BROWSER_LABELS.has(form.label) ? form.label : null);
+  const PROOF_HELP = 'This browser couldn\u2019t prove its sign-in key. Please try again.';
+  const WEAK_PIN = 'Please choose a PIN that\u2019s harder to guess: not one digit repeated, a run like 123456, or a short pattern repeated.';
+  const PIN_HELP = 'Type a PIN of six digits.';
   // What a name, an email or anything else that isn't a GitHub username gets (the sign-in simulation, Oct 30: 2 of 10
   // people typed their name or email, and "letters, numbers and dashes" didn't tell them where to find it).
   const LOGIN_HELP = 'That isn\u2019t a GitHub username. Use the username in your GitHub address (github.com/your-username), '
@@ -126,7 +166,7 @@ function make(deps) {
   // confirmed (args.region) also gets the resident tag for this session.
   async function finish(res, ctx, args) {
     const token = c.token(32);
-    const out = await run(ctx, (t) => store.signIn(t, { ...args, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS }));
+    const out = await runOff(ctx, (t) => store.signIn(t, { ...args, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS }));
     // The new session's hash, which proves who is acting in the steps right after (fix 3, 019).
     if (!out.refused) out.sessionHash = c.sha256hex(token);
     if (!out.refused) {
@@ -358,7 +398,8 @@ function make(deps) {
       return json(res, 200, { code, expires_in: CODE_MINUTES * 60 });
     },
 
-    // 023: asked every 2 seconds by /join.js. { waiting } until the code is posted and claimed, then signs in.
+    // 023: asked every 2 seconds by /join.js. { waiting } until the code is posted and claimed; then (037) { claimed },
+    // and the page asks for a new PIN, makes this browser's key and sends both with a signed challenge, which signs in.
     // From a declined region, { region } first: the page asks where the person lives, and asks again with confirm=1.
     async codeFinish(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
@@ -367,10 +408,29 @@ function make(deps) {
       const body = (await h.form(req)) || {};
       const country = region.declined(req);
       if (country && body.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (body.pin === undefined) {
+        const st = await run(ANON, (t) => store.codeStatus(t, c.sha256hex(tag)));
+        if (st.status === 'waiting') return json(res, 200, { waiting: true });
+        // Claimed: the person's own account says whether it has a PIN already and how many browsers, so the page can
+        // offer to remove the others when the PIN is replaced (the review of 037, L2).
+        if (st.status === 'claimed') return json(res, 200, { claimed: true, expires_in: st.secondsLeft, has_pin: st.hasPin, browsers: st.browsers });
+        h.addCookie(res, h.clear(CODE_BROWSER));
+        return json(res, 200, { expired: true });
+      }
+      const pin = pinOf(body);
+      if (!pin) return json(res, 200, { error: PIN_HELP, pin_error: true });
+      const pub = b64(body.pub, 65);
+      const proof = pub && proofOf(body, pub);
+      const label = labelOf(body);
+      if (!proof || !label) return json(res, 200, { error: PROOF_HELP, retry: true });
       const token = c.token(32);
-      const out = await run(ANON, (t) => store.codeSignIn(t, { browserHash: c.sha256hex(tag), displayName: NEW_NAME,
-        sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
+      const out = await run(ANON, (t) => store.codeSignInPin(t, { browserHash: c.sha256hex(tag), displayName: NEW_NAME,
+        sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null, pin, publicKey: pub, label,
+        removeOthers: body.remove_others === '1', ...proof }));
       if (out.status === 'waiting') return json(res, 200, { waiting: true });
+      if (out.status === 'bad_key') return json(res, 200, { error: PROOF_HELP, retry: true });
+      if (out.status === 'weak_pin') return json(res, 200, { error: WEAK_PIN, pin_error: true });
+      if (out.status === 'bad_proof') return json(res, 200, { error: PROOF_HELP, retry: true });
       h.addCookie(res, h.clear(CODE_BROWSER));
       if (out.status === 'expired') return json(res, 200, { expired: true });
       if (out.status === 'region' || out.refused === 'region') {
@@ -383,12 +443,21 @@ function make(deps) {
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
-      return json(res, 200, { signed_in: true, go: goAfter(body) });
+      return json(res, 200, { signed_in: true, go: goAfter(body), key_id: out.keyId });
     },
 
-    // The key file (Aaron, Oct 28): signing in again with the same username and file, with no post. Rate limited per
-    // network; the 10th wrong file for a username cancels its key file (the database counts), and the person is asked
-    // to start again with a new code. Each sign-in leaves the member an in-app notice. The same for every account, the administrator's included.
+    // 037: a one-time challenge for this browser to sign, good for 2 minutes, made for this site's own address.
+    async challenge(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      if (await limited('challenge_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      const ch = await run(ANON, (t) => store.challengeIssue(t, ORIGIN));
+      return json(res, 200, { challenge: ch, origin: ORIGIN, expires_in: 120 });
+    },
+
+    // Lane 2, a new browser (Aaron, Oct 28; 037): the same username and key file, with no post, and the PIN. Rate
+    // limited per network; the 10th wrong file for a username cancels its key file, and so does the 10th wrong PIN with
+    // it (the database counts); either way the person starts again with a new code. This browser gets its key and the
+    // member a notice, "New browser added". A member who has no PIN yet (an account from before 037) sets it here.
     async keyFileSignIn(req, res) {
       if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
       if (!codeKey) return json(res, 503, { error: 'Sign-in isn\u2019t switched on here yet.' });
@@ -396,21 +465,75 @@ function make(deps) {
       const login = loginOf(form), file = fileOf(form);
       if (!login) return json(res, 200, { error: LOGIN_HELP });
       if (!file) return json(res, 200, { error: 'Choose your key file.' });
+      const pin = pinOf(form);
+      if (!pin) return json(res, 200, { error: PIN_HELP, pin_error: true });
       const country = region.declined(req);
       if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
         return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       }
+      const pub = b64(form.pub, 65);
+      const proof = pub && proofOf(form, pub);
+      const label = labelOf(form);
+      if (!proof || !label) return json(res, 200, { error: PROOF_HELP, retry: true });
       const token = c.token(32);
-      const out = await run(ANON, (t) => store.fileSignIn(t, { loginHash: loginHash(login), keyHash: fileKey(login, file),
-        displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null }));
-      if (out.status === 'start_again') return json(res, 200, { start_again: true, error: 'Too many wrong key files. Please start again: get a new code, post it, and choose a new key file. You\u2019ll be back in your same account.' });
+      const out = await run(ANON, (t) => store.fileSignInPin(t, { loginHash: loginHash(login), keyHash: fileKey(login, file),
+        displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS, region: country || null, pin,
+        pinAgain: typeof form.pin_again === 'string' ? form.pin_again : null, publicKey: pub, label, ...proof }));
+      if (out.status === 'start_again') return json(res, 200, { start_again: true, error: '10 wrong PINs were tried with your key file, so it was cancelled. Please start again: get a new code, post it, and choose a key file. You\u2019ll be back in your same account.' });
+      // Aaron (Nov 5): after 3 wrong key files for a username, key-file sign-in for it pauses for 10 minutes; the member is
+      // told in-app. This browser's PIN (if it has a key) and a new code still work.
+      if (out.status === 'paused') return json(res, 200, { paused: true, wait_seconds: out.waitSeconds, error: 'Signing in with a key file is paused for this username for ' + Math.ceil((out.waitSeconds || 600) / 60) + ' minutes, after 3 wrong key files. Try again then, or sign in with a new code.' });
+      // A member from before PINs sets their first one here, typed twice (the review of 037, L3).
+      if (out.status === 'confirm_pin') return json(res, 200, { confirm_pin: true, error: 'This is your first PIN. Type it again to set it.' });
+      if (out.status === 'bad_key') return json(res, 200, { error: PROOF_HELP, retry: true });
       if (out.status === 'no_match') return json(res, 200, { error: 'That username and key file don\u2019t match. Check both, or get a new code.' });
+      if (out.status === 'wrong_pin') return json(res, 200, { pin_error: true, tries_left: out.triesLeft, error: 'That PIN isn\u2019t right.' + (out.triesLeft ? ' ' + out.triesLeft + (out.triesLeft === 1 ? ' try is' : ' tries are') + ' left before your key file is cancelled.' : '') });
+      if (out.status === 'weak_pin') return json(res, 200, { error: 'This is your first PIN. ' + WEAK_PIN, pin_error: true });
+      if (out.status === 'bad_proof') return json(res, 200, { error: PROOF_HELP, retry: true });
       if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
       if (out.refused) return json(res, 200, { refused: out.refused });
       h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
       if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
       h.addCookie(res, h.clear(CODE_BROWSER)); // signed in by the key file: a code still waiting here has nothing left to do
+      await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
+      const old = sessionHash(req);
+      if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+      return json(res, 200, { signed_in: true, go: goAfter(form), key_id: out.keyId });
+    },
+
+    // Lane 3 (037): this browser again, with its key and the PIN, no file. A wrong PIN counts against this browser's
+    // key; the 10th cancels it ({ cancelled }), and the page offers the other two ways in.
+    async browserSignIn(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the join page.' });
+      const form = (await h.form(req)) || {};
+      const keyId = isUuid(form.key_id) ? form.key_id : null;
+      if (!keyId) return json(res, 200, { no_key: true });
+      const pin = pinOf(form);
+      if (!pin) return json(res, 200, { error: PIN_HELP, pin_error: true });
+      const country = region.declined(req);
+      if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+      if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
+        return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+      }
+      // The review of 037 (M2): the site checks this browser's signature itself too, with the key's public half, before
+      // the database checks it again; a key that isn't there is no_key, and the PIN is never sent on.
+      const pub = await run(ANON, (t) => store.browserKeyPublic(t, keyId));
+      if (!pub) return json(res, 200, { no_key: true });
+      const proof = proofOf(form, pub);
+      if (!proof) return json(res, 200, { error: PROOF_HELP, retry: true });
+      const token = c.token(32);
+      const out = await run(ANON, (t) => store.browserSignIn(t, { keyId, displayName: NEW_NAME, sessionHash: c.sha256hex(token),
+        sessionDays: SESSION_DAYS, region: country || null, pin, ...proof }));
+      if (out.status === 'no_key') return json(res, 200, { no_key: true });
+      if (out.status === 'cancelled') return json(res, 200, { cancelled: true, error: '10 wrong PINs were tried in this browser, so its sign-in key was cancelled. Sign in with your key file and PIN, or with a new code.' });
+      if (out.status === 'wrong_pin') return json(res, 200, { pin_error: true, tries_left: out.triesLeft, error: 'That PIN isn\u2019t right.' + (out.triesLeft ? ' ' + out.triesLeft + (out.triesLeft === 1 ? ' try is' : ' tries are') + ' left before this browser\u2019s key is cancelled.' : '') });
+      if (out.status === 'bad_proof') return json(res, 200, { error: PROOF_HELP, retry: true });
+      if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
+      if (out.refused) return json(res, 200, { refused: out.refused });
+      h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+      if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+      h.addCookie(res, h.clear(CODE_BROWSER));
       await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
@@ -567,9 +690,13 @@ function make(deps) {
       res.setHeader('Cache-Control', 'no-store');
       if (!who) { res.statusCode = 401; return res.end(JSON.stringify({ signed_in: false })); }
       const a = await run(session.actorFor(who), (t) => store.account(t));
+      // 037: the PIN (whether set, and when), the key file and this member's browsers; never key material.
+      const m = await run(session.actorFor(who), (t) => store.signinMethods(t));
       res.statusCode = 200;
       res.end(JSON.stringify({ signed_in: true, member_id: a.memberId, display_name: a.displayName, trust_level: a.trustLevel, joined: a.joined,
         is_admin: who.isAdmin === true, sign_ins: a.signIns.map((i) => ({ id: i.id, provider: i.provider, level: i.level, verified_at: i.verifiedAt })), sessions: a.sessions,
+        pin: m.pin ? { set_at: m.pin.set_at } : null, key_file: m.key_file || null,
+        browsers: (m.browsers || []).map((b) => ({ id: b.id, label: b.label, added: b.created_at, used: b.used_at })),
         deletion_review: a.deletionReview ? { since: a.deletionReview.since, disables_at: a.deletionReview.disablesAt } : null }));
     },
 
@@ -629,6 +756,32 @@ function make(deps) {
       if (out.refused === 'busy') return h.redirect(res, '/account?error=busy');
       if (out.refused) return h.redirect(res, '/account?error=unlink');
       return h.redirect(res, '/account?saved=unlinked');
+    },
+
+    // 037: change the PIN from a signed-in session, with the current one (or set a new one by signing in with a code). A
+    // form on /account, from our own pages. The 10th wrong current PIN signs this session out.
+    async pinChange(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/account');
+      const who = await current(req);
+      if (!who) return h.redirect(res, '/join?error=signin');
+      const body = (await h.form(req)) || {};
+      if (body.next !== body.again) return h.redirect(res, '/account?error=pin_again#pin');
+      const out = await run(session.actorFor(who), (t) => store.pinChange(t, { current: body.current, next: body.next }));
+      if (out.status === 'ok') return h.redirect(res, '/account?saved=pin#pin');
+      if (out.status === 'signed_out') { h.addCookie(res, h.clear(SESSION)); return h.redirect(res, '/join?error=pin_signed_out'); }
+      if (out.status === 'wrong_pin') return h.redirect(res, '/account?error=pin_wrong&left=' + Number(out.tries_left) + '#pin');
+      if (out.status === 'weak_pin') return h.redirect(res, '/account?error=pin_weak#pin');
+      return h.redirect(res, '/account?error=pin_none#pin');
+    },
+
+    // 037: remove one of your browsers, so it no longer signs in with your PIN. A form on /account.
+    async browserRemove(req, res) {
+      if (!h.sameSite(req)) return h.redirect(res, '/account');
+      const who = await current(req);
+      if (!who) return h.redirect(res, '/join?error=signin');
+      const body = (await h.form(req)) || {};
+      const ok = await run(session.actorFor(who), (t) => store.browserKeyRemove(t, body.id));
+      return h.redirect(res, ok ? '/account?saved=browser_removed#browsers' : '/account?error=browser#browsers');
     },
 
     async me(req, res) {

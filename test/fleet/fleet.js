@@ -13,7 +13,7 @@
 // It drives the real request handlers (no network in between), so it measures our code and database, not Vercel.
 'use strict';
 
-const { promote } = require('../helpers');
+const { promote, asSignin } = require('../helpers');
 const crypto = require('crypto');
 const c = require('../../signin/crypto');
 const store = require('../../db/signin');
@@ -100,7 +100,7 @@ async function fleet({ run, su, cfg, good = 4, bad = 1, round = 0, log = () => {
     const ip = '198.51.' + (10 + i + 40 * round) + '.' + (20 + i);
     const token = c.token(32);
     // The owner signs up with GitHub (level 1) and JEVs promotes them to level 2, as in phase 1 (migration 021).
-    const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('fleet ' + tag + ' ' + i)], keyVersion: 1,
+    const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('fleet ' + tag + ' ' + i)], keyVersion: 1,
       level: 1, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
     await promote(su, out.memberId);
     const owner = { id: out.memberId, cookie: '__Host-dog_session=' + token, ip };

@@ -358,6 +358,11 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "join/pin.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "loops.html": {
   "ids": [
    [

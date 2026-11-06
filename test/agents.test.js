@@ -1,7 +1,7 @@
 // Release 2, PR 5: agents (F2, F3, S3, S4, S5), against a real Postgres.
 'use strict';
 
-const { promote, shadowMode } = require('./helpers');
+const { promote, shadowMode, asSignin } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 // Acting as an administrator straight in the database (the test superuser), the way the site does it.
@@ -113,7 +113,7 @@ test.after(async () => {
 
 async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())],
     keyVersion: 1, level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);

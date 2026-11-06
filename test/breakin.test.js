@@ -16,7 +16,7 @@ const review = require('../db/review');
 const controls = require('../db/controls');
 const jevs = require('../db/jevs');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, promote, shadowMode } = require('./helpers');
+const { trustSystem, promote, shadowMode, asSignin } = require('./helpers');
 
 const SERVER = process.env.TEST_DATABASE_URL;
 if (!SERVER) {
@@ -47,7 +47,7 @@ const MAY_SEE = {
 
 async function signIn(level, name, fp = c.sha256hex(crypto.randomUUID())) {
   const token = c.token(32);
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fp], keyVersion: 1,
     level: Math.min(level, 1), displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   return { id: out.memberId, fp, sessionHash: c.sha256hex(token), ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
@@ -127,6 +127,14 @@ test.before(async () => {
   // A's key file (023, Oct 28), as a code sign-in keeps it (the sign-in role writes it).
   await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.file_keys (member_id, fingerprint, login_hash, key_hash)
     values ('${A.id}', '${'f'.repeat(64)}', '${c.sha256hex('login a')}', '${c.sha256hex('key a')}')`); });
+  // 037 (Nov 5, 2026): A's PIN (a keyed hash and its salt), a browser's public key and a one-time challenge, as the
+  // sign-in role writes them, so the checks below prove nobody else can read them.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_signin');
+    await t.unsafe(`insert into app.signin_pins (member_id, salt, pin_hash) values ('${A.id}', '\\x${'1'.repeat(32)}', '\\x${'2'.repeat(64)}')`);
+    await t.unsafe(`insert into app.browser_keys (member_id, public_key, label) values ('${A.id}', '\\x04${'3'.repeat(128)}', 'Firefox on Linux')`);
+  });
+  await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
   // 026: a country the behaviour watch saw A sign in from (a keyed hash).
   await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.watch_seen (member_id, kind, key_hash)
     values ('${A.id}', 'country', '${c.sha256hex('country a')}')`); });

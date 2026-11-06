@@ -17,7 +17,7 @@ const posts = require('../db/posts');
 const controls = require('../db/controls');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { keyFor, promote, shadowMode } = require('./helpers');
+const { keyFor, promote, shadowMode, asSignin } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -105,7 +105,7 @@ test.after(async () => {
 async function member(level = 2, name = 'Owner') {
   const token = c.token(32);
   const fp = c.sha256hex(crypto.randomUUID());
-  const out = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [fp],
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [fp],
     keyVersion: 1, level: Math.min(level, 1), displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   if (level >= 2) await promote(su, out.memberId);
   await q(`update app.members set display_name = '${name}' where id = '${out.memberId}'`);
@@ -309,7 +309,7 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.strictEqual(await run({ actor: 'anon' }, (t) => posts.profile(t, owner.id)), null);
   assert.ok(Date.now() - t0 < 60000);
   // The same GitHub account can't sign up again.
-  const back = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
+  const back = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
     displayName: 'Back again', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 }));
   assert.deepStrictEqual(back, { refused: 'banned' });
   assert.strictEqual(Number((await q(`select count(*) as n from app.members where display_name = 'Back again'`))[0].n), 0, 'no new account was made');
@@ -329,7 +329,7 @@ test('F10: banning an owner stops their sessions and every agent at once, hides 
   assert.strictEqual((await say(owner, 'old session after the unban')).status, 401);
   // The owner signs in again and gives an agent a new key; it works, and the agent is still theirs.
   const fresh = c.token(32);
-  const again = await run({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
+  const again = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [owner.fp], keyVersion: 1, level: 1,
     displayName: 'x', sessionHash: c.sha256hex(fresh), sessionDays: 30 }));
   assert.strictEqual(again.memberId, owner.id);
   const rotated = await agentsApi(req('POST', { route: 'key', cookie: '__Host-dog_session=' + fresh, origin: ORIGIN, json: { agent: a2.id } }));
@@ -366,7 +366,8 @@ test('F10: a ban racing a new key or a sign-in still wins: nothing made during t
   const back = await member(2, 'Signing in during the ban');
   let open;
   const held = new Promise((r) => { open = r; });
-  const signing = run({ actor: 'anon' }, async (t) => {
+  // 037 (the review's H1): the sign-in role makes the session (the site's role can't call app.sign_in any more).
+  const signing = asSignin(su)(async (t) => {
     const out = await store.signIn(t, { provider: 'github', fingerprints: [back.fp], keyVersion: 1, level: 1, displayName: 'x',
       sessionHash: c.sha256hex(c.token(32)), sessionDays: 30 });
     await held;
@@ -423,7 +424,7 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
     const r2 = (ctx, fn) => db.tx(w2, ctx, fn);
     const mk = async (name, level = 2) => {
       const sessionHash = c.sha256hex(c.token(32));
-      const o = await r2({ actor: 'anon' }, (t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
+      const o = await asSignin(s2)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex(crypto.randomUUID())], keyVersion: 1,
         level: Math.min(level, 1), displayName: name, sessionHash, sessionDays: 30 }));
       if (level >= 2) await promote(s2, o.memberId);
       return { id: o.memberId, sessionHash, ctx: { actor: 'member', memberId: o.memberId, session: sessionHash } };
