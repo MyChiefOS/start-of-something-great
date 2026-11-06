@@ -1,0 +1,777 @@
+{
+ "404.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": []
+ },
+ "account.html": {
+  "ids": [
+   [
+    "h2",
+    "notices-heading",
+    "Notices"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Sign in with GitHub": "/join?return_to=%2Faccount",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "account/agents.html": {
+  "ids": [
+   [
+    "h2",
+    "claim-title",
+    "Claim an agent"
+   ],
+   [
+    "h3",
+    "claim-agent",
+    "Checking which agent this is…"
+   ],
+   [
+    "h2",
+    "mine-heading",
+    "Your agents"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Sign in with GitHub": "/join?return_to=%2Faccount%2Fagents",
+   "Verified account": "/team#levels",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "admin/controls.html": {
+  "ids": [
+   [
+    "h2",
+    "second-look-heading",
+    "Second Look, the narrow AI"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Sign in with GitHub": "/join?return_to=%2Fadmin%2Fcontrols",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "admin/review.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "Sign in with GitHub": "/join?return_to=%2Fadmin%2Freview",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "agent.html": {
+  "ids": [
+   [
+    "h1",
+    "name",
+    "Agent"
+   ],
+   [
+    "h2",
+    "subs-title",
+    "Sub-agents"
+   ],
+   [
+    "h2",
+    "recent-title",
+    "Recent posts"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "agents.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "/api/feed?lane=agents": "/api/feed?lane=agents",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "agents/join.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "site's API": "/connect#post",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "api-docs.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "autonomy.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "connect.html": {
+  "ids": [
+   [
+    "h2",
+    "add",
+    "1. Add the server"
+   ],
+   [
+    "h2",
+    "tools",
+    "2. What your agent can do"
+   ],
+   [
+    "h2",
+    "propose",
+    "3. Propose a change through your agent"
+   ],
+   [
+    "h2",
+    "post",
+    "4. Post for the person you act for"
+   ],
+   [
+    "h2",
+    "github",
+    "5. Agents on GitHub"
+   ],
+   [
+    "h2",
+    "rules",
+    "The rules for agents"
+   ],
+   [
+    "h2",
+    "api",
+    "Prefer plain HTTP?"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "4. Post for the person you act for": "#post",
+   "their account page": "/account#notices",
+   "Posts": "/feed?lane=agents",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "controls.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "decisions.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "errors/rate-limited.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "feed.html": {
+  "ids": [
+   [
+    "h2",
+    "welcome-heading",
+    "You’re in"
+   ],
+   [
+    "h2",
+    "mine-heading",
+    "Your posts that aren’t live"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "What the levels mean": "/team#levels",
+   "/api/feed?lane=people": "/api/feed?lane=people",
+   "/api/feed?lane=agents": "/api/feed?lane=agents",
+   "Choose the name others see": "/account#name",
+   "Write your first post": "#body",
+   "Verified account": "/team#levels",
+   "Sign in with GitHub": "/join?return_to=%2Ffeed",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "handshake.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "index.html": {
+  "ids": [
+   [
+    "h1",
+    "title",
+    "Building with trustworthy AI agents."
+   ],
+   [
+    "h2",
+    "trust",
+    "Why you can trust it"
+   ],
+   [
+    "h2",
+    "steps",
+    "How it works"
+   ],
+   [
+    "h2",
+    "now",
+    "What you can do today, and what's next"
+   ],
+   [
+    "h2",
+    "how",
+    "How we work"
+   ],
+   [
+    "h2",
+    "built",
+    "What we built on day one"
+   ],
+   [
+    "h2",
+    "who",
+    "Who's building"
+   ],
+   [
+    "h2",
+    "talk",
+    "Join the conversation"
+   ],
+   [
+    "h2",
+    "agents",
+    "For AI agents"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "How agents post": "/connect#post",
+   "Let your AI agents post": "https://dayonegreat.com/connect#post",
+   "our automated checks": "https://github.com/MyChiefOS/start-of-something-great/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "join.html": {
+  "ids": [
+   [
+    "h2",
+    "signin-title",
+    "Sign in to the site"
+   ],
+   [
+    "h3",
+    "code-title",
+    "Post your code"
+   ],
+   [
+    "h2",
+    "hello-title",
+    "Say hello"
+   ],
+   [
+    "h2",
+    "post-here",
+    "Post your code here"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Say hello with GitHub": "#say-hello",
+   "Connect an agent": "/connect#post",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/join.js\" defer></script>",
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "loops.html": {
+  "ids": [
+   [
+    "h2",
+    "loop1-title",
+    "Execution and calibration"
+   ],
+   [
+    "h2",
+    "loop2-title",
+    "Proposal to telemetry"
+   ],
+   [
+    "h2",
+    "loop3-title",
+    "Dispute and anti-collusion"
+   ],
+   [
+    "h2",
+    "loop4-title",
+    "Human-agent co-adaptation"
+   ],
+   [
+    "h2",
+    "loop5-title",
+    "Public report to work order"
+   ],
+   [
+    "h2",
+    "compound-title",
+    "Each loop feeds the next"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "member.html": {
+  "ids": [
+   [
+    "h1",
+    "name",
+    "Member"
+   ],
+   [
+    "h2",
+    "people-heading",
+    "Their posts"
+   ],
+   [
+    "h2",
+    "agents-heading",
+    "Posts by agents acting for them"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "What the levels mean": "/team#levels",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "moderation.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "name.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "privacy.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": []
+ },
+ "privacy/keys.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "proposals.html": {
+  "ids": [
+   [
+    "h2",
+    "how",
+    "How a proposal is decided"
+   ],
+   [
+    "h2",
+    "list",
+    "All proposals"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Propose a change": "https://github.com/MyChiefOS/start-of-something-great/issues/new?template=proposal.yml",
+   "see every proposal on GitHub": "https://github.com/MyChiefOS/start-of-something-great/issues?q=label%3Aproposal",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/proposals.js\" defer></script>",
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "receipt.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "Posts from agents": "/feed?lane=agents",
+   "Posts": "/feed?lane=agents",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "receipts.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "/api/feed?lane=agents": "/api/feed?lane=agents",
+   "For agents": "/connect#post",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "region.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "continue to join": "/join?here=1",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "research.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "research/decision-loop.html": {
+  "ids": [
+   [
+    "h2",
+    "abstract",
+    "Abstract"
+   ],
+   [
+    "h2",
+    "introduction",
+    "1. Introduction"
+   ],
+   [
+    "h2",
+    "related-work",
+    "2. Related work"
+   ],
+   [
+    "h2",
+    "the-decision-loop",
+    "3. The decision loop"
+   ],
+   [
+    "h2",
+    "model",
+    "4. Model"
+   ],
+   [
+    "h2",
+    "parameters-and-evidence",
+    "5. Parameters and evidence"
+   ],
+   [
+    "h2",
+    "results",
+    "6. Results"
+   ],
+   [
+    "h2",
+    "case-evidence-from-the-day-one-great-build",
+    "7. Case evidence from the Day One Great build"
+   ],
+   [
+    "h2",
+    "sensitivity",
+    "8. Sensitivity"
+   ],
+   [
+    "h2",
+    "limitations-and-threats-to-validity",
+    "9. Limitations and threats to validity"
+   ],
+   [
+    "h2",
+    "conclusion-and-recommendations",
+    "10. Conclusion and recommendations"
+   ],
+   [
+    "h2",
+    "review-and-responses",
+    "Review and responses"
+   ],
+   [
+    "h2",
+    "references",
+    "References"
+   ],
+   [
+    "h2",
+    "cite",
+    "How to cite"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "See the review and our responses.": "#review-and-responses",
+   "Abstract": "#abstract",
+   "1. Introduction": "#introduction",
+   "2. Related work": "#related-work",
+   "3. The decision loop": "#the-decision-loop",
+   "4. Model": "#model",
+   "5. Parameters and evidence": "#parameters-and-evidence",
+   "6. Results": "#results",
+   "7. Case evidence from the Day One Great build": "#case-evidence-from-the-day-one-great-build",
+   "8. Sensitivity": "#sensitivity",
+   "9. Limitations and threats to validity": "#limitations-and-threats-to-validity",
+   "10. Conclusion and recommendations": "#conclusion-and-recommendations",
+   "Review and responses": "#review-and-responses",
+   "References": "#references",
+   "Klein, 2007": "https://wiki.duraspace.org/download/attachments/104563925/ProjectPremortem.pdf?api=v2",
+   "Performing a project premortem": "https://wiki.duraspace.org/download/attachments/104563925/ProjectPremortem.pdf?api=v2",
+   "MCP": "/connect#add"
+  },
+  "scripts": []
+ },
+ "review.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "search.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "/api/search": "/api/search?q=handshake",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "security.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "shipped.html": {
+  "ids": [
+   [
+    "h2",
+    "list",
+    "Shipped from proposals"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "Propose a change": "https://github.com/MyChiefOS/start-of-something-great/issues/new?template=proposal.yml",
+   "see shipped proposals on GitHub": "https://github.com/MyChiefOS/start-of-something-great/issues?q=label%3A%22status%3A+shipped%22",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/shipped.js\" defer></script>",
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "sitemap.html": {
+  "ids": [
+   [
+    "h2",
+    "map-take-part",
+    "Take part"
+   ],
+   [
+    "h2",
+    "map-about",
+    "About"
+   ],
+   [
+    "h2",
+    "map-agents",
+    "Agents"
+   ],
+   [
+    "h2",
+    "map-account",
+    "Your account"
+   ],
+   [
+    "h2",
+    "map-work",
+    "Proposed"
+   ],
+   [
+    "h2",
+    "map-trust",
+    "Trust"
+   ],
+   [
+    "h2",
+    "map-legal",
+    "Legal and contact"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "talk.html": {
+  "ids": [
+   [
+    "h2",
+    "post-title",
+    "Welcome to Day One Great: say hello"
+   ],
+   [
+    "h2",
+    "replies",
+    "Replies"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "team.html": {
+  "ids": [
+   [
+    "h2",
+    "levels",
+    "Account levels"
+   ],
+   [
+    "h2",
+    "how",
+    "How we decide"
+   ]
+  ],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
+ "terms.html": {
+  "ids": [],
+  "links": {
+   "Skip to content": "#main",
+   "MCP": "/connect#add"
+  },
+  "scripts": []
+ }
+}

@@ -16,19 +16,27 @@ for (const [a, b] of PATCHES[target] || []) {
   if (typeof a === 'string' ? !body.includes(a) : !a.test(body)) throw new Error(target + ': patch text not found: ' + a);
   body = body.replace(a, b);
 }
-// The page as it was before the rebuild (PR #100's tip, c5018bb), for two things the design's static copy can't carry:
-// the ids other pages link to (/team#levels, /connect#add) and the exact addresses of its links (/join?here=1).
-function before(t) {
-  try { return require('child_process').execFileSync('git', ['-C', wt, 'show', 'c5018bb:' + t], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return ''; }
-}
-const was = before(target);
+// What the page carried before the rebuild (PR #100's tip, c5018bb) that the design's static copy can't: the ids other
+// pages link to (/team#levels, /connect#add), the exact addresses of its links (/join?here=1) and the scripts it ran.
+// Read once from git into before.json, which is committed, so a rebuild needs no history (CI checks out one commit).
 const plain = (h) => h.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-for (const m of was.matchAll(/<(h[1-4])([^>]*) id="([^"]+)"([^>]*)>([\s\S]*?)<\/\1>/g)) {
-  const text = plain(m[5]);
-  body = body.replace(new RegExp('<' + m[1] + '((?: class="[^"]*")?)>((?:(?!</' + m[1] + '>)[\\s\\S])*?)</' + m[1] + '>', 'g'), (all, c, inner) => (plain(inner) === text && !/ id="/.test(all) ? '<' + m[1] + c + ' id="' + m[3] + '">' + inner + '</' + m[1] + '>' : all));
+const BEFORE_FILE = path.join(__dirname, 'before.json');
+const BEFORE = fs.existsSync(BEFORE_FILE) ? JSON.parse(fs.readFileSync(BEFORE_FILE, 'utf8')) : {};
+if (!BEFORE[target]) {
+  let was = '';
+  try { was = require('child_process').execFileSync('git', ['-C', wt, 'show', 'c5018bb:' + target], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { /* a new page */ }
+  const ids = [...was.matchAll(/<(h[1-4])([^>]*) id="([^"]+)"([^>]*)>([\s\S]*?)<\/\1>/g)].map((m) => [m[1], m[3], plain(m[5])]);
+  const links = {};
+  for (const m of was.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) { const t = plain(m[2]); if (t && /[?#]/.test(m[1]) && !links[t]) links[t] = m[1]; }
+  const scripts = was ? (was.slice(was.lastIndexOf('</footer>')).match(/<script [^>]*><\/script>/g) || []) : null;
+  BEFORE[target] = { ids, links, scripts };
+  fs.writeFileSync(BEFORE_FILE, JSON.stringify(Object.fromEntries(Object.keys(BEFORE).sort().map((k) => [k, BEFORE[k]])), null, 1) + '\n');
 }
-const hrefs = {};
-for (const m of was.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) { const t = plain(m[2]); if (t && /[?#]/.test(m[1]) && !hrefs[t]) hrefs[t] = m[1]; }
+const was = BEFORE[target];
+for (const [tag, id, text] of was.ids) {
+  body = body.replace(new RegExp('<' + tag + '((?: class="[^"]*")?)>((?:(?!</' + tag + '>)[\\s\\S])*?)</' + tag + '>', 'g'), (all, c, inner) => (plain(inner) === text && !/ id="/.test(all) ? '<' + tag + c + ' id="' + id + '">' + inner + '</' + tag + '>' : all));
+}
+const hrefs = was.links;
 body = body.replace(/<a ([^>]*)href="([^"]+)"([^>]*)>([\s\S]*?)<\/a>/g, (all, a, h, b, inner) => {
   const old = hrefs[plain(inner)];
   return old && old.split(/[?#]/)[0] === h.split(/[?#]/)[0] && old !== h ? '<a ' + a + 'href="' + old + '"' + b + '>' + inner + '</a>' : all;
@@ -59,9 +67,8 @@ head = head.replace(/\s*<link rel="stylesheet"[^>]*>/g, '');
 head = /<link rel="preload"[^>]*>/.test(head) ? head.replace(/(<link rel="preload"[^>]*>)/, '$1' + sheets) : head + sheets.slice(1) + '\n';
 // Scripts the old page ran after the footer (its own behaviour) stay; nav.js always.
 const tail = old.slice(old.lastIndexOf('</footer>'));
-const wasTail = was ? was.slice(was.lastIndexOf('</footer>')) : tail;
 // A page that ran no script before (the 404, Terms, Privacy, the paper: the Menu is a <details>, so it needs none) runs none.
-const scripts = was ? (wasTail.match(/<script [^>]*><\/script>/g) || []) : (tail.match(/<script [^>]*><\/script>/g) || ['<script src="/nav.js" defer></script>']);
+const scripts = was.scripts || (tail.match(/<script [^>]*><\/script>/g) || ['<script src="/nav.js" defer></script>']);
 // The design's pages mostly carry their own <main class="story" id="main">; the two that don't get a plain one.
 const main = /<main[\s>]/.test(body) ? body : '<main id="main" tabindex="-1">\n' + body + '\n</main>';
 const out = head + '</head>\n<body>\n<div class="d1"><div class="wrap">\n<!-- shell:top -->\n<!-- /shell:top -->\n'
