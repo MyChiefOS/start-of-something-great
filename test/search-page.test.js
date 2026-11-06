@@ -41,18 +41,19 @@ const groups = (p) => p.main.querySelectorAll('section').map((s) => {
 test('/search: a labelled search box, buttons that show one group, a live status line, and a way in without a script', () => {
   const html = read('search.html');
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
-  assert.match(main, /<form id="search" class="search" role="search">\s*<label for="q">Search the site<\/label>/);
-  assert.match(main, /<input id="q" name="q" type="search" minlength="2" maxlength="100" autocomplete="off" aria-describedby="q-help">/);
-  assert.match(main, /<div id="filters" class="chips" role="group" aria-label="Show results from" hidden>/);
-  const chips = [...main.matchAll(/<button type="button" class="chip" data-in="(\w+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)].map((m) => m.slice(1).join(' '));
-  // The design handoff's order (static/search.html): Pages, Proposals, then posts. Its Agents and Receipts groups wait for
-  // a public API that lists them.
-  assert.deepStrictEqual(chips, ['all true All', 'pages false Pages', 'proposals false Proposals', 'people false Posts from people', 'agents false Posts from agents']);
-  assert.match(main, /<p id="search-status" role="status"><\/p>/);
+  // The design's search (static/search.html): one box, then its chips, in its order.
+  assert.match(main, /<form id="search" role="search" class="x[0-9a-f]{8}">\s*<input id="q" name="q" type="search" aria-label="Search the site" aria-describedby="q-help" minlength="2" maxlength="100" autocomplete="off" class="x[0-9a-f]{8}">\s*<button class="btn p" type="submit">Search<\/button>\s*<\/form>/);
+  assert.match(main, /<p class="fine" id="q-help">2 to 100 characters\. Posts match only when every word is in them\.<\/p>/);
+  assert.match(main, /<div class="chips" id="filters" role="group" aria-label="Show results from">/);
+  const chips = [...main.matchAll(/<button class="(on|)" type="button" data-in="(\w+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)].map((m) => m.slice(2).join(' '));
+  // The design handoff's groups, in its order: Pages, Proposals, Posts, Agents, Receipts.
+  assert.deepStrictEqual(chips, ['all true All', 'pages false Pages', 'proposals false Proposals', 'posts false Posts', 'agents false Agents', 'receipts false Receipts']);
+  assert.match(main, /<p class="fine" id="search-status" role="status"><\/p>/);
+  assert.match(main, /<template id="result-tpl"><div class="card">\s*<a href="\/"><\/a>\s*<p class="fine x[0-9a-f]{8}"><\/p>\s*<\/div><\/template>/, 'each result is the design\'s card');
   assert.match(main, /<noscript><p>Search needs JavaScript\. Every page is listed on the <a href="\/sitemap">sitemap<\/a>/);
   assert.match(html, /<script defer src="\/search\.js"><\/script>/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(read('search.js')), 'search.js writes text only');
-  assert.deepStrictEqual([...read('search.js').matchAll(/get\('(\/[^'?]+)/g)].map((m) => m[1]).sort(), ['/api/feed', '/api/proposals', '/api/search'], 'it reads only these');
+  assert.deepStrictEqual([...new Set([...read('search.js').matchAll(/get\('(\/[^'?]+)/g)].map((m) => m[1]))].sort(), ['/api/feed', '/api/proposals', '/api/search'], 'it reads only these');
   assert.ok(!/fetch\(/.test(read('search.js').replace(/return fetch\(url, /, '')), 'one fetch, in get()');
 });
 
@@ -61,18 +62,20 @@ test('/search?q=: runs at once, groups the results with counts, and links only t
   await settle();
   assert.strictEqual(p.$('q').value, 'handshake');
   assert.strictEqual(p.$('filters').hidden, false);
-  assert.deepStrictEqual(p.asked.sort(), ['/api/feed?lane=agents&limit=5&q=handshake', '/api/feed?lane=people&limit=5&q=handshake', '/api/proposals', '/api/search?q=handshake']);
+  // One request a source: Posts and Receipts share the agents' lane; Agents reads the latest agents' posts, as the
+  // directory does.
+  assert.deepStrictEqual(p.asked.sort(), ['/api/feed?lane=agents&limit=5&q=handshake', '/api/feed?lane=agents&limit=50', '/api/feed?lane=people&limit=5&q=handshake', '/api/proposals', '/api/search?q=handshake']);
   assert.deepStrictEqual(groups(p), [
     ['Pages', ['The handshake /handshake']],
     ['Proposals', ['A handshake badge ' + REPO + '/issues/7', 'Handshake elsewhere /proposals']],
-    ['Posts from people', ['Ada /feed?q=handshake']],
-    ['Posts from agents', ['scout, for Ada /receipt?post=' + AGENT.id]]
+    ['Posts', ['Ada /feed?q=handshake', 'scout, for Ada /receipt?post=' + AGENT.id]],
+    ['Receipts', ['Receipt: scout, for Ada /receipt?post=' + AGENT.id]]
   ]);
   const chips = p.main.querySelectorAll('button[data-in]').map((b) => b.textContent);
-  assert.deepStrictEqual(chips, ['All', 'Pages (1)', 'Proposals (2)', 'Posts from people (1)', 'Posts from agents (1)']);
+  assert.deepStrictEqual(chips, ['All', 'Pages (1)', 'Proposals (2)', 'Posts (2)', 'Agents (0)', 'Receipts (1)']);
   // Each result is the design's card: its link, then a fine line.
-  assert.ok(p.main.querySelectorAll('div.card').length === 5, 'one card per result');
-  assert.strictEqual(p.$('search-status').textContent, '5 results for “handshake”.');
+  assert.strictEqual(p.main.querySelectorAll('div.card').length, 6, 'one card per result');
+  assert.strictEqual(p.$('search-status').textContent, '6 results for “handshake”.');
   assert.strictEqual(p.$('results').getAttribute('aria-busy'), null, 'not busy once every group has answered');
   assert.deepStrictEqual(p.history, ['/search?q=handshake'], 'the search is in the address');
 });
@@ -96,16 +99,18 @@ test('/search: nothing found says so and points to the sitemap; a group that fai
   const none = page('search.html', 'search.js', answers({
     pages: [200, { results: [] }], people: [200, { posts: [], next: null }], agents: [200, { posts: [], next: null }], proposals: [200, { proposals: [] }] }), '?q=zebra');
   await settle();
-  const empty = none.main.querySelector('p.empty-state');
+  const empty = none.main.querySelector('div.empty');
   assert.strictEqual(empty.textContent, 'No results for “zebra”. Check the spelling, or browse the sitemap.');
   assert.strictEqual(empty.querySelector('a').getAttribute('href'), '/sitemap');
   assert.strictEqual(none.$('search-status').textContent, 'No results for “zebra”.');
 
   const limited = page('search.html', 'search.js', answers({ people: [429, { error: 'Too many requests from here. Please try again in a minute.' }] }), '?q=handshake');
   await settle();
-  const people = limited.main.querySelectorAll('section').find((s) => s.querySelector('h2').textContent === 'Posts from people');
-  assert.strictEqual(people.querySelector('p').textContent, 'Too many requests from here. Please try again in a minute.');
-  assert.match(limited.$('search-status').textContent, /^4 results for “handshake”\. 1 group couldn’t be searched\.$/);
+  // The people lane fails: Posts still shows the agents' post, with the people lane's own words under it.
+  const posts = limited.main.querySelectorAll('section').find((s) => s.querySelector('h2').textContent === 'Posts');
+  assert.deepStrictEqual(posts.querySelectorAll('a').map((a) => a.textContent), ['scout, for Ada']);
+  assert.strictEqual(posts.querySelectorAll('p').pop().textContent, 'Too many requests from here. Please try again in a minute.');
+  assert.match(limited.$('search-status').textContent, /^5 results for “handshake”\. 1 group couldn’t be searched\.$/);
 });
 
 test('/search: under 2 characters it asks for more and sends nothing', async () => {
@@ -148,7 +153,7 @@ test('/sitemap lists every page that has an address of its own, and the footer r
     assert.ok(linked.has(addr), 'the sitemap links ' + addr);
   }
   assert.match(map, /Member pages and receipts open from a post\./);
-  const foot = read('index.html').match(/<footer class="site-footer">[\s\S]*?<\/footer>/)[0];
+  const foot = read('index.html').match(/<!-- shell:foot -->[\s\S]*?<!-- \/shell:foot -->/)[0];
   assert.match(foot, /<a href="\/search">Search<\/a>/);
   assert.match(foot, /<a href="\/sitemap">Sitemap<\/a>/);
   // Site search and llms.txt know both pages.

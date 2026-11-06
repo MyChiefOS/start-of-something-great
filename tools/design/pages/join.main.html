@@ -12,7 +12,7 @@
 <button type="button" id="path-back" class="path-choice" aria-pressed="false" aria-controls="signin-fields">I have a key file</button>
 </div>
 <div id="signin-fields" hidden>
-<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"></span> <button type="button" id="code-change" class="button">Change</button></p>
+<p id="signin-as" class="signin-as" hidden><span id="signin-as-text"></span> <button type="button" id="code-change" class="btn s">Change</button></p>
 <div id="field-set">
 <label for="code-login">Your GitHub username</label>
 <input id="code-login" class="field" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" aria-describedby="code-login-help">
@@ -21,8 +21,8 @@
 <input id="code-file" class="field" name="file" type="file" aria-describedby="code-file-help">
 <p id="code-file-help" class="help">Any private file only you have, of any type, that you have never sent or uploaded anywhere. A file that syncs to a cloud service counts as shared, so pick another. We never see the file, only its fingerprint, and never your password.</p>
 <p class="act">
-<button type="button" id="code-get" class="button primary" hidden>Get a sign-in code</button>
-<button type="button" id="key-signin" class="button primary" hidden>Sign in with my key file</button>
+<button type="button" id="code-get" class="btn p" hidden>Get a sign-in code</button>
+<button type="button" id="key-signin" class="btn p" hidden>Sign in with my key file</button>
 </p>
 <p id="back-help" class="help" hidden>Lost your key file? Choose “First time here, or a new key file”, get a code and choose a new file: you’ll be back in your same account. Changed your GitHub username? Do the same with your new username.</p>
 <details>
@@ -39,9 +39,9 @@
 </details>
 </div>
 </div>
-<div id="code-region" hidden><p id="code-region-text"></p><p><button type="button" id="code-region-yes" class="button">I’m a member who lives elsewhere: continue</button></p></div>
+<div id="code-region" hidden><p id="code-region-text"></p><p><button type="button" id="code-region-yes" class="btn s">I’m a member who lives elsewhere: continue</button></p></div>
 <p class="wait-line"><span id="code-status" role="status" aria-live="polite"></span> <span id="code-wait" aria-hidden="true"></span></p>
-<p class="act" id="code-again" hidden><button type="button" id="code-new" class="button primary">Get a new code</button></p>
+<p class="act" id="code-again" hidden><button type="button" id="code-new" class="btn p">Get a new code</button></p>
 <div id="code-show" class="code-step" hidden>
 <h3 id="code-title" tabindex="-1">Post your code</h3>
 <p>Press Copy, then paste it in the comment box on this page, signed in to GitHub as that username. A hello around it is fine. Your post is public.</p>
@@ -54,7 +54,7 @@
 <li>Or post it as a new comment in <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1" target="_blank" rel="noopener">our welcome thread on GitHub</a> (a new tab); this page keeps waiting.</li>
 </ul>
 </details>
-<p class="code-row"><code id="code-value"></code> <button type="button" id="code-copy" class="button">Copy</button> <span class="code-works">Works once, for 10 minutes</span> <span id="code-time" aria-hidden="true"></span></p>
+<p class="code-row"><code id="code-value"></code> <button type="button" id="code-copy" class="btn s">Copy</button> <span class="code-works">Works once, for 10 minutes</span> <span id="code-time" aria-hidden="true"></span></p>
 <p id="code-copied" class="code-copied" role="status" aria-live="polite"></p>
 </div>
 </section>

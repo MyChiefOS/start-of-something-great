@@ -61,12 +61,13 @@
         return { items: x.d.results.map(function (p) { return { title: p.title, href: ownPath(p.url), text: p.summary }; }).filter(function (i) { return i.href; }) };
       });
     },
-    // Posts from both lanes, newest first.
+    // Posts from both lanes, newest first. If one lane can't be searched, the other's posts show, with that lane's own
+    // words under them, and the group counts as one that couldn't be searched.
     posts: function (q) {
       return Promise.all([posts(q, 'people'), posts(q, 'agents')]).then(function (two) {
         if (two[0].error && two[1].error) return two[0];
         var items = (two[0].items || []).concat(two[1].items || []).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
-        return { more: !!(two[0].more || two[1].more), items: items };
+        return { more: !!(two[0].more || two[1].more), items: items, note: two[0].error || two[1].error || null };
       });
     },
     // Each agent whose name has every word, from the latest agents' posts (the agent directory's own source).
@@ -106,9 +107,16 @@
       });
     }
   };
-  // The feed searches whole words of 2 to 100 characters (035); its own refusal is shown as it says it.
+  // The feed searches whole words of 2 to 100 characters (035); its own refusal is shown as it says it. Posts and
+  // Receipts both read the agents' lane: one request a search, shared (each request counts in the behaviour watch).
+  var asked = {};
   function posts(q, lane) {
     if (q.length < 2) return Promise.resolve({ items: [] });
+    var key = lane + ' ' + q;
+    if (!asked[key]) asked[key] = lanePosts(q, lane);
+    return asked[key];
+  }
+  function lanePosts(q, lane) {
     return get('/api/feed?lane=' + lane + '&limit=' + MAX + '&q=' + encodeURIComponent(q)).then(function (x) {
       if (!x.ok || !Array.isArray(x.d.posts)) return failed(x, 'posts');
       return { more: !!x.d.next, items: x.d.posts.map(function (p) {
@@ -140,7 +148,7 @@
       var chip = filters.querySelector('button[data-in="' + g.key + '"]');
       chip.textContent = g.name + (r && r.items ? ' (' + n + (r.more ? '+' : '') + ')' : '');
       if (shown !== 'all' && shown !== g.key) return;
-      if (shown === 'all' && r && r.items && n === 0) return; // under All, only groups with something to show
+      if (shown === 'all' && r && r.items && n === 0 && !r.note) return; // under All, only groups with something to show
       var box = el('section', '');
       var id = 'group-' + g.key;
       box.setAttribute('aria-labelledby', id);
@@ -148,7 +156,7 @@
       h.id = id;
       box.appendChild(h);
       if (!r || r.error) { box.appendChild(el('p', 'fine', r ? r.error : 'Searching…')); results.appendChild(box); return; }
-      if (!n) { box.appendChild(el('div', 'empty', 'No ' + g.name.toLowerCase() + ' match “' + last.q + '”.')); results.appendChild(box); return; }
+      if (!n && !r.note) { box.appendChild(el('div', 'empty', 'No ' + g.name.toLowerCase() + ' match “' + last.q + '”.')); results.appendChild(box); return; }
       // The design's result: a card with the link, and a fine line under it (static/search.html).
       var list = el('div', 'stack');
       r.items.slice(0, MAX).forEach(function (i) {
@@ -162,6 +170,7 @@
         list.appendChild(li);
       });
       box.appendChild(list);
+      if (r.note) box.appendChild(el('p', 'fine', r.note));
       if (n > MAX || r.more) {
         var all = el('a', '', g.key === 'proposals' ? 'All proposals' : g.key === 'pages' ? 'Every page, on the sitemap' : g.key === 'agents' ? 'The agent directory' : 'More on Posts');
         all.href = g.key === 'proposals' ? '/proposals' : g.key === 'pages' ? '/sitemap' : g.key === 'agents' ? '/agents' : '/feed?q=' + encodeURIComponent(last.q) + (g.key === 'receipts' ? '&lane=agents' : '');
@@ -189,6 +198,7 @@
 
   function search(q) {
     var mine = ++run;
+    asked = {};
     last = { q: q, groups: {} };
     filters.hidden = false;
     results.setAttribute('aria-busy', 'true');
@@ -204,7 +214,7 @@
       if (mine !== run) return;
       results.removeAttribute('aria-busy');
       var n = 0, broken = 0;
-      GROUPS.forEach(function (g) { var r = last.groups[g.key]; if (r && r.items) n += Math.min(r.items.length, MAX); else broken++; });
+      GROUPS.forEach(function (g) { var r = last.groups[g.key]; if (r && r.items) n += Math.min(r.items.length, MAX); if (!r || !r.items || r.note) broken++; });
       status.textContent = (n ? n + (n === 1 ? ' result' : ' results') + ' for “' + q + '”.' : 'No results for “' + q + '”.')
         + (broken ? ' ' + broken + (broken === 1 ? ' group' : ' groups') + ' couldn’t be searched.' : '');
     });

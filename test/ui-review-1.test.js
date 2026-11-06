@@ -16,13 +16,14 @@ function navWith(answer, pathname = '/feed') {
   const added = [];
   const link = { attrs: { href: '/join' }, textContent: 'Join', setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
     parentNode: { insertBefore: (n, ref) => added.push({ n, before: ref }) } };
-  // For agents, in the Menu's panel: Your agents goes just after it (UX PR B).
+  // For agents, in the design's wide row and in its Menu: Your agents goes just after each (UX PR B; the design
+  // handoff of Nov 5 draws the links twice).
   const guide = { nextSibling: 'after For agents', parentNode: link.parentNode };
   const sandbox = {
     document: {
-      querySelector: (sel) => (sel === '.site-nav a[data-nav="account"]' ? link : sel === '.site-nav a[data-nav="agents"]' ? (added[0] ? added[0].n : null)
-        : sel === '.site-nav a[href="/connect"]' ? guide : null),
-      querySelectorAll: () => [],
+      querySelector: (sel) => (sel === '.hd a[data-nav="agents"]' ? (added[0] ? added[0].n : null) : null),
+      querySelectorAll: (sel) => (sel === '.hd a[data-nav="account"]' ? [link]
+        : sel === '.hd .dnav a[href="/connect"], .hd .mpanel a[href="/connect"]' ? [guide, guide] : []),
       createElement: () => ({ attrs: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = v; } })
     },
     location: { pathname },
@@ -39,7 +40,7 @@ const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((r) =
 test('item 7: once signed in, the menu has "Your agents" beside Account; a visitor sees neither', async () => {
   const m = navWith({ signed_in: true, unread: 0 });
   await settle();
-  assert.strictEqual(m.added.length, 1);
+  assert.strictEqual(m.added.length, 2, 'in the wide row and in the Menu');
   assert.strictEqual(m.added[0].n.textContent, 'Your agents');
   assert.strictEqual(m.added[0].n.attrs.href, '/account/agents');
   assert.strictEqual(m.added[0].before, 'after For agents', 'just after For agents, in the Menu (UX PR B; it was just before Account)');
@@ -106,15 +107,19 @@ test('item 22: every page with a main area starts with a skip link to it, shown 
   let n = 0;
   for (const f of files) {
     const h = read(f);
-    if (!h.includes('<main')) continue;
+    // tools/design/pages holds the build's templates (fragments of <main>), not pages.
+    if (!h.includes('<main') || f.startsWith('tools/')) continue;
     n += 1;
-    assert.match(h, /<body[^>]*>\s*<a class="skip-link" href="#main">Skip to content<\/a>/, f + ': the first thing in the body');
-    assert.match(h, /<main id="main"[\s>]/, f);
+    // Inside the design's wrapper (<div class="d1"><div class="wrap">), which holds no other content before it.
+    assert.match(h, /<body[^>]*>\s*(?:<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*)?<a class="skip(?:-link)?" href="#main">Skip to content<\/a>/, f + ': the first thing in the body');
+    assert.match(h, /<main(?: class="[^"]*")? id="main"[\s>]/, f);
   }
   assert.ok(n >= 20, 'all ' + n + ' pages');
   const css = read('styles.css');
   assert.match(css, /\.skip-link \{ position: absolute; left: -9999px; top: 0; \}/);
   assert.match(css, /\.skip-link:focus \{ left: 1rem;/);
+  // The design's own skip link: off screen until it has focus.
+  assert.match(read('design.css'), /\.d1 \.skip\{position:absolute;left:-9999px;top:0\}\.d1 \.skip:focus\{left:12px;/);
 });
 
 test('item 23: the lanes are tabs: only the selected one is in the Tab order, and the arrow keys, Home and End move between them', () => {

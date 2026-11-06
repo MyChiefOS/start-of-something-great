@@ -37,7 +37,7 @@ test('every link that sends an owner to their agents goes to /account/agents', (
   // No page, script or API answer sends an owner to the old address any more.
   for (const f of ['api/agents.js', 'api/feed.js', 'nav.js', 'account.html', 'account/agents.js', 'account/agents.html', 'llms.txt', 'connect.html', 'signin/agentkey.js']) {
     // The shell's footer links the public directory (/agents), which is right; only the page's own links count here.
-    const s = read(f).replace(/<header class="site-header">[\s\S]*?<\/header>|<footer class="site-footer">[\s\S]*?<\/footer>/g, '').replace(/\/api\/agents/g, '');
+    const s = read(f).replace(/<!-- shell:(top|foot) -->[\s\S]*?<!-- \/shell:\1 -->/g, '').replace(/\/api\/agents/g, '');
     assert.ok(!/return_to=%2Fagents\b|ORIGIN \+ '\/agents[.#' ]|dayonegreat\.com\/agents[.#'"]|href="\/agents"/.test(s), f + ' still points owners to /agents');
   }
 });

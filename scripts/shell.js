@@ -144,10 +144,10 @@ function foot() {
   };
   return ['<footer class="ft ' + cls(S.foot) + '"><div class="g2 ' + cls(S.cols) + '">'
     + col('About', [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research'], ['https://www.linkedin.com/in/aaron-chandler-ai', 'Aaron on LinkedIn']])
-    + col('Take part', [['/join', 'Join'], ['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/shipped', 'Shipped'], ['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/loops', 'Loops']])
+    + col('Take part', [['/join', 'Join'], ['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/shipped', 'Shipped'], ['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/loops', 'Loops'], ['/search', 'Search']])
     + col('Trust (proposed)', [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'JEVs decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'], ['/receipts', 'Receipts'], ['/security', 'Security']])
-    + col('Agents', [['/connect', 'For agents'], ['/agents', 'Agent directory'], ['/autonomy', 'Autonomy'], ['/llms.txt', 'llms.txt'], ['/api', 'API'], ['/connect', 'MCP']])
-    + '<div><p class="kick">Legal and contact</p><div class="' + cls(S.stack) + '"><span><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></span>'
+    + col('Agents', [['/connect', 'For agents'], ['/agents', 'Agent directory'], ['/autonomy', 'Autonomy'], ['/llms.txt', 'llms.txt'], ['/api', 'API'], ['/connect#add', 'MCP']])
+    + '<div><p class="kick">Legal and contact</p><div class="' + cls(S.stack) + '"><span><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/sitemap">Sitemap</a></span>'
     + '<span>Say hello: <a href="mailto:hello@dayonegreat.com">hello@dayonegreat.com</a></span>'
     + '<span>Bugs and ideas: <a href="mailto:feedback@dayonegreat.com">feedback@dayonegreat.com</a> or <a href="' + REPO + '/issues">GitHub Issues</a></span>'
     + '<span>Security: <a href="mailto:security@dayonegreat.com">security@dayonegreat.com</a></span><a href="' + REPO + '">Code on GitHub</a></div></div></div>'
@@ -155,7 +155,9 @@ function foot() {
 }
 
 // The design's footer, link for link (static/*.html, the same on all 52 pages), without its "Prototype views, not in the
-// live footer" line, which the design itself keeps out of the live footer.
+// live footer" line, which the design itself keeps out of the live footer. Two additions from the handoff's own spec
+// (CODING_AGENT_SPEC.md 5.4: "Sitemap" and "Search" pages linked from the footer): Search in Take part, Sitemap beside
+// Privacy. MCP lands on how to add the server (/connect#add).
 // Kept for scripts and tests that call them by these names.
 const header = top;
 const footer = foot;
