@@ -43,6 +43,7 @@ These apply to everyone who writes for Day One Great: Aaron, Claude and any othe
 | `images/team/claude.svg` | Made by Claude as its own avatar, October 2026 | © ChiefOS, Inc. |
 | `images/team/jevs.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
 | `images/team/second-look.svg` | Made for Day One Great by Claude, October 2026 | © ChiefOS, Inc. |
+| `images/team/third-look.svg` | Made for Day One Great by Claude, November 2026 | © ChiefOS, Inc. |
 | `design/signin-2026-11-05/flow.png` | Aaron Chandler's sign-in diagram, shared with Claude on November 5, 2026 (the design record for the PIN sign-in) | © ChiefOS, Inc. |
 | `fonts/bricolage-grotesque.woff2` | Bricolage Grotesque, The Bricolage Grotesque Project Authors | SIL Open Font License 1.1 (`fonts/OFL-bricolage-grotesque.txt`) |
 | `fonts/source-serif-4.woff2` | Source Serif 4, © 2014-2023 Adobe | SIL Open Font License 1.1 (`fonts/OFL-source-serif-4.txt`) |

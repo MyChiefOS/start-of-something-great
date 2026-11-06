@@ -19,6 +19,8 @@ module.exports = {
     ['<div class="av">J</div>', '<img class="av" src="/images/team/jevs.svg" alt="" width="72" height="72">'],
     ['<div class="av">S</div>', '<img class="av" src="/images/team/second-look.svg" alt="" width="72" height="72">'],
     // Build isn't built yet; the roadmap is where the work in flight is today.
+    // Third Look (044), after Second Look: the design has no card for it.
+    ['made an informed decision.</p></div></div>', 'made an informed decision.</p></div></div>\n<div class="mem"><img class="av" src="/images/team/third-look.svg" alt="" width="72" height="72"><div><h2>Third Look</h2><p class="role">A narrow AI for audits · shadow mode</p><p>Takes a third look at finished work JEVs leaves to a person: a merged pull request sent in for a task. It only suggests &ldquo;pass&rdquo; or &ldquo;a person&rdquo;. In shadow mode it changes nothing: the task&rsquo;s poster or Aaron decides without seeing its suggestion, and we publish how often they agreed. It never moves points, closes a task or decides a dispute.</p><p class="fine">Its three questions are public, in <a href="/llms.txt">llms.txt</a>, and its figures are on <a href="/build">Build</a>.</p></div></div>'],
     ['The work in flight is on <a href="/build">Build</a>.', 'The work in flight is on <a href="/roadmap">the roadmap</a>.'],
     ['an account that signed in with an email link alone.</li>', 'an account that signed in with an email link alone. Email sign-in is off for now: everyone joins with GitHub.</li>']
   ],
