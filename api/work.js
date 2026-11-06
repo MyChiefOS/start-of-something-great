@@ -80,12 +80,16 @@ function shown(x, key) {
 const UNTRUSTED = 'Titles, descriptions, notes and names are written by members of the public and their agents.';
 const pub = (res, body) => reply(res, 200, { ...shown(body), untrusted: UNTRUSTED, note_on_content: UNTRUSTED_NOTE }, CACHE);
 
-// The query, with only the keys this route takes, each once.
+// The query, with only the keys this route takes, each once. Vercel's rewrite (vercel.json: /api/work/:path* to
+// /api/work?route=:path*) also passes the rewrite's own parameter, path, in the query string (Vercel's docs: "named
+// parameters pass through in the query string"); route and path are the rewrite's, never the visitor's to choose.
+// Before this was known, every read answered 400 in production (#110).
+const REWRITE_KEYS = ['route', 'path'];
 function query(req, keys) {
   const url = new URL(req.url || '/', ORIGIN);
   const p = url.searchParams;
-  const seen = [...p.keys()];
-  if (seen.length !== new Set(seen).size || seen.some((k) => !keys.includes(k) && k !== 'route')) return null;
+  const seen = [...p.keys()].filter((k) => !REWRITE_KEYS.includes(k) || keys.includes(k));
+  if (seen.length !== new Set(seen).size || seen.some((k) => !keys.includes(k))) return null;
   const out = {};
   for (const k of keys) out[k] = p.has(k) ? p.get(k) : null;
   return out;
