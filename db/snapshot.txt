@@ -22,6 +22,11 @@ constraint app.agent_keys agent_keys_agent_id_fkey FOREIGN KEY (agent_id) REFERE
 constraint app.agent_keys agent_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.agent_keys agent_keys_key_hash_key UNIQUE (key_hash)
 constraint app.agent_keys agent_keys_pkey PRIMARY KEY (id)
+constraint app.agent_recovery_keys agent_recovery_keys_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.agent_recovery_keys agent_recovery_keys_agent_id_key UNIQUE (agent_id)
+constraint app.agent_recovery_keys agent_recovery_keys_pkey PRIMARY KEY (id)
+constraint app.agent_recovery_keys agent_recovery_keys_recovery_hash_check CHECK (((char_length(recovery_hash) = 64) AND (recovery_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.agent_recovery_keys agent_recovery_keys_recovery_hash_key UNIQUE (recovery_hash)
 constraint app.agent_rules agent_rules_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id)
 constraint app.agent_rules agent_rules_agent_id_version_key UNIQUE (agent_id, version)
 constraint app.agent_rules agent_rules_daily_cap_check CHECK (((daily_cap >= 1) AND (daily_cap <= 1000)))
@@ -187,7 +192,7 @@ constraint app.jevs_challenges jevs_challenges_owner_id_fkey FOREIGN KEY (owner_
 constraint app.jevs_challenges jevs_challenges_pkey PRIMARY KEY (id)
 constraint app.jevs_challenges jevs_challenges_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'declined'::text])))
 constraint app.jevs_challenges jevs_challenges_subject_kind_check CHECK ((subject_kind = ANY (ARRAY['member'::text, 'post'::text, 'agent'::text])))
-constraint app.jevs_decisions jevs_decisions_action_check CHECK ((action = ANY (ARRAY['signup'::text, 'account.check'::text, 'post.create'::text, 'post.approved'::text, 'post.reported'::text, 'draft.create'::text, 'agent.register'::text, 'agent.create'::text, 'agent.claim'::text, 'agent.key'::text, 'agent.rules'::text, 'account.delete'::text, 'agent.subagent'::text])))
+constraint app.jevs_decisions jevs_decisions_action_check CHECK ((action = ANY (ARRAY['account.check'::text, 'account.delete'::text, 'agent.claim'::text, 'agent.create'::text, 'agent.key'::text, 'agent.recover'::text, 'agent.recovery_issue'::text, 'agent.register'::text, 'agent.rules'::text, 'agent.subagent'::text, 'draft.create'::text, 'post.approved'::text, 'post.create'::text, 'post.reported'::text, 'signup'::text])))
 constraint app.jevs_decisions jevs_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'challenge'::text, 'hold'::text, 'hide'::text, 'promote'::text, 'queue'::text, 'draft'::text])))
 constraint app.jevs_decisions jevs_decisions_level_check CHECK ((level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
 constraint app.jevs_decisions jevs_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
@@ -285,7 +290,7 @@ constraint app.notices notices_body_check CHECK ((char_length(body) <= 2000))
 constraint app.notices notices_check CHECK (((member_id IS NOT NULL) OR (kind = 'alert'::text)))
 constraint app.notices notices_dedupe_key_check CHECK ((((char_length(dedupe_key) >= 1) AND (char_length(dedupe_key) <= 160)) AND (dedupe_key ~ '^[a-z0-9_:.-]+$'::text)))
 constraint app.notices notices_dedupe_key_key UNIQUE (dedupe_key)
-constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['draft_waiting'::text, 'draft_expired'::text, 'report_upheld'::text, 'brake_on'::text, 'contained'::text, 'containment_lifted'::text, 'appeal_decided'::text, 'act_reconfirm'::text, 'act_expired'::text, 'challenge'::text, 'account_flagged'::text, 'alert'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'post_published'::text, 'signin_pin'::text, 'signin_browser'::text])))
+constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['account_flagged'::text, 'act_expired'::text, 'act_reconfirm'::text, 'agent_recovered'::text, 'agent_recovery_set'::text, 'alert'::text, 'appeal_decided'::text, 'brake_on'::text, 'challenge'::text, 'contained'::text, 'containment_lifted'::text, 'draft_expired'::text, 'draft_waiting'::text, 'post_published'::text, 'report_upheld'::text, 'signin_browser'::text, 'signin_keyfile'::text, 'signin_linked'::text, 'signin_pin'::text, 'signin_unlinked'::text])))
 constraint app.notices notices_link_check CHECK (((char_length(link) <= 200) AND (link ~ '^/([A-Za-z0-9?=&#._~%-][A-Za-z0-9/?=&#._~%-]*)?$'::text)))
 constraint app.notices notices_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.notices notices_pkey PRIMARY KEY (id)
@@ -475,6 +480,8 @@ default app.agent_drafts.id = app.uuid_v7()
 default app.agent_drafts.status = 'pending'::text
 default app.agent_keys.created_at = now()
 default app.agent_keys.id = app.uuid_v7()
+default app.agent_recovery_keys.created_at = now()
+default app.agent_recovery_keys.id = app.uuid_v7()
 default app.agent_rules.created_at = now()
 default app.agent_rules.id = app.uuid_v7()
 default app.agent_rules.restarts_clock = false
@@ -695,6 +702,12 @@ function app.agent_keys_fresh() owner=dog_owner execute=dog_owner language=plpgs
 function app.agent_keys_fresh_start() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=928978585362dc12e8f0314686b4abd4
 function app.agent_keys_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6940f6db4124bdbdf351efeb786c9656
 function app.agent_keys_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4b0b142d82b31d4a8b8b4e405d23ede0
+function app.agent_keys_recovery_clear() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=191f3edc8e27c674f5a13633211f505f
+function app.agent_recover(p_recovery_hash text, p_new_key_hash text, p_new_recovery_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, status text, subagents_stopped integer) body_md5=4f42e2937a74edb54cc18fbf998f7d2b
+function app.agent_recovery_clear(p_agent uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=ef09c39e724560d085b74b04cc9f62f5
+function app.agent_recovery_issue(p_key_hash text, p_recovery_hash text, p_current_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=7b7afd69b2cb5eaaef85bb7238d2d0b3
+function app.agent_recovery_status(p_agents uuid[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, set_at timestamp with time zone) body_md5=be85d53d734445d001217d54d9ce832c
+function app.agent_recovery_subject(p_recovery_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=b8ed7c5860db062264686ca14cbd80b3
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=5cfd72d7dad720bfa87219050b19e727
 function app.agent_resolve(p_key_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, owner_id uuid) body_md5=99d0b638dd1ebe11bc8dd799d1e74025
 function app.agent_rules_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b8046815cb85df3ac268e969accdef70
@@ -708,7 +721,7 @@ function app.agents_by() owner=dog_owner execute=dog_owner language=plpgsql vola
 function app.agents_cascade() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=7f233441931899c0e84c9271ceea8d08
 function app.agents_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=16fe186a3e55c6ee33f4fc09acae782f
 function app.agents_first_rules() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=3ccc40d32ea4d79f2cc5852c08d81234
-function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=af55100493cb9ca3e59934b83f44a2d9
+function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=5ae8b49cf159f2fdd1d1dd0ea861b246
 function app.agents_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=d49b0b63509bfd48464899074cdad145
 function app.agents_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c5dd087de8df28ca0356ff2667dcf059
 function app.approve_draft(p_draft uuid, p_hash text) owner=dog_delegate execute=dog_delegate,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, status text) body_md5=5a72f3ac2256e3969ab73849db172e88
@@ -766,7 +779,7 @@ function app.jevs_answer(p_challenge uuid, p_answer text) owner=dog_jevs execute
 function app.jevs_appealable(p_post uuid) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=11d8f3e3e22b547c00ac25ab72dfec6c
 function app.jevs_challenges_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=0a4982bbee462fa8f73e8c620e47953e
 function app.jevs_challenges_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=639694e6a9015139d80bfb3a58b7d883
-function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=db9b84195a28a165fb018058a2d676fa
+function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=e6cead2f39984da36630929541a6b730
 function app.jevs_decisions_alert() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=275ad52bf6873a0733fc05daa6a1cc70
 function app.jevs_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=55cdb93da3b2681196ca0311b3f15c77
 function app.jevs_enforcing() owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_delegate language=sql volatile=s definer=false config= returns=boolean body_md5=307b7b21a365ef3e4019044002660681
@@ -803,7 +816,7 @@ function app.log_ts(p timestamp with time zone) owner=dog_owner execute=dog_owne
 function app.log_unverified(p_reason text) owner=dog_log execute=dog_log language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=f20c0078b7f3c553f6c9ffd309df9aeb
 function app.log_witness_report(p_size bigint, p_root bytea, p_witnessed_at timestamp with time zone, p_alarm text) owner=dog_log execute=dog_log,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=ac48d151d21a7d1216ee72af92a029c0
 function app.members_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7a7ccf71109b288f31e841949299a0c9
-function app.members_ban_cleanup() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=30c82a1e7dc5fcc67ae9e180dd5c8859
+function app.members_ban_cleanup() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=bb0b01db3853cf7c6024a6d93882c7ca
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4053e4545be8fc6e00edef3e669f9d8a
 function app.members_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=df7acce5fec3c9fb400da637cab87fcf
 function app.notices_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=864fc9753cca81b5a55d5228869a732c
@@ -834,6 +847,10 @@ function app.posts_limit() owner=dog_limits execute=dog_limits,dog_app language=
 function app.posts_review_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=af89b57b3f3a7bb212ba7c7e685aae4f
 function app.posts_scored() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=e36af3ace5db4a59ef379b215ae76e48
 function app.profile(p_member uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, display_name text, trust_level smallint, joined timestamp with time zone, live_posts bigint) body_md5=339d442d5da6afdad550b54b384f7fe5
+function app.public_agent(p_agent uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d20411b07c4bff1db5fcec9e73b35e85
+function app.public_agent_card(p_agent uuid) owner=dog_public execute=dog_public language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=6747907ea8e6f5e8ed0ca1e7d2aa0ce1
+function app.public_agent_reverts(p_agent uuid) owner=dog_jevs execute=dog_jevs,dog_public language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(went_live integer, removed integer) body_md5=697f2b08c1f327c0cd57fd7dfab7f28c
+function app.public_agents(p_before uuid, p_limit integer) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=20228cf360d88253255eecaa0252f58c
 function app.public_decisions() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4c8d8c52cc6ebfecc4d8ff3b779f2b34
 function app.rate_limit_hit(p_bucket text, p_key_hash text, p_window_seconds integer, p_max integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=b9f1f156d4d146d471d5f4118e98abd8
 function app.receipt(p_post uuid) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, published_at timestamp with time zone, agent_id uuid, agent_name text, owner_id uuid, owner_name text, delegation text, rules_version integer, post_mode text, daily_cap integer, minutes_to_approve integer, agent_chain jsonb) body_md5=2acc10f3873b33308e65ce90bf215cd6
@@ -935,6 +952,12 @@ grant app.agent_keys.key_hash dog_signin INSERT
 grant app.agent_keys.revoked_at dog_app SELECT
 grant app.agent_keys.revoked_at dog_app UPDATE
 grant app.agent_keys.revoked_at dog_signin UPDATE
+grant app.agent_recovery_keys dog_signin DELETE
+grant app.agent_recovery_keys dog_signin SELECT
+grant app.agent_recovery_keys.agent_id dog_signin INSERT
+grant app.agent_recovery_keys.created_at dog_signin UPDATE
+grant app.agent_recovery_keys.recovery_hash dog_signin INSERT
+grant app.agent_recovery_keys.recovery_hash dog_signin UPDATE
 grant app.agent_rules dog_app SELECT
 grant app.agent_rules dog_erase DELETE
 grant app.agent_rules.agent_id dog_app INSERT
@@ -947,6 +970,7 @@ grant app.agent_rules.agent_id dog_signin INSERT
 grant app.agent_rules.agent_id dog_signin SELECT
 grant app.agent_rules.by_identity dog_signin SELECT
 grant app.agent_rules.created_at dog_jevs SELECT
+grant app.agent_rules.created_at dog_public SELECT
 grant app.agent_rules.created_at dog_signin SELECT
 grant app.agent_rules.daily_cap dog_app INSERT
 grant app.agent_rules.daily_cap dog_jevs SELECT
@@ -970,7 +994,9 @@ grant app.agent_rules.reply_mode dog_signin SELECT
 grant app.agent_rules.report_mode dog_app INSERT
 grant app.agent_rules.report_mode dog_signin INSERT
 grant app.agent_rules.report_mode dog_signin SELECT
+grant app.agent_rules.restarts_clock dog_public SELECT
 grant app.agent_rules.restarts_clock dog_signin SELECT
+grant app.agent_rules.set_by dog_public SELECT
 grant app.agent_rules.set_by dog_signin SELECT
 grant app.agent_rules.version dog_delegate SELECT
 grant app.agent_rules.version dog_jevs SELECT
@@ -1024,6 +1050,7 @@ grant app.agents.parent_id dog_public SELECT
 grant app.agents.root_id dog_app SELECT
 grant app.agents.root_id dog_jevs SELECT
 grant app.agents.root_id dog_limits SELECT
+grant app.agents.root_id dog_public SELECT
 grant app.agents.status dog_app SELECT
 grant app.agents.status dog_app UPDATE
 grant app.agents.status dog_delegate SELECT
@@ -1621,6 +1648,10 @@ policy app.agent_keys agent_keys_signin_insert cmd=a permissive=true to=dog_sign
 policy app.agent_keys agent_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agent_keys agent_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.agent_keys agent_keys_update cmd=w permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)))))) check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member))))))
+policy app.agent_recovery_keys agent_recovery_keys_signin_delete cmd=d permissive=true to=dog_signin using=true check=
+policy app.agent_recovery_keys agent_recovery_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
+policy app.agent_recovery_keys agent_recovery_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.agent_recovery_keys agent_recovery_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.agent_rules agent_rules_delegate_select cmd=r permissive=true to=dog_delegate using=true check=
 policy app.agent_rules agent_rules_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.agent_rules agent_rules_erase_select cmd=r permissive=true to=dog_erase using=true check=
@@ -1787,7 +1818,7 @@ policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=
 policy app.notices notices_jevs_insert cmd=a permissive=true to=dog_jevs using= check=(kind = ANY (ARRAY['challenge'::text, 'account_flagged'::text, 'alert'::text, 'post_published'::text]))
 policy app.notices notices_log_insert cmd=a permissive=true to=dog_log using= check=((member_id IS NULL) AND (kind = 'alert'::text))
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
-policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'signin_pin'::text, 'signin_browser'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
+policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['agent_recovered'::text, 'agent_recovery_set'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'signin_pin'::text, 'signin_browser'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
 policy app.pin_keys pin_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.pin_keys pin_keys_signin cmd=r permissive=true to=dog_signin using=true check=
@@ -1896,6 +1927,7 @@ trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_fresh BEFORE INSERT O
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_fresh_start AFTER INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_fresh_start()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_guard BEFORE UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_guard()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_owner_active BEFORE INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_owner_active()
+trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_recovery_clear AFTER INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_recovery_clear()
 trigger app.agent_rules enabled=A CREATE TRIGGER agent_rules_audit AFTER INSERT ON app.agent_rules FOR EACH ROW EXECUTE FUNCTION app.agent_rules_audit()
 trigger app.agent_rules enabled=A CREATE TRIGGER agent_rules_cascade AFTER INSERT ON app.agent_rules FOR EACH ROW EXECUTE FUNCTION app.agent_rules_cascade()
 trigger app.agent_rules enabled=A CREATE TRIGGER agent_rules_fill BEFORE INSERT ON app.agent_rules FOR EACH ROW EXECUTE FUNCTION app.agent_rules_fill()

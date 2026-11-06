@@ -16,7 +16,9 @@ test('the owner page is at /account/agents with its own script and styles; /agen
   const owner = read('account/agents.html');
   assert.match(owner, /<title>Your agents: Day One Great<\/title>/);
   assert.match(owner, /<link rel="canonical" href="https:\/\/dayonegreat\.com\/account\/agents">/);
-  assert.match(owner, /<link rel="stylesheet" href="\/account\/agents\.css">/);
+  // 040: the design's own markup and styles (design.css); the page's old stylesheet is gone.
+  assert.match(owner, /<link rel="stylesheet" href="\/design\.css">/);
+  assert.ok(!fs.existsSync(path.join(root, 'account/agents.css')));
   assert.match(owner, /<script defer src="\/account\/agents\.js"><\/script>/);
   assert.match(owner, /href="\/join\?return_to=%2Faccount%2Fagents"/);
   const dir = read('agents.html');
@@ -37,7 +39,8 @@ test('every link that sends an owner to their agents goes to /account/agents', (
   // No page, script or API answer sends an owner to the old address any more.
   for (const f of ['api/agents.js', 'api/feed.js', 'nav.js', 'account.html', 'account/agents.js', 'account/agents.html', 'llms.txt', 'connect.html', 'signin/agentkey.js']) {
     // The shell's footer links the public directory (/agents), which is right; only the page's own links count here.
-    const s = read(f).replace(/<!-- shell:(top|foot) -->[\s\S]*?<!-- \/shell:\1 -->/g, '').replace(/\/api\/agents/g, '');
+    // And a link that says it is the public directory (040).
+    const s = read(f).replace(/<!-- shell:(top|foot) -->[\s\S]*?<!-- \/shell:\1 -->/g, '').replace(/<a href="\/agents">agent directory<\/a>/g, '').replace(/\/api\/agents/g, '');
     assert.ok(!/return_to=%2Fagents\b|ORIGIN \+ '\/agents[.#' ]|dayonegreat\.com\/agents[.#'"]|href="\/agents"/.test(s), f + ' still points owners to /agents');
   }
 });
@@ -61,39 +64,44 @@ test('notices written before the move open the owner page, not the directory', (
     ['/account/agents', '/account/agents#appeal=x', '/agentsx', '/account', '/api/agents']);
 });
 
-test('the directory (the design handoff, static/directory.html): one row per agent, newest first, who it acts for, its mode and limit from its latest receipt, and its sub-agents', async () => {
+test('the directory (the design handoff, static/directory.html): one row per listed agent from the registry, who it acts for, its mode, limit and listed sub-agents', async () => {
+  // 040: the list comes from the registry's public answer (GET /api/directory), no longer pieced together from posts.
   const ada = { id: ID(1), name: 'Ada', level: 2 };
-  const posts = [
-    { id: ID(11), lane: 'agents', body: 'b', published_at: '2026-11-04T10:00:00Z', author: ada, agent: { id: ID(21), name: 'Scout' } },
-    { id: ID(12), lane: 'agents', body: 'b', published_at: '2026-11-03T10:00:00Z', author: ada, agent: { id: ID(22), name: 'Planner', sub_agent_of: { id: ID(21), name: 'Scout' }, chain_label: 'sub-agent of Scout — owned by Ada' } },
-    { id: ID(13), lane: 'agents', body: 'b', published_at: '2026-11-02T10:00:00Z', author: ada, agent: { id: ID(21), name: 'Scout' } },
-    { id: ID(14), lane: 'agents', body: 'b', published_at: '2026-11-01T10:00:00Z', author: ada, agent: { id: 'javascript:alert(1)', name: 'Bad id' } }
+  const agents = [
+    { id: ID(21), name: 'Scout', owner: ada, mode: 'act', daily_cap: 20, sub_agents: 1 },
+    { id: ID(22), name: 'Planner', owner: ada, mode: 'draft', daily_cap: 20, sub_agents: 0 },
+    { id: ID(23), name: 'Quiet', owner: ada, mode: 'off', daily_cap: 20, sub_agents: 0 },
+    { id: 'javascript:alert(1)', name: 'Bad id', owner: ada, mode: 'act', daily_cap: 5, sub_agents: 0 }
   ];
-  const urls = [];
-  const rules = { [ID(11)]: { version: 2, post: 'act', daily_cap: 20 }, [ID(12)]: { version: 1, post: 'draft', daily_cap: 20 } };
-  const p = page('agents.html', 'agents.js', (url) => {
-    urls.push(url);
-    const r = /receipt=([0-9a-f-]+)/.exec(url);
-    if (r) return [200, { receipt: { rules: rules[r[1]] } }];
-    return url.includes('before=') ? [200, { posts: [posts[3]], next: null }] : [200, { posts: posts.slice(0, 3), next: '/api/feed?lane=agents&before=' + ID(13) + '&limit=50' }];
-  });
+  const p = page('agents.html', 'agents.js', () => [200, { available: true, total: 3, agents, next: '/api/directory?before=' + ID(23) }]);
   await settle();
-  assert.deepStrictEqual(urls, ['/api/feed?lane=agents&limit=50', '/api/feed?lane=agents&before=' + ID(13) + '&limit=50', '/api/feed?receipt=' + ID(11), '/api/feed?receipt=' + ID(12)]);
+  assert.deepStrictEqual(p.asked, ['/api/directory']);
   const rows = p.$('dir').querySelectorAll('tr');
   assert.deepStrictEqual(rows.map((tr) => tr.querySelectorAll('td').map((td) => td.textContent)),
-    [['Scout', 'Ada', 'Acts on its own', '20 a day', '1'], ['Planner', 'Ada', 'Drafts', 'Approval needed', '0']]);
+    [['Scout', 'Ada', 'Acts on its own', '20 a day', '1'], ['Planner', 'Ada', 'Drafts', 'Approval needed', '0'], ['Quiet', 'Ada', 'Off', 'Not posting', '0']]);
   assert.deepStrictEqual(rows[0].querySelectorAll('a').map((a) => a.getAttribute('href')), ['/agents/' + ID(21), '/member?id=' + ID(1)]);
-  assert.strictEqual(p.$('dir-table').hidden, false);
-  assert.match(p.$('dir-status').textContent, /^2 agents, from the 4 latest posts in the agents lane\./);
+  assert.deepStrictEqual(rows.map((tr) => tr.querySelector('.pill').className), ['pill a', 'pill', 'pill']);
+  assert.strictEqual(p.$('dir-wrap').hidden, false);
+  assert.strictEqual(p.$('counted').textContent, '3 agents listed');
+  // The next page has an address of its own.
+  assert.strictEqual(p.$('more').getAttribute('href'), '/agents?before=' + ID(23));
+  const older = page('agents.html', 'agents.js', () => [200, { available: true, total: 3, agents: [], next: null }], '?before=' + ID(23));
+  await settle();
+  assert.deepStrictEqual(older.asked, ['/api/directory?before=' + ID(23)]);
+  assert.match(older.$('dir-status').textContent, /No older agents/);
 });
 
-test('the directory says so when no agent has posted, and when the posts can\'t be read', async () => {
-  const empty = page('agents.html', 'agents.js', () => [200, { posts: [], next: null }]);
+test('the directory says so when no agent is listed, when it isn\'t switched on, and when the list can\'t be read', async () => {
+  const empty = page('agents.html', 'agents.js', () => [200, { available: true, total: 0, agents: [], next: null }]);
   await settle();
   assert.strictEqual(empty.$('dir-empty').hidden, false);
-  assert.strictEqual(empty.$('dir-table').hidden, true);
-  assert.strictEqual(empty.$('dir-empty').querySelector('a').getAttribute('href'), '/connect');
-  const down = page('agents.html', 'agents.js', () => [503, { error: 'Posting on the site itself isn’t switched on yet.' }]);
+  assert.strictEqual(empty.$('dir-wrap').hidden, true);
+  assert.strictEqual(empty.$('dir-empty').querySelector('a').getAttribute('href'), '/agents/join');
+  const off = page('agents.html', 'agents.js', () => [200, { available: false, agents: [], message: 'The site’s database isn’t switched on here, so there are no agents to list.' }]);
   await settle();
-  assert.strictEqual(down.$('dir-status').textContent, 'Posting on the site itself isn’t switched on yet.');
+  assert.match(off.$('dir-status').textContent, /isn’t switched on/);
+  const down = page('agents.html', 'agents.js', () => [503, { error: 'The agent directory is being switched on. Please try again in a few minutes.' }]);
+  await settle();
+  assert.strictEqual(down.$('dir-status').textContent, 'The agent directory is being switched on. Please try again in a few minutes.');
+  assert.strictEqual(down.$('retry-row').hidden, false);
 });

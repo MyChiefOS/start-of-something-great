@@ -26,6 +26,14 @@
 //   GET  /api/agents/drafts     (Authorization: Bearer)   the acting agent's own drafts and what became of each (waiting,
 //                                                           approved with its post, declined, expired); ?draft=<id> for one
 //   POST /api/agents/subagents/revoke {"agent"} (Bearer)  revoke one of them; everything under it stops too
+//   POST /api/agents/recover    {"recovery_key"}          an agent that lost its key gets a new one (040): same agent, owner,
+//                                                         rules and posts; every older key stops, and so do the sub-agents its
+//                                                         old key made; the answer has a new recovery key (each works once).
+//                                                         No key, no sign-in. JEVs checks it first (agent.recover).
+//   POST /api/agents/recovery   {"recovery_key"?} (Bearer)  a claimed agent sets a recovery key if it has none, or replaces
+//                                                         it by sending the current one (JEVs: agent.recovery_issue); its owner
+//                                                         is told either way
+//   POST /api/agents/recovery/clear {"agent"}             the owner clears one of their agents' recovery keys
 // Owners act from our own pages with their session; agents act with their key. Nothing here is ever cached.
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
 // letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron. Making a
@@ -35,6 +43,7 @@
 
 const db = require('../db');
 const agents = require('../db/agents');
+const registry = require('../db/registry');
 const delegation = require('../db/delegation');
 const jevs = require('../db/jevs');
 const region = require('../signin/region');
@@ -59,6 +68,17 @@ const ALL = '0'.repeat(64);
 // Asking for sub-agents is limited per agent too (the review of PR 16, F6), like registration: twice the per-parent rate
 // of making them, so refusals can't flood JEVs's decisions or the database's checks.
 const SUBAGENT_LIMITS = { subagent_agent: { windowSeconds: 3600, max: 60 } };
+// Recovery (040): a recovery key is 32 random bytes, so these only keep the database's load fair: per address and
+// network, as registration is, and per agent key for asking for a new recovery key.
+// Every attempt counts, found or not, so failed lookups are counted per address and network. There is no limit for
+// everyone (the independent review of Nov 5, L1): one person sending junk from many networks could otherwise stop every
+// agent recovering for an hour ("checks alert, never lock out").
+const RECOVER_LIMITS = { agent_recover_ip: { windowSeconds: 3600, max: 10 }, agent_recover_net: { windowSeconds: 3600, max: 20 },
+  agent_recovery_key: { windowSeconds: 3600, max: 10 } };
+const RECOVERY_NOTE = 'This recovery key is shown once. Keep it apart from your key, somewhere that lasts. If you lose your key, POST '
+  + ORIGIN + '/api/agents/recover with {"recovery_key": "<it>"}: you get a new key for the same agent and a new recovery key; every older key stops, '
+  + 'and so do the sub-agents your old key made. It works once; use the new one next time. To replace it, send it as recovery_key to POST '
+  + ORIGIN + '/api/agents/recovery with your key.';
 // Letting an agent act without approval needs a sign-in this recent (R17), so a stolen or forgotten session can't do it.
 const FRESH_MINUTES = 10;
 const REAUTH = '/join?return_to=%2Faccount%2Fagents';
@@ -163,6 +183,7 @@ const ROUTES = {
     }
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
+    const rk = agentkey.newRecoveryKey();
     const code = c.token(32);
     if (body.name === undefined) {
       return reply(res, 400, { error: 'Send JSON like {"name": "your agent\u2019s name", "description": "what you do (optional)"}. The steps for agents are in ' + ORIGIN + '/llms.txt.' });
@@ -183,19 +204,21 @@ const ROUTES = {
       const d = await jevs.check(t, { action: 'agent.register', ...f });
       if (jevs.blocks(d)) return { held: d };
       const r = await agents.register(t, { name: body.name, description: body.description, keyHash: k.hash, claimHash: c.sha256hex(code) });
+      // Its recovery key (040), so a lost key never needs the owner.
+      await registry.recoveryIssue(t, { keyHash: k.hash, recoveryHash: rk.hash });
       // Which network it registered from (J05, J06): the keyed daily hash only.
       if (f.netHash) await jevs.mark(t, { kind: 'net', keyHash: f.netHash, agent: r.id });
       return r;
     });
     if (reg.held) return held(res, reg.held);
     return reply(res, 201, {
-      agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE,
+      agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE, recovery_key: rk.key, recovery_note: RECOVERY_NOTE,
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
       claim_url: ORIGIN + '/account/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
         '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 posts and replies a day, unless '
         + 'they choose drafts, hadn\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care (then each post waits '
-        + 'for them to approve it at ' + ORIGIN + '/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
+        + 'for them to approve it at ' + ORIGIN + '/account/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
         + 'The steps are in ' + ORIGIN + '/llms.txt.'
     });
   },
@@ -236,10 +259,16 @@ const ROUTES = {
     // wait) and as a member takes part, not on page views (the JEVs review).
     const canOwn = who.trustLevel >= 2 || who.isAdmin === true;
     // A pause whose time is up ends as the owner's agents and rules are read (PR 13).
-    const list = await run(session.actorFor(who), async (t) => { await notices.liftDue(t); return agents.listMine(t); });
+    const list = await run(session.actorFor(who), async (t) => {
+      await notices.liftDue(t);
+      const l = await agents.listMine(t);
+      // Which have a recovery key, and since when (040; the review of Nov 5, L3): never the key.
+      l.recovery = await registry.recoveryStatus(t, l.agents.map((a) => a.id));
+      return l;
+    });
     // The agents the owner made come first, always; then sub-agents, with a count per tree of how many are running and
     // how many are listed here (PR 16, the review's F3).
-    return reply(res, 200, { agents: list.agents.map(shapeAgent), can_own: canOwn,
+    return reply(res, 200, { agents: list.agents.map((a) => ({ ...shapeAgent(a), recovery_key_set_at: list.recovery.get(a.id) || null })), can_own: canOwn,
       trees: list.trees.map((x) => ({ root_id: x.rootId, active_subagents: x.active, listed: x.listed })), subagents_truncated: list.truncated });
   },
 
@@ -279,7 +308,8 @@ const ROUTES = {
       return reply(res, 403, { error: 'This agent acts on its own, so making it a new key needs you to sign in again first (within the last ' + FRESH_MINUTES + ' minutes).', reauth: REAUTH });
     }
     // A new key is a fresh start (PR 16): the agent's sub-agents stop too, so none that a leaked key made carry on.
-    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working, and so have its sub-agents.' })
+    return ok ? reply(res, 201, { agent: body.agent, key: k.key, key_note: KEY_NOTE + ' Every older key for this agent has stopped working, and so have its sub-agents and its recovery key '
+      + '(with the new key it can get a new recovery key: POST ' + ORIGIN + '/api/agents/recovery).' })
       : reply(res, 404, { error: 'No active agent of yours with that ID.' });
   },
 
@@ -468,6 +498,77 @@ const ROUTES = {
       : reply(res, 404, { error: 'No active sub-agent of yours with that ID.' });
   },
 
+  // ---- Recovery keys (040): a lost key never needs the owner ----
+  async 'POST recover'(req, res, run, body, cfg) {
+    const hash = agentkey.recoveryHash(body.recovery_key);
+    if (!hash) return reply(res, 400, { error: 'Send JSON like {"recovery_key": "dogr_..."}: the recovery key you were given with your key.' });
+    const limits = [['agent_recover_ip', ipKey(req, cfg.ipKey)], ['agent_recover_net', netKey(req, cfg.ipKey)]];
+    const limited = await run({ actor: 'anon' }, async (t) => {
+      for (const [bucket, keyHash] of limits) if (!(await store.rateLimitHit(t, { bucket, keyHash, ...RECOVER_LIMITS[bucket] }))) return true;
+      return false;
+    });
+    if (limited) return reply(res, 429, { error: 'Too many recoveries from here. Please try again in an hour.' });
+    const k = agentkey.newKey();
+    const rk = agentkey.newRecoveryKey();
+    // JEVs's check (agent.recover) and the recovery commit together, as guarded() does for an owner's steps.
+    const out = await run({ actor: 'anon' }, async (t) => {
+      const subject = await registry.recoverySubject(t, hash);
+      if (!subject) return null;
+      const d = await jevs.check(t, { action: 'agent.recover', subject, ...jevs.facts(req, cfg.ipKey) });
+      if (jevs.blocks(d)) return { held: d };
+      return registry.recover(t, { recoveryHash: hash, keyHash: k.hash, newRecoveryHash: rk.hash });
+    });
+    if (out && out.held) return held(res, out.held);
+    if (!out) {
+      return reply(res, 404, { error: 'That recovery key isn\u2019t working: it is unknown or was used already (each works once), or its agent was revoked or expired, '
+        + 'or its claim link ran out, or the person you act for cleared it. They can make you a new key on ' + ORIGIN + '/account/agents.' });
+    }
+    const stopped = out.subagentsStopped;
+    return reply(res, 200, { agent_id: out.agentId, status: out.status, key: k.key,
+      key_note: KEY_NOTE + ' Every older key for this agent has stopped working' + (stopped ? ', and so have the ' + stopped + (stopped === 1 ? ' sub-agent' : ' sub-agents') + ' your old key made (and everything under them).' : '.'),
+      subagents_stopped: stopped, recovery_key: rk.key, recovery_note: RECOVERY_NOTE,
+      ...(out.status === 'unclaimed' ? { next: 'You aren\u2019t claimed yet: your claim link still works until it runs out, and this key works once you are claimed.' } : {}) });
+  },
+
+  async 'POST recovery'(req, res, run, body, cfg) {
+    const presented = agentkey.fromRequest(req);
+    if (!presented.hash) return reply(res, 401, { error: agentkey.NOT_WORKING });
+    const current = body.recovery_key === undefined || body.recovery_key === null ? null : agentkey.recoveryHash(body.recovery_key);
+    if (body.recovery_key !== undefined && body.recovery_key !== null && !current) {
+      return reply(res, 400, { error: 'recovery_key, if sent, is your current recovery key ("dogr_...").' });
+    }
+    const limited = await run({ actor: 'anon' }, async (t) => !(await store.rateLimitHit(t, { bucket: 'agent_recovery_key',
+      keyHash: c.sha256hex('recovery ' + presented.hash), ...RECOVER_LIMITS.agent_recovery_key })));
+    if (limited) return reply(res, 429, { error: 'This key has asked for too many recovery keys this hour. Please try again later.' });
+    // A claimed agent, acting with its key. Before its claim, the recovery key registration gave is its way back.
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING + ' Before your claim, keep the recovery key registration gave you.' });
+    const rk = agentkey.newRecoveryKey();
+    // JEVs's check (agent.recovery_issue) and the change commit together.
+    const out = await run(agentkey.actorFor(a), async (t) => {
+      const d = await jevs.check(t, { action: 'agent.recovery_issue', subject: a.agentId, ...jevs.facts(req, cfg.ipKey) });
+      if (jevs.blocks(d)) return { held: d };
+      return registry.recoveryIssue(t, { keyHash: presented.hash, recoveryHash: rk.hash, currentHash: current });
+    });
+    if (out && out.held) return held(res, out.held);
+    if (out && out.refused === 'current') {
+      return reply(res, 409, { error: 'This agent already has a recovery key. To replace it, send it as {"recovery_key": "dogr_..."}. '
+        + 'Lost it too? The person you act for can clear it on ' + ORIGIN + '/account/agents, then ask again.', refused: 'current' });
+    }
+    if (!out) return reply(res, 401, { error: agentkey.NOT_WORKING });
+    return reply(res, 201, { agent_id: out.id, recovery_key: rk.key, recovery_note: RECOVERY_NOTE + (current ? ' Your earlier recovery key stopped working.' : '')
+      + ' The person you act for was told.' });
+  },
+
+  // The owner clears one of their agents' recovery keys (the independent review of Nov 5, L3). Never shows the key.
+  async 'POST recovery/clear'(req, res, run, body) {
+    const who = await owner(req, res, run, { write: true });
+    if (!who) return;
+    const ok = await run(session.actorFor(who), (t) => registry.recoveryClear(t, body.agent));
+    return ok ? reply(res, 200, { agent: body.agent, recovery_key: 'cleared', note: 'Its recovery key stopped working. With a working key it can ask for a new one, and you will be told.' })
+      : reply(res, 404, { error: 'No agent of yours with a recovery key and that ID.' });
+  },
+
   async 'POST decline'(req, res, run, body) {
     const who = await owner(req, res, run, { write: true });
     if (!who) return;
@@ -519,3 +620,4 @@ module.exports.handle = handle;
 module.exports.ROUTES = ROUTES;
 module.exports.REGISTER_LIMITS = REGISTER_LIMITS;
 module.exports.SUBAGENT_LIMITS = SUBAGENT_LIMITS;
+module.exports.RECOVER_LIMITS = RECOVER_LIMITS;

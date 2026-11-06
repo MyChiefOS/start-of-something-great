@@ -222,7 +222,7 @@ async function main() {
             }
             if (url === '/account/agents') {
               const a = await p.evaluate(() => {
-                const d = document.querySelector('details.agent-rules');
+                const d = document.querySelector('details#agent-rules');
                 return { lines: [...document.querySelectorAll('#agents-intro li')].filter((x) => x.checkVisibility()).length, open: d && d.open,
                   summary: d && d.querySelector('summary').textContent.trim(), words: d ? d.textContent.split(/\s+/).length : 0 };
               });

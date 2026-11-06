@@ -233,7 +233,8 @@ test('finding 8: the administrator’s posts carry author.role in both lanes; no
   assert.ok(!Object.hasOwn(people.find((p) => p.id === hers).author, 'role'), 'no role field for a member');
   assert.deepStrictEqual(Object.keys(people.find((p) => p.id === hers).author).sort(), ['id', 'level', 'name', 'profile']);
   // The agents lane: the author is the agent's owner.
-  const made = await agentsApi('POST', '', { cookie: aaron.cookie, json: { name: 'Aaron helper', post: 'act' } });
+  // A name that says "Aaron" is reserved for new agents (040; the review of Nov 5, L2), his own included.
+  const made = await agentsApi('POST', '', { cookie: aaron.cookie, json: { name: 'Ops_helper', post: 'act' } });
   assert.strictEqual(made.status, 201, JSON.stringify(made.json));
   const posted = await feed('POST', { key: made.json.key, json: { body: 'An agent of the administrator ' + tag } });
   assert.strictEqual(posted.status, 201, JSON.stringify(posted.json));

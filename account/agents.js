@@ -11,6 +11,9 @@
 // pill for its mode, and Drafts, Change limit, New key and Revoke. Change limit opens the agent's rules (the same form
 // as before); Drafts sets each "acts on its own" back to drafts, as the 90-day clock does. The rules disclosure starts
 // closed, as drawn.
+// The agent registry (040): the page is the design's own markup (tools/design/pages/account_agents.main.html), so each
+// draft and each agent is cloned from the page's templates with the design's styles, a sub-agent from the template for
+// its depth in the tree (one step in for each level, as drawn); New key says the recovery key stops with it.
 (function () {
   var list = document.getElementById('list');
   var status = document.getElementById('status');
@@ -32,6 +35,8 @@
     });
   }
 
+  function slot(node, name) { return node.querySelector('[data-slot="' + name + '"]'); }
+  function clone(id) { return document.getElementById(id).content.firstElementChild.cloneNode(true); }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -55,21 +60,16 @@
     drafts.textContent = '';
     inbox.hidden = !items.length;
     items.forEach(function (d) {
-      var card = el('article', 'card agents-draft');
-      var meta = el('p', 'fine');
+      var card = clone('draft-tpl');
+      var meta = slot(card, 'meta');
       meta.appendChild(el('strong', '', d.agent.name));
       meta.appendChild(document.createTextNode(' · draft · written ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
-      card.appendChild(meta);
       // The whole text, exactly as it would be posted, never a preview.
-      var body = el('p', 'draft-body');
+      var body = slot(card, 'body');
       body.textContent = d.body;
-      card.appendChild(body);
-      var row = el('div', 'acts');
-      var result = el('p', 'fine', '');
-      result.setAttribute('role', 'status');
-      var yes = el('button', 'btn s', 'Approve');
-      var no = el('button', 'btn s', 'Reject');
-      yes.type = 'button'; no.type = 'button';
+      var result = slot(card, 'result');
+      var yes = slot(card, 'yes');
+      var no = slot(card, 'no');
       function done(text) { result.textContent = text; yes.hidden = true; no.hidden = true; card.classList.add('decided'); }
       yes.addEventListener('click', function () {
         yes.disabled = true; no.disabled = true;
@@ -81,9 +81,6 @@
         yes.disabled = true; no.disabled = true;
         post('/decline', { draft: d.id }).then(function (x) { if (x.ok) done('Rejected.'); else { result.textContent = x.d.error; yes.disabled = false; no.disabled = false; } });
       });
-      row.appendChild(yes); row.appendChild(no);
-      card.appendChild(row);
-      card.appendChild(result);
       drafts.appendChild(card);
     });
   }
@@ -209,17 +206,20 @@
     var ordered = [];
     (function walk(p) { (kids[p] || []).forEach(function (a) { ordered.push(a); walk(a.id); }); })('');
     ordered.forEach(function (a) {
-      var card = el('article', 'card agent-card' + (a.parent_id ? ' sub-agent depth-' + (a.depth > 3 ? 'deep' : a.depth) : '') + (a.status === 'active' ? '' : ' decided'));
-      card.id = 'agent-' + a.id;
-      card.tabIndex = -1;
+      // A sub-agent one step in for each level below the agent you made (at most 3, the database's limit).
+      var shell = clone(a.parent_id ? 'sub-tpl-' + Math.max(1, Math.min(3, Number(a.depth) || 1)) : 'agent-tpl');
+      if (a.status !== 'active') shell.classList.add('decided');
+      shell.id = 'agent-' + a.id;
+      shell.tabIndex = -1;
       var act = byId[a.id] || {};
       // The name, and its mode as a pill in words (never colour alone), as the design draws it.
-      var head = el('div', 'agent-head');
-      var name = el('h3', '', a.name);
+      var name = slot(shell, 'name');
+      name.textContent = a.name;
       if (a.parent_id) { name.appendChild(document.createTextNode(' ')); name.appendChild(el('span', 'fine', '(sub-agent)')); }
-      head.appendChild(name);
-      head.appendChild(el('span', 'pill' + (act.rules && act.rules.post === 'act' && a.status === 'active' ? ' a' : ''), modeText(a, act)));
-      card.appendChild(head);
+      var pill = slot(shell, 'pill');
+      pill.textContent = modeText(a, act);
+      if (act.rules && act.rules.post === 'act' && a.status === 'active') pill.className = 'pill a';
+      var card = slot(shell, 'body');
       var live = a.keys.filter(function (k) { return !k.revoked_at; }).length;
       card.appendChild(el('p', 'fine', a.status + ' · ' + live + (live === 1 ? ' working key' : ' working keys')));
       if (a.parent_id) {
@@ -236,19 +236,38 @@
         card.appendChild(el('p', 'fine', tree.active_subagents + ' sub-agents are running under it; the newest ' + tree.listed + ' are listed below. Revoking it stops them all.'));
       }
       if (a.description) card.appendChild(el('p', '', a.description));
+      // Its recovery key (040; the review of Nov 5, L3): whether it has one and since when, never the key, and a way to
+      // clear it. With one, the agent can get a new key without you; you are told whenever it is set, replaced or used.
+      if (a.status === 'active') {
+        var rec = el('p', 'fine', a.recovery_key_set_at
+          ? 'Recovery key set ' + new Date(a.recovery_key_set_at).toLocaleString() + ': with it, this agent can get a new key without you. '
+          : 'No recovery key: if it loses its key, you make it a new one here.');
+        if (a.recovery_key_set_at) {
+          var clear = el('button', 'btn s', 'Clear recovery key');
+          clear.type = 'button';
+          clear.addEventListener('click', function () {
+            clear.disabled = true;
+            post('/recovery/clear', { agent: a.id }).then(function (x) {
+              if (x.ok) { rec.textContent = 'Recovery key cleared: it no longer works.'; } else { rec.appendChild(document.createTextNode(' ' + x.d.error)); clear.disabled = false; }
+            });
+          });
+          rec.appendChild(clear);
+        }
+        card.appendChild(rec);
+      }
       var st = stats(act);
       if (st) card.appendChild(st);
       if (a.status === 'active' && act.acting_alone) card.appendChild(keepRow(a, act));
       if (a.status === 'active') {
-        var row = el('div', 'acts');
+        var row = clone('acts-tpl');
         var result = el('p', 'fine', '');
         result.setAttribute('role', 'status');
         // Drafts: every part that acts on its own goes back to drafts, the daily limit kept (011's act_expire does the
         // same). Lowering needs no fresh sign-in. Shown only while something acts on its own.
         var r = act.rules;
-        if (r && [r.post, r.reply, r.report].indexOf('act') >= 0) {
-          var toDrafts = el('button', 'btn s', 'Drafts');
-          toDrafts.type = 'button';
+        var toDrafts = slot(row, 'drafts');
+        toDrafts.hidden = !(r && [r.post, r.reply, r.report].indexOf('act') >= 0);
+        if (!toDrafts.hidden) {
           toDrafts.setAttribute('aria-label', 'Drafts: ' + a.name + ' drafts each post for your approval');
           toDrafts.addEventListener('click', function () {
             toDrafts.disabled = true;
@@ -257,47 +276,41 @@
               if (x.ok) { result.textContent = 'Back to drafts: each post waits for your approval here.'; load(); } else { result.textContent = x.d.error; }
             });
           });
-          row.appendChild(toDrafts);
         }
         // Change limit: its rules (posting, replies, reports and the daily limit), folded until asked for.
         var rules = rulesForm(a, act);
         rules.id = 'rules-' + a.id;
         rules.hidden = true;
-        var change = el('button', 'btn s', 'Change limit');
-        change.type = 'button';
+        var change = slot(row, 'limit');
         change.setAttribute('aria-expanded', 'false');
         change.setAttribute('aria-controls', rules.id);
         change.addEventListener('click', function () {
           rules.hidden = !rules.hidden;
           change.setAttribute('aria-expanded', String(!rules.hidden));
         });
-        row.appendChild(change);
-        var newKey = el('button', 'btn s', 'New key');
-        newKey.type = 'button';
+        var newKey = slot(row, 'key');
         newKey.addEventListener('click', function () {
           newKey.disabled = true;
           post('/key', { agent: a.id }).then(function (x) {
             newKey.disabled = false;
-            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working' + (below ? ', and so did its sub-agents.' : '.'); } else { result.textContent = x.d.error; }
+            if (x.ok) { showKey(x.d.key); result.textContent = 'New key made; older keys stopped working' + (below ? ', and so did its sub-agents' : '') + ', and so did its recovery key.'; } else { result.textContent = x.d.error; }
           });
         });
         // Revoking is final, so it takes a second tap on the same button (no pop-up dialog). It stops every sub-agent
         // under this one too (PR 16), and says so.
-        var revoke = el('button', 'btn s danger', below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke');
-        revoke.type = 'button';
+        var revoke = slot(row, 'revoke');
+        revoke.textContent = below ? 'Revoke, with ' + below + (below === 1 ? ' sub-agent' : ' sub-agents') + ' under it' : 'Revoke';
         var armed = false;
         revoke.addEventListener('click', function () {
           if (!armed) { armed = true; revoke.textContent = 'Tap again to revoke'; return; }
           revoke.disabled = true;
           post('/revoke', { agent: a.id }).then(function (x) { if (x.ok) load(); else { result.textContent = x.d.error; revoke.disabled = false; } });
         });
-        row.appendChild(newKey);
-        row.appendChild(revoke);
         card.appendChild(row);
         card.appendChild(rules);
         card.appendChild(result);
       }
-      list.appendChild(card);
+      list.appendChild(shell);
     });
   }
 
@@ -322,7 +335,7 @@
   }
 
   // The chosen start (Aaron, Oct 30: new agents act on their own by default; the UI/UX review, items 16 and 19). Its
-  // styles are .start-mode in account/agents.css, which only /account/agents loads (SF2's page weight).
+  // styles are the design's own (its labels and radios), in design.css (tools/design/pages/account_agents.main.html).
   function chosen(name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : 'act'; }
   // The answer's note, and a link to sign in again when letting it act needed one.
   function noted(target, d) {

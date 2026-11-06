@@ -158,6 +158,11 @@ test.before(async () => {
   // The ban above ended A's sessions, so A signs in again, leaving a session row.
   A.sessionHash = (await signIn(2, 'Member A', A.fp)).sessionHash;
   A.ctx = { ...A.ctx, session: A.sessionHash };
+  // 040: A's agent's recovery key, set the one way the site can (with a working key). After the ban, which took A's
+  // agent keys and its recovery key (the review of Nov 5, H1), so A makes the agent a new key first.
+  const [aAgentRow] = await su`select id from app.agents where owner_id = ${A.id} and name = 'A agent'`;
+  await run(A.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${aAgentRow.id}, ${c.sha256hex('a-key-2')})`);
+  await run({ actor: 'anon' }, (t) => t`select app.agent_recovery_issue(${c.sha256hex('a-key-2')}, ${c.sha256hex('a-recovery')}, null::text)`);
   // 030: the behaviour watch's web records for A's session and account (a request, and its sealed place), as the site
   // writes them, and a removal count.
   await run({ actor: 'anon' }, (t) => store.watchSession(t, { sessionHash: A.sessionHash, ua: c.sha256hex('ua a'), country: c.sha256hex('country a') }));

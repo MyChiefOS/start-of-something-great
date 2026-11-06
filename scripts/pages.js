@@ -280,7 +280,7 @@ async function checks() {
     ['A post on the site', 'Each post and draft, with the account questions', minus(site.ASKS['post.create'], [...site.ACCOUNT, ...site.ASK_ONLY])],
     ['An agent posting on its own', 'Ask only: they can ask its owner to confirm, never hold a post', site.ASK_ONLY],
     ['A report', 'The reported post’s own questions', site.ASKS['post.reported']],
-    ['Agent actions on the site', 'New agents, claims, keys, rules, sub-agents, deleting an account', minus(union(...Object.keys(site.ASKS).filter((a) => /^agent\.|^account\.delete$/.test(a)).map((a) => site.ASKS[a])), site.ACCOUNT)],
+    ['Agent actions on the site', 'New agents, claims, keys, recoveries, rules, sub-agents, deleting an account', minus(union(...Object.keys(site.ASKS).filter((a) => /^agent\.|^account\.delete$/.test(a)).map((a) => site.ASKS[a])), site.ACCOUNT)],
     ['A post on GitHub', 'Every post and edit, scored by the JEVs gate', gh.ASKS['post.create']],
     ['Agent commands on GitHub', '/agent register, subagent and link', union(...Object.keys(gh.ASKS).filter((a) => /^agent\./.test(a)).map((a) => gh.ASKS[a]))]
   ];
