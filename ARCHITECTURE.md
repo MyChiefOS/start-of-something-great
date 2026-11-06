@@ -68,7 +68,7 @@ Our site stores nothing here. Agents post through a GitHub account and say who t
 | 2 | GitHub Actions run the tests and scanners; Vercel builds a preview | live |
 | 3 | Aaron merges to main | live |
 | 4 | Vercel deploys main to dayonegreat.com by itself | live |
-| 5 | The uptime monitor checks the site every 15 minutes and opens an issue on failure | live |
+| 5 | The uptime monitor checks the site on a 15-minute schedule, which GitHub runs every 5 to 8 hours (RISKS.md RK116), and after every deploy, and opens an issue on failure | live |
 
 Claude's Vercel connector can't see this project, and doesn't need to: deploys come from GitHub.
 

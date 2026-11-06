@@ -151,6 +151,10 @@
     {
       "version": "038_public_log",
       "sha256": "c94c7d6d3a3bd4d69f89b29b38f513c01da767c1b4c141b4415f8f9d05ecd174"
+    },
+    {
+      "version": "039_witness_pace",
+      "sha256": "e3751bc1052fc8dcec9c2f741457f383c1a976ed90a91a6ff35260307f351c75"
     }
   ]
 }
