@@ -46,6 +46,11 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 .d1 .linkbtn:hover{color:var(--amber)}
 .d1 .report{margin-top:8px;font-size:15px}
 @media(max-width:820px){.d1 .linkbtn{min-height:44px}}
+/* A track's fill (the design's .trk i, its width written inline), in steps of 5%, as classes a script can set. */
+${Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('')}
+/* A card heading the design draws as an h3, kept an h2 where an h3 would skip a level (spec 5.3: one h1, logical
+   heading order): the design's .card h3, at h2. */
+.d1 h2.h3,.d1 .story h2.h3,.d1 .card h2.h3{font-size:22px;margin:4px 0 8px}
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 ${fonts}
 .d1{${dark};--rule-strong:#626160}

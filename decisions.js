@@ -78,12 +78,12 @@
       $('sl-row').hidden = !shadow;
       if (shadow) {
         text('sl-agree', count(s.agreed_in_a_row) + ' of ' + count(s.needed));
-        // The design's track (static/decisions.html): its fill's width is set here, through the style object, which the
-        // security policy allows (it forbids only style written into the page).
+        // The design's track (static/decisions.html): its fill is one of design.css's widths, in steps of 5%, set as a
+        // class (no style from the script); the exact figure is in the words beside it and in aria-valuenow.
         var track = $('sl-track'), max = s.needed || 80, now = Math.min(s.agreed_in_a_row || 0, max);
         track.setAttribute('aria-valuemax', String(max));
         track.setAttribute('aria-valuenow', String(now));
-        $('sl-bar').style.width = Math.round((100 * now) / max) + '%';
+        $('sl-bar').className = 'w' + Math.round((20 * now) / max) * 5;
       }
       text('sl-fine', (shadow ? 'Agreement so far. At most ' + count(s.daily_clear_cap) + ' easy posts a day once on.' : 'At most ' + count(s.daily_clear_cap) + ' easy posts a day.')
         + ' It pauses itself if Aaron removes more than 1 in 80.');

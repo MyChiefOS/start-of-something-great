@@ -18,12 +18,15 @@ const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 const mainOf = (f) => read(f).match(/<main[\s\S]*?<\/main>/)[0];
 const strip = (s) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
-// file, its address (cleanUrls: x.html is /x), the h1, the h2s in order, its own script and stylesheet.
+// file, its address (cleanUrls: x.html is /x), the h1, the h2s in order, its own script and stylesheet (the design's
+// inline styles that only this page uses, as classes in /css/<page>.css: tools/design/build.js).
+// The page between the shell's markers: the design draws a page's notice just above its <main>.
+const bodyOf = (f) => read(f).match(/<!-- \/shell:top -->([\s\S]*?)<!-- shell:foot -->/)[1];
 const PAGES = [
-  { file: 'decisions.html', path: '/decisions', h1: 'JEVs decisions', h2: ['Last 24 hours', 'Latest high-risk decisions', 'Second Look', 'Human oversight'], js: 'decisions.js', css: 'decisions.css' },
-  { file: 'receipts.html', path: '/receipts', h1: 'Receipts', h2: ['Recent', 'What a receipt shows'], js: 'receipts.js', css: 'receipts.css' },
-  { file: 'receipt.html', path: '/receipt', h1: 'Receipt', h2: ['Agent post', 'Proposed: execution receipts'], js: 'receipt.js', css: 'receipt.css' },
-  { file: 'errors/rate-limited.html', path: '/errors/rate-limited', h1: 'Slow down for a moment', h2: ['If something else went wrong'], js: 'errors/rate-limited.js', css: 'errors/rate-limited.css' },
+  { file: 'decisions.html', path: '/decisions', h1: 'JEVs decisions', h2: ['Last 24 hours', 'Latest high-risk decisions', 'Second Look', 'Human oversight'], js: 'decisions.js', css: 'css/decisions.css' },
+  { file: 'receipts.html', path: '/receipts', h1: 'Receipts', h2: ['Recent', 'What a receipt shows'], js: 'receipts.js', css: 'css/receipts.css' },
+  { file: 'receipt.html', path: '/receipt', h1: 'Receipt', h2: ['Agent post', 'Proposed: execution receipts'], js: 'receipt.js', css: 'css/receipt.css' },
+  { file: 'errors/rate-limited.html', path: '/errors/rate-limited', h1: 'Slow down for a moment', h2: ['If something else went wrong'], js: 'errors/rate-limited.js', css: null },
   { file: '404.html', path: null, h1: 'This page doesn’t exist', h2: [], js: null, css: null }
 ];
 
@@ -44,8 +47,8 @@ test('each page is at its address, carries the shell exactly as scripts/shell.js
     assert.deepStrictEqual(h1, [p.h1], p.file + ': one h1');
     assert.deepStrictEqual([...main.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => strip(m[1])), p.h2, p.file + ': the sections, in the design’s order');
     assert.ok(!/<h[3-6]\b/.test(main), p.file + ': no level skipped');
-    assert.match(main, /^<main id="main" class="story[^"]*" tabindex="-1">/, p.file + ': the story template, focusable for the skip link');
-    assert.match(html, /<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/);
+    assert.match(main, /^<main(?: class="story[^"]*")? id="main" tabindex="-1">/, p.file + ': the design\'s main, focusable for the skip link');
+    assert.match(html, /<body>\s*<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*<a class="skip" href="#main">Skip to content<\/a>/);
     const title = html.match(/<title>([^<]+)<\/title>/)[1];
     assert.ok(title.endsWith(': Day One Great'), p.file + ': title is "<Heading>: Day One Great"');
     if (p.path) assert.ok(shell.exists(p.path) || p.path.startsWith('/errors/'), p.path);
@@ -66,7 +69,7 @@ test('the security policy holds: no inline style, no inline script, no on* handl
     if (p.js) assert.ok(new RegExp('<script defer src="/' + p.js.replace(/[./]/g, '\\$&') + '"></script>').test(html), p.file + ' loads ' + p.js);
     if (p.css) {
       assert.ok(html.includes('<link rel="stylesheet" href="/' + p.css + '">'), p.file + ' loads ' + p.css);
-      assert.ok(html.indexOf('href="/design.css"') < html.indexOf('href="/' + p.css + '"'), 'styles.css, design.css, then the page’s own');
+      assert.ok(html.indexOf('href="/design.css"') < html.indexOf('href="/' + p.css + '"'), 'design.css, then the page’s own');
       const css = read(p.css);
       assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(/i.test(css), p.css + ': the site’s own colour tokens only');
     }
@@ -88,17 +91,17 @@ test('no figure from the design’s sample set is shown as real; the "Proposed" 
   for (const js of ['decisions.js', 'receipts.js', 'receipt.js', 'errors/rate-limited.js']) {
     for (const s of ['63 of 80', 'R-99231', 'P-48211', 'claude_helper', '@mira', 'err_8f31c2', 'T-1012']) assert.ok(!read(js).includes(s), js + ': ' + s);
   }
-  const dec = mainOf('decisions.html');
+  const dec = bodyOf('decisions.html');
   assert.ok(!dec.includes('administrator only'), 'the counts are public now');
-  assert.match(dec, /<b>Proposed\.<\/b> These numbers are live and public, as counts and question IDs only\./);
+  assert.match(dec, /<b class="x[0-9a-f]{8}">Proposed\.<\/b> These numbers are live and public, as counts and question IDs only\./);
   assert.match(dec, /<span class="pill m">Live counts<\/span>/);
-  const rec = mainOf('receipts.html');
-  assert.match(rec, /<b>Proposed\.<\/b> The receipts listed here are real, one for each agent post\. Checking a receipt against a signed public record comes with the public log \(phase 2\): nothing here is signed or witnessed yet\./);
+  const rec = bodyOf('receipts.html');
+  assert.match(rec, /<b class="x[0-9a-f]{8}">Proposed\.<\/b> The receipts listed here are real, one for each agent post\. Checking a receipt against a signed public record comes with the public log \(phase 2\): nothing here is signed or witnessed yet\./);
   assert.ok(!/tells you if anything changed/.test(rec), 'no claim that a hash is checked today');
   // Nothing claims to be verified, secure or audited (5.7).
   for (const p of PAGES) assert.ok(!/\b(verified|secure|audited)\b/i.test(strip(mainOf(p.file)).replace(/an independent audit/g, '')), p.file);
   // The receipt's execution card was all sample figures: an honest empty state instead.
-  assert.match(mainOf('receipt.html'), /<div class="empty-state">\s*<p>No execution receipts yet\.<\/p>/);
+  assert.match(mainOf('receipt.html'), /<div class="empty">No execution receipts yet\./);
 });
 
 test('the GitHub gate’s own question titles (J16, J17) are the gate’s, so /api/decisions names them as the gate does', async () => {
@@ -207,7 +210,8 @@ test('/decisions, run: the four counts, the 7-day rows in words, Second Look’s
   assert.strictEqual(p.$('high-empty').hidden, true);
   assert.strictEqual(text(p.$('sl-mode')), 'Shadow mode');
   assert.strictEqual(text(p.$('sl-agree')), '12 of 80');
-  assert.deepStrictEqual([p.$('sl-track').value, p.$('sl-track').max], [12, 80]);
+  // The design's track: a progressbar with its figures, its fill a design.css width (12 of 80 is 15%).
+  assert.deepStrictEqual([p.$('sl-track').getAttribute('aria-valuenow'), p.$('sl-track').getAttribute('aria-valuemax'), p.$('sl-bar').className], ['12', '80', 'w15']);
   assert.match(text(p.$('sl-text')), /after Aaron agrees with its last 80 decisions\.$/);
   assert.match(text(p.$('sl-fine')), /^Agreement so far\. At most 10 easy posts a day once on\. It pauses itself if Aaron removes more than 1 in 80\.$/);
   // 3 decisions in 7 days: no rate; 25 in 30 days: rates with their sample size.

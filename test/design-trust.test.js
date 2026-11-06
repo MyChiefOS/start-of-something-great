@@ -38,22 +38,24 @@ test('each page exists at its path and carries the shell exactly as scripts/shel
     assert.strictEqual(shell.render(f, html), html, f + ' carries the shell: run node scripts/shell.js');
     const slug = f.replace(/\.html$/, '');
     assert.ok(html.includes('<link rel="canonical" href="https://dayonegreat.com/' + slug + '">'), f + ': canonical /' + slug);
-    assert.match(html, /<body>\s*(<!--[^>]*-->\s*)?<a class="skip-link" href="#main">Skip to content<\/a>/, f + ': the skip link first');
-    assert.ok(html.includes('<main id="main" class="story'), f + ': a story or dashboard main');
-    assert.ok(html.includes('<link rel="stylesheet" href="/styles.css">\n  <link rel="stylesheet" href="/design.css">\n  <link rel="stylesheet" href="/trust.css">'), f + ': the stylesheets in order');
+    assert.match(html, /<body>\s*(<!--[^>]*-->\s*)?<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*<a class="skip" href="#main">Skip to content<\/a>/, f + ': the skip link first');
+    assert.ok(html.includes('<main class="story" id="main" tabindex="-1">'), f + ': the design\'s story main');
+    // design.css, then the page's own inline styles as classes where it has any (tools/design/build.js).
+    const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
+    assert.deepStrictEqual(sheets, fs.existsSync(path.join(root, 'css', slug.replace(/\//g, '-') + '.css')) ? ['/design.css', '/css/' + slug.replace(/\//g, '-') + '.css'] : ['/design.css'], f + ': the stylesheets in order');
     assert.ok(html.includes('<script src="/nav.js" defer></script>'), f + ': nav.js');
   }
   // The trust pages carry the Trust row, with their own mark.
   for (const f of ['status.html', 'roadmap.html', 'checks.html', 'moderation.html', 'autonomy.html', 'security.html']) {
-    const row = read(f).match(/<nav class="sub-row" aria-label="Trust">[\s\S]*?<\/nav>/);
+    const row = read(f).match(/<div class="sub2" aria-label="Trust">[\s\S]*?<\/div>/);
     assert.ok(row, f + ' has the Trust row');
-    assert.ok(row[0].includes('<a href="/' + f.replace(/\.html$/, '') + '" aria-current="page">'), f + ' is marked current');
+    assert.ok(row[0].includes('<a class="on" href="/' + f.replace(/\.html$/, '') + '" aria-current="page">'), f + ' is marked current');
   }
 });
 
 test('each page has the design\'s one h1 and its section headings in order, with no level skipped', () => {
   for (const [f, [h1, h2s]] of Object.entries(PAGES)) {
-    const main = mainOf(read(f));
+    const main = mainOf(read(f).replace(/<template[\s\S]*?<\/template>/g, ''));
     const h1s = [...main.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/g)].map((m) => text(m[1]));
     assert.deepStrictEqual(h1s, [h1], f + ': the h1');
     const got = [...main.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => text(m[1]));
@@ -116,8 +118,8 @@ test('the generated pages match their source files (node scripts/pages.js --chec
 
 test('a changed source file makes its page stale, and --check says so', () => {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pages-'));
-  for (const d of ['scripts', 'db', 'api', 'signin', 'supabase', 'jevs', '.github', 'notify', 'moderation']) fs.cpSync(path.join(root, d), path.join(tmp, d), { recursive: true });
-  for (const f of fs.readdirSync(root)) if (/\.(html|md|json|js|txt)$/.test(f)) fs.copyFileSync(path.join(root, f), path.join(tmp, f));
+  for (const d of ['scripts', 'db', 'api', 'signin', 'supabase', 'jevs', '.github', 'notify', 'moderation', 'css', 'tools']) fs.cpSync(path.join(root, d), path.join(tmp, d), { recursive: true });
+  for (const f of fs.readdirSync(root)) if (/\.(html|md|json|js|txt|css)$/.test(f)) fs.copyFileSync(path.join(root, f), path.join(tmp, f));
   // Every folder of pages too: the shell links a page only once it exists, so the copy needs them all.
   for (const d of ['privacy', 'research', 'admin', 'account', 'agents', 'errors']) if (fs.existsSync(path.join(root, d))) fs.cpSync(path.join(root, d), path.join(tmp, d), { recursive: true });
   try { fs.symlinkSync(path.join(root, 'node_modules'), path.join(tmp, 'node_modules')); } catch { /* already there */ }
@@ -162,7 +164,9 @@ test('the pages hold every row of their source files (no row dropped), and Opera
   assert.strictEqual((mainOf(read('status.html')).match(/<tr>/g) || []).length - 1, rows('USE-CASES.md', '| # | Use case |'));
   assert.strictEqual((mainOf(read('risks.html')).match(/<tr id="rk/g) || []).length, rows('RISKS.md', '| ID | Risk |'));
   const ops = rows('OPERATIONS.md', '| When | Action |');
-  assert.strictEqual((read('operations.html').match(/<li><p class="when">/g) || []).length, Math.min(100, ops));
+  // Each entry is the design's card, its time on the first, fine line.
+  const list = mainOf(read('operations.html')).split('<h2>Every action, newest first</h2>')[1];
+  assert.strictEqual((list.match(/<div class="card"><p class="fine x[0-9a-f]{8}">/g) || []).length, Math.min(100, ops));
   // Every question in the code is on /checks, both versions where both ask it.
   const site = require('../db/jevs').QUESTIONS;
   for (const q of site) assert.ok(read('checks.html').includes('<strong>' + q.id + ' '), q.id);
@@ -184,7 +188,7 @@ test('/privacy/keys says today\'s rule only (phase 3 is not decided), and /statu
   assert.match(keys, /There is no minimum size; the page refuses files over 100 MB\./);
   assert.match(read('join.js'), /f\.size > 100 \* 1024 \* 1024/, 'the 100 MB rule is the one join.js applies');
   assert.match(keys, /Nothing about it is decided or live/);
-  assert.match(keys, /<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="\/privacy">Privacy policy<\/a><\/li><li aria-current="page">Key files<\/li><\/ol><\/nav>/);
+  assert.match(keys, /<nav class="crumbs" aria-label="Breadcrumb"><a href="\/privacy">Privacy policy<\/a> \/ <span aria-current="page">Key files<\/span><\/nav>/);
   const status = read('status.html');
   assert.ok(status.includes('<script src="/status.js" defer></script>'));
   assert.ok(status.includes('>' + read('jevs/mode').trim().replace(/^./, (c) => c.toUpperCase()) + '</span>'), 'JEVs mode is the repository\'s jevs/mode');

@@ -176,9 +176,10 @@ function status() {
     '<div class="card ' + X('margin-bottom:8px') + '">',
     '<div class="' + X('display:flex;gap:28px;flex-wrap:wrap;align-items:center') + '">',
     '<div><p class="kick ' + X('margin:0 0 4px') + '">JEVs mode</p><span class="pill a ' + X('font-size:15px') + '" id="live-jevs">' + esc(cap(mode)) + '</span></div>',
-    '<div><p class="kick ' + X('margin:0 0 4px') + '">Site sign-in</p><span class="pill" id="live-signin">Not checked</span></div>',
-    '<div><p class="kick ' + X('margin:0 0 4px') + '">Go-live</p><span class="pill' + (stage === 'public' ? ' f' : '') + '" id="live-stage">' + (stage === 'public' ? 'Open' : 'Closed') + '</span></div>',
-    '<div><p class="kick ' + X('margin:0 0 4px') + '">Uptime check</p><span class="pill" id="live-uptime">' + esc(every) + '</span></div>',
+    // Under each pill, what our own API answers right now (status.js fills and shows the line).
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Site sign-in</p><span class="pill" id="live-signin">Not checked</span><p class="fine" id="live-signin-now" hidden></p></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Go-live</p><span class="pill' + (stage === 'public' ? ' f' : '') + '" id="live-stage">' + (stage === 'public' ? 'Open' : 'Closed') + '</span><p class="fine" id="live-stage-now" hidden></p></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Uptime check</p><span class="pill" id="live-uptime">' + esc(every) + '</span><p class="fine" id="live-uptime-now" hidden></p></div>',
     '</div>',
     '</div>',
     '<p class="fine" id="live-status" role="status">JEVs mode is the repository’s <a href="' + BLOB + 'jevs/mode">jevs/mode</a>; go-live is <a href="' + BLOB + 'launch.json">launch.json</a>; the uptime check is the schedule in <a href="' + BLOB + '.github/workflows/uptime.yml">uptime.yml</a>. Site sign-in and the live values load from <a href="/api/status">/api/status</a> and <a href="/api/ready">/api/ready</a>.</p>',
