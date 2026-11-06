@@ -175,7 +175,8 @@ const typedId = (s, kind) => { const m = new RegExp('^' + kind + ':(.+)$').exec(
 const step = (id, state, text, detail) => ({ id, title: STEPS.find((s) => s[0] === id)[1], state, text, detail: detail || '' });
 
 // opts: { fetch (absent offline), site (base for proof requests, default dayonegreat.com), memory ({size, root} or null:
-// the largest checkpoint seen before), pinnedKey (a vkey given by the person checking, e.g. the CLI's --key), onStep }.
+// the largest checkpoint seen before), pinnedKey (a vkey given by the person checking, e.g. the CLI's --key), repoPin
+// (defaults to verifier/log-key.js), onStep }.
 // Returns { status, reason, steps, firstFailure, memory (the largest checkpoint seen, to keep: only ever one signed by
 // the confirmed key and not failed; otherwise the memory given, unchanged) }.
 //
@@ -215,8 +216,10 @@ export async function verifyBundle(bundle, opts = {}) {
 
   // The pins, before anything is trusted. The witness's state.json is read once, here, and used at steps 5 and 6.
   let pin = null, pinFrom = null, wstate = null, wstateNote = 'not read: no network';
+  // repoPin: the repository's pin, verifier/log-key.js, unless a test models a log with a key of its own (null).
+  const repoPin = 'repoPin' in opts ? opts.repoPin : PINNED_VKEY;
   if (opts.pinnedKey) { pin = opts.pinnedKey; pinFrom = 'the key you gave'; }
-  else if (PINNED_VKEY) { pin = PINNED_VKEY; pinFrom = 'the key pinned in the repository (verifier/log-key.js)'; }
+  else if (repoPin) { pin = repoPin; pinFrom = 'the key pinned in the repository (verifier/log-key.js)'; }
   if (net) {
     try {
       const r = await net(WITNESS.state, { cache: 'no-store' });

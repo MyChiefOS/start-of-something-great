@@ -16,7 +16,8 @@ import * as L from '../../verifier/lib.js';
 
 const MARK = { pass: 'PASS', fail: 'FAIL', warn: 'WAIT', info: 'NOTE', na: ' -- ' };
 
-export async function main(argv, { fetchImpl = globalThis.fetch, out = (s) => process.stdout.write(s + '\n') } = {}) {
+// repoPin is for tests only (a log with a key of its own); the command line always uses verifier/log-key.js.
+export async function main(argv, { fetchImpl = globalThis.fetch, out = (s) => process.stdout.write(s + '\n'), ...test } = {}) {
   const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
   const offline = argv.includes('--offline');
   const site = (flag('--site') || L.SITE).replace(/\/+$/, '');
@@ -39,7 +40,7 @@ export async function main(argv, { fetchImpl = globalThis.fetch, out = (s) => pr
   const rememberFile = flag('--remember');
   let memory = null;
   if (rememberFile && fs.existsSync(rememberFile)) { try { memory = JSON.parse(fs.readFileSync(rememberFile, 'utf8')); } catch { memory = null; } }
-  const res = await L.verifyBundle(bundle, { fetch: offline ? null : fetchImpl, site, memory, pinnedKey: flag('--key') });
+  const res = await L.verifyBundle(bundle, { fetch: offline ? null : fetchImpl, site, memory, pinnedKey: flag('--key'), ...('repoPin' in test ? { repoPin: test.repoPin } : {}) });
   if (rememberFile && res.memory) fs.writeFileSync(rememberFile, JSON.stringify(res.memory) + '\n');
   if (argv.includes('--json')) out(JSON.stringify(res, null, 2));
   else {

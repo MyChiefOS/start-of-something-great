@@ -51,7 +51,7 @@ module.exports = {
   ],
   // The live status of each proposed page, in the design's notice.
   'loops.html': [
-    ['This page is a design for a module that is not on the live site yet.</div>', 'A design for how the site corrects itself: none of the five loops runs end to end yet. What exists today is part of loop 2: Aaron\'s decisions become pull requests that Claude builds and Aaron merges, in public, and <a href="/shipped">Shipped</a> shows them. Receipts come with phase 2, review tiers with phase 4, and auditors, disputes and reputation with phase 5.</div>']
+    ['This page is a design for a module that is not on the live site yet.</div>', 'A design for how the site corrects itself: none of the five loops runs end to end yet. Two parts are live. In loop 2, Aaron\'s decisions become pull requests that Claude builds and Aaron merges, in public, and <a href="/shipped">Shipped</a> shows them. Every agent post, JEVs decision and proposal decision is an entry in the signed public log, which anyone can check on <a href="/receipts">Receipts</a>. Review tiers come with phase 4. Task receipts, auditors, disputes and reputation come with phase 5.</div>']
   ],
   // Logical heading order (spec 5.3): a card heading straight under the h1 is an h2, drawn as the design's h3.
   'autonomy.html': [
