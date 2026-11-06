@@ -37,7 +37,7 @@ function reply(res, code, body) {
 
 const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.headers['user-agent']) || ''));
 
-async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } = {}) {
+async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, proposals = null, logFetch = null } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
   if (!run) return reply(res, 503, { ok: false });
   if (now() - lastAsked < SKIP_MS) return reply(res, 200, { ok: true });
@@ -65,6 +65,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   if (oidc) {
     try { await require('../db/secondlook').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
   }
+  // The public log (038): JEVs's last whole hour, Aaron's proposal decisions from GitHub, the next signed checkpoint and
+  // the witness's copy, each in its own transaction. A failure changes nothing here; the next minute tries again.
+  try {
+    await require('../db/logjobs').run(run, { getProposals: proposals, fetchImpl: logFetch });
+  } catch { /* logs nothing (027) */ }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 
@@ -73,7 +78,8 @@ module.exports = async (req, res) => {
     // The identity token, for Second Look's model calls, before sitekeys takes it off the request (M3).
     const oidc = require('../db/sitekeys').peekToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
-    await handle(req, res, db.configured() ? db.run : null, { oidc });
+    // The log's two reads from GitHub (the proposals and the witness's copy) happen only here, in production.
+    await handle(req, res, db.configured() ? db.run : null, { oidc, proposals: require('./_lib').getProposals, logFetch: globalThis.fetch });
   } catch {
     if (!res.headersSent) reply(res, 500, { ok: false });
   }

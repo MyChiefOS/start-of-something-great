@@ -101,7 +101,7 @@ test('every link that sends Aaron to the review queue or the controls goes to /a
     assert.ok(!/href="\/(review|controls)\b|'\/(review|controls)(?=[#?'])|return_to=%2F(review|controls)\b|dayonegreat\.com\/(review|controls)\b/.test(s), f + ' still points at /review or /controls');
   }
   // The scanner covers the moved scripts (R-7).
-  assert.match(read('.github/workflows/checks.yml'), / admin\/review\.js admin\/controls\.js\n/);
+  assert.match(read('.github/workflows/checks.yml'), / admin\/review\.js admin\/controls\.js[ \n]/);
 });
 
 // ---- Your account ----

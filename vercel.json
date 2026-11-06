@@ -137,11 +137,20 @@
       ]
     },
     {
-      "source": "/((?!talk/?$|join/?$|account/?$|auth/).*)",
+      "source": "/((?!talk/?$|join/?$|account/?$|auth/|receipts?$|receipts/|verifier/).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests"
+        }
+      ]
+    },
+    {
+      "source": "/(receipts?|receipts/.*|verifier/.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://raw.githubusercontent.com/MyChiefOS/start-of-something-great/log-witness/; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests"
         }
       ]
     },
@@ -214,6 +223,10 @@
     {
       "source": "/api/notify/:path*",
       "destination": "/api/notify?route=:path*"
+    },
+    {
+      "source": "/api/log/:path*",
+      "destination": "/api/log?route=:path*"
     },
     {
       "source": "/agents/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",

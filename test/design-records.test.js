@@ -24,7 +24,7 @@ const strip = (s) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 const bodyOf = (f) => read(f).match(/<!-- \/shell:top -->([\s\S]*?)<!-- shell:foot -->/)[1];
 const PAGES = [
   { file: 'decisions.html', path: '/decisions', h1: 'JEVs decisions', h2: ['Last 24 hours', 'Latest high-risk decisions', 'Second Look', 'Human oversight'], js: 'decisions.js', css: 'css/decisions.css' },
-  { file: 'receipts.html', path: '/receipts', h1: 'Receipts', h2: ['Recent', 'What a receipt shows'], js: 'receipts.js', css: 'css/receipts.css' },
+  { file: 'receipts.html', path: '/receipts', h1: 'Receipts', h2: ['Verify a receipt', 'Recent', 'The log now', 'What a receipt shows', 'What else is in the log'], js: 'receipts.js', css: 'css/receipts.css' },
   { file: 'receipt.html', path: '/receipt', h1: 'Receipt', h2: ['Agent post', 'Proposed: execution receipts'], js: 'receipt.js', css: 'css/receipt.css' },
   { file: 'errors/rate-limited.html', path: '/errors/rate-limited', h1: 'Slow down for a moment', h2: ['If something else went wrong'], js: 'errors/rate-limited.js', css: null },
   { file: '404.html', path: null, h1: 'This page doesn’t exist', h2: [], js: null, css: null }
@@ -46,7 +46,9 @@ test('each page is at its address, carries the shell exactly as scripts/shell.js
     const h1 = [...main.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/g)].map((m) => strip(m[1]).replace(/'/g, '’'));
     assert.deepStrictEqual(h1, [p.h1], p.file + ': one h1');
     assert.deepStrictEqual([...main.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => strip(m[1])), p.h2, p.file + ': the sections, in the design’s order');
-    assert.ok(!/<h[3-6]\b/.test(main), p.file + ': no level skipped');
+    // No level skipped: each heading is at most one level below the one before it (the design puts h3 in its cards).
+    let level = 1;
+    for (const m of main.matchAll(/<h([1-6])\b/g)) { assert.ok(Number(m[1]) <= level + 1, p.file + ': h' + m[1] + ' after h' + level); level = Number(m[1]); }
     assert.match(main, /^<main(?: class="story[^"]*")? id="main" tabindex="-1">/, p.file + ': the design\'s main, focusable for the skip link');
     assert.match(html, /<body>\s*<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*<a class="skip" href="#main">Skip to content<\/a>/);
     const title = html.match(/<title>([^<]+)<\/title>/)[1];
@@ -95,11 +97,17 @@ test('no figure from the design’s sample set is shown as real; the "Proposed" 
   assert.ok(!dec.includes('administrator only'), 'the counts are public now');
   assert.match(dec, /<b class="x[0-9a-f]{8}">Proposed\.<\/b> These numbers are live and public, as counts and question IDs only\./);
   assert.match(dec, /<span class="pill m">Live counts<\/span>/);
+  // The public log is built (038): the receipts are checked against it in the browser, so no "Proposed" notice says
+  // otherwise; what is checked is said step by step (the Verify checklist).
   const rec = bodyOf('receipts.html');
-  assert.match(rec, /<b class="x[0-9a-f]{8}">Proposed\.<\/b> The receipts listed here are real, one for each agent post\. Checking a receipt against a signed public record comes with the public log \(phase 2\): nothing here is signed or witnessed yet\./);
-  assert.ok(!/tells you if anything changed/.test(rec), 'no claim that a hash is checked today');
-  // Nothing claims to be verified, secure or audited (5.7).
-  for (const p of PAGES) assert.ok(!/\b(verified|secure|audited)\b/i.test(strip(mainOf(p.file)).replace(/an independent audit/g, '')), p.file);
+  assert.ok(!/nothing here is signed or witnessed yet|comes with the public log \(phase 2\)/.test(rec), 'no notice that the log is still to come');
+  assert.match(rec, /<h2 id="verify-heading">Verify a receipt<\/h2>/);
+  // Nothing claims to be secure or audited (5.7); "Verified" is said only as a check's result, on the pages that run it.
+  for (const p of PAGES) {
+    const words = strip(mainOf(p.file)).replace(/an independent audit/g, '');
+    assert.ok(!/\b(secure|audited)\b/i.test(words), p.file);
+    if (!['receipts.html', 'receipt.html'].includes(p.file)) assert.ok(!/\bverified\b/i.test(words), p.file);
+  }
   // The receipt's execution card was all sample figures: an honest empty state instead.
   assert.match(mainOf('receipt.html'), /<div class="empty">No execution receipts yet\./);
 });
@@ -162,7 +170,7 @@ test('/api/decisions: read-only, no parameters (so the edge cache can’t be ski
 if (!Object.getOwnPropertyDescriptor(El.prototype, 'lastChild')) {
   Object.defineProperty(El.prototype, 'lastChild', { get() { return this.children[this.children.length - 1] || null; } });
 }
-function load(file, script, answers, { search = '', pathname } = {}) {
+function load(file, script, answers, { search = '', pathname, worker = null, storage = null } = {}) {
   const doc = { focused: null };
   const main = parseMain(read(file), doc);
   const asked = [];
@@ -176,13 +184,18 @@ function load(file, script, answers, { search = '', pathname } = {}) {
   const sandbox = { document: doc, location, history: { length: 1, back() {} }, URLSearchParams, Intl, Date, Math, JSON, Promise, Object, String, Number,
     encodeURIComponent, decodeURIComponent,
     setInterval: (f) => { timers.push(f); return timers.length; }, clearInterval() {},
+    // The Verify page's worker (verifier/worker.js), answered by the test: worker(message, reply).
+    ...(worker ? { Worker: class { constructor(url, opts) { this.url = url; this.opts = opts; (sandboxWorkers.list = sandboxWorkers.list || []).push(this); }
+      postMessage(m) { setImmediate(() => worker(m, (r) => this.onmessage({ data: { id: m.id, ...r } }), this)); } terminate() { this.ended = true; } } } : {}),
+    ...(storage ? { localStorage: storage } : {}),
     fetch: (url) => {
       asked.push(url);
       const [status, body] = answers(url);
       return Promise.resolve({ ok: status >= 200 && status < 300, status, headers: { get: (h) => (h === 'x-vercel-id' ? 'iad1::test-ref' : null) }, json: () => Promise.resolve(body) });
     } };
+  const sandboxWorkers = {};
   vm.runInNewContext(read(script), sandbox);
-  return { $: doc.getElementById, asked, location, timers, main };
+  return { $: doc.getElementById, asked, location, timers, main, workers: sandboxWorkers };
 }
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 const text = (e) => e.textContent.replace(/\s+/g, ' ').trim();
@@ -245,66 +258,164 @@ const RECEIPT = { receipt: { post: { id: ID, published_at: '2026-11-05T10:42:00Z
   owner: { id: 'm1', name: 'Ada' }, delegation: { label: 'Approved by Ada' }, rules: { version: 2, post: 'draft', daily_cap: 5 },
   approval: { approved_by_owner: true, minutes_to_approve: 4 } } };
 
-test('/receipts, run: the newest agent posts as receipts linking to /receipts/<id>; older ones on demand; the lookup opens an ID and answers a hash honestly', async () => {
+// The worker's answers, as verifier/worker.js gives them: each step, then the end.
+const STEP = (id, state, text) => ({ id, title: 'Step ' + id, state, text, detail: 'Why ' + id });
+const DONE = (status, reason) => ({ status, reason, steps: [], firstFailure: null, memory: { size: 9, root: 'r' } });
+const BUNDLE = (seq = 4) => ({ entry: { seq, leaf_hash: 'bGVhZmxlYWZsZWFmbGVhZmxlYWZsZWFmbGVhZmxlYWY=', entry: { subject: 'post:' + ID } } });
+const CHECKPOINT = { available: true, tree_size: 12, checkpoint: { size: 10, signed_at: new Date(Date.now() - 30000).toISOString() }, log_key: { key_id: '4688c48b' },
+  witnesses: [{ site_reading: { status: 'ok', witness_size: 10, witnessed_at: new Date(Date.now() - 600000).toISOString() } }] };
+const memoryStore = () => { const m = {}; return { m, getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; };
+
+test('/receipts, run: the newest agent posts as receipts, each checked in the browser; the log now; older ones on demand; honest when down', async () => {
   const post = (n) => ({ id: ID.slice(0, -2) + String(n).padStart(2, '0'), agent: { name: 'Scout' }, author: { name: 'Ada' }, delegation: { receipt: '/receipt?post=x' } });
-  const p = load('receipts.html', 'receipts.js', (url) => [200, url.includes('before=') ? { posts: [post(3)], next: null }
-    : { posts: [post(1), post(2), { id: 'people-post', author: { name: 'Bo' } }], next: '/api/feed?lane=agents&before=x&limit=10' }]);
-  await settle();
-  assert.deepStrictEqual(p.asked, ['/api/feed?lane=agents&limit=10']);
+  const asks = [];
+  const storage = memoryStore();
+  const p = load('receipts.html', 'receipts.js', (url) => [200, url === '/api/log/checkpoint' ? CHECKPOINT : url.includes('before=') ? { posts: [post(3)], next: null }
+    : { posts: [post(1), post(2), { id: 'people-post', author: { name: 'Bo' } }], next: '/api/feed?lane=agents&before=x&limit=10' }],
+  { storage, worker: (m, reply) => { asks.push(m); reply({ type: 'done', result: DONE(m.input.ref.endsWith('01') ? 'verified' : 'verified_unwitnessed', 'r'), bundle: BUNDLE() }); } });
+  await settle(); await settle();
+  assert.deepStrictEqual(p.asked.sort(), ['/api/feed?lane=agents&limit=10', '/api/log/checkpoint']);
+  assert.strictEqual(p.workers.list[0].url, '/verifier/worker.js');
+  assert.strictEqual(JSON.stringify(p.workers.list[0].opts), '{"type":"module"}', 'a module worker');
   const rows = () => p.$('rows').children.map((tr) => tr.children.map(text));
-  // The end of each ID, which differs between neighbours (a UUIDv7's start is its time).
-  assert.deepStrictEqual(rows(), [['\u2026' + post(1).id.slice(-8), 'Agent post', 'Scout for Ada', 'Posted'], ['\u2026' + post(2).id.slice(-8), 'Agent post', 'Scout for Ada', 'Posted']]);
+  // The end of each ID, which differs between neighbours (a UUIDv7's start is its time), and its state from the checks.
+  assert.deepStrictEqual(rows(), [['…' + post(1).id.slice(-8), 'Agent post', 'Scout for Ada', 'Verified'], ['…' + post(2).id.slice(-8), 'Agent post', 'Scout for Ada', 'Verified, not yet witnessed']]);
+  assert.deepStrictEqual(asks.map((m) => m.input.ref), [post(1).id, post(2).id], 'each row is checked by the worker, one at a time');
   const link = p.$('rows').children[0].children[0].children[0];
   assert.deepStrictEqual([link.href, link.getAttribute('aria-label')], ['/receipts/' + post(1).id, 'Receipt ' + post(1).id]);
   assert.deepStrictEqual([p.$('recent').hidden, p.$('empty').hidden, p.$('more-row').hidden], [false, true, false]);
+  assert.deepStrictEqual(JSON.parse(storage.m['dog.maxCheckpoint']), { size: 9, root: 'r' }, 'the largest checkpoint seen is kept');
+  assert.strictEqual(text(p.$('h-size')), '12 entries');
+  assert.match(text(p.$('h-signed')), /^The first 10, \d+ seconds ago, by key 4688c48b$/);
+  assert.match(text(p.$('h-witness')), /^GitHub holds a checkpoint of 10 entries, from its run 10 minutes ago\.$/);
   p.$('more').click();
-  await settle();
+  await settle(); await settle();
   assert.strictEqual(rows().length, 3);
   assert.strictEqual(p.$('more-row').hidden, true, 'no more pages');
 
-  const form = p.$('lookup');
-  const submit = (v) => { p.$('lookup-id').value = v; form.dispatch('submit'); return text(p.$('lookup-result')); };
-  assert.match(submit('a'.repeat(64)), /^That looks like a hash\. Checking a hash against the signed public record comes with phase 2, so it can’t be checked yet\. Nothing was sent\.$/);
-  assert.strictEqual(p.location.href, null, 'a hash goes nowhere');
-  assert.match(submit('hello'), /^That isn’t a receipt ID\./);
-  submit('https://dayonegreat.com/receipt?post=' + ID);
-  assert.strictEqual(p.location.href, '/receipts/' + ID);
-  submit(' ' + ID.toUpperCase() + ' ');
-  assert.strictEqual(p.location.href, '/receipts/' + ID);
-  assert.strictEqual(p.asked.length, 2, 'the lookup asks nothing');
-
-  const empty = load('receipts.html', 'receipts.js', () => [200, { posts: [], next: null }]);
+  const empty = load('receipts.html', 'receipts.js', (url) => [200, url === '/api/log/checkpoint' ? { available: false } : { posts: [], next: null }]);
   await settle();
   assert.deepStrictEqual([empty.$('recent').hidden, empty.$('empty').hidden], [true, false]);
+  assert.strictEqual(text(empty.$('h-size')), 'The log isn’t switched on here.');
   const down = load('receipts.html', 'receipts.js', () => [503, { error: 'Search and author filters are being switched on.' }]);
   await settle();
   assert.match(text(down.$('status')), /being switched on\. Reference: iad1::test-ref\.$/);
   assert.deepStrictEqual([text(down.$('more')), down.$('more-row').hidden], ['Try again', false]);
 });
 
-test('a receipt, run: at /receipts/<id> (the design’s address) and at /receipt?post=<id>, the design’s rows in its order, as text', async () => {
+test('/receipts, run: Verify checks a pasted ID in the worker, step by step, and ends on the banner with the result; errors say what went wrong', async () => {
+  const seen = [];
+  const p = load('receipts.html', 'receipts.js', (url) => [200, url === '/api/log/checkpoint' ? CHECKPOINT : { posts: [], next: null }], {
+    storage: memoryStore(),
+    worker: (m, reply) => {
+      seen.push(m);
+      if (m.type === 'parse') return reply(m.text === '{bad' ? { type: 'error', code: 'json', message: 'That isn’t valid JSON.' } : { type: 'parsed', bundle: JSON.parse(m.text) });
+      if (m.input.ref === 'nope') return reply({ type: 'error', code: 'unknown', message: 'No entry in the log has that ID.' });
+      reply({ type: 'step', step: STEP('entry', 'pass', 'Entry 4 hashes to its leaf.') });
+      reply({ type: 'step', step: STEP('signature', 'na', 'Not yet possible.') });
+      reply({ type: 'done', result: DONE('failed', 'Step 4 failed: the proof fails.'), bundle: BUNDLE() });
+    } });
+  await settle();
+  // The tabs: arrow keys, Home and End, with the selected tab's panel shown.
+  const tab = (id) => p.$(id);
+  const key = (id, k) => { const ev = { key: k, preventDefault() {} }; for (const f of tab(id).on.keydown) f(ev); };
+  key('tab-paste', 'ArrowRight');
+  assert.deepStrictEqual(['tab-paste', 'tab-file', 'tab-link'].map((id) => tab(id).getAttribute('aria-selected')), ['false', 'true', 'false']);
+  assert.deepStrictEqual([p.$('panel-paste').hidden, p.$('panel-file').hidden, tab('tab-file').tabIndex], [true, false, 0]);
+  key('tab-file', 'End'); assert.strictEqual(tab('tab-link').getAttribute('aria-selected'), 'true');
+  key('tab-link', 'Home'); assert.strictEqual(tab('tab-paste').getAttribute('aria-selected'), 'true');
+  key('tab-paste', 'ArrowLeft'); assert.strictEqual(tab('tab-link').getAttribute('aria-selected'), 'true');
+  key('tab-link', 'ArrowRight');
+  // Nothing pasted: said plainly, nothing asked.
+  p.$('verify').dispatch('submit');
+  assert.match(text(p.$('verify-error')), /^Paste a receipt’s ID, a hash or a proof bundle first\.$/);
+  p.$('paste').value = ID;
+  p.$('verify').dispatch('submit');
+  await settle();
+  assert.deepStrictEqual(seen.map((m) => m.input && m.input.ref), [ID]);
+  assert.deepStrictEqual(p.$('checks').children.map((li) => li.getAttribute('aria-label')), ['Step 1, Passed: Step entry', 'Step 2, Not yet possible: Step signature']);
+  assert.deepStrictEqual([text(p.$('banner-pill')), text(p.$('result-heading')), text(p.$('banner-reason'))], ['Failed', 'Failed', 'Step 4 failed: the proof fails.']);
+  assert.strictEqual(p.$('result').hidden, false);
+  assert.strictEqual(p.$('banner'), p.$('banner').ownerDocument.focused, 'focus moves to the banner');
+  assert.strictEqual(p.$('result-acts').hidden, false, 'Export and Copy CLI command, once done');
+  // A pasted bundle is parsed in the worker, never sent.
+  p.$('paste').value = '{"entry":{"seq":4}}';
+  p.$('verify').dispatch('submit');
+  await settle();
+  assert.deepStrictEqual(seen.slice(1).map((m) => m.type || 'verify'), ['parse', 'verify']);
+  assert.strictEqual(JSON.stringify(seen[2].input), '{"bundle":{"entry":{"seq":4}}}');
+  p.$('paste').value = '{bad';
+  p.$('verify').dispatch('submit');
+  await settle();
+  assert.strictEqual(text(p.$('verify-error')), 'That isn’t valid JSON.');
+  p.$('paste').value = 'nope';
+  p.$('verify').dispatch('submit');
+  await settle();
+  assert.deepStrictEqual([text(p.$('verify-error')), p.$('result').hidden], ['No entry in the log has that ID.', true]);
+  // From a receipt page: /receipts?id=<id> checks it at once, in the From a link tab.
+  const q = load('receipts.html', 'receipts.js', (url) => [200, url === '/api/log/checkpoint' ? CHECKPOINT : { posts: [], next: null }], {
+    search: '?id=' + ID, worker: (m, reply) => { seen.push(m); reply({ type: 'done', result: DONE('verified', 'ok'), bundle: BUNDLE() }); } });
+  await settle();
+  assert.deepStrictEqual([q.$('tab-link').getAttribute('aria-selected'), seen[seen.length - 1].input.ref, text(q.$('result-heading'))], ['true', ID, 'Verified']);
+  // No Worker in this browser: the page says to use the command line.
+  const old = load('receipts.html', 'receipts.js', (url) => [200, url === '/api/log/checkpoint' ? CHECKPOINT : { posts: [], next: null }]);
+  await settle();
+  old.$('paste').value = ID;
+  old.$('verify').dispatch('submit');
+  await settle();
+  assert.match(text(old.$('verify-error')), /need Web Workers\)\. Use the command line: node tools\/verify\/dog-verify\.mjs\.$/);
+});
+
+test('a receipt, run: at /receipts/<id> (the design’s address) and at /receipt?post=<id>, the design’s rows in its order, as text, then its log entry checked in the browser', async () => {
   for (const where of [{ pathname: '/receipts/' + ID }, { pathname: '/receipt', search: '?post=' + ID }]) {
-    const p = load('receipt.html', 'receipt.js', () => [200, RECEIPT], where);
+    const p = load('receipt.html', 'receipt.js', () => [200, RECEIPT], { ...where, storage: memoryStore(),
+      worker: (m, reply) => reply({ type: 'done', result: DONE('verified_unwitnessed', 'In the public log and unchanged; not yet witnessed.'), bundle: BUNDLE(7) }) });
     await settle();
     assert.deepStrictEqual(p.asked, ['/api/feed?receipt=' + ID], JSON.stringify(where));
     const dl = p.$('facts').children.map(text);
-    assert.deepStrictEqual(dl.filter((_, i) => i % 2 === 0), ['Agent', 'Acts for', 'Rules', 'Approved', 'Posted']);
+    assert.deepStrictEqual(dl.filter((_, i) => i % 2 === 0), ['Agent', 'Acts for', 'Rules', 'Approved', 'Posted', 'In the log']);
     assert.deepStrictEqual(dl.filter((_, i) => i % 2 === 1).slice(0, 4), ['Scout', 'Ada', 'The rules Ada had set at the time, version 2: drafts for the owner’s approval, 5 a day',
       'Yes, Ada approved the exact words, about 4 minutes after the draft']);
+    assert.match(dl[11], /^Entry 7, leaf bGVhZmxlYWZs…$/);
     assert.strictEqual(p.$('facts').children[3].children[0].href, '/member?id=m1');
     assert.deepStrictEqual([p.$('card').hidden, text(p.$('summary'))], [false, '']);
+    assert.deepStrictEqual([text(p.$('state')), text(p.$('state-line'))], ['Verified, not yet witnessed', 'Checked in your browser: In the public log and unchanged; not yet witnessed.']);
+    assert.deepStrictEqual([p.$('verify-link').href, p.$('bundle-link').href], ['/receipts?id=' + ID, '/api/log/receipt/' + ID]);
+    assert.ok(p.workers.list[0].ended, 'the worker is ended once it answers');
+  }
+  // The review of 038, L4: the page's facts are checked against the facts the log entry seals. The same facts pass; a
+  // page that names another owner, rules version or approval than its entry is "Failed", whatever the proofs say.
+  const FACTS = { post: ID, agent: 'a', owner: 'm1', rules_version: 2, delegation: 'approved', actor: 'agent:x', on_behalf_of: 'member:y' };
+  for (const [facts, state] of [[FACTS, 'Verified'], [{ ...FACTS, owner: 'm2' }, 'Failed'], [{ ...FACTS, rules_version: 3 }, 'Failed'], [{ ...FACTS, delegation: 'rules' }, 'Failed']]) {
+    const c = load('receipt.html', 'receipt.js', () => [200, RECEIPT], { pathname: '/receipts/' + ID, storage: memoryStore(),
+      worker: (m, reply) => reply({ type: 'done', result: DONE('verified', 'In the public log and unchanged, and witnessed.'), bundle: { ...BUNDLE(7), opening: { key: 'k', facts } } }) });
+    await settle();
+    assert.strictEqual(text(c.$('state')), state, JSON.stringify(facts));
+    if (state === 'Failed') assert.match(text(c.$('state-line')), /^This page doesn’t match the log: the facts sealed in its entry differ on (the person it acts for|the rules version|whether the owner approved the words)\. Trust the log’s entry, not this page\.$/);
   }
   const own = { ...RECEIPT, receipt: { ...RECEIPT.receipt, approval: null, rules: { version: 1, post: 'act', daily_cap: 20 } } };
   const p = load('receipt.html', 'receipt.js', () => [200, own], { pathname: '/receipts/' + ID });
   await settle();
   assert.strictEqual(text(p.$('facts').children[7]), 'No: it posted on its own, under Ada’s rules');
   assert.strictEqual(text(p.$('facts').children[5]), 'The rules Ada had set at the time, version 1: acts on its own, 20 a day');
+  assert.deepStrictEqual([text(p.$('state')), text(p.$('state-line'))], ['Not checked', 'Your browser can’t run the checks here; use Verify step by step or the command line.']);
   const bad = load('receipt.html', 'receipt.js', () => assert.fail('nothing is asked'), { pathname: '/receipts/not-a-post' });
   await settle();
-  assert.deepStrictEqual([text(bad.$('summary')), bad.$('card').hidden], ['This address doesn’t name a post.', true]);
-  const gone = load('receipt.html', 'receipt.js', () => [404, { error: 'No receipt for that post: it isn’t a live agent post.' }], { pathname: '/receipts/' + ID });
-  await settle();
-  assert.deepStrictEqual([text(gone.$('summary')), gone.$('card').hidden], ['No receipt for that post: it isn’t a live agent post.', true]);
+  assert.deepStrictEqual([text(bad.$('summary')), bad.$('card').hidden], ['This address doesn’t name a receipt.', true]);
+  // Not an agent post: the log entry itself (a JEVs decision here), with what is sealed said plainly.
+  const decision = { v: 1, entry: { seq: 3, leaf_hash: 'x', entry: { type: 'jevs.decision', actor: 'jevs', subject: 'decision:' + ID, ts: '2026-11-05T10:00:00.000Z', payload: { record: 'ab' } } } };
+  const d = load('receipt.html', 'receipt.js', (url) => (url.startsWith('/api/feed') ? [404, { error: 'No receipt for that post: it isn’t a live agent post.' }] : [200, decision]),
+    { pathname: '/receipts/' + ID, storage: memoryStore(), worker: (m, reply) => reply({ type: 'done', result: DONE('verified', 'ok'), bundle: decision }) });
+  await settle(); await settle();
+  assert.deepStrictEqual(d.asked, ['/api/feed?receipt=' + ID, '/api/log/receipt/' + ID]);
+  assert.strictEqual(text(d.$('kind')), 'JEVs decision');
+  const facts = d.$('facts').children.map(text);
+  assert.deepStrictEqual(facts.filter((_, i) => i % 2 === 0), ['Kind', 'Subject', 'By', 'Sealed', 'When', 'In the log']);
+  assert.strictEqual(facts[5], 'JEVs, the automatic checks');
+  assert.match(facts[9], /\(the hour, not the minute\)$/);
+  const gone = load('receipt.html', 'receipt.js', () => [404, { error: 'No log entry has that ID.' }], { pathname: '/receipts/' + ID });
+  await settle(); await settle();
+  assert.deepStrictEqual([text(gone.$('summary')), gone.$('card').hidden], ['No log entry has that ID.', true]);
 });
 
 test('/errors/rate-limited, run: the wait and the reference from the address, Try again only to a path on this site; without them, honest defaults', () => {

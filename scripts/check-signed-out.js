@@ -42,13 +42,23 @@ const PAGES = ['/feed', '/account/agents', '/account', '/admin/review', '/admin/
 // The administrator's pages moved on Nov 5, 2026; the old addresses pass a visitor on (review.js, controls.js).
 const MOVED = [['/review#appeals', '/admin/review#appeals'], ['/controls?x=1', '/admin/controls?x=1']];
 
-const OWN_POLICY = ['/talk', '/join', '/account'];
-const DEFAULT_POLICY = '/((?!talk/?$|join/?$|account/?$|auth/).*)';
+// The security policy Vercel sends for a page, by the same paths its rules' sources match (test/security.test.js
+// checks those sources with the regular expressions Vercel builds): /talk, /join, /account and sign-in have their own,
+// the receipt pages and the verifier theirs (the review of 038, L3), and every other page the default one. A policy in
+// vercel.json this check doesn't know stops it rather than serving a page with the wrong one.
+const DEFAULT_POLICY = '/((?!talk/?$|join/?$|account/?$|auth/|receipts?$|receipts/|verifier/).*)';
+const VERIFY_POLICY = '/(receipts?|receipts/.*|verifier/.*)';
+const KNOWN = [DEFAULT_POLICY, VERIFY_POLICY, '/talk', '/join', '/account', '/auth/(.*)'];
 function policyFor(url, rules) {
-  const source = OWN_POLICY.includes(url) ? url : DEFAULT_POLICY;
-  const rule = rules.find((r) => r.source === source && r.csp);
-  if (!rule) throw new Error('vercel.json has no security policy for ' + source);
-  return rule.csp.replace(/;\s*upgrade-insecure-requests/, '');
+  const own = rules.filter((r) => r.csp).map((r) => r.source);
+  if (own.length !== KNOWN.length || !own.every((x) => KNOWN.includes(x))) throw new Error('vercel.json\'s security policies changed: ' + own.join(', '));
+  const p = url.toLowerCase();
+  const bare = p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
+  const source = ['/talk', '/join', '/account'].includes(bare) ? bare
+    : p.startsWith('/auth/') ? '/auth/(.*)'
+    : bare === '/receipts' || bare === '/receipt' || p.startsWith('/receipts/') || p.startsWith('/verifier/') ? VERIFY_POLICY
+    : DEFAULT_POLICY;
+  return rules.find((r) => r.source === source && r.csp).csp.replace(/;\s*upgrade-insecure-requests/, '');
 }
 function serve() {
   const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));

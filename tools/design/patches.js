@@ -50,11 +50,6 @@ module.exports = {
     ['draft proposals.</li>', 'draft proposals.</li><li>Every account and post checked by <a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026">our automated checks</a>: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.</li>']
   ],
   // The live status of each proposed page, in the design's notice.
-  'security.html': [
-    // The live page's two known limits, as before: the third is the design's (rule 1 of the build guide).
-    [/<li>The gate's token check uses a GitHub header that works but is not documented\. If it stops, new sign-ins stop and the monitor alerts\.<\/li>/, ''],
-    ['The live site has only the contact line in the footer.', 'The verifier&rsquo;s hash, the log&rsquo;s witnesses and the key fingerprints wait for the public log (phase 2), which isn&rsquo;t built yet.']
-  ],
   'loops.html': [
     ['This page is a design for a module that is not on the live site yet.</div>', 'A design for how the site corrects itself: none of the five loops runs end to end yet. What exists today is part of loop 2: Aaron\'s decisions become pull requests that Claude builds and Aaron merges, in public, and <a href="/shipped">Shipped</a> shows them. Receipts come with phase 2, review tiers with phase 4, and auditors, disputes and reputation with phase 5.</div>']
   ],

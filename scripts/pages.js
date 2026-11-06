@@ -183,6 +183,19 @@ function status() {
     '</div>',
     '</div>',
     '<p class="fine" id="live-status" role="status">JEVs mode is the repository’s <a href="' + BLOB + 'jevs/mode">jevs/mode</a>; go-live is <a href="' + BLOB + 'launch.json">launch.json</a>; the uptime check is the schedule in <a href="' + BLOB + '.github/workflows/uptime.yml">uptime.yml</a>. Site sign-in and the live values load from <a href="/api/status">/api/status</a> and <a href="/api/ready">/api/ready</a>.</p>',
+    // The public log's health (038; CODING_AGENT_SPEC.md 1.6), in the same card as the design's row above, filled by
+    // /log-health.js from /api/log/checkpoint.
+    '<div class="card ' + X('margin-bottom:8px') + '" id="log-card" role="group" aria-labelledby="log-card-name">',
+    '<p class="kick ' + X('margin:0 0 4px') + '" id="log-card-name">The public log</p>',
+    '<div class="' + X('display:flex;gap:28px;flex-wrap:wrap;align-items:center') + '">',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Tree size</p><span class="pill" id="log-size">Not checked</span></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Last checkpoint</p><span class="pill" id="log-age">Not checked</span></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Witnesses</p><span class="pill" id="log-witness">Not checked</span></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Last consistency check</p><span class="pill" id="log-check">Not checked</span></div>',
+    '<div><p class="kick ' + X('margin:0 0 4px') + '">Monitor</p><span class="pill" id="log-monitor">Not checked</span></div>',
+    '</div>',
+    '</div>',
+    '<p class="fine" id="log-line" role="status">Entries in the log and the last signed checkpoint load from <a href="/api/log/checkpoint">/api/log/checkpoint</a>; the one witness for now is GitHub (<a href="' + REPO + '/blob/main/.github/workflows/log-witness.yml">log-witness.yml</a>, every 15 minutes), which also re-hashes every entry; <a href="/security#log">Security</a> lists the witnesses.</p>',
     '<h2>Each role, end to end</h2>',
     '<p class="fine">From the use-case checklist, ' + src('USE-CASES.md') + ' (checked ' + esc(checked) + '). A row is done only when its “done when” passes live. The file has no state field, so each state is read from its “Works today” words, which are printed under it; nothing is called proven live unless the file says live.</p>',
     ...tableOpen('Every role in production, from USE-CASES.md'),
@@ -199,7 +212,7 @@ function status() {
     '<p class="fine">Full table on <a href="/roadmap">Roadmap</a>.</p>',
     '<div class="acts"><a class="btn" href="/roadmap">Open the roadmap</a><a class="btn" href="/decisions">See JEVs decisions</a></div>',
     '<p class="fine">Also available as JSON at <a href="/api/status">/api/status</a>.</p>');
-  return page({ file: 'status.html', heading: 'Status', main, scripts: ['/status.js'],
+  return page({ file: 'status.html', heading: 'Status', main, scripts: ['/status.js', '/log-health.js'],
     description: 'What works on Day One Great, what is built but not proven, and what is not built: every role from the use-case checklist, with the live go-live stage and sign-in.',
     ogDescription: 'What works, what is built but not proven, and what is not built.' });
 }

@@ -102,7 +102,7 @@ test('R2: every page gets a strict Content-Security-Policy and cannot be framed'
   const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const all = v.headers.find((h) => h.source === '/(.*)').headers;
   const get = (k) => (all.find((h) => h.key.toLowerCase() === k.toLowerCase()) || {}).value || '';
-  const csp = v.headers.find((h) => h.source === '/((?!talk/?$|join/?$|account/?$|auth/).*)').headers.find((h) => h.key === 'Content-Security-Policy').value;
+  const csp = v.headers.find((h) => h.source === '/((?!talk/?$|join/?$|account/?$|auth/|receipts?$|receipts/|verifier/).*)').headers.find((h) => h.key === 'Content-Security-Policy').value;
   assert.match(csp, /default-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.match(csp, /script-src 'self'(;|$)/);
@@ -132,21 +132,24 @@ test('R2: every page works under that policy (no inline code, styles or outside 
 test('R2: only /talk and /join may load giscus, only sign-in may post forms, and every path gets exactly one Content-Security-Policy', () => {
   const v = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
   const cspRules = v.headers.filter((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
-  assert.deepStrictEqual(cspRules.map((h) => h.source), ['/((?!talk/?$|join/?$|account/?$|auth/).*)', '/talk', '/join', '/account', '/auth/(.*)']);
+  assert.deepStrictEqual(cspRules.map((h) => h.source), ['/((?!talk/?$|join/?$|account/?$|auth/|receipts?$|receipts/|verifier/).*)', '/(receipts?|receipts/.*|verifier/.*)', '/talk', '/join', '/account', '/auth/(.*)']);
   const value = (i) => cspRules[i].headers.find((h) => h.key === 'Content-Security-Policy').value;
   // Sign-in's and the account page's policy is the strict one with one change: forms may post to this site (PR 2, SF4; /account added Oct 16).
   // /join signs people in with GitHub through giscus, exactly as /talk does (phase 1, Aaron, Oct 23), so it shares /talk's policy.
-  for (const i of [3, 4]) assert.strictEqual(value(i), value(0).replace("form-action 'none'", "form-action 'self'"));
-  const talk = cspRules[1].headers.find((h) => h.key === 'Content-Security-Policy').value;
+  for (const i of [4, 5]) assert.strictEqual(value(i), value(0).replace("form-action 'none'", "form-action 'self'"));
+  // The receipt pages and the verifier may also read the public log's witness copy, on its own branch only (038; the
+  // review of 038, L3), and nothing else changes.
+  assert.strictEqual(value(1), value(0).replace("connect-src 'self';", "connect-src 'self' https://raw.githubusercontent.com/MyChiefOS/start-of-something-great/log-witness/;"));
+  const talk = cspRules[2].headers.find((h) => h.key === 'Content-Security-Policy').value;
   assert.match(talk, /script-src 'self' https:\/\/giscus\.app;/);
   assert.match(talk, /style-src 'self' https:\/\/giscus\.app;/);
   assert.match(talk, /frame-src https:\/\/giscus\.app/);
   assert.match(talk, /frame-ancestors 'none'/);
-  assert.strictEqual(value(2), talk, '/join has the same policy as /talk');
+  assert.strictEqual(value(3), talk, '/join has the same policy as /talk');
   // The same regular expressions Vercel builds from these sources (path-to-regexp 6, checked Oct 15).
-  const rules = [/^(?:\/((?!talk\/?$|join\/?$|account\/?$|auth\/).*))[\/#?]?$/i, /^\/talk[\/#?]?$/i, /^\/join[\/#?]?$/i, /^\/account[\/#?]?$/i, /^\/auth(?:\/(.*))[\/#?]?$/i];
+  const rules = [/^(?:\/((?!talk\/?$|join\/?$|account\/?$|auth\/|receipts?$|receipts\/|verifier\/).*))[\/#?]?$/i, /^(?:\/(receipts?|receipts\/.*|verifier\/.*))[\/#?]?$/i, /^\/talk[\/#?]?$/i, /^\/join[\/#?]?$/i, /^\/account[\/#?]?$/i, /^\/auth(?:\/(.*))[\/#?]?$/i];
   for (const p of ['/', '/talk', '/talk/', '/TALK', '/talks', '/talk/x', '/about', '/api/status', '/fonts/a.woff2', '/research', '/research/decision-loop',
-    '/join', '/join/', '/JOIN', '/joins', '/join/x', '/account', '/account/', '/accounts', '/account/x', '/auth/github/start', '/auth/email/continue', '/auth', '/authors']) {
+    '/join', '/join/', '/JOIN', '/joins', '/join/x', '/join/pin', '/receipts', '/receipts/', '/receipts/0190a1b2-0000-7000-8000-000000000000', '/receipt', '/receiptsx', '/verifier/worker.js', '/verifiers', '/account', '/account/', '/accounts', '/account/x', '/auth/github/start', '/auth/email/continue', '/auth', '/authors']) {
     const n = rules.filter((r) => r.test(p)).length;
     assert.strictEqual(n, 1, p + ' gets ' + n + ' policies');
   }

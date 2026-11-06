@@ -1,0 +1,91 @@
+# The public log's witness (migration 038; CODING_AGENT_SPEC.md 1.3; Aaron, Nov 5: "Phase 2 we can use GItHUB for now").
+# Every 15 minutes, in two jobs (the independent review of Nov 5, M4):
+#   check:  reads the latest signed checkpoint from https://dayonegreat.com/api/log/checkpoint, checks it against the
+#           last good one, re-hashes the entries and checks proposal decisions against GitHub (tools/verify/witness.mjs).
+#           It can only read this repository, and no step that reads the site's answers holds a token.
+#   record: writes only state.json, checkpoint and README.md to the branch log-witness, after checking they are what
+#           the check writes, and on an alarm opens one issue labelled log-witness (no mentions, no links).
+# The site reads the branch, marks the log unverified on an alarm and alerts Aaron in his inbox. Nothing is ever blocked.
+# No secret but the workflow's own GITHUB_TOKEN, given only to the record job.
+name: Public log witness
+
+on:
+  schedule:
+    - cron: '4,19,34,49 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: log-witness
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      state: ${{ steps.check.outputs.state }}
+      checkpoint: ${{ steps.check.outputs.checkpoint }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Read the witness branch (public, no token; empty on the first run)
+        run: |
+          set -euo pipefail
+          git init -q witness
+          cd witness
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 origin log-witness; then git checkout -q -b log-witness FETCH_HEAD; else git checkout -q --orphan log-witness; fi
+      - name: Witness the latest checkpoint
+        id: check
+        run: node main/tools/verify/witness.mjs witness
+
+  record:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Check out the witness branch (made on the first run)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q witness
+          cd witness
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 origin log-witness; then git checkout -q -b log-witness FETCH_HEAD; else git checkout -q --orphan log-witness; fi
+      - name: Write what the check saw, and raise its alarm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITNESS_STATE_B64: ${{ needs.check.outputs.state }}
+          WITNESS_CHECKPOINT_B64: ${{ needs.check.outputs.checkpoint }}
+        run: node main/tools/verify/witness.mjs --record witness
+      - name: Commit it to log-witness
+        run: |
+          set -euo pipefail
+          cd witness
+          git add state.json README.md $( [ -f checkpoint ] && echo checkpoint )
+          if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+          git -c user.name='log-witness' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Witnessed"
+          git push -q origin log-witness

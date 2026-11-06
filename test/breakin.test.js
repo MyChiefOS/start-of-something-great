@@ -39,6 +39,10 @@ let A, B, BAgent, tables;
 // subagent_settings: anyone signed in sees the one row of limits sub-agents are made within (PR 16; public in 013).
 // timer_slot (027): its one row, the heartbeat, which anyone may read (only when the timers last finished).
 // invariant_slot (032): the same for the hourly never-break checks (only when they last finished).
+// The public log (038): every row of its tree, checkpoints, head, the key's public half and the witness reading is public
+// by design (random IDs and keyed hashes only), so everyone sees all of them, and nobody may change any (below). The
+// key's seed and the keyed hashes' keys (app.log_openings) stay out of reach like every private table.
+const PUBLIC_LOG = new Set(['log_entries', 'log_nodes', 'log_checkpoints', 'log_head', 'log_keys', 'log_witness']);
 const MAY_SEE = {
   anon: { jevs_settings: 1, timer_slot: 1, invariant_slot: 1 },
   B: { members: 1, identities: 1, sessions: 1, agents: 1, agent_keys: 1, agent_rules: 1, jevs_settings: 1, subagent_settings: 1, timer_slot: 1, invariant_slot: 1 },
@@ -103,6 +107,14 @@ test.before(async () => {
     await t.unsafe(`insert into app.sl_releases (post_id, decision_id) values ('${p.id}', '${d.id}')`);
     // Aaron's decision on a shadow clear, kept as an outcome (it names no post or person; nobody but him reads it).
     await t.unsafe(`insert into app.sl_outcomes (approved) values (true)`);
+  });
+  // The public log (038): an entry for A's post with its opening (the key of its keyed hash), a signed checkpoint and a
+  // proposal decision, written by the log's own functions in its own role.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_log');
+    await t.unsafe(`select app.log_post('${p.id}', '${agent.id}', '${A.id}', 'rules', 1, 'A post', now())`);
+    await t.unsafe(`select app.log_proposal(1, 'approved')`);
+    await t.unsafe(`select app.log_checkpoint()`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
@@ -209,7 +221,8 @@ test('S2, S3: nobody sees rows that aren\'t theirs in any table, now or in table
         assert.strictEqual(e.code, '42501', label + ' reading ' + t + ': ' + e.message);
         continue; // no right to read the table at all
       }
-      assert.strictEqual(n, MAY_SEE[label][t] || 0, label + ' sees ' + n + ' rows of ' + t);
+      const want = PUBLIC_LOG.has(t) ? (await q(`select count(*)::int as n from app.${t}`))[0].n : MAY_SEE[label][t] || 0;
+      assert.strictEqual(n, want, label + ' sees ' + n + ' rows of ' + t);
     }
   }
 });

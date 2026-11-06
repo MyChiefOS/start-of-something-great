@@ -147,6 +147,10 @@
     {
       "version": "037_signin_pin",
       "sha256": "3fd81320ae1115333e94dcf4977c271b9c440bb74661155e11df15e67cdd8830"
+    },
+    {
+      "version": "038_public_log",
+      "sha256": "c94c7d6d3a3bd4d69f89b29b38f513c01da767c1b4c141b4415f8f9d05ecd174"
     }
   ]
 }
