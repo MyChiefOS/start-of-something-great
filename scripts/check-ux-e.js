@@ -47,7 +47,7 @@ async function main() {
           say: document.getElementById('posts-say').textContent,
           sayRole: document.getElementById('posts-say').getAttribute('role'),
           sayShown: document.getElementById('posts-say').getBoundingClientRect().width > 1,
-          metas: [...document.querySelectorAll('#posts .post-meta')].map((x) => x.textContent),
+          metas: [...document.querySelectorAll('#posts .card > div:first-child')].map((x) => x.textContent.replace(/\s*\n\s*/g, '')),
           levelsLink: [...document.querySelectorAll('main a[href="/team#levels"]')].filter((a) => a.checkVisibility()).length,
           alternates: [...document.querySelectorAll('link[rel="alternate"][type="application/json"]')].map((l) => l.getAttribute('href')),
           welcome: document.getElementById('welcome').checkVisibility(),
@@ -86,13 +86,13 @@ async function main() {
         });
         p = await open(ctx, base, '/feed', tag + ' /feed search', fail);
         where = tag + ' /feed search';
-        const label = await p.evaluate(() => { const q = document.getElementById('q'); return { label: q.labels.length ? q.labels[0].textContent : null, type: q.type,
+        const label = await p.evaluate(() => { const q = document.getElementById('q'); return { label: q.labels.length ? q.labels[0].textContent : q.getAttribute('aria-label'), type: q.type,
           above: q.getBoundingClientRect().top < document.getElementById('posts').getBoundingClientRect().top, clear: document.getElementById('clear').checkVisibility() }; });
         if (label.label !== 'Search posts' || label.type !== 'search' || !label.above || label.clear) fail(where, 'the field: ' + JSON.stringify(label));
         await p.fill('#q', '  garden   party ');
         await p.press('#q', 'Enter');
         await p.waitForFunction(() => /match/.test(document.getElementById('posts-say').textContent));
-        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, metas: [...document.querySelectorAll('#posts .post-meta')].map((x) => x.textContent),
+        m = await p.evaluate(() => ({ say: document.getElementById('posts-say').textContent, metas: [...document.querySelectorAll('#posts .card > div:first-child')].map((x) => x.textContent.replace(/\s*\n\s*/g, '')),
           clear: document.getElementById('clear').checkVisibility(), sideways: document.documentElement.scrollWidth > innerWidth }));
         views++;
         if (asked !== 'garden party') fail(where, 'the search sent was ' + JSON.stringify(asked));
@@ -180,7 +180,7 @@ async function main() {
           facts: [...document.querySelectorAll('#facts dt')].map((x) => x.textContent),
           level: (document.querySelector('#facts dd') || {}).textContent,
           parts: ['people-part', 'agents-part'].map((x) => document.getElementById(x).checkVisibility()),
-          posts: document.querySelectorAll('#people-list article').length,
+          posts: document.querySelectorAll('#people-list .card').length,
           say: document.getElementById('people-say').textContent,
           sideways: document.documentElement.scrollWidth > innerWidth }));
         views++;
@@ -189,18 +189,19 @@ async function main() {
         if (m.title !== 'ChristopherMontgomeryAdaLovelace <b>x</b> · Day One Great') fail(where, 'title ' + m.title);
         if (m.summary !== 'Showing 2 posts of theirs and 2 posts by their agents.') fail(where, 'summary ' + m.summary);
         if (JSON.stringify(m.facts) !== JSON.stringify(['Level', 'Joined'])) fail(where, 'facts ' + m.facts);
-        if (!/^Verified \(level 2\) · What the levels mean$/.test(m.level || '')) fail(where, 'level ' + m.level);
+        if (!/^Verified \(level 2\)$/.test(m.level || '')) fail(where, 'level ' + m.level);
+        if (!(await p.evaluate(() => [...document.querySelectorAll('main a[href="/team#levels"]')].some((a) => a.checkVisibility())))) fail(where, 'no "What the levels mean"');
         if (JSON.stringify(m.parts) !== '[true,true]' || m.posts !== 2 || m.say !== '') fail(where, 'lists: ' + JSON.stringify(m));
         if (m.sideways) fail(where, 'the page scrolls sideways');
         await p.close();
         // A name on /feed opens that member's page.
         p = await open(ctx, base, '/feed', tag + ' /feed names', fail);
-        const hrefs = await p.evaluate(() => [...document.querySelectorAll('#posts .post-meta strong a')].map((a) => a.getAttribute('href')));
+        const hrefs = await p.evaluate(() => [...document.querySelectorAll('#posts .card > div:first-child b a')].map((a) => a.getAttribute('href')));
         if (JSON.stringify(hrefs) !== JSON.stringify(['/member?id=' + ADA, '/member?id=' + GRACE])) fail(tag + ' /feed names', 'name links: ' + hrefs);
         await p.close();
         // A bad address says so and asks nothing.
         p = await open(ctx, base, '/member?id=nope', tag + ' /member bad', fail);
-        if (await p.evaluate(() => document.getElementById('summary').textContent) !== 'This address doesn’t name a member. Back to Posts') fail(tag + ' /member bad', 'no message');
+        if (await p.evaluate(() => document.getElementById('none').textContent) !== 'This address doesn’t name a member. Back to Posts') fail(tag + ' /member bad', 'no message');
         await p.close();
 
         await ctx.close();

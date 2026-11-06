@@ -190,10 +190,11 @@ test('the footer, the same on every page (the design\'s columns, each link only 
   // The design's five columns, as drawn (README "Shell"), with the pages that aren't built left out.
   assert.deepStrictEqual(groups, [
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Loops /loops']],
+    // Search and Sitemap: the handoff's spec (CODING_AGENT_SPEC.md 5.4: "Sitemap" and "Search" pages linked from the footer).
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Loops /loops', 'Search /search']],
     ['Trust (proposed)', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
-    ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect']],
-    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
+    ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
+    ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',
       'GitHub Issues ' + repo + '/issues', 'security@dayonegreat.com mailto:security@dayonegreat.com', 'Code on GitHub ' + repo]]
   ]);
   assert.match(foot, /<p class="x[0-9a-f]{8}">Day One Great™ is a <a href="https:\/\/www\.chiefos\.cloud">ChiefOS, Inc\.<\/a> company\.<\/p><\/footer>/);
@@ -292,6 +293,7 @@ test('/join leads with one compact sign-in panel, the comment box under the code
   const css = read('join.css');
   assert.match(css, /\.path-choice, \.join-panel \.field \{ min-height: 44px;/);
   assert.match(css, /\.story \.join-panel summary \{ min-height: 44px; \}/);
+  assert.match(css, /\.join-panel \.btn \{ display: inline-flex; align-items: center; justify-content: center; min-height: 44px; \}/, 'its buttons too, at every width');
   assert.match(read('design.css'), /\.d1 \.btn,\.d1 button\{min-height:44px\}/, 'the design\'s buttons are 44 px');
   assert.deepStrictEqual(css.match(/#[0-9a-fA-F]{3,6}\b/g), null, 'no colours of its own: the tokens only');
   assert.ok(!/--[a-z]+\s*:/.test(css), 'no new colour tokens: only the ones in styles.css');

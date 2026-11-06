@@ -104,7 +104,8 @@
     document.getElementById('name').textContent = m.name;
     document.title = m.name + ' · Day One Great';
     summary.textContent = 'Loading their posts\u2026';
-    row('Level', LEVEL[m.level] || 'Level ' + m.level);
+    // The level's name and number, as before; what the levels mean is linked in the line under the lists (the design).
+    row('Level', (LEVEL[m.level] || 'Level ' + m.level) + ' (level ' + m.level + ')');
     row('Joined', new Date(m.joined).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
     facts.hidden = false;
     // One line says what both lists show (the lists' own lines would appear with their sections and often go unheard).

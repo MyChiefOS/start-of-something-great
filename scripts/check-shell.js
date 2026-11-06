@@ -6,8 +6,11 @@
 //
 //   node scripts/check-shell.js [--root DIR] [--shots DIR] [--no-checks]
 //
+// The design handoff of Nov 5, 2026 (scripts/shell.js): the header is .hd (the wordmark, the wide row .dnav and the
+// Menu, details.mnav), with the Proposed and section rows (.sub2) under it.
+//
 // Checks, on every page (the 404 too), signed out and signed in (Account (3)):
-//   - at 320, 360 and 390 px wide: the header is one row, at most 72 px tall with the menu closed, nothing scrolls
+//   - at 320, 360 and 390 px wide: the header is one row, at most 100 px tall (the design's) with the menu closed, nothing scrolls
 //     sideways, and the screen order is the Tab order (the wordmark, Menu, then Join or Account);
 //   - at 1280 by 800 px: the header's main links sit in one row, and the design's Proposed and section rows (README
 //     "Shell") each sit in one row under it, with no label overlapping another;
@@ -97,7 +100,7 @@ async function open(ctx, base, url, where, fail) {
 
 // The header's size, and the top of each visible control in it.
 const measure = (p) => p.evaluate(() => {
-  const h = document.querySelector('.site-header .site-top');
+  const h = document.querySelector('.hd');
   // checkVisibility: a closed <details> skips its content without display: none, so size alone would count it.
   const shown = (el) => { const r = el.getBoundingClientRect(); return el.checkVisibility({ visibilityProperty: true }) && r.width > 0 && r.height > 0; };
   const controls = [...h.querySelectorAll('a, summary')].filter(shown).map((el) => {
@@ -112,7 +115,7 @@ const focused = (p) => p.evaluate(() => {
   const el = document.activeElement;
   if (!el || el === document.body) return null;
   const s = getComputedStyle(el);
-  return { text: el.textContent.trim(), tag: el.tagName, ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2, inHeader: !!el.closest('.site-header') };
+  return { text: el.textContent.trim(), tag: el.tagName, ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2, inHeader: !!el.closest('.hd') };
 });
 
 async function tabTo(p, match, limit = 20) {
@@ -138,11 +141,11 @@ async function keyboard(p, where, fail, phone) {
   if (!phone) return;
   // The Menu: Enter opens it and closes it, Space too; where nav.js runs (every page but the four that run no
   // script), Escape also closes it and puts focus back on Menu.
-  const isOpen = () => p.evaluate(() => document.querySelector('.site-header details').open);
-  const linksShown = () => p.evaluate(() => [...document.querySelectorAll('.site-header details a')].filter((a) => a.checkVisibility()).length);
+  const isOpen = () => p.evaluate(() => document.querySelector('.hd details.mnav').open);
+  const linksShown = () => p.evaluate(() => [...document.querySelectorAll('.hd details.mnav a')].filter((a) => a.checkVisibility()).length);
   const onMenu = async () => { const f = await focused(p); return f && f.tag === 'SUMMARY'; };
-  if (!(await p.locator('.site-header details > summary').count())) return fail(where, 'there is no Menu to open');
-  await p.evaluate(() => document.querySelector('.site-header summary').focus());
+  if (!(await p.locator('.hd details.mnav > summary').count())) return fail(where, 'there is no Menu to open');
+  await p.evaluate(() => document.querySelector('.hd details.mnav > summary').focus());
   await p.keyboard.press('Enter');
   if (!(await isOpen()) || !(await linksShown())) fail(where, 'Enter on Menu did not open it');
   const first = await tabTo(p, () => true, 1);
@@ -164,8 +167,8 @@ async function keyboard(p, where, fail, phone) {
   }
 }
 
-// The rows under the header on a wide screen (the Proposed row, the About or Trust row): each label's box.
-const notes = (p) => p.evaluate(() => [...document.querySelectorAll('.site-header .sub-row')].map((row) =>
+// The rows under the header on a wide screen (the Proposed row, the About or Trust row: the design's .sub2): each label's box.
+const notes = (p) => p.evaluate(() => [...document.querySelectorAll('.sub2')].map((row) =>
   [...row.querySelectorAll('a, span')].filter((a) => a.checkVisibility()).map((a) => { const b = a.getBoundingClientRect(); return { text: a.textContent.trim(), l: b.left, r: b.right, t: b.top, b: b.bottom, mid: Math.round((b.top + b.bottom) / 2) }; })));
 const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
 
@@ -200,8 +203,8 @@ async function main() {
             const p = await open(ctx, base, url, 'shot ' + name, () => {});
             await p.screenshot({ path: path.join(SHOTS, name + '-' + width + '-' + scheme + '-fold.png') });
             await p.screenshot({ path: path.join(SHOTS, name + '-' + width + '-' + scheme + '-full.png'), fullPage: true });
-            if (width < 1280 && name === 'feed' && (await p.locator('.site-header summary').count())) {
-              await p.click('.site-header summary');
+            if (width < 1280 && name === 'feed' && (await p.locator('.hd details.mnav > summary').count())) {
+              await p.click('.hd details.mnav > summary');
               await p.screenshot({ path: path.join(SHOTS, 'menu-open-' + width + '-' + scheme + '.png') });
             }
             await p.close();
@@ -215,8 +218,8 @@ async function main() {
           const ctx = await context(browser, base, { width, height, scheme, signedIn: true });
           const p = await open(ctx, base, '/feed', 'shot signed in', () => {});
           await p.screenshot({ path: path.join(SHOTS, 'signed-in-feed-' + width + '-' + scheme + '-fold.png') });
-          if (width === 390 && (await p.locator('.site-header summary').count())) {
-            await p.click('.site-header summary');
+          if (width === 390 && (await p.locator('.hd details.mnav > summary').count())) {
+            await p.click('.hd details.mnav > summary');
             await p.screenshot({ path: path.join(SHOTS, 'signed-in-menu-open-390-' + scheme + '.png') });
           }
           await ctx.close();
@@ -235,7 +238,9 @@ async function main() {
             const where = width + ' ' + who;
             p = await open(phone, base, url, where, fail);
             m = await measure(p);
-            if (m.height > 72) fail(where, 'the header is ' + m.height + ' px tall (at most 72)');
+            // The design's header on a phone: the wordmark and Menu in one row, 100 px with its padding (static/*.html,
+            // measured at 320 to 390 px; it was 72 before the design).
+            if (m.height > 100) fail(where, 'the header is ' + m.height + ' px tall (at most 100, the design\'s)');
             if (m.sideways > 0) fail(where, 'the page scrolls sideways by ' + m.sideways + ' px');
             if (new Set(m.controls.map((c) => Math.round(c.mid / 8))).size > 1) fail(where, 'the header is more than one row: ' + JSON.stringify(m.controls));
             if (!m.controls.some((c) => c.text === 'Menu')) fail(where, 'no Menu in the header');
@@ -245,9 +250,9 @@ async function main() {
             if (width === 390) {
               await keyboard(p, where, fail, true);
               if (await p.evaluate(() => !!document.querySelector('script[src="/nav.js"]'))) {
-                const isOpen = () => p.evaluate(() => document.querySelector('.site-header details').open);
-                await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.querySelector('.site-header details').open = true; });
-                const panel = await p.locator('.site-header .menu-panel').boundingBox();
+                const isOpen = () => p.evaluate(() => document.querySelector('.hd details.mnav').open);
+                await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.querySelector('.hd details.mnav').open = true; });
+                const panel = await p.locator('.hd .mpanel').boundingBox();
                 await p.mouse.click(panel.x + 4, panel.y + panel.height - 4); // the panel's own bottom padding
                 if (!(await isOpen())) fail(where, 'a tap inside the open Menu closed it');
                 // A point outside the Menu that is no link or control, so the tap only closes the Menu.
@@ -291,7 +296,7 @@ async function main() {
           const where = 'first screen 390x844 ' + scheme + (signedIn ? ' signed in' : ' signed out');
           const ctx = await context(browser, base, { width: 390, height: 844, scheme, signedIn });
           const p = await open(ctx, base, '/', where, fail);
-          const seen = await p.evaluate(() => ['.hero h1', '.hero .lede', '.hero .button.primary[href="/join"]'].map((sel) => {
+          const seen = await p.evaluate(() => ['.hero h1', '.hero .lede', '.hero .btn.p[href="/join"]'].map((sel) => {
             const el = document.querySelector(sel);
             if (!el) return { sel, missing: true };
             const r = el.getBoundingClientRect();
@@ -310,9 +315,9 @@ async function main() {
       for (const scheme of ['light', 'dark']) {
         const ctx = await context(browser, base, { width: 1280, height: 800, scheme, signedIn: false });
         const p = await open(ctx, base, '/feed', 'hover ' + scheme, fail);
-        await p.hover('.site-nav .nav-join');
+        await p.hover('.hd .dnav a.join');
         await p.waitForTimeout(100);
-        const c = await p.evaluate(() => { const s = getComputedStyle(document.querySelector('.site-nav .nav-join')); return { bg: s.backgroundColor, fg: s.color, filter: s.filter }; });
+        const c = await p.evaluate(() => { const s = getComputedStyle(document.querySelector('.hd .dnav a.join')); return { bg: s.backgroundColor, fg: s.color, filter: s.filter }; });
         // A brightness() filter changes both colours as painted, so the check applies it (white text can't get lighter,
         // which is how the brighter light-scheme pill fell to 4.36:1); any other filter it can't measure.
         const bright = c.filter === 'none' ? 1 : Number((c.filter.match(/^brightness\(([\d.]+)\)$/) || [])[1]);

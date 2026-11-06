@@ -2,7 +2,7 @@
    every control at least 44 px tall, the code large, and the comment box right under it. Colours from the tokens in
    styles.css only. Its own file, so the shared styles.css, which every page loads, stays within the page-weight budget
    (SF2), as agents.css does for /agents. */
-.signin.story { padding-top: 1.5rem; }
+.signin.story { padding-top: 1rem; } /* the design's header is taller on phones: the panel's button stays in the first screen at 390 by 844 */
 .signin.story h1 { font-size: clamp(2rem, 7vw, 3.25rem); max-width: none; }
 .signin.story .dek { font-size: 1rem; margin: 0.5rem 0 0.6rem; }
 .signin .jump { margin: 0 0 0.75rem; }
@@ -24,6 +24,7 @@
 .path-choice:focus-visible, .join-panel .field:focus-visible, .join-panel button:focus-visible, .join-panel summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .story .join-panel .help { color: var(--muted); font-size: 0.88rem; line-height: 1.4; margin: 0.25rem 0 0; }
 .story .join-panel .act { margin: 0.75rem 0 0; }
+.join-panel .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
 .story .join-panel summary { min-height: 44px; }
 .story .join-panel details { margin: 0.5rem 0 0; }
 .story .join-panel summary { display: list-item; padding: 0.55rem 0; line-height: 1.4; font-size: 0.95rem; }
