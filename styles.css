@@ -160,11 +160,15 @@ a:focus-visible, .button:focus-visible {
 }
 .wrap > main { max-width: 46rem; }
 
-/* Header, written into every page by scripts/shell.js: one row, 320 px up. On phones, the wordmark, Menu, whose panel
-   drops below, and Join (Account once signed in), in the Tab order; on wide screens the panel's links sit in the row,
-   "on this site" and "on GitHub" as a small second line, and Menu goes. The menu is a <details>, so it works on the
-   pages that run no script. */
-.site-header { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; padding: 0.75rem 0; }
+/* Header (scripts/shell.js; the design handoff): wordmark, Menu (a <details>), Join; from 820 px the links in a row,
+   with the Proposed and section rows under it. */
+.site-header { position: relative; padding: 0.75rem 0 0; }
+.site-top { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; padding-bottom: 0.75rem; }
+.sub-row { display: none; flex-wrap: wrap; align-items: center; gap: 0.25rem 1.1rem; padding: 0.4rem 0; border-top: 1px solid var(--rule); font-family: var(--display); font-size: 0.875rem; }
+.sub-row span { color: var(--muted); }
+.sub-row a { text-decoration: none; color: var(--muted); min-height: 24px; display: inline-flex; align-items: center; }
+.sub-row a:hover, .sub-row a[aria-current] { color: var(--text); }
+.sub-row a[aria-current] { text-decoration: underline; text-decoration-color: var(--amber); }
 .wordmark {
   font-family: var(--display);
   font-weight: 700;
@@ -198,24 +202,20 @@ a:focus-visible, .button:focus-visible {
 .menu > summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .menu-panel { position: absolute; z-index: 20; top: 100%; left: -1.25rem; right: -1.25rem; padding: 0 1.25rem 1rem; background: var(--ink); border-block: 1px solid var(--rule); }
 .menu-panel a { display: block; min-height: 44px; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); font-size: 1.05rem; }
-.site-nav .menu-panel a.nav-about { display: none; }
-.nav-sub { display: inline-block; margin-left: 0.45rem; color: var(--muted); font-size: 0.85em; }
 .nav-group { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.25rem; }
 .nav-group span { grid-column: 1 / -1; padding-top: 1rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
-@media (max-width: 24rem) { .site-header, .site-nav:has([href^="/account"]) { column-gap: 0.25rem; } .site-nav a.nav-join[href^="/account"] { padding: 0 0.5rem; font-size: 0.875rem; } .site-nav:has([href^="/account"]) .menu > summary { gap: 0.25rem; padding: 0; } }
+@media (max-width: 24rem) { .site-top, .site-nav:has([href^="/account"]) { column-gap: 0.25rem; } .site-nav a.nav-join[href^="/account"] { padding: 0 0.5rem; font-size: 0.875rem; } .site-nav:has([href^="/account"]) .menu > summary { gap: 0.25rem; padding: 0; } }
 @supports selector(::details-content) {
-  @media (min-width: 48rem) {
-    .site-nav { gap: 0.7rem; }
+  @media (min-width: 51.25rem) {
+    .sub-row { display: flex; }
+    .site-nav { gap: 1.1rem; }
     .site-nav a.nav-join { min-height: 36px; }
     .menu > summary, .nav-group { display: none; }
     .menu::details-content { content-visibility: visible; }
-    .menu-panel { position: static; display: flex; align-items: center; gap: 0.7rem; padding: 0; background: none; border: 0; }
+    .menu-panel { position: static; display: flex; align-items: center; gap: 1.1rem; padding: 0; background: none; border: 0; }
     .site-nav .menu-panel a { position: relative; display: inline-block; min-height: 24px; padding: 2px 0; border: 0; font-size: inherit; color: var(--muted); }
     .site-nav .menu-panel a:hover, .site-nav .menu-panel a[aria-current] { color: var(--text); }
-    .site-nav .menu-panel a.nav-about { display: inline-block; }
-    .site-nav .menu-panel a:has(.nav-sub):has(+ a .nav-sub) { min-width: 3.75rem; }
-    .nav-sub { position: absolute; left: 0; top: 100%; margin: 0; font-size: 0.72rem; line-height: 1; white-space: nowrap; }
-  }
+      }
 }
 
 h1, h2, h3 {
@@ -296,9 +296,9 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 
 /* Story pages */
 .story { padding-top: 3.5rem; padding-bottom: 1rem; }
-.story h1 { font-size: clamp(2.4rem, 8vw, 4rem); letter-spacing: -0.04em; max-width: 14ch; }
-.story .dek { color: var(--muted); font-size: 1.2rem; margin: 1rem 0 2.5rem; max-width: var(--measure); }
-.story h2 { font-size: 1.6rem; margin: 2.75rem 0 1rem; }
+.story h1 { font-size: clamp(2.2rem, 7vw, 3.6rem); letter-spacing: -0.04em; max-width: 16ch; }
+.story .dek { color: var(--muted); font-size: 1.25rem; margin: 1rem 0 2rem; max-width: var(--measure); }
+.story h2 { font-size: 1.625rem; margin: 2.75rem 0 0.75rem; }
 .story p, .story ul { max-width: var(--measure); }
 .story ul { padding-left: 1.2rem; }
 .story li { margin-bottom: 0.5rem; }
@@ -327,17 +327,15 @@ section p { max-width: var(--measure); margin: 0 0 1rem; }
 .talk-replies { max-width: calc(var(--measure) + 3rem); margin-top: 1.5rem; min-height: 12rem; }
 @media (max-width: 560px) { .post { padding: 1.25rem 1rem 0.25rem; } }
 
-/* Footer, the same on every page (scripts/shell.js): About, Take part, Agents, then Legal and contact. */
+/* Footer (scripts/shell.js): the design's columns, wrapping. */
 .site-footer { margin-top: 5rem; padding: 2rem 0 3rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.95rem; }
 .site-footer p { margin: 0 0 0.5rem; line-height: 1.7; }
 .site-footer a { color: var(--muted); }
 .site-footer a:hover { color: var(--amber); }
-.footer-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1.5rem 2rem; margin-bottom: 1.5rem; }
+.footer-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
 .footer-cols > div > a { display: block; width: fit-content; min-height: 24px; padding: 2px 0; }
 .site-footer h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin: 0 0 0.5rem; }
-.footer-legal { grid-column: 1 / -1; }
 .footer-legal p { margin: 0.25rem 0; }
-@media (min-width: 48rem) { .footer-cols { grid-template-columns: 1fr 1fr 1fr 2fr; } .footer-legal { grid-column: auto; } }
 
 @media (max-width: 34rem) {
   body { font-size: 1.0625rem; }

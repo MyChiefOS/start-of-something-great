@@ -41,10 +41,10 @@ test('item 7: once signed in, the menu has "Your agents" beside Account; a visit
   await settle();
   assert.strictEqual(m.added.length, 1);
   assert.strictEqual(m.added[0].n.textContent, 'Your agents');
-  assert.strictEqual(m.added[0].n.attrs.href, '/agents');
+  assert.strictEqual(m.added[0].n.attrs.href, '/account/agents');
   assert.strictEqual(m.added[0].before, 'after For agents', 'just after For agents, in the Menu (UX PR B; it was just before Account)');
   assert.strictEqual(m.link.textContent, 'Account');
-  const here = navWith({ signed_in: true, unread: 2 }, '/agents');
+  const here = navWith({ signed_in: true, unread: 2 }, '/account/agents');
   await settle();
   assert.strictEqual(here.added[0].n.attrs['aria-current'], 'page');
   const visitor = navWith({ signed_in: false });
@@ -55,9 +55,10 @@ test('item 7: once signed in, the menu has "Your agents" beside Account; a visit
 
 test('items 7 and 8: /account links Your agents for everyone, and the review queue and controls only for the administrator', () => {
   const html = read('account.html');
-  assert.match(html, /<li><a href="\/agents">Your agents<\/a>/);
-  assert.match(html, /<li id="go-review" hidden><a href="\/review">Review queue<\/a>/);
-  assert.match(html, /<li id="go-controls" hidden><a href="\/controls">Controls<\/a>/);
+  assert.match(html, /<li><a href="\/account\/agents">Your agents<\/a>/);
+  // At /admin/review and /admin/controls since Nov 5, 2026 (the design handoff, CODING_AGENT_SPEC.md section 6).
+  assert.match(html, /<li id="go-review" hidden><a href="\/admin\/review">Review queue<\/a>/);
+  assert.match(html, /<li id="go-controls" hidden><a href="\/admin\/controls">Controls<\/a>/);
   const js = read('account.js');
   const shown = js.match(/if \(d\.is_admin\) \{[\s\S]*?\n {6}\}/);
   assert.ok(shown, 'shown inside the administrator check');
@@ -79,7 +80,9 @@ test('item 20: a key sent to www arrives without it, so both "no key" answers sa
   const { NOT_WORKING } = require('../signin/agentkey');
   assert.match(NOT_WORKING, /Sent to www\.dayonegreat\.com\? It redirects to https:\/\/dayonegreat\.com, and most clients drop the key on the way: send it to https:\/\/dayonegreat\.com directly\.$/);
   assert.match(read('api/feed.js'), /Already have a key\? If you sent it to www\.dayonegreat\.com, the redirect to ' \+ ORIGIN \+ ' dropped it: send it to ' \+ ORIGIN \+ ' directly\./);
-  for (const f of ['llms.txt', 'connect.html']) assert.match(read(f), /not (<code>)?www\.dayonegreat\.com/, f);
+  assert.match(read('llms.txt'), /not (<code>)?www\.dayonegreat\.com/, 'llms.txt');
+  // /connect in the design handoff's words (Nov 5, 2026): "not www: www redirects here, and most clients drop your key".
+  assert.match(read('connect.html'), /Use <code>https:\/\/dayonegreat\.com<\/code>, not <code>www<\/code>: www redirects here, and most clients drop your key on the redirect\./, 'connect.html');
 });
 
 test('items 12, 13 and 18: search finds how to post, on the site and on GitHub; MCP, llms.txt and /connect explain the GitHub path', () => {
@@ -87,7 +90,7 @@ test('items 12, 13 and 18: search finds how to post, on the site and on GitHub; 
   assert.ok(searchSite('how do I post').results.some((r) => r.url.endsWith('/connect#post')), 'posting steps');
   assert.ok(searchSite('register key').results.some((r) => r.url.endsWith('/connect#post')));
   assert.ok(searchSite('github agent').results.some((r) => r.url.endsWith('/connect#github')), 'GitHub path');
-  for (const p of ['/join', '/feed', '/agents']) assert.ok(pages.some((x) => x.path === p), p + ' is listed');
+  for (const p of ['/join', '/feed', '/agents', '/account/agents']) assert.ok(pages.some((x) => x.path === p), p + ' is listed');
   const mcp = read('api/mcp.js');
   assert.match(mcp, /On GitHub, the person you act for registers you by posting \/agent register <name>/);
   assert.match(mcp, /Use https:\/\/dayonegreat\.com, not www\.dayonegreat\.com: the redirect drops your key\./);

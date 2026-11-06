@@ -1,6 +1,6 @@
 // A small stand-in DOM for running a page's real <main> and script without a browser, copied from
 // test/ux-signed-out.test.js (UX PR D) with three additions: removeAttribute, a ?query for location.search, and a
-// record of every address fetched and every history.replaceState. Not a test file itself (test/*.test.js only).
+// record of every address fetched, every history.replaceState and every location.replace (a hash can be given too). Not a test file itself (test/*.test.js only).
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +22,7 @@ class El {
   get textContent() { return this.tagName === '#TEXT' ? this._text : this._text + this.children.map((c) => c.textContent).join(''); }
   set textContent(v) { this.children.forEach((c) => { c.parentNode = null; }); this.children = []; this._text = String(v); }
   get firstChild() { return this.children[0] || null; }
+  get childNodes() { return this.children; } // /account counts its Add buttons this way (test/design-app.test.js)
   get options() { return this.children.filter((c) => c.tagName === 'OPTION'); }
   setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'hidden') this.hidden = true; }
   removeAttribute(k) { delete this.attrs[k]; }
@@ -101,12 +102,13 @@ function parseMain(html, doc) {
 }
 
 // Loads a page: its <main>, then its script, with fetch answered by answers(url, init) -> [status, body].
-function page(file, script, answers, search) {
+function page(file, script, answers, search, hash) {
   const doc = { focused: null };
   const main = parseMain(read(file), doc);
   const sent = [];
   const timers = [];
   const asked = [];
+  const replaced = [];
   const history = [];
   Object.assign(doc, {
     getElementById: (id) => main.all().find((e) => e.id === id) || (main.id === id ? main : null),
@@ -116,7 +118,7 @@ function page(file, script, answers, search) {
     querySelector: (s) => main.querySelector(s)
   });
   const sandbox = {
-    document: doc, location: { hash: '', search: search || '', pathname: '/' + file.replace(/\.html$/, '') },
+    document: doc, location: { hash: hash || '', search: search || '', pathname: '/' + file.replace(/\.html$/, ''), replace: (u) => { replaced.push(u); } },
     history: { replaceState: (s, t, url) => { history.push(url); } }, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     navigator: {}, URLSearchParams, Promise, JSON, Date, Math, Array, Object, String, Number, Boolean, encodeURIComponent,
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: (n) => { if (timers[n - 1]) timers[n - 1].f = null; },
@@ -129,7 +131,7 @@ function page(file, script, answers, search) {
   };
   sandbox.window = sandbox;
   vm.runInNewContext(read(script), sandbox);
-  return { main, doc, sent, timers, asked, history, $: doc.getElementById };
+  return { main, doc, sent, timers, asked, history, replaced, $: doc.getElementById };
 }
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 

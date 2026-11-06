@@ -1,0 +1,78 @@
+/* The trust pages (the design handoff of Nov 5, 2026: static/status, roadmap, checks, moderation, autonomy and security,
+   and the spec's /limits, /risks, /operations and /privacy/keys). The design's inline styles, as classes, on the site's
+   own tokens: no new colours. Shared by these pages only, so the other pages stay light. */
+
+/* Dashboard template (CODING_AGENT_SPEC.md 5.3): up to the shell's 1200 px, for the wide registers. */
+.wrap > main.dash { max-width: none; }
+.dash .dek, .dash > p { max-width: var(--measure); }
+
+/* The notice sits first in main, as drawn: 24 px under the header, the story's own space between it and the kicker. It
+   is inside main (not between header and main, as the static file has it), so it sits in a landmark (5.6). */
+.story.noticed { padding-top: 1.5rem; }
+.story.noticed > .notice:first-child { margin: 0 0 3.5rem; }
+
+/* Status: the live card (design: a card, flex row, 28 px gap; label 4 px above its pill; the JEVs pill at 15 px). */
+.live-card { margin-bottom: 0.5rem; }
+.live-row { display: flex; flex-wrap: wrap; gap: 1.25rem 1.75rem; align-items: flex-start; }
+.live-row > div { flex: 1 1 8.5rem; min-width: 0; }
+.live-row .kicker { margin: 0 0 0.25rem; font-size: 0.8rem; }
+.pill.big { font-size: 0.95rem; }
+.live-row .src { margin-top: 0.35rem; font-size: 0.8rem; line-height: 1.4; }
+.live-line { margin: 0.75rem 0 0; font-size: 0.85rem; }
+
+/* A cell's own words from the file, under its pill or name. */
+.sub { display: block; margin-top: 0.3rem; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.data td { vertical-align: top; }
+.data td .pill { margin-top: 0.1rem; }
+.data .id { white-space: nowrap; font-family: var(--display); font-weight: 600; }
+
+/* Status: "Open the roadmap" row with no margin; the JSON line 20 px below. */
+.acts.flush { margin: 0; }
+.after { margin-top: 1.25rem; }
+
+/* Autonomy: the eight cards (design: auto-fit 15rem columns, 14 px gap, 20 px margin, 60rem wide; h3 19 px). */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: 0.875rem; margin: 1.25rem 0; max-width: 60rem; }
+/* The design draws these as h3 straight under the h1; they are h2 here (no skipped level, 5.3), at the design's size. */
+.cards .card .h3 { font-size: 1.1875rem; margin: 0.25rem 0 0.5rem; letter-spacing: -0.025em; }
+.cards .card .fine { margin: 0; }
+
+/* Security: "Report it" card (42rem; label 6 px above; no paragraph margin). */
+.report-card { max-width: 42rem; }
+.report-card .kicker { margin: 0 0 0.375rem; font-size: 0.8rem; }
+.report-card p { margin: 0; }
+
+/* Risks: filters. Links, so each filter has its own address; 44 px under 820 px (.btn.s, design.css). */
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 1rem 0 0.5rem; }
+.filters > div { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.filters .label { font-family: var(--display); font-size: 0.85rem; color: var(--muted); margin-right: 0.25rem; }
+.filters .btn[aria-current] { border-color: var(--amber); }
+.shown { margin: 0.5rem 0; }
+
+/* Operations: the timeline, newest first. */
+.timeline { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 46rem; }
+.timeline > li { padding: 1rem 0; border-top: 1px solid var(--rule); margin: 0; }
+.timeline > li:last-child { border-bottom: 1px solid var(--rule); }
+.timeline .when { margin: 0 0 0.25rem; font-family: var(--display); font-size: 0.9rem; color: var(--amber); }
+.timeline .what { margin: 0 0 0.5rem; }
+.timeline .def { grid-template-columns: 7.5rem 1fr; font-size: 0.9rem; margin-bottom: 0; }
+@media (max-width: 34rem) { .timeline .def { grid-template-columns: 1fr; gap: 0.1rem; } .timeline .def dd { margin-bottom: 0.5rem; } }
+
+/* Checks: every question, one row each. */
+.questions { margin: 0; padding: 0; max-width: var(--measure); }
+.questions li { list-style: none; padding: 0.9rem 0; border-top: 1px solid var(--rule); margin: 0; line-height: 1.5; }
+.questions li:last-child { border-bottom: 1px solid var(--rule); }
+.questions strong { font-family: var(--display); letter-spacing: -0.01em; }
+.questions p { margin: 0.35rem 0 0; color: var(--muted); font-size: 1rem; }
+.questions p b { color: var(--text); font-family: var(--display); font-weight: 600; font-size: 0.85rem; }
+
+/* Breadcrumbs (as app.css draws them on the detail pages; repeated here so /privacy/keys needn't load app.css). */
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; list-style: none; margin: 0 0 1rem; padding: 0; font-family: var(--display); font-size: 0.9rem; color: var(--muted); }
+.crumbs li { margin: 0; }
+.crumbs li + li::before { content: "\203A"; margin-right: 0.5rem; }
+.crumbs a { color: var(--muted); display: inline-block; min-height: 24px; }
+.crumbs a:hover { color: var(--amber); }
+
+@media (max-width: 51.24rem) {
+  .crumbs a { min-height: 44px; padding: 0.6rem 0; }
+  .live-row > div { flex-basis: 40%; }
+}

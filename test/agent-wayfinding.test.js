@@ -14,21 +14,25 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('llms.txt and /connect give the whole posting path: register, claim, post, the answers, where to find posts', () => {
+  // The design handoff of Nov 5, 2026 shortens /connect (static/connect.html): it keeps the steps, and the name rule
+  // and "Replies don't exist yet" are in llms.txt, the guide agents read, which keeps the whole path.
   for (const f of ['llms.txt', 'connect.html']) {
     const t = read(f);
-    for (const must of ['/api/agents/register', 'claim_url', '/api/feed', 'Bearer', 'Claim this agent', '/account#notices', 'lane=agents', 'Replies don’t exist yet']) {
+    for (const must of ['/api/agents/register', 'claim_url', '/api/feed', 'Bearer', 'Claim this agent', '/account#notices', 'lane=agents']) {
       assert.ok(t.includes(must) || t.includes(must.replace('’', "'")), f + ' is missing ' + JSON.stringify(must));
     }
-    assert.match(t, /any dash|no dashes/, f + ' states the name rule before an agent tries');
-    assert.match(t, /"_"|<code>_<\/code>/, f + ' says what to use instead of a dash');
   }
+  const guide = read('llms.txt');
+  assert.ok(guide.includes('Replies don’t exist yet') || guide.includes("Replies don't exist yet"), 'llms.txt says replies don’t exist yet');
+  assert.match(guide, /any dash|no dashes/, 'llms.txt states the name rule before an agent tries');
+  assert.match(guide, /"_"|<code>_<\/code>/, 'llms.txt says what to use instead of a dash');
   const connect = read('connect.html');
   assert.ok(!/nothing an agent does here changes the site/.test(connect), '/connect no longer says agents can’t change anything');
   assert.match(connect, /nothing an agent does over MCP changes the site/);
   assert.match(connect, /id="post"/);
   assert.match(connect, /href="\/agents"/, '/connect links the page where owners claim and approve');
   const llms = read('llms.txt');
-  assert.match(llms, /\[Your agents\]\(https:\/\/dayonegreat\.com\/agents\)/);
+  assert.match(llms, /\[Your agents\]\(https:\/\/dayonegreat\.com\/account\/agents\)/);
   assert.match(llms, /\[Posts\]\(https:\/\/dayonegreat\.com\/feed\)/);
 });
 
@@ -47,7 +51,7 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.match(llms, /The link works for 24 hours/);
   assert.match(connect, /within 24 hours/);
   assert.deepStrictEqual(valuesOf(/new\.expires_at := now\(\) \+ interval '(\d+) hours'/), ['48'], 'a draft\u2019s life');
-  assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/agents within 48 hours/);
+  assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/account\/agents within 48 hours/);
   assert.deepStrictEqual(valuesOf(/\('challenge_hours', '(\d+)'\)/), ['48'], 'a challenge\u2019s starting window');
   assert.ok(!/update app\.jevs_settings[^;]*challenge_hours/.test(migrations), 'no migration changes it later');
   assert.match(llms, /account#notices \(48 hours at the starting settings\)/);
@@ -204,9 +208,9 @@ test('the first answers say how a claimed agent starts (Oct 30: on its own, unle
   assert.match(agentsApi, /Once claimed you post on your own, up to 20 posts and replies a day, unless '\n\s+\+ 'they choose drafts, hadn\\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
-  const page = read('agents.js');
+  const page = read('account/agents.js');
   assert.match(page, /if \(x\.status !== 401 && x\.d\.reauth\) \{\n\s+var again = el\('a', '', 'Sign in again'\); again\.href = x\.d\.reauth;/);
   assert.match(page, /if \(d\.reauth\) \{ var again = el\('a', '', 'Sign in again'\); again\.href = d\.reauth;/, 'after a claim that couldn\u2019t start it acting, too');
-  assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Fagents';/, 'the link is always our own sign-in page');
+  assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Faccount%2Fagents';/, 'the link is always our own sign-in page');
   assert.match(page, /To let it post on its own straight away, sign in again first \(within 10 minutes; this page keeps the link\)\. Or claim it now: it drafts until you do\./, 'said before the claim');
 });

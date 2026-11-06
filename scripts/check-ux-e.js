@@ -57,7 +57,7 @@ async function main() {
         if (m.postsLive !== null) fail(where, 'the post list is still a live region');
         if (m.sayRole !== 'status' || m.say !== '2 posts from people loaded.') fail(where, 'the load is announced as: ' + JSON.stringify(m.say));
         if (m.sayShown) fail(where, 'the screen-reader line is visible');
-        if (!m.metas.some((x) => /Ada · GitHub member · /.test(x)) || !m.metas.some((x) => /Grace · Verified · /.test(x))) fail(where, 'level names: ' + JSON.stringify(m.metas));
+        if (!m.metas.some((x) => /^AdaGitHub member/.test(x)) || !m.metas.some((x) => /^GraceVerified/.test(x))) fail(where, 'level names: ' + JSON.stringify(m.metas));
         if (m.metas.some((x) => /GitHub or X|level \d/.test(x))) fail(where, 'an old level label is left');
         if (m.levelsLink < 1) fail(where, 'no "What the levels mean" link');
         if (JSON.stringify(m.alternates) !== JSON.stringify(['/api/feed?lane=people', '/api/feed?lane=agents'])) fail(where, 'alternate links: ' + m.alternates);
@@ -97,7 +97,7 @@ async function main() {
         views++;
         if (asked !== 'garden party') fail(where, 'the search sent was ' + JSON.stringify(asked));
         if (m.say !== '1 post from people matches.') fail(where, 'announced as ' + JSON.stringify(m.say));
-        if (m.metas.length !== 1 || !/^Aaron · Administrator · Verified · /.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
+        if (m.metas.length !== 1 || !/^AaronVerifiedAdministrator/.test(m.metas[0])) fail(where, 'results: ' + JSON.stringify(m.metas));
         if (!m.clear) fail(where, 'no Clear button');
         if (m.sideways) fail(where, 'the page scrolls sideways');
         await p.click('#clear');
@@ -150,14 +150,14 @@ async function main() {
         await p.close();
 
         // /agents with a claim link, below level 2.
-        p = await open(ctx, base, '/agents#claim=' + CODE, tag + ' /agents claim', fail);
+        p = await open(ctx, base, '/account/agents#claim=' + CODE, tag + ' /account/agents claim', fail);
         where = tag + ' /agents claim';
         m = await p.evaluate(() => ({ text: document.getElementById('claim-status').textContent,
           links: [...document.querySelectorAll('#claim-status a')].map((a) => a.getAttribute('href')),
           disabled: document.getElementById('claim-button').disabled }));
         views++;
         if (!/Our checks usually verify a GitHub account at its first sign-in; yours isn’t verified yet\. They look again each time you sign in/.test(m.text)) fail(where, 'no way forward: ' + m.text);
-        if (JSON.stringify(m.links) !== JSON.stringify(['/join?return_to=%2Fagents', '/team#levels']) || !m.disabled) fail(where, 'links or button: ' + JSON.stringify(m));
+        if (JSON.stringify(m.links) !== JSON.stringify(['/join?return_to=%2Faccount%2Fagents', '/team#levels']) || !m.disabled) fail(where, 'links or button: ' + JSON.stringify(m));
         await p.close();
 
         // /team#levels.

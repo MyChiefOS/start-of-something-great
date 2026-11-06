@@ -81,6 +81,11 @@
       ],
       "destination": "/region",
       "permanent": false
+    },
+    {
+      "source": "/verify",
+      "destination": "/receipts",
+      "permanent": false
     }
   ],
   "headers": [
@@ -175,9 +180,29 @@
           "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests"
         }
       ]
+    },
+    {
+      "source": "/api",
+      "headers": [
+        {
+          "key": "Vary",
+          "value": "Accept"
+        }
+      ]
     }
   ],
   "rewrites": [
+    {
+      "source": "/api",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/html.*"
+        }
+      ],
+      "destination": "/api-docs"
+    },
     {
       "source": "/auth/:path*",
       "destination": "/api/auth?route=:path*"
@@ -189,6 +214,14 @@
     {
       "source": "/api/notify/:path*",
       "destination": "/api/notify?route=:path*"
+    },
+    {
+      "source": "/agents/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+      "destination": "/agent"
+    },
+    {
+      "source": "/receipts/:id",
+      "destination": "/receipt"
     }
   ],
   "crons": [

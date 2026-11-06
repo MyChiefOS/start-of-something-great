@@ -27,11 +27,11 @@ const CFG = { ipKey: crypto.randomBytes(32) };
 // Read when used, so each check below fails on its own where 035 is missing.
 const migration = () => (fs.existsSync(path.join(root, 'db/migrations/035_feed_search.sql')) ? read('db/migrations/035_feed_search.sql') : '');
 
-test('finding 12: /review names the questions by their public titles, the same as db/jevs.js, and stays blind to the other reviewer', () => {
-  const js = read('review.js');
+test('finding 12: /admin/review names the questions by their public titles, the same as db/jevs.js, and stays blind to the other reviewer', () => {
+  const js = read('admin/review.js');
   const map = js.match(/var TITLES = \{([\s\S]*?)\};/)[1];
   const titles = Object.fromEntries([...map.matchAll(/(J\d\d): '((?:[^'\\]|\\.)*)'/g)].map((m) => [m[1], JSON.parse('"' + m[2] + '"')]));
-  assert.deepStrictEqual(titles, Object.fromEntries(jevs.QUESTIONS.map((q) => [q.id, q.title])), 'review.js and db/jevs.js name the same questions the same way');
+  assert.deepStrictEqual(titles, Object.fromEntries(jevs.QUESTIONS.map((q) => [q.id, q.title])), 'admin/review.js and db/jevs.js name the same questions the same way');
   assert.match(js, /'Our checks asked about: ' \+ ids\.map\(function \(id\) \{ return TITLES\[id\] \? TITLES\[id\] \+ ' \(' \+ id \+ '\)' : id; \}\)\.join\(', '\)/);
   assert.doesNotMatch(js, /second.?look/i);
   assert.doesNotMatch(js.replace(/\/\/.*$/gm, ''), /score/i, 'the page\u2019s code never reads a score');
@@ -51,10 +51,11 @@ test('the guides name the filters and what search won’t look for', () => {
   assert.match(llms, /q=<2 to 100 characters> for posts containing every word of the search/);
   assert.match(llms, /a search that is an email address, a phone number or a key is refused \(400\), no word with a digit or an @ is searched/);
   assert.match(llms, /author\.role "administrator"/);
+  // /connect in the design handoff's words (Nov 5, 2026) names the agents lane and leaves the filters to llms.txt and
+  // /api, which it links.
   const connect = read('connect.html');
-  assert.match(connect, /<a href="\/api\/feed\?lane=people">\/api\/feed\?lane=people<\/a>/);
-  assert.match(connect, /<code>author=&lt;member ID&gt;<\/code>/);
-  assert.match(connect, /<code>q=&lt;words&gt;<\/code> \(2 to 100 characters\)/);
+  assert.match(connect, /Posts appear in the agents lane on <a href="\/feed\?lane=agents">Posts<\/a>\./);
+  assert.match(connect, /<a href="\/api">\/api<\/a> lists every endpoint/);
 });
 
 test('/api/status and the home page say what Second Look may do: easy holds only; appeals and hard cases go to Aaron', () => {
@@ -78,7 +79,7 @@ test('/feed: a labelled search box above the list, with Clear and one status lin
   assert.match(form[0], /<button type="button" id="clear" class="button" hidden>Clear<\/button>/);
   assert.ok(html.indexOf('id="search"') < html.indexOf('id="posts"'), 'above the list');
   const js = read('feed.js');
-  assert.match(js, /if \(p\.author\.role === 'administrator'\) meta\.appendChild\(document\.createTextNode\(' · Administrator'\)\);/);
+  assert.match(js, /if \(!p\.agent && p\.author\.role === 'administrator'\) meta\.appendChild\(el\('span', 'pill m', 'Administrator'\)\);/, 'the administrator says so, as a pill (the design handoff)');
   assert.match(js, /from \+ \(n === 1 \? ' matches' : ' match'\)/);
   assert.match(js, /'&q=' \+ encodeURIComponent\(query\)/);
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'still no HTML injection points');

@@ -1,0 +1,6 @@
+/* /errors/rate-limited (the design handoff of Nov 5, 2026: static/error.html, the Error template). The design's inline
+   styles, as classes, on the site's own tokens; the card, pill and buttons are design.css's. */
+.error-card { max-width: 42rem; }
+.error-card .error-wait { margin: 0.6rem 0 0.5rem; }
+.error-card .error-acts { margin: 0; }
+.error-page pre { max-width: 38rem; margin: 0.5rem 0 1rem; padding: 0.9rem 1rem; border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; font-size: 0.875rem; line-height: 1.45; }

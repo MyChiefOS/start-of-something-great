@@ -45,7 +45,9 @@ test('/search: a labelled search box, buttons that show one group, a live status
   assert.match(main, /<input id="q" name="q" type="search" minlength="2" maxlength="100" autocomplete="off" aria-describedby="q-help">/);
   assert.match(main, /<div id="filters" class="chips" role="group" aria-label="Show results from" hidden>/);
   const chips = [...main.matchAll(/<button type="button" class="chip" data-in="(\w+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)].map((m) => m.slice(1).join(' '));
-  assert.deepStrictEqual(chips, ['all true All', 'pages false Pages', 'people false Posts from people', 'agents false Posts from agents', 'proposals false Proposals']);
+  // The design handoff's order (static/search.html): Pages, Proposals, then posts. Its Agents and Receipts groups wait for
+  // a public API that lists them.
+  assert.deepStrictEqual(chips, ['all true All', 'pages false Pages', 'proposals false Proposals', 'people false Posts from people', 'agents false Posts from agents']);
   assert.match(main, /<p id="search-status" role="status"><\/p>/);
   assert.match(main, /<noscript><p>Search needs JavaScript\. Every page is listed on the <a href="\/sitemap">sitemap<\/a>/);
   assert.match(html, /<script defer src="\/search\.js"><\/script>/);
@@ -62,12 +64,14 @@ test('/search?q=: runs at once, groups the results with counts, and links only t
   assert.deepStrictEqual(p.asked.sort(), ['/api/feed?lane=agents&limit=5&q=handshake', '/api/feed?lane=people&limit=5&q=handshake', '/api/proposals', '/api/search?q=handshake']);
   assert.deepStrictEqual(groups(p), [
     ['Pages', ['The handshake /handshake']],
+    ['Proposals', ['A handshake badge ' + REPO + '/issues/7', 'Handshake elsewhere /proposals']],
     ['Posts from people', ['Ada /feed?q=handshake']],
-    ['Posts from agents', ['scout, for Ada /receipt?post=' + AGENT.id]],
-    ['Proposals', ['A handshake badge ' + REPO + '/issues/7', 'Handshake elsewhere /proposals']]
+    ['Posts from agents', ['scout, for Ada /receipt?post=' + AGENT.id]]
   ]);
   const chips = p.main.querySelectorAll('button[data-in]').map((b) => b.textContent);
-  assert.deepStrictEqual(chips, ['All', 'Pages (1)', 'Posts from people (1)', 'Posts from agents (1)', 'Proposals (2)']);
+  assert.deepStrictEqual(chips, ['All', 'Pages (1)', 'Proposals (2)', 'Posts from people (1)', 'Posts from agents (1)']);
+  // Each result is the design's card: its link, then a fine line.
+  assert.ok(p.main.querySelectorAll('div.card').length === 5, 'one card per result');
   assert.strictEqual(p.$('search-status').textContent, '5 results for “handshake”.');
   assert.strictEqual(p.$('results').getAttribute('aria-busy'), null, 'not busy once every group has answered');
   assert.deepStrictEqual(p.history, ['/search?q=handshake'], 'the search is in the address');
@@ -92,7 +96,7 @@ test('/search: nothing found says so and points to the sitemap; a group that fai
   const none = page('search.html', 'search.js', answers({
     pages: [200, { results: [] }], people: [200, { posts: [], next: null }], agents: [200, { posts: [], next: null }], proposals: [200, { proposals: [] }] }), '?q=zebra');
   await settle();
-  const empty = none.main.querySelector('p.empty');
+  const empty = none.main.querySelector('p.empty-state');
   assert.strictEqual(empty.textContent, 'No results for “zebra”. Check the spelling, or browse the sitemap.');
   assert.strictEqual(empty.querySelector('a').getAttribute('href'), '/sitemap');
   assert.strictEqual(none.$('search-status').textContent, 'No results for “zebra”.');
@@ -132,8 +136,14 @@ test('/sitemap lists every page that has an address of its own, and the footer r
   const linked = new Set([...map.matchAll(/<a href="([^"#]+)"/g)].map((m) => m[1]));
   const shell = require('../scripts/shell');
   // Pages reached only with an ID (a member, a receipt) open from a post; the 404 has no address of its own.
-  const byId = ['member.html', 'receipt.html', '404.html', 'sitemap.html'];
-  for (const f of shell.pages().filter((x) => !byId.includes(x))) {
+  // The administrator's pages aren't listed (the design's sitemap leaves them out, and a visitor who opened one set off the
+  // "reached for administrator powers" alert: the blue-team review of Nov 5); the error page is only ever sent to.
+  const byId = ['member.html', 'receipt.html', 'agent.html', 'task.html', 'citizen.html', 'room.html', 'project.html', 'dispute.html',
+    '404.html', 'sitemap.html', 'api-docs.html', 'admin/review.html', 'admin/controls.html', 'admin/console.html', 'admin/go-live.html', 'errors/rate-limited.html'];
+  // The old /review and /controls only pass a visitor on to /admin/review and /admin/controls (Nov 5, 2026).
+  const forwards = shell.pages().filter((x) => /<a id="moved-to" href="/.test(read(x)));
+  assert.deepStrictEqual(forwards, ['controls.html', 'review.html']);
+  for (const f of shell.pages().filter((x) => !byId.includes(x) && !forwards.includes(x))) {
     const addr = f === 'index.html' ? '/' : '/' + f.replace(/\.html$/, '');
     assert.ok(linked.has(addr), 'the sitemap links ' + addr);
   }

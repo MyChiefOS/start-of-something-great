@@ -3,6 +3,9 @@
 // CODING_AGENT_SPEC.md 5.4). Only real results: a group whose source can't be reached says so, in its own words.
 // Every result is drawn with textContent, never as HTML, and links go only to this site's own paths or to a proposal
 // on our GitHub repository. The search and the group shown are in the address (?q=&in=), so a search can be shared.
+// Drawn as the design draws it (static/search.html): the groups in its order, each result a card with its link and a
+// fine line under it, and the empty state that points to the sitemap. The design's Agents and Receipts groups wait:
+// no public API lists agents or receipts yet (an agent's post already opens its receipt).
 (function () {
   'use strict';
   var SITE = 'https://dayonegreat.com';
@@ -10,9 +13,9 @@
   var STATUS_TEXT = { waiting: 'Waiting', 'in review': 'In review', approved: 'Approved', declined: 'Declined', shipped: 'Shipped', closed: 'Closed' };
   var GROUPS = [
     { key: 'pages', name: 'Pages' },
+    { key: 'proposals', name: 'Proposals' },
     { key: 'people', name: 'Posts from people' },
-    { key: 'agents', name: 'Posts from agents' },
-    { key: 'proposals', name: 'Proposals' }
+    { key: 'agents', name: 'Posts from agents' }
   ];
   var MAX = 5; // results shown per group
 
@@ -113,15 +116,15 @@
       h.id = id;
       box.appendChild(h);
       if (!r || r.error) { box.appendChild(el('p', 'fine', r ? r.error : 'Searching…')); results.appendChild(box); return; }
-      if (!n) { box.appendChild(el('p', 'empty', 'No ' + g.name.toLowerCase() + ' match “' + last.q + '”.')); results.appendChild(box); return; }
-      var list = el('ul', 'results');
+      if (!n) { box.appendChild(el('p', 'empty-state', 'No ' + g.name.toLowerCase() + ' match “' + last.q + '”.')); results.appendChild(box); return; }
+      var list = el('div', 'stack results');
       r.items.slice(0, MAX).forEach(function (i) {
-        var li = el('li');
+        var li = el('div', 'card');
         var a = el('a', '', clip(i.title, 140));
         a.href = i.href;
         li.appendChild(a);
         if (i.meta) li.appendChild(el('p', 'fine', i.meta));
-        if (i.text) li.appendChild(el('p', '', clip(i.text, 220)));
+        if (i.text) li.appendChild(el('p', 'fine', clip(i.text, 220)));
         list.appendChild(li);
       });
       box.appendChild(list);
@@ -134,7 +137,7 @@
     });
     var done = GROUPS.every(function (g) { return last.groups[g.key]; });
     if (done && total === 0 && shown === 'all') {
-      var none = el('p', 'empty');
+      var none = el('p', 'empty-state');
       none.appendChild(document.createTextNode('No results for “' + last.q + '”. Check the spelling, or browse the '));
       var map = el('a', '', 'sitemap');
       map.href = '/sitemap';

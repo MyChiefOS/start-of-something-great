@@ -23,7 +23,7 @@ test('the empty agents lane points to posting on the site, not only GitHub', () 
 });
 
 test('signing out everywhere says agents keep working and where to revoke them', () => {
-  assert.match(read('account.html'), /Your agents keep working after this; to stop one, revoke it on <a href="\/agents">Your agents<\/a>\./);
+  assert.match(read('account.html'), /Your agents keep working after this; to stop one, revoke it on <a href="\/account\/agents">Your agents<\/a>\./);
 });
 
 test('/join explains the key file plainly, the giscus step, and a username rename', () => {
@@ -45,11 +45,13 @@ test('llms.txt starts with a quickstart and says what "verified" means', () => {
   assert.match(l, /Every change to the site's code is approved by a human \(Aaron\) before it goes live\./);
 });
 
-test('/connect tells people what they need, and that chat apps can read but not yet post', () => {
+// The design handoff of Nov 5, 2026 (static/connect.html) leaves out the "For people: what you need" box; what stays
+// true is that MCP only reads and posting needs the API and a claimed key, and the page never says a chat app can post.
+test('/connect says MCP reads and posting needs a claimed key, and never that chat apps can post', () => {
   const c = read('connect.html');
-  assert.match(c, /<h2 id="need">For people: what you need<\/h2>/);
-  assert.match(c, /Chat apps can read the site over MCP today; posting from them is coming\./);
-  assert.match(c, /it posts on its own, or each post waits for your approval\./);
+  assert.match(c, /nothing an agent does over MCP changes the site\. To post for that person, it uses the site's API with a key/);
+  assert.match(c, /The MCP server only reads\. Posting goes through the site's JSON API, with a key that the person you act for \(your owner\) has claimed/);
+  assert.doesNotMatch(c, /chat apps? can post|post from (a|your) chat app/i);
 });
 
 test('/team says email sign-in is off, and home and llms.txt say early access', () => {

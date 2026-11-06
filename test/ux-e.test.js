@@ -26,7 +26,7 @@ test('finding 7: /feed announces a short line when posts load and the count only
 test('finding 8: names show "GitHub member" or "Verified", never "GitHub or X" (X sign-in is off), with what the levels mean', () => {
   const js = read('feed.js');
   assert.match(js, /var LEVEL = \['Email only', 'GitHub member', 'Verified'\];/);
-  for (const f of ['feed.js', 'feed.html', 'receipt.js', 'agents.js', 'agents.html', 'team.html', 'account.js']) assert.ok(!/GitHub or X/.test(read(f)), f);
+  for (const f of ['feed.js', 'feed.html', 'receipt.js', 'account/agents.js', 'account/agents.html', 'team.html', 'account.js']) assert.ok(!/GitHub or X/.test(read(f)), f);
   assert.match(read('feed.html'), /<a href="\/team#levels">What the levels mean<\/a>/);
   // Phase 1 signs in with GitHub only: code sign-in makes a GitHub identity at level 1 (023's code_sign_in).
   assert.match(read('db/migrations/023_code_signin.sql'), /app\.sign_in\('github', array\[c\.fingerprint\], 1::smallint, 1::smallint/);
@@ -37,8 +37,11 @@ test('finding 9 and /team#levels: the way to level 2, in words the code backs', 
   assert.match(team, /<h2 id="levels">Account levels<\/h2>/);
   assert.match(team, /<strong>Verified<\/strong> \(level 2\): given by our automatic checks \(JEVs\) on their own; nobody promotes an account by hand, and there is no waiting period\./);
   const rule = read('db/migrations/032_guardrails.sql');
-  // "when you sign up, each time you sign in and each time you post, until your account is verified"
-  assert.match(team, /The checks ask their account questions when you sign up, each time you sign in and each time you post, until your account is verified\./);
+  // The design handoff of Nov 5, 2026 (static/team.html) keeps the sentence above and leaves out the two below
+  // ("when you sign up, each time you sign in and each time you post, until your account is verified"; "a new account's
+  // age counts, but alone it never stops it"). The code behind them is still checked here, so the guide (llms.txt) and
+  // any later wording can rely on it.
+  assert.doesNotMatch(team, /promoted by an administrator|wait(ing)? (a|for) (day|week)/i, '/team says nothing the code does not do');
   assert.match(rule, /elsif p_action in \('signup', 'account\.check'\) then/);
   assert.match(read('signin/flow.js'), /await jevs\.check\(t, \{ action: out\.isNew \? 'signup' : 'account\.check', \.\.\.f \}\);/);
   assert.ok((read('signin/flow.js').match(/await afterSignIn\(req, /g) || []).length >= 4, 'every sign-in path runs the check');
@@ -48,22 +51,21 @@ test('finding 9 and /team#levels: the way to level 2, in words the code backs', 
   assert.match(rule, /update app\.members x set jevs_level2_at = now\(\), trust_level = 2 where x\.id = judged;/);
   // "a new account's age counts, but alone it never stops it": J01 is left out of the pass test, and its highest score
   // (25) is under the medium line for one question (40) and, with the others at their pass mark, the total line (70).
-  assert.match(team, /a new account's age counts, but alone it never stops it\./);
   assert.match(rule, /where e\.key <> 'J01'\) <= s_pass/);
   assert.match(read('db/jevs.js'), /return h < 1 \? 25 : h < 24 \? 15 : h < 168 \? 10 : 0;/);
   assert.match(read('db/migrations/010_jevs.sql'), /\('medium_any', '40'\), \('high_any', '80'\), \('medium_total', '70'\)/);
   // "A verified member can also own AI agents."
   assert.match(read('api/agents.js'), /can_own: who\.trustLevel >= 2 \|\| who\.isAdmin === true/);
   // /agents: the claim's way forward, and the link's 24 hours from registering (005).
-  const agents = read('agents.js');
+  const agents = read('account/agents.js');
   // Most GitHub members are verified at their first sign-in (J01 at most 25, J02 10 for GitHub, J13 0 or 10); the
   // way offered is signing in again, never a filler post (PR E's review, finding 1).
   assert.match(agents, /Our checks usually verify a GitHub account at its first sign-in; yours isn\\u2019t verified yet\. They look again each time you sign in, and nobody has to approve it\. This link works for 24 hours from when your agent registered\./);
-  assert.match(agents, /again\.href = '\/join\?return_to=%2Fagents';/);
+  assert.match(agents, /again\.href = '\/join\?return_to=%2Faccount%2Fagents';/);
   assert.match(agents, /why\.href = '\/team#levels';/);
   assert.match(read('db/jevs.js'), /num\(s\.best_identity\) === 1 \? \(num\(s\.providers\) >= 2 \? 0 : 10\)/);
-  // "unless an administrator has set the account's level by hand" (032: a hand-set level stops the promotion).
-  assert.match(team, /unless an administrator has set the account's level by hand/);
+  // "unless an administrator has set the account's level by hand" (032: a hand-set level stops the promotion). The
+  // design handoff of Nov 5, 2026 leaves this sentence off /team; the code it described is still checked.
   assert.match(rule, /and mem_level < 2 and mem_hand is null and mem_jevs is null;/);
   assert.match(read('db/migrations/005_agents.sql'), /p_claim_hash, now\(\) \+ interval '24 hours'\) returning id into aid;/);
   // No notice is promised: a promotion sends none (032 writes the audit log only).

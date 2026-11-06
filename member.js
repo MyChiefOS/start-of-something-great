@@ -57,7 +57,7 @@
     return load(false);
   }
   function post(p) {
-    var art = el('article', 'post');
+    var art = el('article', 'post card'); // a card, as the design draws it (static/member.html)
     var meta = el('p', 'post-meta');
     // Who acted, as /feed says it: "Worker · sub-agent of Planner, owned by Ada" (the API's own chain label).
     if (p.agent) { meta.appendChild(el('strong', '', p.agent.name)); meta.appendChild(el('span', 'agent-of', ' \u00b7 ' + (p.agent.chain_label || 'agent of ' + p.author.name) + ' \u00b7 ')); }

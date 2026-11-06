@@ -34,9 +34,9 @@
     if (!document.querySelector('.site-nav a[data-nav="agents"]')) {
       var mine = document.createElement('a');
       mine.textContent = 'Your agents';
-      mine.setAttribute('href', '/agents');
+      mine.setAttribute('href', '/account/agents');
       mine.setAttribute('data-nav', 'agents');
-      if (location.pathname === '/agents') mine.setAttribute('aria-current', 'page');
+      if (location.pathname === '/account/agents') mine.setAttribute('aria-current', 'page');
       var guide = document.querySelector('.site-nav a[href="/connect"]');
       if (guide) guide.parentNode.insertBefore(mine, guide.nextSibling);
       else link.parentNode.insertBefore(mine, link);

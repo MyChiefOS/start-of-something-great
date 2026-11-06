@@ -51,8 +51,8 @@
 }
 .hero .lede { margin-top: 1.25rem; }
 .hero .actions { margin-top: 1.75rem; }
-.also { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 1.25rem; margin: 1rem 0 0; font-family: var(--display); font-size: 0.95rem; }
-.also span { flex-basis: 100%; color: var(--muted); }
+.also { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.also span { color: var(--muted); }
 /* At least 24 by 24 CSS px to tap (WCAG 2.5.8): these links stand alone. */
 .also a, .trust li > a { display: inline-block; min-height: 24px; padding-block: 2px; }
 
@@ -81,3 +81,24 @@
   .hero h1 { font-size: 1.9rem; }
   .trust li { padding: 0.45rem 0; }
 }
+
+/* The design handoff of Nov 5, 2026 (static/index.html): numbered rows, Now and Next as kickers, the people in two
+   columns, and the closing sections in the Section template. */
+.hero .kicker { margin-bottom: 0.75rem; }
+ol.numbered { list-style: none; margin: 0; padding: 0; gap: 0; }
+ol.numbered .li { grid-template-columns: 30px 1fr; }
+h3.kicker { font-size: 0.85rem; margin: 0 0 0.75rem; }
+h3.person { font-size: 1.25rem; margin-bottom: 0.25rem; }
+.fine.body { max-width: 38rem; font-size: 1.0625rem; }
+.acts.tight { margin-top: 0.75rem; }
+.measure { max-width: 38rem; }
+.proposed-next .card { display: grid; grid-template-columns: auto 1fr auto; gap: 1.75rem; align-items: center; }
+.proposed-next .big { font-size: 3.5rem; line-height: 1; }
+.proposed-next h3 { margin: 0 0 0.4rem; }
+.proposed-next .fine { margin-top: 0.5rem; }
+.proposed-next .acts { margin: 0; gap: 0.6rem; }
+@media (max-width: 51.24rem) { .proposed-next .card { grid-template-columns: 1fr; gap: 1rem; } }
+.proposed-next .track { display: block; width: 100%; height: 4px; border: 0; border-radius: 2px; background: var(--rule); appearance: none; -webkit-appearance: none; }
+.proposed-next .track::-webkit-progress-bar { background: var(--rule); border-radius: 2px; }
+.proposed-next .track::-webkit-progress-value { background: var(--amber); border-radius: 2px; }
+.proposed-next .track::-moz-progress-bar { background: var(--amber); border-radius: 2px; }

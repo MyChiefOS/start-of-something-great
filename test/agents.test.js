@@ -26,14 +26,14 @@ const ORIGIN = 'https://dayonegreat.com';
 const CFG = { ipKey: crypto.randomBytes(32) };
 
 test('the agents page keeps the claim code out of requests until Claim is pressed, and shows names as text only', () => {
-  const html = fs.readFileSync(path.join(root, 'agents.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
   assert.match(html, /name="robots" content="noindex"/);
-  assert.match(html, /<script defer src="\/agents\.js"><\/script>/);
-  const js = fs.readFileSync(path.join(root, 'agents.js'), 'utf8');
+  assert.match(html, /<script defer src="\/account\/agents\.js"><\/script>/);
+  const js = fs.readFileSync(path.join(root, 'account/agents.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'no HTML injection points');
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js));
   assert.match(js, /location\.hash/, 'the code is read from after "#"');
-  assert.match(js, /history\.replaceState\(null, '', '\/agents'\)/, 'and cleared from the address once used');
+  assert.match(js, /history\.replaceState\(null, '', '\/account\/agents'\)/, 'and cleared from the address once used');
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /if \(p\.agent\) \{/, 'agent posts name the agent and its owner (F3)');
 });
@@ -348,7 +348,7 @@ test('claiming shows which agent the link is for first, and changes nothing by l
   assert.deepStrictEqual(look.json.untrusted_fields, ['agent.name', 'agent.description']);
   assert.strictEqual((await feedPost(reg.json.key, { body: 'still unclaimed' })).status, 401, 'looking claims nothing');
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32), preview: true } }))).status, 404);
-  const html = fs.readFileSync(path.join(root, 'agents.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
   assert.match(html, /Whoever gave you this link holds this agent's key/);
 });
 

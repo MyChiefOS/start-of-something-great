@@ -1,0 +1,9 @@
+/* The talk page only (/talk). The design handoff of Nov 5, 2026 (static/talk.html): the welcome post as an amber-topped
+   card (design.css .card), and the replies in a plain card under it, where giscus loads. giscus itself is untouched. */
+.talk-post { max-width: 42rem; margin: 1.5rem 0; }
+.story .talk-post h2 { font-size: 1.625rem; margin: 0.5rem 0 0.75rem; }
+.talk-post > .fine { margin: 0; }
+.talk-post .signoff { font-style: italic; }
+.talk-replies { max-width: 42rem; border-top-color: var(--rule); padding: 1.5rem; }
+.talk-github { margin: 1rem 0 0; text-align: center; }
+@media (max-width: 34rem) { .talk-replies { padding: 1rem; } }

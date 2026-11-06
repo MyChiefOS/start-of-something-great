@@ -9,8 +9,8 @@
 // Checks, on every page (the 404 too), signed out and signed in (Account (3)):
 //   - at 320, 360 and 390 px wide: the header is one row, at most 72 px tall with the menu closed, nothing scrolls
 //     sideways, and the screen order is the Tab order (the wordmark, Menu, then Join or Account);
-//   - at 1280 by 800 px: the header's links sit in one row, and "on this site" and "on GitHub" show as a second line
-//     inside the header, overlapping nothing and at least 8 px apart;
+//   - at 1280 by 800 px: the header's main links sit in one row, and the design's Proposed and section rows (README
+//     "Shell") each sit in one row under it, with no label overlapping another;
 //   - the Menu opens and closes by keyboard (Enter and Space; Escape too where nav.js runs), and every control in the
 //     header shows a visible focus ring (at 390 and 1280);
 //   - where nav.js runs, a tap outside the open Menu closes it and a tap inside keeps it open (390);
@@ -38,7 +38,8 @@ const SHOT_PAGES = [['home', '/'], ['feed', '/feed'], ['talk', '/talk'], ['team'
 function addresses() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && f !== '404.html').map((f) => (f === 'index.html' ? '/' : '/' + f.replace(/\.html$/, '')));
   const research = fs.readdirSync(path.join(ROOT, 'research')).filter((f) => f.endsWith('.html')).map((f) => '/research/' + f.replace(/\.html$/, ''));
-  return top.concat(research, ['/no-such-page']);
+  const sub = (d) => fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => '/' + d + '/' + f.replace(/\.html$/, ''));
+  return top.concat(research, sub('account'), sub('admin'), ['/no-such-page']);
 }
 
 // The security policy Vercel sends for a page: /talk, /join and /account have their own rule in vercel.json, and every
@@ -96,7 +97,7 @@ async function open(ctx, base, url, where, fail) {
 
 // The header's size, and the top of each visible control in it.
 const measure = (p) => p.evaluate(() => {
-  const h = document.querySelector('.site-header');
+  const h = document.querySelector('.site-header .site-top');
   // checkVisibility: a closed <details> skips its content without display: none, so size alone would count it.
   const shown = (el) => { const r = el.getBoundingClientRect(); return el.checkVisibility({ visibilityProperty: true }) && r.width > 0 && r.height > 0; };
   const controls = [...h.querySelectorAll('a, summary')].filter(shown).map((el) => {
@@ -163,17 +164,9 @@ async function keyboard(p, where, fail, phone) {
   }
 }
 
-// "on this site" and "on GitHub" on a wide screen: shown, inside the header, and clear of every other label and note.
-const notes = (p) => p.evaluate(() => {
-  const h = document.querySelector('.site-header').getBoundingClientRect();
-  const box = (el) => { const r = el.getBoundingClientRect(); return { text: el.textContent.trim(), l: r.left, r: r.right, t: r.top, b: r.bottom }; };
-  const labels = [...document.querySelectorAll('.site-header .wordmark, .site-nav a')].filter((a) => a.checkVisibility()).map((a) => {
-    const r = document.createRange(); r.selectNodeContents(a); const s = a.querySelector('.nav-sub'); if (s) r.setEndBefore(s);
-    const b = r.getBoundingClientRect(); return { text: a.firstChild.textContent.trim(), l: b.left, r: b.right, t: b.top, b: b.bottom };
-  });
-  const subs = [...document.querySelectorAll('.site-nav .nav-sub')].map((s) => Object.assign(box(s), { shown: s.checkVisibility() && s.getBoundingClientRect().width > 1, size: parseFloat(getComputedStyle(s).fontSize) }));
-  return { header: { t: h.top, b: h.bottom }, labels, subs };
-});
+// The rows under the header on a wide screen (the Proposed row, the About or Trust row): each label's box.
+const notes = (p) => p.evaluate(() => [...document.querySelectorAll('.site-header .sub-row')].map((row) =>
+  [...row.querySelectorAll('a, span')].filter((a) => a.checkVisibility()).map((a) => { const b = a.getBoundingClientRect(); return { text: a.textContent.trim(), l: b.left, r: b.right, t: b.top, b: b.bottom, mid: Math.round((b.top + b.bottom) / 2) }; })));
 const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
 
 // WCAG relative luminance of a computed colour (rgb() or color(srgb ...)) as painted under a brightness() filter of
@@ -254,7 +247,8 @@ async function main() {
               if (await p.evaluate(() => !!document.querySelector('script[src="/nav.js"]'))) {
                 const isOpen = () => p.evaluate(() => document.querySelector('.site-header details').open);
                 await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.querySelector('.site-header details').open = true; });
-                await p.click('.site-header .nav-group > span');
+                const panel = await p.locator('.site-header .menu-panel').boundingBox();
+                await p.mouse.click(panel.x + 4, panel.y + panel.height - 4); // the panel's own bottom padding
                 if (!(await isOpen())) fail(where, 'a tap inside the open Menu closed it');
                 // A point outside the Menu that is no link or control, so the tap only closes the Menu.
                 const spot = await p.evaluate(() => {
@@ -277,14 +271,10 @@ async function main() {
           if (rows.size > 1) fail('1280 ' + who, 'the header is ' + rows.size + ' rows: ' + JSON.stringify(m.controls));
           if (m.controls.some((c) => c.text === 'Menu')) fail('1280 ' + who, 'Menu shows on a wide screen');
           if (m.sideways > 0) fail('1280 ' + who, 'the page scrolls sideways by ' + m.sideways + ' px');
-          const n = await notes(p);
-          if (n.subs.length !== 2 || n.subs.some((s) => !s.shown || s.size < 11)) fail('1280 ' + who, '"on this site" and "on GitHub" are not both shown: ' + JSON.stringify(n.subs));
-          for (const s of n.subs) {
-            if (s.t < n.header.t || s.b > n.header.b) fail('1280 ' + who, '"' + s.text + '" falls outside the header');
-            for (const o of n.labels.concat(n.subs)) if (o !== s && overlap(s, o)) fail('1280 ' + who, '"' + s.text + '" overlaps "' + o.text + '"');
+          for (const row of await notes(p)) {
+            if (new Set(row.map((x) => Math.round(x.mid / 8))).size > 1) fail('1280 ' + who, 'a row under the header wraps: ' + row.map((x) => x.text).join(' | '));
+            for (const x of row) for (const o of row) if (o !== x && overlap(x, o)) fail('1280 ' + who, '"' + x.text + '" overlaps "' + o.text + '"');
           }
-          // Far enough apart to read as two notes, not one phrase ("on this site on GitHub").
-          if (n.subs.length === 2 && n.subs[1].l - n.subs[0].r < 8) fail('1280 ' + who, 'the notes are ' + Math.round(n.subs[1].l - n.subs[0].r) + ' px apart (at least 8)');
           await keyboard(p, '1280 ' + who, fail, false);
           await p.close();
           pages++;

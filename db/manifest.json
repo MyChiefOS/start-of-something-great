@@ -139,6 +139,10 @@
     {
       "version": "035_feed_search",
       "sha256": "7e07cc66a5739c4e382ae759051699402d124576f888ab21e7d55d058e3a2f8c"
+    },
+    {
+      "version": "036_public_decisions",
+      "sha256": "04ba696e715d94c7fdfa3ea0ddee9ec3bcab7b49c77a56d3cb0d7773fbf82fe5"
     }
   ]
 }

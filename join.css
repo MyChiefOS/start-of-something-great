@@ -51,3 +51,13 @@
 .story .hello h2.post-here { font-size: 1.25rem; margin: 0.9rem 0 0; }
 .hello .talk-replies { margin-top: 0.75rem; }
 @media (prefers-color-scheme: light) { .signin .join-panel button.button.primary { color: #ffffff; } }
+
+/* The design handoff of Nov 5, 2026 (static/join.html): the two paths as pill tabs (amber edge when chosen), the code
+   in an amber box beside Copy and "Works once, for 10 minutes", and Say hello as a card. */
+.path-choice { border-radius: 999px; padding: 0.5rem 1.1rem; text-align: center; color: var(--muted); background: transparent; border-color: var(--rule-strong); }
+.path-choice[aria-pressed="true"] { color: var(--text); background: transparent; box-shadow: none; }
+.story .join-panel .code-row code#code-value { font-size: 1.1rem; padding: 0.45rem 0.85rem; border: 1px solid var(--amber); border-radius: 8px; }
+.story .join-panel .code-works { color: var(--muted); font-size: 0.9rem; }
+.story section.hello #hello-head { max-width: calc(var(--measure) + 3rem); margin: 1.25rem 0 1rem; padding: 1rem 1.1rem; border: 1px solid var(--rule); border-radius: 10px; }
+.story section.hello #hello-head h2 { font-size: 1.35rem; margin: 0 0 0.25rem; }
+.paths { display: flex; flex-wrap: wrap; gap: 0.5rem; }

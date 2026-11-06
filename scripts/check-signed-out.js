@@ -7,19 +7,21 @@
 //   node scripts/check-signed-out.js [--root DIR] [--shots DIR] [--no-checks]
 //
 // Checks, at 390 by 844 and 1280 by 800 px, in dark and light:
-//   - signed out, on /feed, /agents, /account, /review and /controls: the first screen holds the signed-out panel, with
+//   - signed out, on /feed, /account/agents, /account, /admin/review and /admin/controls: the first screen holds the signed-out panel, with
 //     exactly one primary button in the page, "Sign in with GitHub", to /join?return_to=<the page>; nothing scrolls
 //     sideways;
-//   - /controls signed out: nothing in the page shows but its heading and the panel (no brake, no Second Look);
+//   - /admin/controls signed out: nothing in the page shows but its kicker, heading, standing line and the panel (no brake, no Second Look);
 //   - /feed signed out: each post's "Sign in to report" is a link to /join?return_to=%2Ffeed, a tap on it goes there,
 //     and no report form ever opens; signed in, Report still opens its form;
-//   - /agents signed out: three short lines show, and the full rules sit in a closed "How agents work" disclosure;
-//   - /controls as the administrator: Second Look's current mode is marked (aria-pressed), "On" sends nothing on the
+//   - /account/agents signed out: three short lines show, and the full rules sit in a closed "How agents work" disclosure;
+//   - the old /review and /controls (moved Nov 5, 2026) pass a visitor on to /admin/review and /admin/controls, the
+//     query and the part after "#" kept;
+//   - /admin/controls as the administrator: Second Look's current mode is marked (aria-pressed), "On" sends nothing on the
 //     first tap and switches on the second;
-//   - /review as the administrator: an item with several reasons lists them oldest first, and an empty queue says what
+//   - /admin/review as the administrator: an item with several reasons lists them oldest first, and an empty queue says what
 //     happens when nothing is waiting;
 //   - no script errors and no security-policy refusals.
-// --shots DIR saves the first screen and the full page of each, and the administrator's /controls and /review;
+// --shots DIR saves the first screen and the full page of each, and the administrator's /admin/controls and /admin/review;
 // --no-checks only takes them (for the "before" copy). Needs Playwright with Chromium; not part of the test suite.
 'use strict';
 
@@ -33,7 +35,9 @@ const SHOTS = arg('--shots');
 const CHECKS = !process.argv.includes('--no-checks');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
   '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.txt': 'text/plain', '.json': 'application/json' };
-const PAGES = ['/feed', '/agents', '/account', '/review', '/controls'];
+const PAGES = ['/feed', '/account/agents', '/account', '/admin/review', '/admin/controls'];
+// The administrator's pages moved on Nov 5, 2026; the old addresses pass a visitor on (review.js, controls.js).
+const MOVED = [['/review#appeals', '/admin/review#appeals'], ['/controls?x=1', '/admin/controls?x=1']];
 
 const OWN_POLICY = ['/talk', '/join', '/account'];
 const DEFAULT_POLICY = '/((?!talk/?$|join/?$|account/?$|auth/).*)';
@@ -118,7 +122,7 @@ async function context(browser, base, { width, height, scheme, who, queue = QUEU
     if (out) {
       if (u.searchParams.has('controls')) return json(r, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
       if (u.searchParams.has('queue')) return json(r, 401, { error: 'Sign in to review.', join: '/join' });
-      if (u.pathname.startsWith('/api/agents')) return json(r, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Fagents' });
+      if (u.pathname.startsWith('/api/agents')) return json(r, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Faccount%2Fagents' });
       return json(r, 401, { error: 'Sign in to see your notices.', join: '/join?return_to=%2Faccount' });
     }
     if (u.searchParams.has('controls')) return json(r, 200, CONTROLS('shadow'));
@@ -144,7 +148,8 @@ const panel = (p) => p.evaluate(() => {
   const shown = (el) => el.checkVisibility({ visibilityProperty: true }) && el.getBoundingClientRect().height > 0;
   const box = document.querySelector('main .signed-out');
   const r = box && box.getBoundingClientRect();
-  const primaries = [...document.querySelectorAll('main .button.primary')].filter(shown)
+  // A primary button is the old .button.primary or the design's amber pill, .btn.p (design.css; the design handoff).
+  const primaries = [...document.querySelectorAll('main .button.primary, main .btn.p')].filter(shown)
     .map((b) => ({ text: b.textContent.trim(), href: b.getAttribute('href'), bottom: b.getBoundingClientRect().bottom }));
   const other = [...document.querySelector('main').children].filter((c) => c !== box && c.tagName !== 'H1' && shown(c)).map((c) => c.id || c.className || c.tagName);
   return { shown: !!box && shown(box), top: r ? r.top : null, bottom: r ? r.bottom : null, primaries, other, height: innerHeight,
@@ -176,7 +181,7 @@ async function main() {
         for (const url of PAGES) {
           const where = tag + ' signed out ' + url;
           const p = await open(ctx, base, url, where, fail);
-          await shot(p, url.slice(1) + '-' + tag + '-out');
+          await shot(p, url.slice(1).replace(/\//g, '-') + '-' + tag + '-out');
           if (CHECKS) {
             const m = await panel(p);
             if (!m.shown) fail(where, 'no signed-out panel shows');
@@ -189,7 +194,8 @@ async function main() {
               if (b.bottom > m.height) fail(where, 'the primary button is below the first screen');
             }
             if (m.sideways > 0) fail(where, 'the page scrolls sideways by ' + m.sideways + ' px');
-            if (url === '/controls' && m.other.length) fail(where, 'more than the panel shows: ' + m.other.join(', '));
+            // The design's kicker and standing line ("Administrator only. ...") are fixed words, never admin data.
+            if (url === '/admin/controls' && m.other.filter((c) => !/^(kicker|dek)$/.test(c)).length) fail(where, 'more than the panel shows: ' + m.other.join(', '));
             if (url === '/feed') {
               const links = await p.$$eval('.report a', (as) => as.map((a) => ({ text: a.textContent, href: a.getAttribute('href') })));
               if (links.length !== POSTS.posts.length) fail(where, links.length + ' "Sign in to report" links for ' + POSTS.posts.length + ' posts');
@@ -201,7 +207,7 @@ async function main() {
               }
               if (await p.locator('.report-form').count()) fail(where, 'a report form opened');
             }
-            if (url === '/agents') {
+            if (url === '/account/agents') {
               const a = await p.evaluate(() => {
                 const d = document.querySelector('details.agent-rules');
                 return { lines: [...document.querySelectorAll('#agents-intro li')].filter((x) => x.checkVisibility()).length, open: d && d.open,
@@ -215,12 +221,20 @@ async function main() {
           await p.close();
           checked++;
         }
+        for (const [from, to] of MOVED) {
+          const p = await open(ctx, base, from, tag + ' signed out ' + from, fail);
+          if (CHECKS) {
+            await p.waitForURL(base + to, { timeout: 3000 }).catch(() => {});
+            if (p.url() !== base + to) fail(tag + ' signed out ' + from, 'not passed on to ' + to + ': at ' + p.url());
+          }
+          await p.close();
+        }
         if (CHECKS && sent.length) fail(tag + ' signed out', 'a page sent ' + JSON.stringify(sent));
         await ctx.close();
 
-        // The administrator: /controls and /review (with items, then empty); a member's /feed.
+        // The administrator: /admin/controls and /admin/review (with items, then empty); a member's /feed.
         const admin = await context(browser, base, { width, height, scheme, who: 'admin' });
-        let p = await open(admin.ctx, base, '/controls', tag + ' admin /controls', fail);
+        let p = await open(admin.ctx, base, '/admin/controls', tag + ' admin /controls', fail);
         if (CHECKS) {
           const where = tag + ' admin /controls';
           const m = await p.evaluate(() => ({ panel: document.querySelector('.signed-out').checkVisibility(), brake: document.getElementById('brake-form').checkVisibility(),
@@ -234,9 +248,9 @@ async function main() {
         if (SHOTS) {
           const h = p.locator('#second-look-heading').or(p.locator('h2', { hasText: 'Second Look' })).first();
           await h.scrollIntoViewIfNeeded();
-          await p.screenshot({ path: path.join(SHOTS, 'controls-' + tag + '-admin-second-look.png') });
+          await p.screenshot({ path: path.join(SHOTS, 'admin-controls-' + tag + '-admin-second-look.png') });
         }
-        await shot(p, 'controls-' + tag + '-admin');
+        await shot(p, 'admin-controls-' + tag + '-admin');
         if (CHECKS) {
           const where = tag + ' admin /controls';
           const on = p.locator('#sl-modes button[data-mode="on"]');
@@ -245,29 +259,29 @@ async function main() {
           if (admin.sent.length) fail(where, 'the first tap on "On" sent ' + JSON.stringify(admin.sent));
           const armed = (await on.textContent()).trim();
           if (armed !== 'Tap again to let Second Look publish easy held posts') fail(where, 'the first tap on "On" says "' + armed + '"');
-          if (SHOTS && width === 390) await p.locator('#sl-modes').screenshot({ path: path.join(SHOTS, 'controls-' + tag + '-admin-on-armed.png') });
+          if (SHOTS && width === 390) await p.locator('#sl-modes').screenshot({ path: path.join(SHOTS, 'admin-controls-' + tag + '-admin-on-armed.png') });
           await on.click();
           await p.waitForTimeout(200);
           if (admin.sent.length !== 1 || JSON.parse(admin.sent[0].body).mode !== 'on') fail(where, 'the second tap on "On" did not switch it on: ' + JSON.stringify(admin.sent));
         }
         await p.close();
-        p = await open(admin.ctx, base, '/review', tag + ' admin /review', fail);
+        p = await open(admin.ctx, base, '/admin/review', tag + ' admin /review', fail);
         if (CHECKS) {
-          // Oldest first by the database's rules (review.js, why()): the first-post flag, reports, JEVs, then the appeal.
+          // Oldest first by the database's rules (admin/review.js, why()): the first-post flag, reports, JEVs, then the appeal.
           const why = await p.$$eval('#queue .why', (x) => x.map((e) => e.textContent + ' | ' + e.nextElementSibling.textContent));
           if (!/^Why: one of a new member’s first 3 posts; flagged by JEVs \(automatic checks\); the author appealed\. \| In the queue since /.test(why[0] || '')) fail(tag + ' admin /review', 'the reasons are not oldest first, or no "In the queue since": ' + why[0]);
           if (!/^Why: 2 reports \(spam\); flagged by JEVs \(automatic checks\); the author appealed\. \| In the queue since /.test(why[1] || '')) fail(tag + ' admin /review', 'the second item reads: ' + why[1]);
         }
-        await shot(p, 'review-' + tag + '-admin');
+        await shot(p, 'admin-review-' + tag + '-admin');
         await p.close();
         await admin.ctx.close();
         const empty = await context(browser, base, { width, height, scheme, who: 'admin', queue: { open: 0, items: [] } });
-        p = await open(empty.ctx, base, '/review', tag + ' admin /review empty', fail);
+        p = await open(empty.ctx, base, '/admin/review', tag + ' admin /review empty', fail);
         if (CHECKS) {
-          const t = await p.evaluate(() => document.getElementById('summary').textContent + ' | ' + (document.querySelector('#queue .empty') || { textContent: '' }).textContent);
+          const t = await p.evaluate(() => document.getElementById('summary').textContent + ' | ' + (document.querySelector('#queue .empty-state') || { textContent: '' }).textContent);
           if (!/^Nothing is waiting\. \| /.test(t) || !/JEVs checks every post/.test(t)) fail(tag + ' admin /review empty', 'no empty state: ' + t);
         }
-        await shot(p, 'review-' + tag + '-admin-empty');
+        await shot(p, 'admin-review-' + tag + '-admin-empty');
         await p.close();
         await empty.ctx.close();
         const member = await context(browser, base, { width, height, scheme, who: 'member' });
@@ -290,7 +304,7 @@ async function main() {
     console.log('FAIL signed-out states and controls (local copy of ' + ROOT + ')\n' + problems.map((x) => '  ' + x).join('\n'));
     process.exitCode = 1;
   } else {
-    console.log('OK signed-out states and controls (local copy of ' + ROOT + '): ' + (CHECKS ? checked + ' signed-out page views (5 pages at 390 and 1280 px, dark and light), the administrator\'s /controls and /review, a member\'s /feed' : 'screenshots only') + (SHOTS ? '; screenshots in ' + SHOTS : ''));
+    console.log('OK signed-out states and controls (local copy of ' + ROOT + '): ' + (CHECKS ? checked + ' signed-out page views (5 pages at 390 and 1280 px, dark and light), the old /review and /controls passed on, the administrator\'s /admin/controls and /admin/review, a member\'s /feed' : 'screenshots only') + (SHOTS ? '; screenshots in ' + SHOTS : ''));
   }
 }
 

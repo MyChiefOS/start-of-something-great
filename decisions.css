@@ -1,0 +1,25 @@
+/* /decisions (the design handoff of Nov 5, 2026: static/decisions.html). The design's inline styles, as classes, on the
+   site's own tokens; the shared components are in design.css. */
+
+/* The "Proposed" notice sits at the top of main, close under the header, as the design draws it above the page. */
+.story > .notice:first-child { margin: -2rem 0 3.5rem; }
+.decisions .status-line:empty { display: none; }
+.decisions .status-line { margin-top: 0.5rem; }
+.decisions .retry-row { margin: 0.5rem 0 0; }
+.decisions .table-wrap { margin: 0.5rem 0 1.25rem; }
+.decisions #day-note { max-width: 42rem; }
+
+/* Second Look: the card, its count and its track (a <progress>, so the value needs no inline style). */
+.sl-card { max-width: 42rem; }
+.sl-card .sl-text { margin: 0.6rem 0 0.5rem; }
+.sl-row { display: flex; align-items: center; gap: 0.9rem; }
+.sl-row[hidden] { display: none; }
+.sl-num { font-size: 2.4rem; line-height: 1; white-space: nowrap; }
+.sl-track { flex: 1; min-width: 4rem; height: 4px; border: 0; border-radius: 2px; background: var(--rule); color: var(--amber); -webkit-appearance: none; appearance: none; }
+.sl-track::-webkit-progress-bar { background: var(--rule); border-radius: 2px; }
+.sl-track::-webkit-progress-value { background: var(--amber); border-radius: 2px; }
+.sl-track::-moz-progress-bar { background: var(--amber); border-radius: 2px; }
+.sl-card .sl-fine { margin-top: 0.5rem; }
+
+.decisions .data th[scope="row"] { font-family: var(--display); font-weight: 600; font-size: 0.9rem; color: var(--text); border-bottom-color: var(--rule); }
+.decisions .end-links { margin-top: 1.25rem; }

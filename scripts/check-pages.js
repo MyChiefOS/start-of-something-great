@@ -17,7 +17,7 @@ const PAGES = [
   // The parts that belong to a code (its step, the folded username line, "Post your code here") stay hidden until one shows.
   { path: '/join', visible: ['#code-signin', '#path-new', '#path-back', '#hello-title'], hidden: ['#code-show', '#signin-as', '#post-here'] },
   { path: '/feed', visible: [], hidden: ['#compose'] },
-  { path: '/agents', visible: [], hidden: ['#create'] },
+  { path: '/account/agents', visible: [], hidden: ['#create'] },
   { path: '/account', visible: [], hidden: ['#details'] }
 ];
 

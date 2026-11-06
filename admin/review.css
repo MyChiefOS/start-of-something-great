@@ -1,0 +1,28 @@
+/* /admin/review only (the design handoff of Nov 5, 2026: static/review.html). The design's inline styles as classes,
+   on the site's own tokens (styles.css) and components (design.css). */
+.story .queue-summary { margin: -1rem 0 1.5rem; }
+.review #queue { margin: 0; }
+.review .queue-item { overflow-wrap: anywhere; }
+.queue-item .pill { white-space: normal; }
+.story .queue-item p { margin: 0.5rem 0; }
+.story .queue-item p.paused-line { margin: 0 0 0.5rem; }
+
+/* The post's exact words, as the design quotes them: the marks are drawn, not added to the text. */
+.story .queue-item blockquote.words { margin: 0.6rem 0 0.4rem; padding: 0; border: 0; font-style: normal; max-width: none; }
+.story .queue-item blockquote.words p { margin: 0 0 0.5rem; white-space: pre-line; }
+.queue-item blockquote.words p:first-child::before { content: "\201C"; }
+.queue-item blockquote.words p:last-child::after { content: "\201D"; }
+
+/* The decisions: two big buttons side by side, drawn alike (CODING_AGENT_SPEC.md 2.2: equal weight, no colour bias;
+   each says what it does in words). */
+.decide { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0 0.25rem; }
+.decide .btn { min-height: 3rem; padding: 0.85rem 1rem; font-size: 1rem; }
+.queue-item .acts { margin: 0.5rem 0 0; gap: 0.6rem; }
+.queue-item.decided > :not(.fine):not(.btn):not(.pill) { opacity: 0.55; }
+.review .empty-state { text-align: left; }
+
+.story p.refresh { margin: 1rem 0 0; }
+.story p.review-note { margin-top: 1.25rem; }
+
+/* No extra space above the appeals (styles.css gives every <section> 3.5rem); its heading spaces it, as drawn. */
+.review #appeals { padding: 0; }

@@ -127,7 +127,7 @@ test('C1: the home page Now and Next lists match /api/status exactly', () => {
   // UX PR C (the UI/UX review of Oct 31, finding 15): each Now item links a short phrase and keeps the rest as plain
   // text, and the list leads with taking part (joining and posting) rather than proposals. Its words and links still
   // match /api/status exactly: each item's text, tags removed, is the status text, and its one link is the status URL.
-  const items = [...html.match(/<h3>Now<\/h3>[\s\S]*?<\/ul>/)[0].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => ({
+  const items = [...html.match(/<h3 class="kicker">Now<\/h3>[\s\S]*?<\/ul>/)[0].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => ({
     text: m[1].replace(/<[^>]+>/g, ''),
     links: [...m[1].matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((x) => ({ href: x[1], words: x[2] }))
   }));
@@ -139,11 +139,15 @@ test('C1: the home page Now and Next lists match /api/status exactly', () => {
     assert.ok(li.links[0].words.split(' ').length <= 6 && li.links[0].words.length < item.text.length, 'a short phrase links, not the whole line: ' + item.text);
   }
   assert.match(items[0].links[0].href, /\/join$/, 'Now leads with joining, not proposals');
+  // Next, in the design's markup: the lead words bold, the rest plain, then when (or a link to the design).
+  const next = html.match(/<h3 class="kicker">Next<\/h3>[\s\S]*?<\/ul>/)[0];
   for (const item of status.phase.next) {
-    assert.ok(html.includes('<strong>' + item.text + '</strong> <span>' + item.target + '</span>'), 'Next is missing: ' + item.text);
+    const li = [...next.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1].replace(/<[^>]+>/g, '')).find((t) => t.startsWith(item.text.replace(/\.$/, '').split(',')[0].split(' that ')[0]));
+    assert.ok(li && li.replace(/ See the design$/, '').replace(/ When traffic needs it\.$/, '') === item.text, 'Next is missing: ' + item.text + ' (found: ' + li + ')');
+    if (item.url) assert.ok(next.includes('href="' + item.url.replace('https://dayonegreat.com', '') + '"'), 'Next links ' + item.url);
   }
-  const nowCount = (html.match(/<h3>Now<\/h3>[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length;
-  const nextCount = (html.match(/<h3>Next<\/h3>[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length;
+  const nowCount = (html.match(/<h3 class="kicker">Now<\/h3>[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length;
+  const nextCount = (html.match(/<h3 class="kicker">Next<\/h3>[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length;
   assert.strictEqual(nowCount, status.phase.live.length, 'Now has extra items not in /api/status');
   assert.strictEqual(nextCount, status.phase.next.length, 'Next has extra items not in /api/status');
 });

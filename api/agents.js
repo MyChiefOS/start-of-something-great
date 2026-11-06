@@ -61,7 +61,7 @@ const ALL = '0'.repeat(64);
 const SUBAGENT_LIMITS = { subagent_agent: { windowSeconds: 3600, max: 60 } };
 // Letting an agent act without approval needs a sign-in this recent (R17), so a stolen or forgotten session can't do it.
 const FRESH_MINUTES = 10;
-const REAUTH = '/join?return_to=%2Fagents';
+const REAUTH = '/join?return_to=%2Faccount%2Fagents';
 
 function reply(res, code, body) {
   res.statusCode = code;
@@ -123,7 +123,7 @@ async function startActing(run, who, req, cfg, agentId) {
   });
   if (out.rules) {
     return { acting: true, rules: out.rules, note: 'It posts on its own now, up to ' + out.rules.daily_cap + ' a day, under your rules; our automatic checks still look at every post. '
-      + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/agents.' };
+      + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/account/agents.' };
   }
   // JEVs asking the owner to confirm (a challenge) is answered by a fresh sign-in, so it gets the same sign-in link as a
   // stale sign-in (the fresh review of group 4: with JEVs enforcing, a stale owner meets the challenge first).
@@ -141,13 +141,13 @@ const shapeAgent = (a) => ({ id: a.id, name: a.name, description: a.description,
   parent_id: a.parentId === undefined ? null : a.parentId, depth: a.depth === undefined ? 0 : a.depth, expires_at: a.expiresAt === undefined ? null : a.expiresAt,
   keys: a.keys.map((k) => ({ id: k.id, created_at: k.createdAt, revoked_at: k.revokedAt })) });
 
-const KEY_NOTE = 'This key is shown once. Keep it secret; send it as "Authorization: Bearer <key>". Revoke it at ' + ORIGIN + '/agents if it leaks.';
+const KEY_NOTE = 'This key is shown once. Keep it secret; send it as "Authorization: Bearer <key>". Revoke it at ' + ORIGIN + '/account/agents if it leaks.';
 
 // A signed-in owner, on our own pages, for every change; reading needs only the session.
 async function owner(req, res, run, { write }) {
   if (write && !sameSite(req)) { reply(res, 403, { error: 'This can only be done from dayonegreat.com.' }); return null; }
   const who = await session.current(req, run);
-  if (!who) { reply(res, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Fagents' }); return null; }
+  if (!who) { reply(res, 401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Faccount%2Fagents' }); return null; }
   return who;
 }
 
@@ -191,7 +191,7 @@ const ROUTES = {
     return reply(res, 201, {
       agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE,
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
-      claim_url: ORIGIN + '/agents#claim=' + code, claim_expires_in_hours: 24,
+      claim_url: ORIGIN + '/account/agents#claim=' + code, claim_expires_in_hours: 24,
       next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
         '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 posts and replies a day, unless '
         + 'they choose drafts, hadn\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care (then each post waits '
@@ -222,7 +222,7 @@ const ROUTES = {
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
     const start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
-      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/agents.' };
+      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     const a = list.find((x) => x.id === out.id);
     return reply(res, 200, { claimed: true, agent: a ? shapeAgent(a) : { id: out.id }, acting: start.acting, note: start.note,
@@ -256,7 +256,7 @@ const ROUTES = {
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     const start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
-      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/agents.' };
+      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
     return reply(res, 201, { agent_id: out.id, status: 'active', key: k.key, key_note: KEY_NOTE, acting: start.acting, note: start.note,
       ...(start.rules ? { rules: start.rules } : {}), ...(start.reauth ? { reauth: start.reauth } : {}) });
   },

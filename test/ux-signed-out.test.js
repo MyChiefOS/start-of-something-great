@@ -1,6 +1,8 @@
 // UX PR D (the UI/UX review of Oct 31, findings 5, 6 and 12's front-end part; Aaron approved all its recommendations on
 // Oct 31): signed-out states on /feed, /agents, /account, /review and /controls, Second Look's mode on /controls, and
-// the review queue's reasons and empty state. Each page's real HTML and script run here in a small stand-in DOM (no
+// the review queue's reasons and empty state. Since the design handoff of Nov 5, 2026 the owner's agents are at
+// /account/agents and the administrator's pages at /admin/review and /admin/controls, each with the design's kicker
+// ("Administrator only") and standing line above the panel: fixed words, never admin data. Each page's real HTML and script run here in a small stand-in DOM (no
 // browser); scripts/check-signed-out.js runs the same pages in Chromium and checks the first screen.
 'use strict';
 const test = require('node:test');
@@ -141,7 +143,7 @@ const CONTROLS = (mode) => ({
   jevs: { mode: 'shadow', last_24h: [], recent: [] },
   second_look: mode === null ? null : { mode, paused: false, decisions_7d: 0, clears_7d: 0, rejects_7d: 0, failed_closed_7d: 0, published_total: 0,
     reversed_total: 0, shadow_clears_decided: 0, shadow_clears_removed: 0, shadow_error_upper_95: 1 } });
-const controls = (status, body) => page('controls.html', 'controls.js', (url, init) => {
+const controls = (status, body) => page('admin/controls.html', 'admin/controls.js', (url, init) => {
   if (init && init.method === 'POST') { const b = JSON.parse(init.body); return [200, { mode: b.mode, message: 'Second Look is now in ' + b.mode + ' mode.' }]; }
   return [status, body];
 });
@@ -150,23 +152,25 @@ const pressed = (p) => modeButtons(p).map((b) => b.getAttribute('data-mode') + '
 
 // ---- /controls (finding 5) ----
 
-test('/controls, given a 401: only the heading and the sign-in panel show, and nothing is sent', async () => {
+test('/admin/controls, given a 401: only the kicker, the heading, the standing line and the sign-in panel show, and nothing is sent', async () => {
   const p = controls(401, { error: 'Sign in to see the owner controls.', join: '/join' });
   await settle();
-  assert.deepStrictEqual(showing(p.main), ['h1', 'signed-out']);
+  assert.deepStrictEqual(showing(p.main), ['p', 'h1', 'p', 'signed-out']);
+  assert.deepStrictEqual(p.main.children.filter((c) => c.shown() && c.tagName === 'P').map((c) => c.textContent),
+    ['Administrator only', 'Administrator only. The site\'s numbers, the emergency brake, bans and Second Look.'], 'fixed words only');
   assert.strictEqual(p.$('admin').hidden, true, 'the brake, owners, JEVs and Second Look stay hidden');
-  const button = p.$('signed-out').querySelector('a.button');
+  const button = p.$('signed-out').querySelector('a.btn');
   assert.strictEqual(button.textContent, 'Sign in with GitHub');
-  assert.strictEqual(button.getAttribute('href'), '/join?return_to=%2Fcontrols');
+  assert.strictEqual(button.getAttribute('href'), '/join?return_to=%2Fadmin%2Fcontrols');
   assert.deepStrictEqual(p.sent, []);
 });
 
-test('/controls, signed in but not the administrator (403), or the database off: one line, no controls, no panel', async () => {
+test('/admin/controls, signed in but not the administrator (403), or the database off: one line, no controls, no panel', async () => {
   for (const [status, body, line] of [[403, { error: 'Only Aaron can see the owner controls.' }, 'Only Aaron can see the owner controls.'],
     [200, { totals: null, everyone: null, owners: [] }, 'The site’s own database isn’t switched on yet.']]) {
     const p = controls(status, body);
     await settle();
-    assert.deepStrictEqual(showing(p.main), ['h1', 'summary'], status);
+    assert.deepStrictEqual(showing(p.main), ['p', 'h1', 'p', 'summary'], status);
     assert.strictEqual(p.$('summary').textContent, line);
   }
 });
@@ -249,7 +253,7 @@ test('/controls: after Second Look pauses itself, choosing Shadow is sent, so th
 });
 
 test('/controls: what each mode does is said beside it, and every number in it is the database\'s (034)', () => {
-  const html = read('controls.html');
+  const html = read('admin/controls.html');
   const mig = read('db/migrations/034_second_look_v1.sql');
   for (const m of ['off', 'shadow', 'on']) assert.match(html, new RegExp('data-mode="' + m + '" aria-pressed="false" aria-describedby="sl-' + m + '-what"'));
   assert.match(html, /role="group" aria-labelledby="sl-modes-label"/);
@@ -263,8 +267,9 @@ test('/controls: what each mode does is said beside it, and every number in it i
   assert.match(html, /Once you have approved all of the last 80 posts it would have published, it switches itself on\./);
   assert.match(mig, /unlock_n integer not null default 80/);
   assert.match(mig, /update app\.sl_settings set mode = 'on', counted_since = now\(\)/);
-  // "at most 10 a day ... more than 1 in 80 ... pauses itself back to shadow".
-  assert.match(html, /It publishes easy held posts itself, at most 10 a day\. If you remove more than 1 in 80 of them \(any one, before its 80th\), it pauses itself back to shadow\./);
+  // "at most 10 a day ... more than 1 in 80 ... pauses itself back to shadow" (the design's words, Nov 5: one removal in
+  // its first 79 is already more than 1 in 80, so they hold without the old "(any one, before its 80th)").
+  assert.match(html, /It publishes easy held posts itself, at most 10 a day\. If you remove more than 1 in 80 of them, it pauses itself back to shadow\./);
   assert.match(mig, /if rev \* 80 > pub then/, 'one removal in its first 79 is more than 1 in 80');
   assert.match(mig, /daily_clear_cap integer not null default 10/);
   assert.match(mig, /update app\.sl_settings set mode = 'shadow', counted_since = now\(\), paused_reason/);
@@ -278,7 +283,7 @@ test('/controls: what each mode does is said beside it, and every number in it i
 
 // ---- The signed-out panel (finding 6) ----
 
-const PANELS = { 'feed.html': '/feed', 'agents.html': '/agents', 'account.html': '/account', 'review.html': '/review', 'controls.html': '/controls' };
+const PANELS = { 'feed.html': '/feed', 'account/agents.html': '/account/agents', 'account.html': '/account', 'admin/review.html': '/admin/review', 'admin/controls.html': '/admin/controls' };
 const JOIN_LINE = '<p class="fine">Joining needs a free GitHub account and a private file of yours as a key. No new password.</p>';
 
 test('one panel, the same on each page that needs sign-in: a sentence, one primary button to /join that comes back, one line on joining', () => {
@@ -289,7 +294,9 @@ test('one panel, the same on each page that needs sign-in: a sentence, one prima
     const lines = panels[0].split('\n').map((l) => l.trim()).filter(Boolean);
     assert.strictEqual(lines.length, 5, file + ': ' + lines.join(' / '));
     assert.match(lines[1], /^<p>[^<]+\.<\/p>$/, file + ': one sentence on what the page is for');
-    assert.strictEqual(lines[2], '<p><a class="button primary" href="/join?return_to=' + encodeURIComponent(url) + '">Sign in with GitHub</a></p>', file);
+    // The design handoff of Nov 5 (static/feed.html): the button is a small amber pill (design.css .btn.p.s).
+    assert.strictEqual(lines[2], '<p><a class="btn p s" href="/join?return_to=' + encodeURIComponent(url) + '">Sign in with GitHub</a></p>', file);
+    assert.match(html, /<link rel="stylesheet" href="\/design\.css">/, file + ' loads the design components');
     assert.strictEqual(lines[3], JOIN_LINE, file);
     assert.ok(!/<script>|<script [^>]*>[^<]/.test(html), file + ': no inline script');
   }
@@ -355,10 +362,11 @@ test('/feed signed in: no panel, Report still opens its form; a sign-in that end
 
 // ---- /agents (finding 6) ----
 
-test('/agents signed out: the panel, three short lines, and the full rules in a closed "How agents work" disclosure', async () => {
-  const p = page('agents.html', 'agents.js', () => [401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Fagents' }]);
+test('/account/agents signed out: three short lines, the panel, and the full rules in a closed "How agents work" disclosure', async () => {
+  const p = page('account/agents.html', 'account/agents.js', () => [401, { error: 'Sign in to manage agents.', join: '/join?return_to=%2Faccount%2Fagents' }]);
   await settle();
-  assert.deepStrictEqual(showing(p.main), ['h1', 'p', 'signed-out', 'agents-intro', 'agent-rules']);
+  // The design's order (static/agents.html): the heading, the standing line, the three lines, then (signed out) the panel.
+  assert.deepStrictEqual(showing(p.main), ['h1', 'p', 'agents-intro', 'signed-out', 'agent-rules']);
   assert.strictEqual(p.$('agents-intro').querySelectorAll('li').length, 3);
   const rules = p.$('agent-rules');
   assert.strictEqual(rules.open, false);
@@ -368,7 +376,7 @@ test('/agents signed out: the panel, three short lines, and the full rules in a 
   assert.ok(paragraphs.every((x) => !x.shown()), 'and folded away');
   assert.ok(rules.textContent.split(/\s+/).length > 300);
   // The three lines say only what the rules and the claim form say.
-  const html = read('agents.html');
+  const html = read('account/agents.html');
   assert.match(html, /<li>An agent posts and replies for you, under rules you set\.<\/li>/);
   assert.match(html, /up to 20 posts and replies a day under your rules/);
   assert.match(html, /<li>It drafts each post for your approval, or acts on its own up to a daily limit you choose\.<\/li>/);
@@ -377,12 +385,14 @@ test('/agents signed out: the panel, three short lines, and the full rules in a 
   assert.match(html, /Every agent post says which it was, and links to a receipt\./);
 });
 
-test('/agents signed in: no panel and no short lines; the rules start open, as before', async () => {
-  const p = page('agents.html', 'agents.js', (url) => [200, url === '/api/agents/activity' ? { agents: [], inbox: [], containment: null, unread_notices: 0 } : { agents: [], can_own: true }]);
+test('/account/agents signed in: no panel; the three lines stay and the rules start closed, as the design draws them', async () => {
+  const p = page('account/agents.html', 'account/agents.js', (url) => [200, url === '/api/agents/activity' ? { agents: [], inbox: [], containment: null, unread_notices: 0 } : { agents: [], can_own: true }]);
   await settle();
   assert.strictEqual(p.$('signed-out').hidden, true);
-  assert.strictEqual(p.$('agents-intro').hidden, true);
-  assert.strictEqual(p.$('agent-rules').open, true);
+  assert.strictEqual(p.$('agents-intro').shown(), true);
+  assert.strictEqual(p.$('agent-rules').open, false);
+  assert.strictEqual(p.$('mine').shown(), true);
+  assert.strictEqual(p.$('status').textContent, 'No agents yet.');
 });
 
 // ---- /account (finding 6) ----
@@ -395,14 +405,14 @@ test('/account signed out: only the heading and the panel', async () => {
 
 // ---- /review (findings 6 and 12) ----
 
-const review = (status, body) => page('review.html', 'review.js', (url) => (url === '/api/notify/appeals' ? [status === 200 ? 200 : status, { containments: [] }] : [status, body]));
+const review = (status, body) => page('admin/review.html', 'admin/review.js', (url) => (url === '/api/notify/appeals' ? [status === 200 ? 200 : status, { containments: [] }] : [status, body]));
 const item = (o) => ({ id: 'i', lane: 'people', status: 'waiting', body: 'Text.', author: { name: 'A', level: 1, status: 'active', live_posts: 0 },
   flagged_at: '2026-10-31T09:00:00Z', first_posts: false, reports: 0, reasons: [], notes: [], classifiers: [], appealed: false, actions: ['approve', 'remove'], ...o });
 
-test('/review signed out: the heading, the panel and the note on how decisions work; no Refresh', async () => {
+test('/admin/review signed out: the kicker, the heading, the standing line, the panel and the note on how decisions work; no Refresh', async () => {
   const p = review(401, { error: 'Sign in to review.' });
   await settle();
-  assert.deepStrictEqual(showing(p.main), ['h1', 'signed-out', 'review-note']);
+  assert.deepStrictEqual(showing(p.main), ['p', 'h1', 'p', 'signed-out', 'review-note']);
 });
 
 test('/review: nothing waiting says what happens instead; JEVs checks every post (032) and owners approve their agents\' drafts', async () => {
@@ -412,7 +422,7 @@ test('/review: nothing waiting says what happens instead; JEVs checks every post
   assert.strictEqual(p.$('queue').textContent, 'JEVs checks every post, and owners approve their own agents’ drafts. Anything held, hidden, reported or appealed comes here.');
   // Second Look's part is said once, in the page's static note, never beside an item: the queue stays blind to its
   // suggestions, so Aaron's decisions stay his own (test/second-look.test.js; the design review of PR D, finding 4).
-  assert.match(read('review.html'), /When Second Look is on, it may publish easy held posts before they reach you, and you get a notice for each\.<\/p>/);
+  assert.match(read('admin/review.html'), /When Second Look is on, it may publish easy held posts before they reach you, and you get a notice for each\.<\/p>/);
   const mig34 = read('db/migrations/034_second_look_v1.sql');
   assert.match(mig34, /if v_decision <> 'clear' or s\.mode <> 'on' or s\.paused_reason is not null then/, 'it publishes only when on');
   assert.match(mig34, /perform app\.notify\(null, 'alert', 'Second Look published a held post'/, 'a notice to the administrator for each');
@@ -436,7 +446,8 @@ test('/review: an item with several reasons lists them oldest first, says when i
   assert.match(cards[0].textContent, /In the queue since .+\./);
   const when = cards[0].querySelector('time');
   assert.ok(when && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(when.getAttribute('datetime')), 'a machine-readable time for agents');
-  assert.deepStrictEqual(cards.map((c) => c.querySelectorAll('button').map((b) => b.textContent)), [['Approve', 'Remove'], ['Remove', 'Undo'], ['Keep', 'Remove']]);
+  // The design's words (static/review.html): Publish, Keep, Remove; Undo after a removal.
+  assert.deepStrictEqual(cards.map((c) => c.querySelectorAll('button').map((b) => b.textContent)), [['Publish', 'Remove'], ['Remove', 'Undo'], ['Keep', 'Remove']]);
   // These are the rules the order rests on.
   assert.match(read('db/migrations/010_jevs.sql'), /p\.status in \('waiting', 'removed'\)\s+and exists \(select 1 from app\.jevs_decisions d where d\.subject_id = p\.id and d\.applied and d\.effect in \('hold', 'hide'\)\)/);
   assert.match(read('db/migrations/032_guardrails.sql'), /if subj_kind = 'post' and eff in \('challenge', 'hold'\) and post_status = 'live' then\s+update app\.posts p set status = 'waiting'/);

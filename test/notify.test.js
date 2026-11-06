@@ -254,7 +254,7 @@ test('N5: notice links are paths on this site only; agent names in titles are ma
   assert.ok(!t.title.includes('bob@example.com'), t.title);
   assert.match(t.title, /\[email hidden\]/);
   assert.deepStrictEqual(box.untrusted_fields, ['notices[].title', 'notices[].body']);
-  assert.match(fs.readFileSync(path.join(root, 'account.js'), 'utf8'), /n\.link && \/\^\\\/\(\?!\\\/\)\/\.test\(n\.link\)/, 'the page checks again before linking');
+  assert.ok(fs.readFileSync(path.join(root, 'account.js'), 'utf8').includes(String.raw`n.link && /^\/(?![/\\])/.test(n.link)`), 'the page checks again before linking (no // or /\ either)');
 });
 
 test('scanner-safe sign-in links (item 4): the email link opens a page that changes nothing; only a same-site POST uses it', () => {
@@ -329,7 +329,7 @@ test('PR 15: keeping an agent acting on its own (R33) needs a fresh sign-in, fro
   const stale = await agentsApi('POST', 'reconfirm', owner, { agent: ag.id, version: shown.rules.version });
   assert.strictEqual(stale.status, 403, JSON.stringify(stale.json));
   assert.match(stale.json.error, /sign in again/i);
-  assert.strictEqual(stale.json.reauth, '/join?return_to=%2Fagents');
+  assert.strictEqual(stale.json.reauth, '/join?return_to=%2Faccount%2Fagents');
   assert.strictEqual(await versions(), n0, 'nothing was confirmed');
   const same = (x) => x`insert into app.agent_rules (agent_id, post_mode, reply_mode, report_mode, daily_cap, reason) values (${ag.id}, 'act', 'draft', 'draft', 1000, 'reconfirmed')`;
   await assert.rejects(run(owner.ctx, same), /fresh_sign_in/, 'the database refuses it without a fresh sign-in');

@@ -13,16 +13,26 @@ const served = [
   ...fs.readdirSync(path.join(root, 'api')).filter((f) => f.endsWith('.js')).map((f) => 'api/' + f)
 ];
 
+// The pages scripts/pages.js writes from the record (the design handoff, phase 7) reprint its rows word for word, and a
+// slipped date keeps its original target there (CHARTER.md section 1; ROADMAP.md: "Nothing is quietly edited"). Those
+// rows are history, not promises: they are checked below instead (each Nov 6 row on /roadmap carries its result).
+const RECORD_ROWS = { 'roadmap.html': /^\s*<tr>/, 'status.html': /^\s*<tr>/, 'operations.html': /^\s*<li><p class="when">/ };
+
 test('R-5: no served page, script, API message or llms.txt promises a preview or November 6', () => {
   const bad = [];
   for (const f of served) {
     fs.readFileSync(path.join(root, f), 'utf8').split('\n').forEach((line, i) => {
       // The status page keeps the dropped milestone as history: "dropped Oct 24: no private preview (Aaron)".
       if (/dropped Oct 24: no private preview/.test(line)) return;
+      if (RECORD_ROWS[f] && RECORD_ROWS[f].test(line)) return;
       if (/private preview|with the preview|november 6|nov\.? 6\b/i.test(line)) bad.push(f + ':' + (i + 1));
     });
   }
   assert.deepStrictEqual(bad, []);
+  // Each roadmap row with a Nov 6 target says how it ended: none reads as still open.
+  const rows = fs.readFileSync(path.join(root, 'roadmap.html'), 'utf8').split('\n').filter((l) => RECORD_ROWS['roadmap.html'].test(l) && /nov\.? 6\b/i.test(l));
+  assert.ok(rows.length >= 1);
+  for (const r of rows) assert.match(r, /<span class="pill[^"]*">(Done|Done, late|Dropped|Replaced|Removed|Missed|Built, not proven)<\/span>/, r.slice(0, 120));
 });
 
 test('R-5: the status page doesn\'t call Release 2 done until it is', () => {
@@ -72,7 +82,8 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
     [['button primary', '/join', 'Join with GitHub'], ['button', '/connect', 'Connect your agent']]);
   // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="also"><span>Early access: open since Oct 29, 2026, and welcoming our first members and their agents\.<\/span> <span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> <a href="\/handshake">Read the handshake<\/a> <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+  assert.match(hero, /<p class="also"><span>Early access: open since Oct 29, 2026, and welcoming our first members and their agents\.<\/span> <span>You'll need a GitHub account \(they're free\)\.<\/span> <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+  assert.match(hero, /<p class="kicker">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
   assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js']);
@@ -102,14 +113,14 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.match(read('receipt.js'), /row\('Acts for', r\.owner\.name\)/);
 
   // How it works: join; post or connect an agent; see what JEVs did and why.
-  const steps = main.match(/<section aria-labelledby="steps">[\s\S]*?<\/section>/)[0];
-  assert.deepStrictEqual([...steps.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]),
+  const steps = main.match(/<section class="sec" aria-labelledby="steps">[\s\S]*?<\/section>/)[0];
+  assert.deepStrictEqual([...steps.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1]),
     ['Join with GitHub.', 'Post, or connect an agent.', 'See what our checks (JEVs) did, and why.']);
   const join = read('join.html');
   assert.ok(join.includes('get a one-time code') && join.includes('choose a key file'), 'step 1: a one-time code and a key file');
   // Step 3 on the site: low goes ahead, medium waits for its owner, high is held for review, and the narrow AI (Second
   // Look) may clear only easy holds. The last clause can't go while the line describes what happens to high risk.
-  assert.match(steps, /On the site, low risk goes ahead, medium waits for you to confirm, and high risk is held for review; a narrow AI may clear only easy holds\./);
+  assert.match(steps, /Low risk goes ahead, medium waits for you to confirm, and high risk is held for review; a narrow AI may clear only easy holds\./);
   assert.match(privacy, /Low risk goes ahead\. A medium-risk action waits until its owner confirms it/);
   assert.match(privacy, /on the site, Second Look, below, may publish an easy held post itself/);
   assert.match(privacy, /only posts held just for account age, sign-in, activity, links or region, with no report or appeal open, at most 10 a day/);
@@ -120,7 +131,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
 
 test('UX PR C: home.css, the home page\'s own styles, is loaded by the home page only, after styles.css', () => {
   const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
-  assert.match(read('index.html'), /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/home\.css">/);
+  assert.match(read('index.html'), /<link rel="stylesheet" href="\/styles\.css">\n  <link rel="stylesheet" href="\/design\.css">\n  <link rel="stylesheet" href="\/home\.css">/);
   for (const f of fs.readdirSync(root).filter((x) => x.endsWith('.html') && x !== 'index.html')) assert.ok(!read(f).includes('/home.css'), f + ' does not load home.css');
   // The glow fades out before the horizon line (finding 15): a mask takes it to nothing above the box's lower edge.
   const css = read('home.css');

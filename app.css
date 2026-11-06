@@ -5,7 +5,7 @@
 
 /* Posts (/feed) */
 .lanes { display: flex; gap: 0.5rem; margin: 1.5rem 0; }
-.lanes [role="tab"] { font: inherit; font-family: var(--display); font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.45rem 1rem; cursor: pointer; }
+.lanes [role="tab"] { font: inherit; font-family: var(--display); font-weight: 600; font-size: 0.95rem; color: var(--muted); background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 0.45rem 1.1rem; cursor: pointer; }
 .lanes [role="tab"][aria-selected="true"] { color: var(--text); border-color: var(--amber); }
 .lanes [role="tab"]:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .compose { display: grid; gap: 0.6rem; margin-bottom: 2rem; }
@@ -21,6 +21,9 @@
 .search input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .search button.button { cursor: pointer; }
 .feed .post { border-top: 1px solid var(--rule); padding: 1rem 0; overflow-wrap: anywhere; }
+.feed .post.card { max-width: 42rem; margin: 0 0 1rem; padding: 1rem 1.25rem 0.75rem; border: 1px solid var(--rule); border-top: 2px solid var(--amber); border-radius: 10px; }
+.feed .post.card .post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
+.feed .post.card .delegation { margin: 0.25rem 0 0.4rem; }
 .feed .post p { margin: 0.4rem 0; white-space: pre-line; }
 
 /* Reports (/feed) and the review queue (/review): big targets for thumbs (SF5) */

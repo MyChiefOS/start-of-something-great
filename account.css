@@ -1,0 +1,40 @@
+/* /account only (the design handoff of Nov 5, 2026: static/account.html). The design's inline styles as classes, on
+   the site's own tokens (styles.css) and components (design.css). Its own file, so the shared sheets stay within the
+   page-weight budget (SF2). */
+
+/* Fields as the design draws them: the label above, a rounded box under it. */
+.field-form label { display: block; margin: 0.9rem 0 0.4rem; font-family: var(--display); font-weight: 600; }
+.field-form input { box-sizing: border-box; width: 100%; max-width: 24rem; min-height: 2.75rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--rule-strong); border-radius: 10px; padding: 0.6rem 0.9rem; }
+.field-form input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.story .field-form p { margin: 0.75rem 0 0; }
+
+/* A destructive button keeps the design's red edge and words (never colour alone: it says what it does). */
+.btn.danger { border-color: #c2413b; color: #f1857f; }
+.btn.danger:hover { border-color: #e0574f; color: #ffb0ab; }
+@media (prefers-color-scheme: light) { .btn.danger { color: #a3302a; } .btn.danger:hover { color: #7d211c; } }
+
+/* Notices as the design's cards: the pill, the words, the answers in one row. */
+#notices .stack { margin: 0.5rem 0 0; }
+.story #notices .notices-summary { margin: 0.75rem 0 0; }
+.notice-card { overflow-wrap: anywhere; }
+.story .notice-card p { margin: 0.6rem 0 0.5rem; }
+.story .notice-card p.notice-meta { margin: 0.5rem 0 0; }
+.notice-card .acts { margin: 0.5rem 0 0; gap: 0.6rem; }
+.notice-card .draft-words { white-space: pre-wrap; font-style: normal; border-left: 2px solid var(--amber); padding: 0.1rem 0 0.1rem 0.75rem; margin: 0.6rem 0; }
+.notice-card.decided > :not(.notice-meta):not(.pill) { opacity: 0.6; }
+.notice-meta .btn { margin-left: 0.4rem; }
+.story p.read-all { margin: 0.9rem 0 0; }
+
+/* Sign-in methods: Unlink sits on the method's own line; Add is a row of small buttons. */
+#signins .inline-form { display: inline; margin-left: 0.5rem; }
+.add-methods .btn { margin-right: 0.5rem; }
+
+/* Signing out: the two forms side by side, as drawn. */
+.acts.sign-out { margin: 0 0 0.5rem; }
+.acts.sign-out form { margin: 0; }
+.story p.sessions { margin: 0 0 0.75rem; }
+
+/* The design has no extra space above a section (styles.css gives every <section> 3.5rem): the headings' own margins
+   space the page, as drawn. The account line sits just under "Signed in as ...". */
+.account #details, .account #notices { padding: 0; }
+.story #who { margin: -1.5rem 0 0; }
