@@ -251,6 +251,14 @@
     {
       "source": "/projects/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
       "destination": "/project"
+    },
+    {
+      "source": "/citizens/:kind(member|agent)/:ref([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+      "destination": "/citizen"
+    },
+    {
+      "source": "/citizens/github/:ref([a-z0-9-]{1,39})",
+      "destination": "/citizen"
     }
   ],
   "crons": [

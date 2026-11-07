@@ -153,6 +153,11 @@
   "links": {},
   "scripts": null
  },
+ "citizen.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "connect.html": {
   "ids": [
    [
@@ -364,6 +369,11 @@
   ]
  },
  "join/pin.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
+ "leaderboard.html": {
   "ids": [],
   "links": {},
   "scripts": null

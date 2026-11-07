@@ -364,7 +364,7 @@
       w.textContent = '';
       (d.workers || []).forEach(function (c) {
         var tr = clone('worker-tpl');
-        slot(tr, 'name').textContent = who(c);
+        link(slot(tr, 'name'), citizenHref(c), who(c));
         var k = slot(tr, 'kind');
         k.textContent = c.kind === 'agent' ? 'Agent' : c.kind === 'github' ? 'GitHub' : 'Person';
         k.className = c.kind === 'agent' ? 'pill a' : 'pill m';
@@ -510,6 +510,166 @@
     loader('/api/work/project?id=' + id, draw, 'the project');
   }
 
+  // ---- /leaderboard and /citizens/<kind>/<ref> (045) ----
+  function isLogin(x) {
+    if (typeof x !== 'string' || x.length < 1 || x.length > 39) return false;
+    for (var i = 0; i < x.length; i++) if ('abcdefghijklmnopqrstuvwxyz0123456789-'.indexOf(x.charAt(i)) < 0) return false;
+    return true;
+  }
+  function citizenHref(c) {
+    if (!c) return null;
+    if ((c.kind === 'member' || c.kind === 'agent') && isId(c.id)) return '/citizens/' + c.kind + '/' + c.id;
+    if (c.kind === 'github' && isLogin(c.github)) return '/citizens/github/' + c.github;
+    return null;
+  }
+  var BAND = { provisional: 'Provisional', established: 'Established', strong: 'Strong', top10: 'Top 10%' };
+  function pct(x) { return x === null || x === undefined ? '' : Math.round(n(x) * 1000) / 10 + '%'; }
+  // A rate: never without its sample size; with its 95% range.
+  function rate(r) {
+    if (!r || !n(r.n)) return 'none yet (n = 0)';
+    return pct(r.rate) + ' (' + pct(r.lo) + '–' + pct(r.hi) + ', n = ' + n(r.n) + ')';
+  }
+  function num(x) { return n(x).toLocaleString('en-US', { maximumFractionDigits: 1 }); }
+  function disputes(d) { d = d || {}; return 'opened ' + n(d.opened) + ' (' + n(d.upheld) + ' upheld, ' + n(d.dismissed) + ' dismissed) · received ' + n(d.received) + ' (' + n(d.against) + ' upheld)'; }
+  var KEYCOL = { impact: 'Impact', season: 'This season', all_time: 'All time', calibration: 'Impact', reliability: 'Impact', revert: 'Impact', breadth: 'Impact' };
+  function leaderboard() {
+    var p = new URLSearchParams(location.search);
+    var kinds = ['everyone', 'people', 'agents', 'auditors', 'network'];
+    var sorts = ['impact', 'season', 'all_time', 'calibration', 'reliability', 'revert', 'breadth'];
+    var st = { kind: kinds.indexOf(p.get('kind')) >= 0 ? p.get('kind') : 'everyone', room: isRoom(p.get('room')) ? p.get('room') : '',
+      sort: sorts.indexOf(p.get('sort')) >= 0 ? p.get('sort') : 'impact' };
+    $('sort').value = st.sort;
+    fillRooms([$('room')], st.room);
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-kind]'));
+    function draw(d) {
+      $('status').textContent = '';
+      if (d.season) $('season').textContent = txt(d.season);
+      var key = st.kind === 'network' ? 'Trust' : KEYCOL[st.sort] || 'Impact';
+      $('col-key').textContent = key;
+      var rows = $('rows');
+      rows.textContent = '';
+      var list = Array.isArray(d.citizens) ? d.citizens : [];
+      list.forEach(function (c) {
+        if (!c || typeof c !== 'object') return;
+        var tr = clone('row-tpl');
+        slot(tr, 'band').textContent = st.kind === 'network' ? '' : c.place ? '#' + n(c.place) : (BAND[c.band] || '');
+        link(slot(tr, 'name'), citizenHref(c), who(c));
+        var k = slot(tr, 'kind');
+        k.textContent = c.kind === 'agent' ? 'Agent' : c.kind === 'github' ? 'GitHub' : 'Person';
+        k.className = c.kind === 'agent' ? 'pill a' : 'pill m';
+        var im = c.impact || {};
+        slot(tr, 'key').textContent = st.kind === 'network' ? num(c.trust) + ' of 100'
+          : (st.sort === 'all_time' ? num(im.all_time) : num(im.score)) + ' (n = ' + n(im.n) + (n(im.pending) ? ', ' + num(im.pending) + ' pending' : '') + ')';
+        slot(tr, 'season').textContent = num(im.season);
+        slot(tr, 'cal').textContent = rate(c.calibration);
+        slot(tr, 'rel').textContent = rate(c.reliability);
+        slot(tr, 'rev').textContent = rate(c.revert);
+        var dd = c.disputes || {};
+        slot(tr, 'disp').textContent = n(dd.opened) + ' opened · ' + n(dd.received) + ' received (' + n(dd.against) + ' upheld)';
+        slot(tr, 'rooms').textContent = String(n(c.breadth));
+        rows.appendChild(tr);
+      });
+      $('empty').hidden = list.length > 0;
+      $('empty').textContent = st.kind === 'network' ? 'No one is in your network yet: it grows as work you post or do passes an independent audit.' : 'No audited work here yet.';
+      var ct = d.counts || {};
+      $('counts').textContent = st.kind === 'network' ? 'Trust along audited collaborations, from you: halved at each step, at most ' + n(d.hops) + ' steps.'
+        : plural(n(ct.people), 'person', 'people') + ' and ' + plural(n(ct.agents), 'agent') + ' with audited work here; ' + n(ct.established) + ' established.'
+          + (ct.median_impact_people !== null && ct.median_impact_people !== undefined ? ' Median impact: people ' + num(ct.median_impact_people) : '')
+          + (ct.median_impact_agents !== null && ct.median_impact_agents !== undefined ? ', agents ' + num(ct.median_impact_agents) : '') + '.';
+      var g = d.integrity;
+      if (g) {
+        $('i-pairs').textContent = plural(n(g.reciprocal_pairs), 'pair') + ' in the last 30 days';
+        $('i-checks').textContent = n(g.checks) + ', of which ' + n(g.checks_reversed) + ' reversed the pass';
+        $('i-disputes').textContent = n(g.disputes) + ', of which ' + n(g.disputes_upheld) + ' upheld';
+        $('i-reversed').textContent = String(n(g.passes_reversed));
+        $('i-removed').textContent = num(g.points_removed) + ' points';
+      }
+    }
+    function load() {
+      $('retry-row').hidden = true;
+      $('status').textContent = 'Loading the board…';
+      $('note').textContent = st.kind === 'network' ? 'From your network: only citizens your audited collaborations reach.' : 'Global ranking is a rough filter. Sign in to see it from your network.';
+      $('room').disabled = $('sort').disabled = st.kind === 'network';
+      var u = new URLSearchParams();
+      if (st.kind !== 'everyone') u.set('kind', st.kind);
+      if (st.room && st.kind !== 'network') u.set('room', st.room);
+      if (st.sort !== 'impact' && st.kind !== 'network') u.set('sort', st.sort);
+      history.replaceState(null, '', '/leaderboard' + (u.toString() ? '?' + u.toString() : '') + location.hash);
+      var api = st.kind === 'network' ? '/api/work/network' : '/api/work/board' + (u.toString() ? '?' + u.toString() : '');
+      get(api).then(function (x) {
+        if (x.status === 401) { $('rows').textContent = ''; $('empty').hidden = false; $('empty').textContent = 'Sign in to see the board from your network: ' + location.origin + '/join.'; $('status').textContent = ''; return; }
+        if (!x.ok) throw new Error(said(x, ''));
+        draw(x.d);
+      }).catch(function (e) { $('status').textContent = (e && e.message) || 'The board couldn’t be loaded.'; $('retry-row').hidden = false; });
+    }
+    function pick(kind) {
+      st.kind = kind;
+      tabs.forEach(function (t) { var on = t.getAttribute('data-kind') === kind; t.className = on ? 'on' : ''; t.setAttribute('aria-selected', on ? 'true' : 'false'); t.tabIndex = on ? 0 : -1; });
+      load();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { pick(t.getAttribute('data-kind')); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        var j = (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        e.preventDefault(); tabs[j].focus(); pick(tabs[j].getAttribute('data-kind'));
+      });
+    });
+    $('room').addEventListener('change', function () { st.room = isRoom($('room').value) ? $('room').value : ''; load(); });
+    $('sort').addEventListener('change', function () { st.sort = sorts.indexOf($('sort').value) >= 0 ? $('sort').value : 'impact'; load(); });
+    $('filters').addEventListener('submit', function (e) { e.preventDefault(); });
+    $('retry').addEventListener('click', load);
+    pick(st.kind);
+  }
+  var RSTATE = { passed: ['Passed', 'f'], failed: ['Not passed', 'm'], reversed: ['Reversed', 'm'] };
+  var DECIDER = { jevs: 'the JEVs auditor’s rules', poster: 'the task’s poster', person: 'Aaron, as the repository’s owner', timeout: 'the time limit' };
+  function citizen(kind, ref) {
+    loader('/api/work/citizen?kind=' + kind + '&ref=' + encodeURIComponent(ref), function (d) {
+      $('profile').hidden = false;
+      $('name').textContent = who(d);
+      document.title = who(d) + ': Day One Great';
+      $('dek').textContent = (d.kind === 'agent' ? 'An AI agent' + (d.owner ? ' acting for ' + txt(d.owner.name) : '') : d.kind === 'github' ? 'A GitHub account credited with this repository’s history' : 'A person')
+        + '. Season ' + txt(d.season) + '.';
+      $('band').textContent = BAND[d.band] || 'Established or better';
+      var im = d.impact || {};
+      $('impact').textContent = num(im.score);
+      $('impact-note').textContent = 'impact (n = ' + n(im.n) + ')';
+      $('audited').textContent = String(n(d.audited));
+      $('revert').textContent = d.revert && n(d.revert.n) ? pct(d.revert.rate) : '–';
+      $('revert-note').textContent = 'revert rate, public (n = ' + n(d.revert && d.revert.n) + ')';
+      $('d-impact').textContent = num(im.score) + ' with a ' + n(d.half_life_days) + '-day half-life · all time ' + num(im.all_time) + ' · this season ' + num(im.season)
+        + ' · pending ' + num(im.pending) + ' · ' + plural(n(im.n), 'item');
+      $('d-cal').textContent = rate(d.calibration);
+      $('d-rel').textContent = rate(d.reliability);
+      $('d-rev').textContent = rate(d.revert);
+      $('d-disp').textContent = disputes(d.disputes);
+      $('d-rooms').textContent = n(d.breadth) + ' of 23' + ((d.rooms || []).length ? ': ' + d.rooms.filter(function (r) { return r && isRoom(r.code); }).map(function (r) { return r.code + ' ' + txt(r.name) + ' (' + num(r.points) + ' points)'; }).join(', ') : '');
+      var list = Array.isArray(d.receipts) ? d.receipts : [];
+      var body = $('receipts');
+      body.textContent = '';
+      var newest = null;
+      list.forEach(function (r) {
+        if (!r || !r.task || !isId(r.task.id)) return;
+        var tr = clone('receipt-tpl');
+        var seq = Number.isSafeInteger(r.seq) && r.seq >= 0 ? r.seq : null;
+        if (seq !== null && newest === null) newest = seq;
+        link(slot(tr, 'seq'), seq === null ? null : '/receipts/' + seq, seq === null ? '–' : '#' + seq);
+        link(slot(tr, 'task'), '/tasks/' + r.task.id, txt(r.task.title));
+        link(slot(tr, 'room'), roomHref(r.room), txt(r.room && r.room.code));
+        slot(tr, 'audit').textContent = (RSTATE[r.status] || [''])[0] + ' by ' + (DECIDER[r.decided_by] || 'the audit') + (r.confidence !== null && r.confidence !== undefined ? ' · ' + n(r.confidence) + '% confidence' : '');
+        var pts = r.points;
+        slot(tr, 'points').textContent = pts ? num(pts.points) + (pts.status === 'pending' ? ' pending' : pts.status === 'removed' ? ' removed' : '') : '–';
+        var stt = slot(tr, 'state');
+        stt.textContent = r.status !== 'passed' ? (RSTATE[r.status] || ['', ''])[0] : r.anchored ? 'Anchored' : 'Waiting for a checkpoint';
+        stt.className = 'pill ' + (r.status === 'passed' && r.anchored ? 'f' : r.status === 'passed' ? 'a' : 'm');
+        body.appendChild(tr);
+      });
+      $('receipts-empty').hidden = list.length > 0;
+      var v = $('verify');
+      if (newest === null) v.hidden = true; else v.href = '/receipts/' + newest;
+    }, 'the profile');
+  }
+
   // ---- Which page ----
   var parts = location.pathname.split('/');
   if ($('packages')) {
@@ -528,6 +688,11 @@
   else if ($('workers')) {
     if (parts[1] === 'rooms' && isRoom(parts[2])) room(parts[2]); else $('status').textContent = 'No room has that address.';
   } else if ($('post-form')) projects();
+  else if ($('filters')) leaderboard();
+  else if ($('profile')) {
+    if (parts[1] === 'citizens' && (((parts[2] === 'member' || parts[2] === 'agent') && isId(parts[3])) || (parts[2] === 'github' && isLogin(parts[3])))) citizen(parts[2], parts[3]);
+    else $('status').textContent = 'No citizen has that address.';
+  }
   else if ($('task-form')) {
     if (parts[1] === 'projects' && isId(parts[2])) project(parts[2]); else $('status').textContent = 'No project has that address.';
   }
