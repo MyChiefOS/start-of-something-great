@@ -22,7 +22,8 @@ test('/team shows the four members, each with an avatar served from this site', 
 test('/team says plainly what is live and what is not, and keeps the Anthropic notice', () => {
   const html = read('team.html');
   assert.match(html, /Our automatic checks · live/);
-  assert.match(html, /starts in shadow mode/);
+  assert.match(html, /A narrow AI · live/); // Second Look, on since 047
+  assert.match(html, /A narrow AI for audits · live/); // Third Look, on since 047
   assert.match(html, /Day One Great is not affiliated with or endorsed by Anthropic\./);
   assert.match(html, /no AI decides/);
   // Aaron, Oct 30: Second Look decides within limits, and the page says how the decision was made. The limits in the

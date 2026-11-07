@@ -502,7 +502,7 @@ constraint app.tl_reviews tl_reviews_submission_id_key UNIQUE (submission_id)
 constraint app.tl_reviews tl_reviews_suggestion_check CHECK ((suggestion = ANY (ARRAY['pass'::text, 'person'::text])))
 constraint app.tl_reviews tl_reviews_version_check CHECK ((char_length(version) <= 20))
 constraint app.tl_settings tl_settings_daily_call_cap_check CHECK (((daily_call_cap >= 0) AND (daily_call_cap <= 200)))
-constraint app.tl_settings tl_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'shadow'::text])))
+constraint app.tl_settings tl_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'shadow'::text, 'on'::text])))
 constraint app.tl_settings tl_settings_model_check CHECK ((model = ANY (ARRAY['mistral/ministral-14b'::text])))
 constraint app.tl_settings tl_settings_pkey PRIMARY KEY (id)
 constraint app.tl_settings tl_settings_singleton_check CHECK (singleton)
@@ -561,7 +561,7 @@ constraint app.work_checks work_checks_reason_check CHECK (((char_length(reason)
 constraint app.work_checks work_checks_status_check CHECK ((status = ANY (ARRAY['open'::text, 'confirmed'::text, 'reversed'::text])))
 constraint app.work_checks work_checks_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.work_checks work_checks_submission_id_key UNIQUE (submission_id)
-constraint app.work_checks work_checks_why_check CHECK ((why = ANY (ARRAY['random'::text, 'size'::text, 'pair'::text, 'note'::text])))
+constraint app.work_checks work_checks_why_check CHECK ((why = ANY (ARRAY['random'::text, 'size'::text, 'pair'::text, 'note'::text, 'third_look'::text])))
 constraint app.work_claims work_claims_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.work_claims work_claims_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.work_claims work_claims_code_hash_key UNIQUE (code_hash)
@@ -613,6 +613,13 @@ constraint app.work_person_votes work_person_votes_size_check CHECK ((size = ANY
 constraint app.work_person_votes work_person_votes_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.work_person_votes work_person_votes_submission_id_key UNIQUE (submission_id)
 constraint app.work_person_votes work_person_votes_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text])))
+constraint app.work_point_entries work_point_entries_amount_check CHECK ((((amount >= '-1000'::integer) AND (amount <= 1000)) AND (amount <> 0)))
+constraint app.work_point_entries work_point_entries_bucket_check CHECK ((bucket = ANY (ARRAY['pending'::text, 'final'::text])))
+constraint app.work_point_entries work_point_entries_citizen_github_check CHECK ((char_length(citizen_github) <= 39))
+constraint app.work_point_entries work_point_entries_citizen_kind_check CHECK ((citizen_kind = ANY (ARRAY['member'::text, 'agent'::text, 'github'::text])))
+constraint app.work_point_entries work_point_entries_kind_check CHECK ((kind = ANY (ARRAY['earned'::text, 'final'::text, 'reversed'::text])))
+constraint app.work_point_entries work_point_entries_pkey PRIMARY KEY (id)
+constraint app.work_point_entries work_point_entries_points_id_fkey FOREIGN KEY (points_id) REFERENCES app.work_points(id) ON DELETE CASCADE
 constraint app.work_points work_points_citizen_agent_fkey FOREIGN KEY (citizen_agent) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.work_points work_points_citizen_github_check CHECK (((char_length(citizen_github) <= 39) AND (citizen_github ~ '^[a-z0-9-]+$'::text)))
 constraint app.work_points work_points_citizen_kind_check CHECK ((citizen_kind = ANY (ARRAY['member'::text, 'agent'::text, 'github'::text])))
@@ -659,6 +666,7 @@ constraint app.work_settings work_settings_poster_daily_points_check CHECK (((po
 constraint app.work_settings work_settings_poster_level_check CHECK (((poster_level >= 1) AND (poster_level <= 3)))
 constraint app.work_settings work_settings_singleton_check CHECK (singleton)
 constraint app.work_settings work_settings_singleton_key UNIQUE (singleton)
+constraint app.work_settings work_settings_tl_check_rate_check CHECK (((tl_check_rate >= (0)::numeric) AND (tl_check_rate <= (1)::numeric)))
 constraint app.work_settings work_settings_tree_active_claims_check CHECK (((tree_active_claims >= 1) AND (tree_active_claims <= 10000)))
 constraint app.work_submissions work_submissions_artifact_kind_check CHECK ((artifact_kind = ANY (ARRAY['pr'::text, 'link'::text, 'file'::text])))
 constraint app.work_submissions work_submissions_artifact_sha256_check CHECK (((char_length(artifact_sha256) = 64) AND (artifact_sha256 ~ '^[0-9a-f]+$'::text)))
@@ -671,7 +679,7 @@ constraint app.work_submissions work_submissions_check4 CHECK (((artifact_kind =
 constraint app.work_submissions work_submissions_check5 CHECK (((artifact_kind = 'pr'::text) = (pr_number IS NOT NULL)))
 constraint app.work_submissions work_submissions_claim_id_fkey FOREIGN KEY (claim_id) REFERENCES app.work_claims(id) ON DELETE CASCADE
 constraint app.work_submissions work_submissions_confidence_check CHECK (((confidence >= 0) AND (confidence <= 100)))
-constraint app.work_submissions work_submissions_decided_by_check CHECK ((decided_by = ANY (ARRAY['jevs'::text, 'poster'::text, 'person'::text, 'timeout'::text])))
+constraint app.work_submissions work_submissions_decided_by_check CHECK ((decided_by = ANY (ARRAY['jevs'::text, 'poster'::text, 'person'::text, 'timeout'::text, 'third_look'::text])))
 constraint app.work_submissions work_submissions_decided_seq_check CHECK ((decided_seq >= 0))
 constraint app.work_submissions work_submissions_final_size_check CHECK ((final_size = ANY (ARRAY[1, 2, 3, 5, 8])))
 constraint app.work_submissions work_submissions_held_reason_check CHECK ((char_length(held_reason) <= 200))
@@ -988,6 +996,8 @@ default app.work_github_prs.refs = ''::text
 default app.work_github_prs.seen_at = now()
 default app.work_person_votes.created_at = now()
 default app.work_person_votes.id = app.uuid_v7()
+default app.work_point_entries.at = now()
+default app.work_point_entries.id = app.uuid_v7()
 default app.work_points.created_at = now()
 default app.work_points.id = app.uuid_v7()
 default app.work_points.status = 'pending'::text
@@ -1012,6 +1022,7 @@ default app.work_settings.points_cap = 100
 default app.work_settings.poster_daily_points = 200
 default app.work_settings.poster_level = 2
 default app.work_settings.singleton = true
+default app.work_settings.tl_check_rate = 0.200
 default app.work_settings.tree_active_claims = 50
 default app.work_settings.updated_at = now()
 default app.work_submissions.created_at = now()
@@ -1251,10 +1262,10 @@ function app.stamp_ok() owner=dog_signin execute=dog_signin,dog_app,dog_public,d
 function app.subagent_create(p_name text, p_description text, p_key_hash text, p_post text, p_reply text, p_report text, p_daily_cap integer, p_ttl_hours integer, p_draft_only boolean, p_caller_key text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, depth smallint, expires_at timestamp with time zone, rules_version integer, post_mode text, reply_mode text, report_mode text, daily_cap integer, chain jsonb) body_md5=7dce1c744a0223cc4fc6cc86736c162e
 function app.subagents_expire() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=78741e657723f8d0beec378bc310cbe8
 function app.timers_run(p_from_cron boolean) owner=dog_timers execute=dog_timers,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=1473d52d6f5a59053efeea81941dfefc
-function app.tl_claim(p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, task_title text, task_description text, note text, pr_number integer, pr_title text, jevs_rules text, model text) body_md5=13b24a49d9d5268bf9cd821b85846bc6
-function app.tl_decide(p_sub uuid, p_version text, p_model text, p_suggestion text, p_answers jsonb, p_reason text, p_fail_closed boolean, p_truncated boolean, p_latency_ms integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=f6d5c27ef2820a93178eb2646d0257f5
-function app.tl_figures() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=20fdd99b346c7301906134d75bdca393
-function app.tl_set_mode(p_mode text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=e96d05d52087d91cfe5232ab897cce15
+function app.tl_claim(p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, task_title text, task_description text, note text, pr_number integer, pr_title text, jevs_rules text, model text) body_md5=11d6472d94f97663dda892100eeb1a8b
+function app.tl_decide(p_sub uuid, p_version text, p_model text, p_suggestion text, p_answers jsonb, p_reason text, p_fail_closed boolean, p_truncated boolean, p_latency_ms integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=f849daccf1c5b3c2e0488d56a4f13f47
+function app.tl_figures() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eaba76884241e80d5d9a50162c6ee1f1
+function app.tl_set_mode(p_mode text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d700f0b5dec030927d2f0caf137feb93
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs,dog_log,dog_work language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
 function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
@@ -1294,9 +1305,11 @@ function app.work_integrity() owner=dog_work execute=dog_work language=sql volat
 function app.work_jevs_rules(f jsonb) owner=dog_owner execute=dog_owner,dog_work,dog_app language=plpgsql volatile=i definer=false config= returns=jsonb body_md5=855ed36c8b61a334fe2a5abb6a7c0d60
 function app.work_jevs_run(p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=02eca869100351e8dd811abe539a92d5
 function app.work_mine() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4399915f43232670c44d895c8c8a573a
-function app.work_network() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=65de75b08d580e918f536317e08478c0
+function app.work_network() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=5dbf5122f5d4c345683f0af9c81cc017
 function app.work_party(p_sub uuid, p_member uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=97df34afc309e82126b681f7c7e65c5f
 function app.work_person_decide(p_sub uuid, p_verdict text, p_size integer, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=6317d0a06a5d12a51d8b3e0bc44d0492
+function app.work_point_entries_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=b67e6fc53ed168950ed6d4ff1775e4ab
+function app.work_points_ledger() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=e9ffdd62a1df331776633fd1364161fe
 function app.work_points_of(p_size integer, p_confidence integer, p_independence integer, p_cap integer) owner=dog_owner execute=dog_owner,dog_work,dog_app language=sql volatile=i definer=false config= returns=integer body_md5=d6a44cede4bc837eb722a715f2bc0ad3
 function app.work_poster_decide(p_sub uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=15dd223a6a466630a378d8d3bf362777
 function app.work_profile(s app.work_stat) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=88ee4efc0dfdf458486b312f251882f0
@@ -2162,6 +2175,8 @@ grant app.work_github_prs dog_work SELECT
 grant app.work_github_prs dog_work UPDATE
 grant app.work_person_votes dog_work INSERT
 grant app.work_person_votes dog_work SELECT
+grant app.work_point_entries dog_work INSERT
+grant app.work_point_entries dog_work SELECT
 grant app.work_points dog_work DELETE
 grant app.work_points dog_work INSERT
 grant app.work_points dog_work SELECT
@@ -2174,6 +2189,7 @@ grant app.work_rooms dog_work SELECT
 grant app.work_settings dog_work SELECT
 grant app.work_settings.last_alert_day dog_work UPDATE
 grant app.work_settings.last_tick_at dog_work UPDATE
+grant app.work_settings.tl_check_rate dog_work SELECT
 grant app.work_settings.updated_at dog_work UPDATE
 grant app.work_submissions dog_work DELETE
 grant app.work_submissions dog_work INSERT
@@ -2509,6 +2525,7 @@ policy app.work_github_codes work_github_codes_work cmd=* permissive=true to=dog
 policy app.work_github_names work_github_names_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_github_prs work_github_prs_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_person_votes work_person_votes_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_point_entries work_point_entries_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_points work_points_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_projects work_projects_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_rooms work_rooms_work cmd=* permissive=true to=dog_work using=true check=true
@@ -2605,3 +2622,6 @@ trigger app.review_flags enabled=A CREATE TRIGGER sl_after_flag_close AFTER UPDA
 trigger app.review_flags enabled=A CREATE TRIGGER sl_after_report AFTER INSERT ON app.review_flags FOR EACH ROW WHEN ((new.source = 'report'::text)) EXECUTE FUNCTION app.sl_after_report()
 trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
+trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_change BEFORE DELETE OR UPDATE ON app.work_point_entries FOR EACH ROW EXECUTE FUNCTION app.work_point_entries_append_only()
+trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_truncate BEFORE TRUNCATE ON app.work_point_entries FOR EACH STATEMENT EXECUTE FUNCTION app.work_point_entries_append_only()
+trigger app.work_points enabled=A CREATE TRIGGER work_points_ledger AFTER INSERT OR UPDATE ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_ledger()

@@ -183,6 +183,14 @@
     {
       "version": "046_disputes",
       "sha256": "338ce35b688e6f6fe958a2cdd55f40a8a43aa20361642e560238cbd3cf34cbf2"
+    },
+    {
+      "version": "047_looks_live",
+      "sha256": "943d5379c9fb11f9b45d50f01717108703a2e7cf25a4673077f07b5d80a1d0f9"
+    },
+    {
+      "version": "048_points_ledger",
+      "sha256": "8983a86f122049a12876e13eefef8e8029cdcd74bb1d01b8a25330c55e6dbba1"
     }
   ]
 }

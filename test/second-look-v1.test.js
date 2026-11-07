@@ -177,6 +177,10 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  // 047 switches Second Look on (Aaron, Nov 6: no shadow modes). These tests start from shadow, as its unlock does, to
+  // test the unlock and the pause too.
+  assert.strictEqual((await su.unsafe('select mode from app.sl_settings'))[0].mode, 'on', '047 switched it on');
+  await su.unsafe("update app.sl_settings set mode = 'shadow'");
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
@@ -237,7 +241,7 @@ const notices = async (kind, subject) => (await q(`select count(*)::int as n fro
 
 let aaron, poster;
 
-test('shadow (the default): it decides and logs; nothing changes; each post once; never in off mode; not past the gate', async () => {
+test('shadow: it decides and logs; nothing changes; each post once; never in off mode; not past the gate', async () => {
   aaron = await member('Aaron', { admin: true });
   poster = await member('Poster');
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'shadow');
