@@ -65,7 +65,25 @@ async function call(t, fn) {
 const opt = (x) => (x === undefined || x === null || x === '' ? null : x);
 
 // ---- Reading: everything here is public on the site ----
-async function summary(t) { const [r] = await call(t, (s) => s`select app.work_summary() as d`); return r.d; }
+// The Build page: the counts, the board and the latest receipt, with the featured project's plan (050) and, for a
+// merged pull request, its changes as GitHub publishes them.
+async function summary(t) {
+  const [r] = await call(t, (s) => s`select app.work_summary() as d, app.work_plan(app.work_featured()) as p`);
+  const d = r.d;
+  if (!d || typeof d !== 'object') return d;
+  d.plan = r.p || null;
+  const lr = d.latest_receipt;
+  const m = lr && lr.artifact && lr.artifact.kind === 'pr' ? /\/pull\/([1-9][0-9]{0,6})$/.exec(String(lr.artifact.url || '')) : null;
+  if (m) { const [c2] = await call(t, (s) => s`select app.work_pr_changes(${Number(m[1])}::integer) as c`); lr.changes = c2.c || null; }
+  return d;
+}
+// A project's plan (050): its milestones, scope, planned and verified work by day, and its schedule figures. No project:
+// the featured one.
+async function plan(t, id) {
+  const pid = id === null || id === undefined ? null : v.uuid('project', id);
+  const [r] = await call(t, (s) => (pid ? s`select app.work_plan(${pid}::uuid) as d` : s`select app.work_plan(app.work_featured()) as d`));
+  return r.d;
+}
 
 async function tasks(t, { status = null, room = null, project = null, q = null, before = null, limit = LIMIT } = {}) {
   const st = opt(status) === null ? null : v.oneOf('status', status, TASK_STATES);
@@ -209,10 +227,29 @@ async function review(t, checkId, { decision, reason }) {
     ${v.text('reason', reason, { min: 3, max: 300 })}) as d`);
   return { result: r.d };
 }
+// A day as YYYY-MM-DD; the database checks the range (a year back to two years ahead).
+const DAY = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+// A real day: one that reads back the same (2026-02-31 doesn't; Postgres would store it as March 3).
+function realDay(field, value) {
+  const s = v.text(field, value, { max: 10, pattern: DAY });
+  if (new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) !== s) throw new v.ValidationError(field, 'is not a real date');
+  return s;
+}
+async function milestoneAdd(t, { project: pj, title, target, gate = false }) {
+  // A title is public words, like a project's: keys and contact details hidden first.
+  const ti = clean('title', title, { min: 3, max: 80, multiline: false });
+  const [r] = await call(t, (s) => s`select app.work_milestone_add(${v.uuid('project', pj)}::uuid, ${ti.text},
+    ${realDay('target', target)}::date, ${v.oneOf('gate', gate, [true, false])}) as d`);
+  return { milestone: r.d };
+}
+async function milestoneMove(t, { milestone, target }) {
+  const [r] = await call(t, (s) => s`select app.work_milestone_move(${v.uuid('milestone', milestone)}::uuid, ${realDay('target', target)}::date) as d`);
+  return { milestone: r.d };
+}
 async function remove(t, kind, id) {
   const [r] = await call(t, (s) => s`select app.work_remove(${v.oneOf('kind', kind, ['task', 'project'])}, ${v.uuid('id', id)}::uuid) as d`);
   return { result: r.d };
 }
 
-module.exports = { summary, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, plan, milestoneAdd, milestoneMove, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };
