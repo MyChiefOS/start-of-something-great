@@ -290,6 +290,8 @@ const DEFINERS = {
   // The administrator's console (051): one tab's figures, every read logged.
   'app.work_console(text, text, text)': 'dog_work',
   'app.work_console_integrity()': { owner: 'dog_work', callers: '' },
+  'app.work_risks(uuid, uuid, smallint)': { owner: 'dog_work', callers: '' },
+  'app.work_ledger_alert()': 'dog_work',
   'app.work_evidence_add(uuid, text)': 'dog_work',
   'app.work_dispute_page(uuid)': 'dog_work',
   'app.work_disputes_list(text, uuid, integer)': 'dog_work',

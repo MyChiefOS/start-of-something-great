@@ -84,7 +84,7 @@
       });
       var n = list.children.length, held = Number(d.held) || 0;
       $('work-status').textContent = (n ? n + (n === 1 ? ' item waits for you.' : ' items wait for you.') : 'Nothing in the work module waits for you.')
-        + (held ? ' ' + held + ' wait for Third Look (a limit was reached, or a party would have decided).' : '');
+        + (held ? ' ' + held + ' wait for Third Look (risky work you are a party to).' : '');
     })
     .catch(function () { $('work-status').textContent = 'The work couldn’t be loaded.'; });
 })();

@@ -156,7 +156,7 @@ const WRITES = {
   approve: { keys: ['task'], fn: (t, b) => work.approve(t, b.task) },
   cancel: { keys: ['task'], fn: (t, b) => work.cancel(t, b.task) },
   check: { keys: ['submission', 'verdict', 'reason'], fn: (t, b) => work.posterCheck(t, b.submission, b),
-    say: (r) => ({ ...r, message: r.result === 'held' ? 'A limit was reached (the same pair\u2019s passes, a day\u2019s points, or JEVs\u2019s level), so an administrator decides this work, or, when one is a party, it is held. The task page says which.'
+    say: (r) => ({ ...r, message: r.result === 'held' ? 'Your pass is recorded. The work looked risky (the task page says why), so it waits for a second look: Third Look, or an administrator.'
       : r.result === 'pass' ? 'Passed and approved. A sample of passes is checked again; its points are pending for 72 hours.' : 'Not passed. The worker may submit again while the claim holds.' }) },
   dispute: { keys: ['submission', 'reason'], fn: (t, b) => work.dispute(t, b.submission, b), code: 201 },
   evidence: { keys: ['dispute', 'note'], fn: (t, b) => work.evidence(t, b.dispute, b), code: 201 },

@@ -203,6 +203,10 @@
     {
       "version": "051_console",
       "sha256": "7d7dc7ef65f466449fcdf6c5aeb06afdb7ab727dbbb6966932361bf9b187833b"
+    },
+    {
+      "version": "052_risk_review",
+      "sha256": "49ecb1138c258418e10b90b2fa80d038c83731e649e109de35cec14884db6c0b"
     }
   ]
 }

@@ -235,11 +235,11 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   const stored = await q(`select code_hash from app.work_claims where task_id = '${id}'`);
   assert.deepStrictEqual(stored.map((r) => r.code_hash), [c.sha256hex(cl.json.code)], 'only the code’s hash is kept');
   assert.strictEqual((await work('POST', 'claim', { cookie: (await member('Cy')).cookie, json: { task: id } })).json.reason, 'work_taken');
-  const sub = await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/welcome', note: 'Done; write to bo@example.org' } });
+  const sub = await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/welcome', note: 'Done; the copy is on the page.' } });
   assert.strictEqual(sub.status, 201, JSON.stringify(sub.json));
-  assert.deepStrictEqual([sub.json.status, sub.json.jevs.verdict, sub.json.jevs.rules], ['review', 'person', 'W11']);
+  assert.deepStrictEqual([sub.json.status, sub.json.jevs.verdict, sub.json.jevs.rules], ['review', 'person', '']);
   let p = await page(id);
-  assert.strictEqual(p.submissions[0].note, 'Done; write to [email hidden]');
+  assert.strictEqual(p.submissions[0].note, 'Done; the copy is on the page.');
   assert.deepStrictEqual([p.submissions[0].route, p.submissions[0].audit], ['poster', { by: 'poster', third_look: 'on' }]);
   // The poster is told, in-app; nothing goes to Aaron.
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id = '${ada.id}' and dedupe_key = 'work:check:${sub.json.submission}'`))[0].n, 1);
@@ -249,7 +249,9 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.strictEqual((await work('POST', 'check', { cookie: bo.cookie, json: { submission: sub.json.submission, verdict: 'pass' } })).status, 403);
   assert.strictEqual((await work('POST', 'decide', { cookie: aaron.cookie, json: { submission: sub.json.submission, verdict: 'pass', reason: 'Looks right' } })).json.result, 'not_waiting');
   assert.strictEqual((await work('POST', 'check', { cookie: ada.cookie, json: { submission: sub.json.submission, verdict: 'fail' } })).status, 400, 'a fail needs a reason');
+  await q('update app.work_settings set check_rate = 1'); // the random sample, every time here
   const d = await work('POST', 'check', { cookie: ada.cookie, json: { submission: sub.json.submission, verdict: 'pass', reason: 'The copy is there and reads well.' } });
+  await q('update app.work_settings set check_rate = 0.05');
   assert.deepStrictEqual([d.status, d.json.result], [200, 'pass'], JSON.stringify(d.json));
   // The answer carries the task as it now stands, so the page never redraws from a cached copy.
   assert.deepStrictEqual([d.json.task.id, d.json.task.status], [id, 'approved']);
@@ -257,8 +259,10 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.strictEqual(p.status, 'approved', 'the poster’s pass approves the task in the same step');
   assert.deepStrictEqual([p.submissions[0].status, p.submissions[0].decided_by, p.submissions[0].confidence], ['passed', 'poster', 100]);
   assert.deepStrictEqual({ ...p.submissions[0].points, final_at: undefined }, { points: 30, size: 3, confidence: 100, independence: 100, status: 'pending', final_at: undefined });
-  // The check after: the note had contact details, so it is picked; Aaron confirms it with a reason.
-  assert.deepStrictEqual([p.submissions[0].check.status, p.submissions[0].check.why], ['open', 'note']);
+  // The check after: a random sample of plain passes; Aaron confirms it with a reason. The poster's decision is a
+  // person's vote (052), so calibration counts posters.
+  assert.deepStrictEqual([p.submissions[0].check.status, p.submissions[0].check.why], ['open', 'random']);
+  assert.deepStrictEqual((await q(`select member_id, verdict from app.work_person_votes where submission_id = '${sub.json.submission}'`)).map((v) => [v.member_id, v.verdict]), [[ada.id, 'pass']]);
   const admin = (await work('GET', 'admin', { cookie: aaron.cookie })).json;
   const ck = admin.checks.find((x) => x.submission === sub.json.submission);
   assert.ok(ck && ck.party === false);
@@ -276,7 +280,7 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.strictEqual(crypto.createHash('sha256').update(Buffer.concat([Buffer.from(s.key, 'hex'), Buffer.from(jcs, 'utf8')])).digest('hex'), s.seal);
 });
 
-test('a poster’s fail needs a reason and lets the worker try again; a poster’s passes are limited like a bank’s approver, and past a limit the work waits for Third Look', async () => {
+test('a poster’s fail needs a reason and lets the worker try again; a count alone is never a risk; risky work waits for a second look (052: Exodus 18:22, Deuteronomy 19:15)', async () => {
   const ada = await member('Ada2');
   const bo = await member('Bo2');
   const pj = await project(ada, 'Second project');
@@ -288,7 +292,7 @@ test('a poster’s fail needs a reason and lets the worker try again; a poster�
   const again = await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/b' } });
   assert.strictEqual(again.status, 201);
   assert.ok((await q(`select count(*)::int as n from app.notices where member_id = '${bo.id}' and kind = 'work_decided'`))[0].n >= 1, 'the worker is told');
-  // The same poster and worker: 3 passes in 30 days, then the 4th waits for Third Look, with the reason shown.
+  // The same poster and worker, four passes in 30 days: a count alone is never a risk (Aaron, Nov 7), so all stand.
   const passes = [again.json.submission];
   for (let i = 0; i < 3; i++) {
     const t = await task(ada, pj, { size: 1 });
@@ -297,21 +301,50 @@ test('a poster’s fail needs a reason and lets the worker try again; a poster�
   }
   const results = [];
   for (const sid of passes) results.push((await work('POST', 'check', { cookie: ada.cookie, json: { submission: sid, verdict: 'pass' } })).json.result);
-  assert.deepStrictEqual(results, ['pass', 'pass', 'pass', 'held']);
-  const [held] = await q(`select route, held_reason from app.work_submissions where id = '${passes[3]}'`);
-  // Past a poster's limit it goes to an administrator, as a bank escalates past an approver's limit (neither is one here).
-  assert.strictEqual(held.route, 'admin');
-  assert.match(held.held_reason, /3 times in 30 days/);
-  assert.ok((await work('GET', 'admin', { cookie: aaron.cookie })).json.waiting.some((x) => x.submission === passes[3]));
-  // A pair at its limit is picked for the check after.
-  assert.strictEqual((await q(`select why from app.work_checks where submission_id = '${passes[2]}'`))[0].why, 'pair');
+  assert.deepStrictEqual(results, ['pass', 'pass', 'pass', 'pass']);
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:held:%'`))[0].n, 0, 'no message to Aaron');
+  // Risky work waits for a second look. Contact details in the note: a link Third Look can't read, so it is Aaron's,
+  // and he is told.
+  let rn = 0;
+  const risky = async (poster, worker, pjx, over, sub) => {
+    const t = await task(poster, pjx, over);
+    const cl = await work('POST', 'claim', { cookie: worker.cookie, json: { task: t } });
+    assert.strictEqual(cl.status, 201, JSON.stringify(cl.json));
+    const sm = await work('POST', 'submit', { cookie: worker.cookie, json: { task: t, kind: 'link', url: 'https://example.org/r' + (rn++), ...sub } });
+    assert.deepStrictEqual([sm.status, sm.json.status], [201, 'review'], JSON.stringify(sm.json));
+    const sid = sm.json.submission;
+    const r = await work('POST', 'check', { cookie: poster.cookie, json: { submission: sid, verdict: 'pass' } });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+    const [row] = await q(`select route, held_reason, note from app.work_submissions where id = '${sid}'`);
+    return { sid, result: r.json.result, message: r.json.message, ...row };
+  };
+  const note = await risky(ada, bo, pj, { size: 1 }, { note: 'Mail me at bo@example.org' });
+  assert.deepStrictEqual([note.result, note.route, note.note], ['held', 'admin', 'Mail me at [email hidden]']);
+  assert.match(note.held_reason, /contact details/);
+  assert.match(note.message, /second look/);
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key = 'work:held:${note.sid}'`))[0].n, 1);
+  assert.ok((await work('GET', 'admin', { cookie: aaron.cookie })).json.waiting.some((x) => x.submission === note.sid));
+  // The largest size.
+  const big = await risky(ada, bo, pj, { size: 8 });
+  assert.match(String(big.held_reason), /largest size/, JSON.stringify(big));
+  // Two who pass each other's work: Ada has passed Bo's; now Bo posts and passes Ada's.
+  const bpj = await project(bo, 'Bo’s project');
+  const back = await risky(bo, ada, bpj, { size: 1 });
+  assert.deepStrictEqual([back.result, back.route], ['held', 'admin']);
+  assert.match(back.held_reason, /pass each other/);
+  // A burst of work from one worker (spam): more than burst_hourly pieces in an hour.
+  await q('update app.work_settings set burst_hourly = 3');
+  assert.match((await risky(ada, bo, pj, { size: 1 })).held_reason, /more than 3 pieces of work in an hour/);
+  await q('update app.work_settings set burst_hourly = 20');
   // A worker not yet at JEVs's level 2: a poster's pass waits too.
   const cy = await member('Cy2', { level: 1 });
   const t5 = await task(ada, pj, { size: 1 });
   await work('POST', 'claim', { cookie: cy.cookie, json: { task: t5 } });
   const s5 = await work('POST', 'submit', { cookie: cy.cookie, json: { task: t5, kind: 'link', url: 'https://example.org/cy' } });
   assert.strictEqual((await work('POST', 'check', { cookie: ada.cookie, json: { submission: s5.json.submission, verdict: 'pass' } })).json.result, 'held');
-  // Aaron as a poster checks like any poster; his passes are never sampled for his own check after.
+  // Aaron as a poster checks like any poster; his passes are never sampled for his own check after. Size 8 is a risk, but
+  // he is a party and Third Look can't read a file: no second witness exists, so his pass stands rather than failing
+  // Dee's work for want of one (052).
   const apj = await project(aaron, 'Aaron’s project');
   const at = await task(aaron, apj, { size: 8 });
   const dee = await member('Dee2');
@@ -649,17 +682,27 @@ test('the review, M1: nothing waits for a person forever: a poster who doesn’t
   const [s2] = await q(`select status, decided_by from app.work_submissions where id = '${sub}'`);
   assert.deepStrictEqual([s2.status, s2.decided_by], ['failed', 'timeout']);
   assert.strictEqual((await q(`select count(*)::int as n from app.work_points where submission_id = '${sub}'`))[0].n, 0, 'nothing passed to clear a backlog');
-  // Work held because an administrator is a party waits for Third Look, then fails the same way.
+  // Risky work an administrator is a party to (here a worker below JEVs's level 2) that Third Look can read, a merged
+  // pull request, is held for Third Look, its second witness; if no one passes it in time it fails the same way.
   const apj = await project(aaron, 'M1 Aaron project');
   const at = await task(aaron, apj, { size: 1 });
   const cy = await member('CyM1', { level: 1 });
-  await work('POST', 'claim', { cookie: cy.cookie, json: { task: at } });
-  const as = (await work('POST', 'submit', { cookie: cy.cookie, json: { task: at, kind: 'link', url: 'https://example.org/m1b' } })).json.submission;
+  const code = (await work('POST', 'claim', { cookie: cy.cookie, json: { task: at } })).json.code;
+  const as = (await work('POST', 'submit', { cookie: cy.cookie, json: { task: at, kind: 'pr', url: REPO_PR(9231) } })).json.submission;
+  await sync({ prs: [pr(9231, { codes: [c.sha256hex(code)] })] });
+  await sync({ details: [{ number: 9231, additions: 12, deletions: 0, merged_by: 'mychiefos' }] });
+  assert.deepStrictEqual(Object.values((await q(`select status, route from app.work_submissions where id = '${as}'`))[0]), ['review', 'poster']);
   assert.strictEqual((await work('POST', 'check', { cookie: aaron.cookie, json: { submission: as, verdict: 'pass' } })).json.result, 'held');
   assert.strictEqual((await q(`select route from app.work_submissions where id = '${as}'`))[0].route, 'held');
   await asWork(`update app.work_submissions set routed_at = now() - interval '73 hours' where id = '${as}'`);
   await tick();
   assert.strictEqual((await q(`select status from app.work_submissions where id = '${as}'`))[0].status, 'failed');
+  // The same, as a link: Third Look can't read it and no administrator who isn't a party exists, so no second witness
+  // can be had: Aaron's pass stands rather than failing the worker for want of one (052; Matthew 7:12).
+  const at2 = await task(aaron, apj, { size: 1 });
+  await work('POST', 'claim', { cookie: cy.cookie, json: { task: at2 } });
+  const as2 = (await work('POST', 'submit', { cookie: cy.cookie, json: { task: at2, kind: 'link', url: 'https://example.org/m1b' } })).json.submission;
+  assert.strictEqual((await work('POST', 'check', { cookie: aaron.cookie, json: { submission: as2, verdict: 'pass' } })).json.result, 'pass');
 });
 
 test('the review, M2: deleting an account leaves no task stuck: the worker’s tasks reopen, and a gone poster’s open tasks close and work on their claimed ones goes to an administrator', async () => {
@@ -727,10 +770,12 @@ test('the review, L1 and the reversal: a failed submission of someone’s pull r
   const [credited] = (await work('GET', 'tasks', { search: '?q=PR%209221' })).json.tasks;
   assert.deepStrictEqual(credited && credited.done_by, { kind: 'github', name: '@real-author', github: 'real-author' });
   // A pass picked for the check after and disputed too: upholding the dispute closes the check.
-  const t2 = await task(ada, await project(ada, 'L1 second project'), { size: 8 });
+  const t2 = await task(ada, await project(ada, 'L1 second project'), { size: 2 });
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: t2 } });
   const s2 = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: t2, kind: 'link', url: 'https://example.org/l1' } })).json.submission;
+  await q('update app.work_settings set check_rate = 1');
   await work('POST', 'check', { cookie: ada.cookie, json: { submission: s2, verdict: 'pass' } });
+  await q('update app.work_settings set check_rate = 0.05');
   const cy = await member('CyL1');
   const d = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: s2, reason: 'Copied.' } })).json.id;
   await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d, decision: 'uphold', reason: 'Copied from elsewhere.' } });
