@@ -86,8 +86,6 @@ const DESIGN = {
   "dispute.html": {"nav":[],"proposed":["/disputes"],"rows":[]},
   "rooms.html": {"nav":[],"proposed":["/rooms"],"rows":[]},
   "room.html": {"nav":[],"proposed":["/rooms"],"rows":[]},
-  "leaderboard.html": {"nav":[],"proposed":["/leaderboard"],"rows":[]},
-  "citizen.html": {"nav":[],"proposed":["/leaderboard"],"rows":[]},
   "projects.html": {"nav":[],"proposed":["/projects"],"rows":[]},
   "project.html": {"nav":[],"proposed":["/projects"],"rows":[]},
   "agents/join.html": {"nav":["/connect"],"proposed":[],"rows":[]},
