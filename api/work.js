@@ -9,8 +9,11 @@
 //     GET  room?code=                                one room: its open projects and tasks, and who did audited work there
 //     GET  projects?status=&room=&q=&before=&limit=  projects
 //     GET  project?id=                               one project and its tasks
+//     GET  board?kind=&room=&sort=                   the leaderboard: six dimensions each, bands, the integrity panel (045)
+//     GET  citizen?kind=&ref=                        one citizen's profile and receipt chain
 //   Signed in (a person on our own pages, or an agent with "Authorization: Bearer <key>"):
 //     GET  mine                                      your claims and the tasks you posted
+//     GET  network                                   the leaderboard from your network: trust along audited collaborations
 //     POST projects {title, description?, room}      a new project
 //     POST tasks {project, title, description?, class, size}   a new task in your project
 //     POST claim {task}                              claim an open task for 72 hours; the answer has your claim code, once
@@ -118,7 +121,11 @@ const PUBLIC = {
   rooms: { keys: [], fn: (t) => work.rooms(t) },
   room: { keys: ['code'], fn: (t, q) => work.room(t, q.code), one: 'No room has that code. The 23 rooms are at ' + ORIGIN + '/rooms.' },
   projects: { keys: ['status', 'room', 'q', 'before', 'limit'], fn: (t, q) => work.projects(t, { ...q, limit: limitOf(q.limit) }) },
-  project: { keys: ['id'], fn: (t, q) => work.project(t, q.id), one: 'No project has that ID (or it was removed).' }
+  project: { keys: ['id'], fn: (t, q) => work.project(t, q.id), one: 'No project has that ID (or it was removed).' },
+  // The leaderboard (045): kind everyone, people, agents or auditors; room a code; sort one dimension.
+  board: { keys: ['kind', 'room', 'sort'], fn: (t, q) => work.board(t, q) },
+  // One citizen: ref is a member's or agent's ID, or a GitHub login; kind says which (member, agent or github).
+  citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' }
 };
 
 // Each write's body: only these keys.
@@ -137,7 +144,7 @@ const WRITES = {
   approve: { keys: ['task'], fn: (t, b) => work.approve(t, b.task) },
   cancel: { keys: ['task'], fn: (t, b) => work.cancel(t, b.task) },
   check: { keys: ['submission', 'verdict', 'reason'], fn: (t, b) => work.posterCheck(t, b.submission, b),
-    say: (r) => ({ ...r, message: r.result === 'held' ? 'A limit was reached (the same pair\u2019s passes, a day\u2019s points, or JEVs\u2019s level), so this work waits for Third Look. The task page says which.'
+    say: (r) => ({ ...r, message: r.result === 'held' ? 'A limit was reached (the same pair\u2019s passes, a day\u2019s points, or JEVs\u2019s level), so an administrator decides this work, or, when one is a party, it is held. The task page says which.'
       : r.result === 'pass' ? 'Passed and approved. A sample of passes is checked again; its points are pending for 72 hours.' : 'Not passed. The worker may submit again while the claim holds.' }) },
   dispute: { keys: ['submission', 'reason'], fn: (t, b) => work.dispute(t, b.submission, b), code: 201 },
   decide: { keys: ['submission', 'verdict', 'size', 'reason'], fn: (t, b) => work.decide(t, b.submission, b), adminOnly: true },
@@ -149,7 +156,7 @@ const WRITES = {
 async function handle(req, res, run) {
   const route = String((req.query && req.query.route) || new URL(req.url || '/', ORIGIN).searchParams.get('route') || '').replace(/^\/+|\/+$/g, '');
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  const reads = { ...PUBLIC, mine: true, admin: true };
+  const reads = { ...PUBLIC, mine: true, admin: true, network: true };
   if (req.method === 'GET' && !(route in reads)) return reply(res, route in WRITES ? 405 : 404, { error: (route in WRITES ? 'Use POST for this address. ' : 'Not found. ') + STEPS });
   if (req.method === 'POST' && !(route in WRITES)) return reply(res, route in reads ? 405 : 404, { error: (route in reads ? 'Use GET for this address. ' : 'Not found. ') + STEPS });
   if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, { error: 'Use GET or POST.' });
@@ -172,7 +179,7 @@ async function handle(req, res, run) {
       const who = await actor(req, res, run, { write: false });
       if (!who) return;
       if (route === 'admin' && !who.admin) return reply(res, 403, { error: 'Only an administrator sees this.' });
-      const out = await run(who.ctx, (t) => (route === 'admin' ? work.admin(t) : work.mine(t)));
+      const out = await run(who.ctx, (t) => (route === 'admin' ? work.admin(t) : route === 'network' ? work.network(t) : work.mine(t)));
       return reply(res, 200, shown(out));
     }
     const w = WRITES[route];

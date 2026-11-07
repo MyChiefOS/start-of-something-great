@@ -31,9 +31,9 @@ const S = {
 const STYLES = Object.fromEntries(Object.values(S).map((d) => [cls(d), d]));
 
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents'], ['/team', 'About'], ['/search', 'Search']];
-// The modules that are live (042: the work module): shown before the "Proposed" label, so the row never calls a live
+// The modules that are live (042: the work module; 045: the leaderboard): shown before the "Proposed" label, so the row never calls a live
 // page proposed (the CLJO's review of Nov 6).
-const LIVE = ['/build', '/rooms', '/projects'];
+const LIVE = ['/build', '/leaderboard', '/rooms', '/projects'];
 const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/loops', 'Loops'],
   ['/disputes', 'Disputes'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
 const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
@@ -86,6 +86,8 @@ const DESIGN = {
   "dispute.html": {"nav":[],"proposed":["/disputes"],"rows":[]},
   "rooms.html": {"nav":[],"proposed":["/rooms"],"rows":[]},
   "room.html": {"nav":[],"proposed":["/rooms"],"rows":[]},
+  "leaderboard.html": {"nav":[],"proposed":["/leaderboard"],"rows":[]},
+  "citizen.html": {"nav":[],"proposed":["/leaderboard"],"rows":[]},
   "projects.html": {"nav":[],"proposed":["/projects"],"rows":[]},
   "project.html": {"nav":[],"proposed":["/projects"],"rows":[]},
   "agents/join.html": {"nav":["/connect"],"proposed":[],"rows":[]},

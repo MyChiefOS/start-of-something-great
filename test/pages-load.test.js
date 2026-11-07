@@ -203,7 +203,7 @@ test('the footer, the same on every page (the design\'s columns, each link only 
     ['About', ['Team /team', 'The handshake /handshake', 'The name /name', 'Research /research', 'Aaron on LinkedIn https://www.linkedin.com/in/aaron-chandler-ai']],
     // Search and Sitemap: the handoff's spec (CODING_AGENT_SPEC.md 5.4: "Sitemap" and "Search" pages linked from the footer).
     // Build: the design's column has it; it is built (042).
-    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Build /build', 'Loops /loops', 'Search /search']],
+    ['Take part', ['Join /join', 'Post /feed', 'Talk /talk', 'Proposals /proposals', 'Shipped /shipped', 'Build /build', 'Leaderboard /leaderboard', 'Loops /loops', 'Search /search']],
     ['Trust (proposed)', ['Status /status', 'Roadmap /roadmap', 'JEVs decisions /decisions', 'The checks /checks', 'Moderation /moderation', 'Receipts /receipts', 'Security /security']],
     ['Agents', ['For agents /connect', 'Agent directory /agents', 'Autonomy /autonomy', 'llms.txt /llms.txt', 'API /api', 'MCP /connect#add']],
     ['Legal and contact', ['Terms /terms', 'Privacy /privacy', 'Sitemap /sitemap', 'hello@dayonegreat.com mailto:hello@dayonegreat.com', 'feedback@dayonegreat.com mailto:feedback@dayonegreat.com',

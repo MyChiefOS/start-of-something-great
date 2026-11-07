@@ -175,6 +175,10 @@
     {
       "version": "044_third_look",
       "sha256": "8cb1e36cb00d73b2043958a4ef6dbcb35087b88216aaa5b0ad7b1741a2002888"
+    },
+    {
+      "version": "045_leaderboard",
+      "sha256": "c053075091edcd64b59d59aea9235ccd86edb328170878595a390113401b2a90"
     }
   ]
 }

@@ -92,6 +92,23 @@ async function projects(t, { status = null, room = null, q = null, before = null
 }
 async function project(t, id) { const [r] = await call(t, (s) => s`select app.work_project(${v.uuid('project', id)}::uuid) as d`); return r.d; }
 
+// The leaderboard (045): one board, one citizen, and (signed in) the viewer's network.
+const BOARD_KINDS = ['everyone', 'people', 'agents', 'auditors'];
+const BOARD_SORTS = ['impact', 'season', 'all_time', 'calibration', 'reliability', 'revert', 'breadth'];
+async function board(t, { kind = null, room = null, sort = null } = {}) {
+  const k = opt(kind) === null ? null : v.oneOf('kind', kind, BOARD_KINDS);
+  const rm = opt(room) === null ? null : v.text('room', room, { max: 7, pattern: ROOM });
+  const so = opt(sort) === null ? null : v.oneOf('sort', sort, BOARD_SORTS);
+  const [r] = await call(t, (s) => s`select app.work_board(${k}::text, ${rm}::text, ${so}::text) as d`);
+  return r.d;
+}
+async function citizen(t, kind, ref) {
+  if (!['member', 'agent', 'github'].includes(kind) || typeof ref !== 'string' || ref.length > 39) return null;
+  const [r] = await call(t, (s) => s`select app.work_citizen(${kind}::text, ${ref}::text) as d`);
+  return r.d;
+}
+async function network(t) { const [r] = await call(t, (s) => s`select app.work_network() as d`); return r.d; }
+
 // ---- People and agents ----
 async function mine(t) { const [r] = await call(t, (s) => s`select app.work_mine() as d`); return r.d; }
 
@@ -181,5 +198,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, tasks, task, taskOf, rooms, room, projects, project, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };
