@@ -1,14 +1,16 @@
 /* build.html: its own design styles. tools/design/build.js */
+.d1 .x0ee7f66a{margin-top:12px!important}
+.d1 .x1b3295d4{grid-template-columns:80px 70px 1fr 90px!important}
 .d1 .x1df5a4c6{gap:56px!important;align-items:start!important}
 .d1 .x2a9081cc{margin-top:20px!important;display:flex!important;align-items:center!important;gap:14px!important;flex-wrap:wrap!important;font-family:var(--display)!important;font-size:15px!important}
 .d1 .x38c33502{font-size:26px!important;margin-top:10px!important}
 .d1 .x3aa9d534{padding-bottom:20px!important}
-.d1 .x3ab4f9e8{width:100%!important;display:block!important;font-family:var(--display)!important;font-size:11px!important}
 .d1 .x42a6ced8{margin-bottom:14px!important}
 .d1 .x4bd8ed59{font-size:64px!important;line-height:1!important;letter-spacing:-.03em!important}
+.d1 .x4e3b78e9{color:var(--amber)!important}
 .d1 .x5306f18f{font-size:22px!important}
 .d1 .x73eb8ab1{margin-top:22px!important;display:flex!important;gap:20px!important;align-items:center!important;padding:16px 24px!important}
-.d1 .x7b5f3749{grid-template-columns:150px 80px 1fr 90px!important}
+.d1 .x94c2097e{display:flex!important;gap:8px!important;flex-wrap:wrap!important;margin-top:12px!important}
 .d1 .x9c4e3734{color:var(--amber)!important;font-family:var(--display)!important;font-weight:700!important}
 .d1 .xbb988083{font-size:30px!important;margin-bottom:6px!important}
 .d1 .xbd70fe71{display:flex!important;gap:12px!important;margin-top:28px!important;flex-wrap:wrap!important}
@@ -17,6 +19,7 @@
 .d1 .xeb2230d6{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))!important;gap:16px!important}
 .d1 .xeb703acc{margin-top:36px!important;max-width:44rem!important;display:grid!important;grid-template-columns:auto 1fr!important;gap:6px 24px!important;align-items:center!important}
 .d1 .xf613f806{font-size:18px!important}
-@media(max-width:820px){.d1 .x7b5f3749.x7b5f3749,.d1 .xd7aac1cf.xd7aac1cf,.d1 .xeb2230d6.xeb2230d6,.d1 .xeb703acc.xeb703acc{grid-template-columns:1fr!important}}
+@media(max-width:820px){.d1 .x1b3295d4.x1b3295d4,.d1 .xd7aac1cf.xd7aac1cf,.d1 .xeb2230d6.xeb2230d6,.d1 .xeb703acc.xeb703acc{grid-template-columns:1fr!important}}
 .d1 .trk i.w0{width:0%}.d1 .trk i.w5{width:5%}.d1 .trk i.w10{width:10%}.d1 .trk i.w15{width:15%}.d1 .trk i.w20{width:20%}.d1 .trk i.w25{width:25%}.d1 .trk i.w30{width:30%}.d1 .trk i.w35{width:35%}.d1 .trk i.w40{width:40%}.d1 .trk i.w45{width:45%}.d1 .trk i.w50{width:50%}.d1 .trk i.w55{width:55%}.d1 .trk i.w60{width:60%}.d1 .trk i.w65{width:65%}.d1 .trk i.w70{width:70%}.d1 .trk i.w75{width:75%}.d1 .trk i.w80{width:80%}.d1 .trk i.w85{width:85%}.d1 .trk i.w90{width:90%}.d1 .trk i.w95{width:95%}.d1 .trk i.w100{width:100%}
+.d1 .plan-svg{display:block;font-family:var(--display);font-size:11px;overflow:visible}.d1 .plan-svg .grid line{stroke:var(--rule)}.d1 .plan-svg .axis{stroke:var(--muted)}.d1 .plan-svg .lab text{fill:var(--muted)}.d1 .plan-svg .mark{stroke:var(--rule);stroke-dasharray:3 4}.d1 .plan-svg .now{stroke:var(--amber);stroke-dasharray:3 4;opacity:.7}.d1 .plan-svg .nowl{fill:var(--amber);font-weight:600}.d1 .plan-svg path,.d1 .plan-svg .forecast{fill:none}.d1 .plan-svg .scope{stroke:var(--muted);stroke-width:1;opacity:.8}.d1 .plan-svg .planned{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:4 4}.d1 .plan-svg .verified{stroke:var(--amber);stroke-width:2.5;stroke-linejoin:round}.d1 .plan-svg .forecast{stroke:var(--amber);stroke-width:2;stroke-dasharray:1 5;stroke-linecap:round}.d1 .plan-svg .dot,.d1 .plan-svg .fdot{fill:var(--ink);stroke:var(--amber);stroke-width:2.5}.d1 .plan-box{min-height:260px}.d1 .figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:22px}.d1 .figs div{border-top:1px solid var(--rule);padding-top:8px;min-width:0}.d1 .figs b{display:block;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}.d1 .figs small{display:block;color:var(--muted);font-family:var(--display);font-size:12.5px;line-height:1.35;margin-top:2px}@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .d1 td.tn{white-space:nowrap}

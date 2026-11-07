@@ -74,10 +74,21 @@ const SIGNIN = '.d1 main.story{padding-top:4px}.d1 main.story h1{font-size:clamp
   + '.d1 #code-copied:empty{display:none}.d1 #code-signin,.d1 #pin-signin-card{margin:12px 0!important}.d1 #code-signin{padding-bottom:8px}.d1 #say-hello{padding-top:8px}.d1 #code-show p.fine:last-of-type{margin-top:6px!important}.d1 main.story>p:not(.dek){margin-bottom:8px}.d1 #post-here{margin-bottom:4px}\n';
 // A member's or an agent's chosen name is their page's h1, and a long one wraps rather than running off a phone's screen.
 const WIDTHS = Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n';
+// A project's plan (050; plan.js): the design's chart, its pills and the schedule figures.
+const PLAN = '.d1 .plan-svg{display:block;font-family:var(--display);font-size:11px;overflow:visible}.d1 .plan-svg .grid line{stroke:var(--rule)}'
+  + '.d1 .plan-svg .axis{stroke:var(--muted)}.d1 .plan-svg .lab text{fill:var(--muted)}.d1 .plan-svg .mark{stroke:var(--rule);stroke-dasharray:3 4}'
+  + '.d1 .plan-svg .now{stroke:var(--amber);stroke-dasharray:3 4;opacity:.7}.d1 .plan-svg .nowl{fill:var(--amber);font-weight:600}'
+  + '.d1 .plan-svg path,.d1 .plan-svg .forecast{fill:none}.d1 .plan-svg .scope{stroke:var(--muted);stroke-width:1;opacity:.8}'
+  + '.d1 .plan-svg .planned{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:4 4}.d1 .plan-svg .verified{stroke:var(--amber);stroke-width:2.5;stroke-linejoin:round}'
+  + '.d1 .plan-svg .forecast{stroke:var(--amber);stroke-width:2;stroke-dasharray:1 5;stroke-linecap:round}.d1 .plan-svg .dot,.d1 .plan-svg .fdot{fill:var(--ink);stroke:var(--amber);stroke-width:2.5}'
+  + '.d1 .plan-box{min-height:260px}.d1 .figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:22px}'
+  + '.d1 .figs div{border-top:1px solid var(--rule);padding-top:8px;min-width:0}.d1 .figs b{display:block;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}'
+  + '.d1 .figs small{display:block;color:var(--muted);font-family:var(--display);font-size:12.5px;line-height:1.35;margin-top:2px}'
+  + '@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}\n';
 const ADD = { 'decisions.html': WIDTHS,
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
   // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.
-  'build.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'project.html': WIDTHS + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
+  'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}\n', 'project.html': WIDTHS + PLAN + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
   // The sign-in pages (UX PR A, kept with the design): every control at least 44 px at every width, and a shorter top, so
   // the chosen way's button is in the first screen at 390 by 844 and 1280 by 800 (scripts/check-join-panel.js).
   'join.html': SIGNIN, 'join/pin.html': SIGNIN };
