@@ -306,3 +306,48 @@ test('on: its pass passes work sent for a second look, held work included; "a pe
   assert.strictEqual(f.mode, 'on');
   assert.ok(f.passed === null || f.passed >= 2);
 });
+
+test('052, the real paths: a poster\'s silence sends readable work to Third Look without a message to Aaron (held if he is a party); doubted held work is told at once; its checks after have their own limit; Aaron is told halfway if Third Look never looks', async () => {
+  await asWork("update app.tl_settings set mode = 'on'");
+  await q('update app.work_settings set tl_check_rate = 1, check_daily = 100');
+  const tick = async () => { await asWork('update app.work_settings set last_tick_at = null'); await run({ actor: 'anon' }, (t) => t`select app.work_tick()`); };
+  const ada = await member('AdaTL5');
+  const bo = await member('BoTL5');
+  // A poster who doesn't check a merged pull request in time: the timer sends it to Third Look (route admin), and Aaron
+  // gets no message for it; Third Look can claim it.
+  const quiet = await prWork(ada, bo);
+  // Aaron's own task, not checked by him in time: held for Third Look, never failed unseen.
+  const mine = await prWork(aaron, bo);
+  await q(`update app.work_submissions set routed_at = now() - interval '73 hours' where id in ('${quiet.s}', '${mine.s}')`);
+  await tick();
+  const route = async (s) => (await q(`select status, route from app.work_submissions where id = '${s}'`))[0];
+  assert.deepStrictEqual(Object.values(await route(quiet.s)), ['review', 'admin']);
+  assert.deepStrictEqual(Object.values(await route(mine.s)), ['review', 'held']);
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key in ('work:escalated:${quiet.s}', 'work:escalated:${mine.s}')`))[0].n, 0, 'no message to Aaron');
+  // Third Look passes the first and doubts the held one; its check after is under its own limit (0 today: none).
+  await q('update app.work_settings set tl_check_daily = 0');
+  const answers = { [quiet.n]: ['yes', 'yes', 'no'], [mine.n]: ['unsure', 'yes', 'no'] };
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const n = Object.keys(answers).find((k) => body.messages[1].content.includes('PULL REQUEST: PR ' + k));
+    const [a1, a2, a3] = answers[n] || ['yes', 'yes', 'no'];
+    return { status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ a1, a2, a3, reason: 'Checked.' }) } }] }) };
+  };
+  for (let i = 0; i < 2; i++) { await claimNow(); await runner.run(run, TOKEN, { gh: async () => FILES, fetchImpl }); }
+  assert.deepStrictEqual(Object.values(await route(quiet.s)), ['passed', null]);
+  assert.strictEqual((await q(`select count(*)::int as n from app.work_checks where submission_id = '${quiet.s}'`))[0].n, 0, 'its own daily limit');
+  await q('update app.work_settings set tl_check_daily = 5');
+  // Doubted held work: the worker and the poster are told now that it can't pass.
+  assert.deepStrictEqual(Object.values(await route(mine.s)), ['review', 'held']);
+  const told = await q(`select member_id from app.notices where dedupe_key like 'work:doubted:${mine.s}:%' order by member_id`);
+  assert.deepStrictEqual(told.map((x) => x.member_id).sort(), [aaron.id, bo.id].sort());
+  // Third Look off: work sent to it waits; halfway through its wait Aaron is told once.
+  await asWork("update app.tl_settings set mode = 'off'");
+  const lone = await prWork(ada, bo);
+  await toAdmin(lone.s);
+  await q(`update app.work_submissions set routed_at = now() - interval '37 hours' where id = '${lone.s}'`);
+  await tick();
+  await tick();
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key = 'work:held:${lone.s}'`))[0].n, 1);
+  await asWork("update app.tl_settings set mode = 'on'");
+});

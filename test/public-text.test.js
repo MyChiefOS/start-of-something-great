@@ -26,6 +26,8 @@ test('R-5: no served page, script, API message or llms.txt promises a preview or
       if (/dropped Oct 24: no private preview/.test(line)) return;
       // The legal pages' dates of change (042): the day Terms and Privacy were updated for the work module, not a promise.
       if (/Updated November 6, 2026 \(the work module: tasks, audits, points and disputes\)/.test(line)) return;
+      // The next change (052) keeps that date as the version before it.
+      if (/before that, November 6, 2026 \(the work module: tasks, audits, points and disputes\)/.test(line)) return;
       if (RECORD_ROWS[f] && RECORD_ROWS[f].test(line)) return;
       if (/private preview|with the preview|november 6|nov\.? 6\b/i.test(line)) bad.push(f + ':' + (i + 1));
     });

@@ -280,7 +280,7 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.strictEqual(crypto.createHash('sha256').update(Buffer.concat([Buffer.from(s.key, 'hex'), Buffer.from(jcs, 'utf8')])).digest('hex'), s.seal);
 });
 
-test('a poster’s fail needs a reason and lets the worker try again; a count alone is never a risk; risky work waits for a second look (052: Exodus 18:22, Deuteronomy 19:15)', async () => {
+test('a poster’s fail needs a reason and lets the worker try again; a count alone is never a risk; risky work waits for a second look (052: Acts 6:2-3, Matthew 18:16)', async () => {
   const ada = await member('Ada2');
   const bo = await member('Bo2');
   const pj = await project(ada, 'Second project');
@@ -292,7 +292,9 @@ test('a poster’s fail needs a reason and lets the worker try again; a count al
   const again = await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/b' } });
   assert.strictEqual(again.status, 201);
   assert.ok((await q(`select count(*)::int as n from app.notices where member_id = '${bo.id}' and kind = 'work_decided'`))[0].n >= 1, 'the worker is told');
-  // The same poster and worker, four passes in 30 days: a count alone is never a risk (Aaron, Nov 7), so all stand.
+  // The same poster and worker: three passes stand; the fourth in 30 days is a risk (farming), so it waits for a second
+  // look: here a link, which Third Look can't read, so it is Aaron's and he is told. Different people saying hello are
+  // never a risk (the passes above Ada's are the first of each pair).
   const passes = [again.json.submission];
   for (let i = 0; i < 3; i++) {
     const t = await task(ada, pj, { size: 1 });
@@ -301,8 +303,9 @@ test('a poster’s fail needs a reason and lets the worker try again; a count al
   }
   const results = [];
   for (const sid of passes) results.push((await work('POST', 'check', { cookie: ada.cookie, json: { submission: sid, verdict: 'pass' } })).json.result);
-  assert.deepStrictEqual(results, ['pass', 'pass', 'pass', 'pass']);
-  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:held:%'`))[0].n, 0, 'no message to Aaron');
+  assert.deepStrictEqual(results, ['pass', 'pass', 'pass', 'held']);
+  assert.match((await q(`select held_reason from app.work_submissions where id = '${passes[3]}'`))[0].held_reason, /passed this worker's work 3 or more times in 30 days/);
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:held:%'`))[0].n, 1, 'one message to Aaron, for the one that is his');
   // Risky work waits for a second look. Contact details in the note: a link Third Look can't read, so it is Aaron's,
   // and he is told.
   let rn = 0;

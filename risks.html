@@ -47,10 +47,10 @@
 </ul>
 <h2>The register in numbers</h2>
 <div class="x1c15a71b">
-<div class="card x453be8fe"><span class="num xdded1070">126</span><p class="fine x98b81e7c">risks recorded</p></div>
+<div class="card x453be8fe"><span class="num xdded1070">127</span><p class="fine x98b81e7c">risks recorded</p></div>
 <div class="card x453be8fe"><span class="num xdded1070">57</span><p class="fine x98b81e7c">accepted</p></div>
 <div class="card x453be8fe"><span class="num xdded1070">24</span><p class="fine x98b81e7c">fixed</p></div>
-<div class="card x453be8fe"><span class="num xdded1070">29</span><p class="fine x98b81e7c">open</p></div>
+<div class="card x453be8fe"><span class="num xdded1070">30</span><p class="fine x98b81e7c">open</p></div>
 <div class="card x453be8fe"><span class="num xdded1070">13</span><p class="fine x98b81e7c">not signed off</p></div>
 <div class="card x453be8fe"><span class="num xdded1070">3</span><p class="fine x98b81e7c">not in phase 1</p></div>
 </div>
@@ -60,7 +60,7 @@
 <p class="fine x98a5f06e">Status</p><div class="chips"><a class="on" href="/risks" data-filter="status" data-value="" aria-current="true">All</a><a href="/risks?status=accepted" data-filter="status" data-value="accepted">Accepted</a><a href="/risks?status=fixed" data-filter="status" data-value="fixed">Fixed</a><a href="/risks?status=open" data-filter="status" data-value="open">Open</a><a href="/risks?status=not-signed-off" data-filter="status" data-value="not-signed-off">Not signed off</a><a href="/risks?status=not-in-phase-1" data-filter="status" data-value="not-in-phase-1">Not in phase 1</a></div>
 <p class="fine x98a5f06e">Severity</p><div class="chips"><a class="on" href="/risks" data-filter="severity" data-value="" aria-current="true">All</a><a href="/risks?severity=high" data-filter="severity" data-value="high">High</a><a href="/risks?severity=medium" data-filter="severity" data-value="medium">Medium</a><a href="/risks?severity=low" data-filter="severity" data-value="low">Low</a></div>
 </nav>
-<p class="fine" id="shown" role="status">All 126 risks.</p>
+<p class="fine" id="shown" role="status">All 127 risks.</p>
 <div class="x4c183b94" tabindex="0" role="region" aria-label="The risk register, from RISKS.md"><table class="x36eb4061">
 <caption class="visually-hidden">The risk register, from RISKS.md</caption>
   <thead><tr><th scope="col">ID</th><th scope="col">Risk and its control</th><th scope="col">Severity (est.)</th><th scope="col">Owner</th><th scope="col">Due</th><th scope="col">Aaron’s sign-off</th><th scope="col">Status</th></tr></thead>
@@ -191,6 +191,7 @@
     <tr id="rk133" data-status="open" data-severity="low"><td class="tn">RK133</td><td>Milestone titles (050) are public words a project's poster writes; no JEVs question checks them<br><span class="fine"><strong>Control:</strong> Keys, email addresses and phone numbers are hidden before saving, as in project titles; 3 to 80 characters on one line, at most 12 a project; an administrator removes the project if needed</span></td><td>1.0 Low</td><td>Claude</td><td>On merge</td><td>Open</td><td><span class="pill">Open</span></td></tr>
     <tr id="rk134" data-status="open" data-severity="low"><td class="tn">RK134</td><td>The timer address (/api/cron) is open, and Third Look takes the Vercel identity token from the request. Unknown: whether Vercel replaces an <code>x-vercel-oidc-token</code> header a caller sends (its documents don't say; not tested live, since a test would spend real work's one try)<br><span class="fine"><strong>Control:</strong> Fails safe: a forged token makes the gateway refuse, the item is recorded as cut short, and the work goes to an administrator, never passed; the item's one try is spent, so Aaron decides it. The token goes only to Vercel's own gateway address, never redirected</span></td><td>2.0 Low</td><td>Claude</td><td>Before Release 2</td><td>Open</td><td><span class="pill">Open</span></td></tr>
     <tr id="rk135" data-status="open" data-severity="low"><td class="tn">RK135</td><td>The database can't tell a real Third Look answer from a forged one: <code>app.tl_decide</code> is open to the site's role, so whoever controls the site's role could pass work Third Look has taken<br><span class="fine"><strong>Control:</strong> Bounded by its gate: only a merged pull request into main that Aaron merged, carrying the claim's code, once per item, and only work sent for a second look; every pass is in the public log, can be disputed, and one in five is checked again by an administrator who isn't a party</span></td><td>2.0 Low</td><td>Claude</td><td>Before Release 2</td><td>Open</td><td><span class="pill">Open</span></td></tr>
+    <tr id="rk136" data-status="open" data-severity="low"><td class="tn">RK136</td><td>While there is one administrator, a dispute of work he is a party to can't be decided, so anyone signed in (but the worker) can keep its points pending with no end date (046, 052)<br><span class="fine"><strong>Control:</strong> Each member's daily dispute limit; the dispute and its reason are public; the points are kept, only not final; the terms and the task page say so plainly; a second administrator, an independent decider, would close it (a decision for Aaron: people)</span></td><td>2.0 Low</td><td>Claude</td><td>Before Release 2</td><td>Open</td><td><span class="pill">Open</span></td></tr>
   </tbody>
 </table></div>
 <p class="fine">Source: <a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/RISKS.md">RISKS.md</a>, with Aaron’s decisions that the rows are measured against. Generated before each commit. See also <a href="/security">Security</a> and <a href="/operations">the operations log</a>.</p>

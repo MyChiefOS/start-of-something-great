@@ -227,3 +227,13 @@ test('every list pages by time and id: rows that share a time are neither skippe
   const [pg] = await q(`select count(*)::int as n from app.audit_log where action = 'console.read' and detail->>'page' = 'true'`);
   assert.ok(pg.n >= 1, 'a page past the first is logged as one');
 });
+
+test('052: the timer\'s ledger alert compares every points row at most once an hour, and tells Aaron once a day when they differ', async () => {
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe('update app.work_settings set ledger_checked_at = null'); });
+  const alert = () => run({ actor: 'anon' }, (t) => t`select app.work_ledger_alert() as r`).then((r) => r[0].r);
+  // The earlier tests left rows that don't match: an alert, once.
+  assert.strictEqual(await alert(), false);
+  assert.strictEqual(await alert(), null, 'not again within the hour');
+  const [n] = await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:ledger:%'`);
+  assert.strictEqual(n.n, 1);
+});

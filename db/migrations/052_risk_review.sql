@@ -4,33 +4,44 @@
 --   Not data because of a daily limit if all the people and agents say hello I should not get hello messages if the
 --   agent is not spamming so change that requirement to meet my clear intent." And on work he is a party to: "Don't
 --   implement behaviors that harm the system. If what your proposing does that don't behave like Jesus. Go look that up."
---   What that gives, in the words it was looked up in:
---   * Small matters are decided where they arise; only the great ones go up ("Every great matter they shall bring to
---     you, but any small matter they shall decide themselves", Exodus 18:22). A poster's pass stands unless the work is
---     risky. A count alone is no longer a risk: the pair limit and the daily points limit stop sending work for review.
---   * Risky work is established by two witnesses, not one ("A matter must be established by the testimony of two or
---     three witnesses", Deuteronomy 19:15): the poster's pass and Third Look's. If Third Look can't pass it, or can't
---     read it, it goes to Aaron. The risks: either party below JEVs's level (new accounts passing each other's work),
---     hidden contact details in the note, the largest size (8), a pair who pass each other's work (collusion), and a
---     burst of work (more than burst_hourly pieces from one worker in an hour: spam).
---   * Third Look sees only that: work sent for review by a risk, or work its poster never checked. It no longer passes
---     work still waiting for its poster, and its passes count when pairs are judged.
---   * No one judges their own case (Luke 12:14; 043's rule, kept): an administrator who is a party decides neither its
---     check nor its dispute; such a dispute stays open, and its points pending, until someone who isn't a party does.
---     The pages now say exactly that (Matthew 5:37), instead of promising a reversal no one can make.
+--   What that gives, with the scripture it was looked up in (INTEGRITY.md: the New Testament, KJV):
+--   * Routine matters are handled by trusted others, so the few who lead aren't drawn from their work ("It is not reason
+--     that we should leave the word of God, and serve tables. Wherefore, brethren, look ye out among you seven men of
+--     honest report", Acts 6:2-3). A poster's pass stands unless the work is risky; how many times people say hello is
+--     not a risk. One poster passing the same worker again and again is: that is how points are farmed.
+--   * Risky work is established by two witnesses, not one ("that in the mouth of two or three witnesses every word may be
+--     established", Matthew 18:16): the poster's pass and Third Look's. If Third Look can't pass it, or can't read it,
+--     it goes to Aaron. The risks: either party below JEVs's level or unknown to the site, hidden contact details in the
+--     note, the largest size (8), one poster passing the same worker more than pair_limit times in 30 days, a pair who
+--     pass each other's work, and a burst (more than burst_hourly pieces from one worker in the hour before it was sent).
+--   * Third Look sees only that: risky work, and work whose poster never checked it. It no longer passes work still
+--     waiting for its poster, and its passes count when pairs are judged. Aaron hears of work only when it is his to
+--     decide: Third Look can't read it, can't pass it, or hasn't looked at it halfway through its wait.
+--   * No one is a witness in their own case ("If I bear witness of myself, my witness is not true", John 5:31; 043's
+--     rule, kept): an administrator who is a party decides neither its check nor its dispute. While there is one
+--     administrator, such a dispute stays open, and its points pending, with no end. The pages say exactly that
+--     (Matthew 5:37).
+--   * Where an administrator is a party and Third Look can't read the work, no second witness can exist: the poster's
+--     pass stands, as before 052, rather than failing an honest worker for want of one (Matthew 7:12). Where Third Look
+--     can read it and doubts it, it isn't established: the worker and the poster are told at once, and it closes when
+--     its wait ends.
 --   * The check after a Third Look pass gets its own daily limit, so posters' checks don't crowd it out.
---   * The poster's decision is recorded as a person's vote, so calibration and the reciprocal-pairs figure count posters.
+--   * The poster's final decision is recorded as a person's vote, so calibration and the reciprocal-pairs figure count
+--     posters. (A pass sent for a second look is recorded by whoever decides it, one vote a submission; the poster's
+--     pass stays in the held reason.)
 --   * The task page says "Passed by Third Look." and no longer prints the model's words (they stay in tl_reviews).
---   * The network leaves out banned and disabled members, as the board does.
---   * Every timer run compares the points with the points ledger, row by row, and alerts Aaron once a day if they
+--   * The network leaves out banned and disabled members before it picks its 100, as the board does.
+--   * Once an hour the timer compares the points with the points ledger, row by row, and alerts Aaron once a day if they
 --     differ; it never blocks anything.
 
 set local role dog_owner;
 
 alter table app.work_settings
   add column burst_hourly integer not null default 20 check (burst_hourly between 1 and 1000),
-  add column tl_check_daily integer not null default 5 check (tl_check_daily between 0 and 100);
-comment on column app.work_settings.pair_limit is 'Since 052: no longer sends work for review by itself (Aaron, Nov 7: review by risk, not by count).';
+  add column tl_check_daily integer not null default 5 check (tl_check_daily between 0 and 100),
+  add column ledger_checked_at timestamptz;
+grant update (ledger_checked_at) on app.work_settings to dog_work;
+comment on column app.work_settings.pair_limit is 'Since 052: one poster passing the same worker more than this in 30 days is a risk (a second look), not a stop.';
 comment on column app.work_settings.poster_daily_points is 'Since 052: no longer sends work for review (Aaron, Nov 7: review by risk, not by count).';
 
 grant create on schema app to dog_work;
@@ -51,12 +62,20 @@ begin
   -- The worker as a person: the member, or the owner of the agent that did it.
   wm := coalesce(s.worker_member, (select g.owner_id from app.agents g where g.id = s.worker_agent));
   select * into st from app.work_settings where singleton;
-  if (select m.trust_level from app.members m where m.id = p_poster) < st.poster_level
-     or (select m.trust_level from app.members m where m.id = wm) < st.poster_level then
+  -- Unknown to the site (a deleted account, or a GitHub account with no member) counts as below the level.
+  if coalesce((select m.trust_level from app.members m where m.id = p_poster), 0) < st.poster_level
+     or coalesce((select m.trust_level from app.members m where m.id = wm), 0) < st.poster_level then
     why := why || ('the poster or the worker isn''t yet at JEVs''s level ' || st.poster_level);
   end if;
   if s.note_hits > 0 then why := why || 'the note had contact details, hidden'::text; end if;
   if p_size = 8 then why := why || 'it is the largest size'::text; end if;
+  -- Farming: this poster has already passed this worker's work pair_limit times in 30 days (by owner).
+  if (select count(*) from app.work_submissions x join app.work_tasks y on y.id = x.task_id
+       where x.status in ('passed', 'reversed') and x.decided_by in ('poster', 'third_look') and x.decided_at > now() - interval '30 days'
+         and coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) = wm
+         and coalesce(y.poster_member, (select g.owner_id from app.agents g where g.id = y.poster_agent)) = p_poster) >= st.pair_limit then
+    why := why || ('this poster has passed this worker''s work ' || st.pair_limit || ' or more times in 30 days');
+  end if;
   -- Collusion: the worker has also passed this poster's work, as its poster or by Third Look, in the last 30 days.
   if exists (select 1 from app.work_submissions x join app.work_tasks y on y.id = x.task_id
               where x.status = 'passed' and x.decided_by in ('poster', 'third_look') and x.decided_at > now() - interval '30 days'
@@ -65,7 +84,8 @@ begin
     why := why || 'these two pass each other''s work'::text;
   end if;
   -- Spam: a burst of work from one worker.
-  if (select count(*) from app.work_submissions x where x.created_at > now() - interval '1 hour'
+  -- Spam: a burst of work from one worker, in the hour before this piece was sent (waiting to check doesn't hide it).
+  if (select count(*) from app.work_submissions x where x.created_at > s.created_at - interval '1 hour' and x.created_at <= s.created_at
         and coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) = wm) > st.burst_hourly then
     why := why || ('this worker sent more than ' || st.burst_hourly || ' pieces of work in an hour');
   end if;
@@ -208,6 +228,15 @@ begin
     perform app.notify(null, 'alert', 'Work waits for you', 'Third Look couldn''t pass this work, so it is yours to decide. '
       || coalesce(s.held_reason, ''), '/admin/review#work', 'submission', p_sub, 'work:held:' || p_sub);
   end if;
+  -- Held work (an administrator is a party) that Third Look doubts isn't established, and no one else can decide it: the
+  -- worker and the poster are told now, not left to find out when its wait ends.
+  if mode = 'on' and p_suggestion = 'person' and s.status = 'review' and s.route = 'held' then
+    select * into t from app.work_tasks x where x.id = s.task_id;
+    perform app.notify(m.id, 'work_decided', 'This work can''t pass',
+      'Third Look couldn''t confirm it, and no administrator who isn''t a party can decide it, so it won''t pass. It closes when its wait ends; then the task can be claimed again.',
+      '/tasks/' || s.task_id, 'submission', p_sub, 'work:doubted:' || p_sub || ':' || m.id)
+      from app.members m where m.id in (s.worker_member, coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)));
+  end if;
   if mode <> 'on' or p_suggestion <> 'pass' then return p_suggestion; end if;
   if s.status <> 'review' or s.route is null or s.route <> all (array['admin', 'held']) then return 'decided_first'; end if;
   perform app.work_finish(p_sub, 'pass', 'third_look', 90, 'Passed by Third Look.');
@@ -264,10 +293,12 @@ begin
   return jsonb_build_object('generated_at', now(), 'hops', 3, 'decay', 0.5,
     'citizens', coalesce((select jsonb_agg(app.work_profile(x) || jsonb_build_object('trust', round((100 * t.m / top)::numeric, 1)) order by t.m desc, x.ref)
         from (select split_part(node, ':', 1) as kind, split_part(node, ':', 2) as ref, sum(m) as m
-                from unnest(tot_nodes, tot_mass) f(node, m) where node <> all (seeds) group by node order by 3 desc limit 100) t
-        join app.work_stats(null) x on x.kind = t.kind and x.ref = t.ref
-       where case x.kind when 'member' then exists (select 1 from app.members m where m.id = x.ref::uuid and m.status = 'active')
-                         when 'agent' then exists (select 1 from app.agents g where g.id = x.ref::uuid) else true end), '[]'::jsonb));
+                from unnest(tot_nodes, tot_mass) f(node, m)
+               where node <> all (seeds)
+                 and case split_part(node, ':', 1) when 'member' then exists (select 1 from app.members m where m.id = split_part(node, ':', 2)::uuid and m.status = 'active')
+                                                   when 'agent' then exists (select 1 from app.agents g where g.id = split_part(node, ':', 2)::uuid) else true end
+               group by node order by 3 desc limit 100) t
+        join app.work_stats(null) x on x.kind = t.kind and x.ref = t.ref), '[]'::jsonb));
 end
 $$;
 
@@ -278,13 +309,111 @@ returns boolean
 language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
-  l jsonb := app.work_console_integrity();
+  l jsonb;
 begin
+  update app.work_settings set ledger_checked_at = now()
+   where singleton and (ledger_checked_at is null or ledger_checked_at <= now() - interval '1 hour');
+  if not found then return null; end if;
+  l := app.work_console_integrity();
   if (l ->> 'intact')::boolean then return true; end if;
   perform app.notify(null, 'alert', 'The points and the points ledger differ',
     (l ->> 'rows_wrong') || ' of ' || (l ->> 'points_rows') || ' points rows don''t match their ledger rows. Nothing was changed or stopped; see the Console''s Ledger tab.',
     '/admin/console', null, null, 'work:ledger:' || to_char(now() at time zone 'UTC', 'YYYY-MM-DD'));
   return false;
+end
+$$;
+
+-- The timer (043), carried over unchanged except where a poster's silence sends the work, and the halfway notice.
+create or replace function app.work_tick()
+returns jsonb
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  st record;
+  n_exp integer := 0;
+  n_final integer := 0;
+  n_fixed integer := 0;
+  x record;
+  waiting integer;
+  party boolean;
+  readable boolean;
+begin
+  select * into st from app.work_settings where singleton for update skip locked;
+  if not found or (st.last_tick_at is not null and st.last_tick_at > now() - interval '50 seconds') then return null; end if;
+  update app.work_settings set last_tick_at = now() where singleton;
+  for x in select c.id, c.task_id from app.work_claims c where c.status = 'active' and c.expires_at <= now() order by c.expires_at limit 500 for update skip locked loop
+    update app.work_claims c set status = 'expired', ended_at = now() where c.id = x.id;
+    update app.work_tasks t set status = 'open', updated_at = now() where t.id = x.task_id and t.status = 'claimed';
+    n_exp := n_exp + 1;
+  end loop;
+  -- Work the worker could fix (W07, W08) that wasn't fixed while the claim held: the rules decide it again, and it fails.
+  for x in select s.id from app.work_submissions s join app.work_claims c on c.id = s.claim_id
+           where s.status = 'waiting' and s.jevs_verdict = 'waiting' and c.expires_at <= now()
+             and (s.jevs_rules like '%W07%' or s.jevs_rules like '%W08%' or c.expires_at + make_interval(hours => st.audit_hours) <= now())
+           order by s.created_at limit 100 loop
+    perform app.work_jevs_run(x.id);
+    n_fixed := n_fixed + 1;
+  end loop;
+  -- Nothing waits for a person forever (the fresh review of #110, M1). A poster who hasn't checked within audit_hours
+  -- is passed over (052): to Third Look when it can read the work (held, if an administrator is a party), otherwise to an
+  -- administrator who isn't a party, and Aaron is told only then. Whatever no one decides within audit_hours of reaching
+  -- them fails: it isn't passed to clear a backlog; the task reopens and the worker may try again.
+  for x in select s.id, s.route, s.worker_member, s.artifact_kind, s.pr_number, t.poster_member, t.poster_agent from app.work_submissions s join app.work_tasks t on t.id = s.task_id
+           where s.status = 'review' and coalesce(s.routed_at, s.created_at) + make_interval(hours => st.audit_hours) <= now() order by s.created_at limit 100 loop
+    party := exists (select 1 from app.members m where m.is_admin
+               and m.id in (x.worker_member, coalesce(x.poster_member, (select g.owner_id from app.agents g where g.id = x.poster_agent))));
+    readable := (select y.mode from app.tl_settings y where y.singleton) = 'on' and x.artifact_kind = 'pr'
+                and exists (select 1 from app.work_github_prs g where g.number = x.pr_number and g.merged_at is not null and g.base = 'main');
+    if x.route = 'poster' and (readable or not party) then
+      update app.work_submissions y set route = case when party then 'held' else 'admin' end, routed_at = now(),
+        held_reason = 'The task''s poster didn''t check it within ' || st.audit_hours || ' hours.' where y.id = x.id;
+      if not readable then
+        perform app.notify(null, 'alert', 'Work a poster didn''t check waits for you', 'A poster didn''t check work on their task in time. Decide it on Review.', '/admin/review#work',
+          'submission', x.id, 'work:escalated:' || x.id);
+      end if;
+    else
+      perform app.work_finish(x.id, 'fail', 'timeout', 100, 'No one could decide it within ' || st.audit_hours || ' hours, so it isn''t passed. You may claim the task again.');
+    end if;
+    n_fixed := n_fixed + 1;
+  end loop;
+  -- Work sent to Third Look for an administrator that it hasn't answered halfway through its wait (Third Look off,
+  -- at its daily limit, or failing): Aaron is told once, so it never fails unseen.
+  for x in select s.id from app.work_submissions s
+           where s.status = 'review' and s.route = 'admin' and s.routed_at + make_interval(hours => st.audit_hours) / 2 <= now()
+             and not exists (select 1 from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)
+           order by s.routed_at limit 100 loop
+    perform app.notify(null, 'alert', 'Work waits for you', 'Third Look hasn''t looked at this work, and half its wait has passed. Decide it on Review.',
+      '/admin/review#work', 'submission', x.id, 'work:held:' || x.id);
+  end loop;
+  -- Tasks left without their work by an account's deletion (the review, M2): a claimed or submitted task with no live
+  -- claim and nothing waiting reopens (a pull request of the repository's history closes); an open task whose poster
+  -- deleted their account closes, since no one is left to approve it.
+  update app.work_tasks t set status = case when t.source = 'github' and t.github_kind = 'pr' then 'closed' else 'open' end, updated_at = now()
+   where t.status in ('claimed', 'submitted')
+     and not exists (select 1 from app.work_claims c where c.task_id = t.id and c.status in ('active', 'submitted'))
+     and not exists (select 1 from app.work_submissions s where s.task_id = t.id and s.status in ('waiting', 'review'));
+  update app.work_tasks t set status = 'closed', updated_at = now()
+   where t.status = 'open' and t.source = 'member' and t.poster_member is null and t.poster_agent is null;
+  -- Points become final after the dispute window, unless a dispute or the check after is still open on them.
+  update app.work_points p set status = 'final' where p.status = 'pending' and p.final_at <= now()
+    and not exists (select 1 from app.work_disputes d where d.submission_id = p.submission_id and d.status = 'open')
+    and not exists (select 1 from app.work_checks k where k.submission_id = p.submission_id and k.status = 'open');
+  get diagnostics n_final = row_count;
+  -- Aaron's daily alert while anything waits for him (in-app, once a day).
+  -- Only what an administrator can decide: a dispute or check of work every administrator is a party to can't be his,
+  -- so it doesn't bring him back each day (052).
+  select (select count(*) from app.work_submissions s where s.status = 'review' and s.route = 'admin')
+       + (select count(*) from app.work_checks k where k.status = 'open'
+            and exists (select 1 from app.members m where m.is_admin and not app.work_party(k.submission_id, m.id)))
+       + (select count(*) from app.work_disputes d where d.status = 'open'
+            and exists (select 1 from app.members m where m.is_admin and not app.work_party(d.submission_id, m.id) and d.member_id is distinct from m.id)) into waiting;
+  if waiting > 0 and st.last_alert_day is distinct from (now() at time zone 'UTC')::date then
+    update app.work_settings set last_alert_day = (now() at time zone 'UTC')::date where singleton;
+    perform app.notify(null, 'alert', 'Work waits for you', waiting || case when waiting = 1 then ' item of work waits' else ' items of work wait' end
+      || ' for you on Review: checks after a poster''s pass, disputes, or the repository''s own tasks. Points under a check or a dispute stay pending; nothing else stops.', '/admin/review#work', null, null,
+      'work:waiting:' || to_char(now() at time zone 'UTC', 'YYYYMMDD'));
+  end if;
+  return jsonb_build_object('expired', n_exp, 'finalised', n_final, 'unfixed', n_fixed);
 end
 $$;
 
