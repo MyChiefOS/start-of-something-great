@@ -13,6 +13,7 @@
 //     GET  citizen?kind=&ref=                        one citizen's profile and receipt chain
 //     GET  disputes?status=&before=&limit=           disputes, newest first (046)
 //     GET  dispute?id=                               one dispute: its steps, evidence, window and outcome
+//     GET  console?tab=&status=&cursor=              the administrator's console, one tab (051); every read is logged
 //     GET  plan?project=                             a project's plan: milestones, scope, planned and verified by day, its figures (050)
 //   Signed in (a person on our own pages, or an agent with "Authorization: Bearer <key>"):
 //     GET  mine                                      your claims and the tasks you posted
@@ -172,7 +173,7 @@ const WRITES = {
 async function handle(req, res, run) {
   const route = String((req.query && req.query.route) || new URL(req.url || '/', ORIGIN).searchParams.get('route') || '').replace(/^\/+|\/+$/g, '');
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  const reads = { ...PUBLIC, mine: true, admin: true, network: true };
+  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true };
   if (req.method === 'GET' && !(route in reads)) return reply(res, route in WRITES ? 405 : 404, { error: (route in WRITES ? 'Use POST for this address. ' : 'Not found. ') + STEPS });
   if (req.method === 'POST' && !(route in WRITES)) return reply(res, route in reads ? 405 : 404, { error: (route in reads ? 'Use GET for this address. ' : 'Not found. ') + STEPS });
   if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, { error: 'Use GET or POST.' });
@@ -191,11 +192,15 @@ async function handle(req, res, run) {
       return pub(res, out);
     }
     if (req.method === 'GET') {
-      if (!query(req, [])) return reply(res, 400, { error: 'This address takes no query. ' + STEPS });
+      if (route !== 'console' && !query(req, [])) return reply(res, 400, { error: 'This address takes no query. ' + STEPS });
       const who = await actor(req, res, run, { write: false });
       if (!who) return;
       if (route === 'admin' && !who.admin) return reply(res, 403, { error: 'Only an administrator sees this.' });
-      const out = await run(who.ctx, (t) => (route === 'admin' ? work.admin(t) : route === 'network' ? work.network(t) : work.mine(t)));
+      if (route === 'console' && !who.admin) return reply(res, 403, { error: 'Only an administrator sees the console.' });
+      const cq = route === 'console' ? query(req, ['tab', 'status', 'cursor']) : null;
+      if (route === 'console' && !cq) return reply(res, 400, { error: 'Ask with tab, status and cursor only, each once.' });
+      const out = await run(who.ctx, (t) => (route === 'admin' ? work.admin(t) : route === 'network' ? work.network(t)
+        : route === 'console' ? work.console(t, cq) : work.mine(t)));
       return reply(res, 200, shown(out));
     }
     const w = WRITES[route];
