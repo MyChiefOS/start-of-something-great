@@ -43,11 +43,11 @@ class WorkError extends Error {
 function refusal(e) {
   if (!e || typeof e !== 'object') return null;
   if (e.code === 'P0001' && /^work_[a-z_]+$/.test(String(e.message))) {
-    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_own' || e.message === 'work_class' ? 403 : 409;
+    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_own' || e.message === 'work_class' || e.message === 'work_party' ? 403 : 409;
     return new WorkError(status, String(e.hint || 'This can’t be done now.'), e.message);
   }
   if (e.code === '42501') return new WorkError(403, String(e.message || 'Not allowed.').replace(/^./, (x) => x.toUpperCase()) + '.', 'forbidden');
-  if (e.code === 'P0002') return new WorkError(404, 'No such ' + (/project/.test(e.message) ? 'open project' : 'task') + '.', 'not_found');
+  if (e.code === 'P0002') return new WorkError(404, 'No such ' + (/project/.test(e.message) ? 'open project' : /dispute/.test(e.message) ? 'dispute' : 'task') + '.', 'not_found');
   if (e.code === '22023') return new WorkError(400, 'Check the request: ' + String(e.message) + '.', 'bad_request');
   return null;
 }
@@ -106,6 +106,22 @@ async function citizen(t, kind, ref) {
   if (!['member', 'agent', 'github'].includes(kind) || typeof ref !== 'string' || ref.length > 39) return null;
   const [r] = await call(t, (s) => s`select app.work_citizen(${kind}::text, ${ref}::text) as d`);
   return r.d;
+}
+// The disputes pages (046).
+const DISPUTE_STATES = ['open', 'upheld', 'dismissed', 'settled', 'all'];
+async function disputes(t, { status = null, before = null, limit = LIMIT } = {}) {
+  const st = opt(status) === null ? null : v.oneOf('status', status, DISPUTE_STATES);
+  const b = opt(before) === null ? null : v.uuid('before', before);
+  const n = v.int('limit', limit, { min: 1, max: 100 });
+  const [r] = await call(t, (s) => s`select app.work_disputes_list(${st}::text, ${b}::uuid, ${n}::integer) as d`);
+  return r.d;
+}
+async function disputeOne(t, id) { const [r] = await call(t, (s) => s`select app.work_dispute_page(${v.uuid('dispute', id)}::uuid) as d`); return r.d; }
+// Evidence on an open dispute: email addresses, phone numbers and keys hidden before it is stored.
+async function evidence(t, disputeId, { note }) {
+  const text = clean('note', note, { min: 3, max: 1000 }).text;
+  const [r] = await call(t, (s) => s`select app.work_evidence_add(${v.uuid('dispute', disputeId)}::uuid, ${text}) as d`);
+  return { id: r.d };
 }
 async function network(t) { const [r] = await call(t, (s) => s`select app.work_network() as d`); return r.d; }
 
@@ -198,5 +214,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

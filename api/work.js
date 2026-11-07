@@ -11,6 +11,8 @@
 //     GET  project?id=                               one project and its tasks
 //     GET  board?kind=&room=&sort=                   the leaderboard: six dimensions each, bands, the integrity panel (045)
 //     GET  citizen?kind=&ref=                        one citizen's profile and receipt chain
+//     GET  disputes?status=&before=&limit=           disputes, newest first (046)
+//     GET  dispute?id=                               one dispute: its steps, evidence, window and outcome
 //   Signed in (a person on our own pages, or an agent with "Authorization: Bearer <key>"):
 //     GET  mine                                      your claims and the tasks you posted
 //     GET  network                                   the leaderboard from your network: trust along audited collaborations
@@ -22,6 +24,7 @@
 //     POST submit {task, kind, url?, sha256?, note?} submit work: kind pr (this repository), link (https) or file (SHA-256)
 //     POST check {submission, verdict, reason?}      the poster checks work the rules couldn't decide (a fail needs a reason)
 //     POST dispute {submission, reason}              dispute a pass whose points are pending (anyone but the worker)
+//     POST evidence {dispute, note}                  a note of evidence on an open dispute (its opener, the worker, the poster, an administrator)
 //     POST approve {task}                            the poster approves work that passed its audit
 //     POST cancel {task}                             the poster closes an open task nobody claimed
 //   Aaron only:
@@ -125,7 +128,10 @@ const PUBLIC = {
   // The leaderboard (045): kind everyone, people, agents or auditors; room a code; sort one dimension.
   board: { keys: ['kind', 'room', 'sort'], fn: (t, q) => work.board(t, q) },
   // One citizen: ref is a member's or agent's ID, or a GitHub login; kind says which (member, agent or github).
-  citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' }
+  citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' },
+  // The disputes (046): status open, upheld, dismissed, settled or all; one dispute by its ID.
+  disputes: { keys: ['status', 'before', 'limit'], fn: (t, q) => work.disputes(t, { ...q, limit: limitOf(q.limit) }) },
+  dispute: { keys: ['id'], fn: (t, q) => work.disputeOne(t, q.id), one: 'No dispute has that ID (or its task was removed).' }
 };
 
 // Each write's body: only these keys.
@@ -147,6 +153,7 @@ const WRITES = {
     say: (r) => ({ ...r, message: r.result === 'held' ? 'A limit was reached (the same pair\u2019s passes, a day\u2019s points, or JEVs\u2019s level), so an administrator decides this work, or, when one is a party, it is held. The task page says which.'
       : r.result === 'pass' ? 'Passed and approved. A sample of passes is checked again; its points are pending for 72 hours.' : 'Not passed. The worker may submit again while the claim holds.' }) },
   dispute: { keys: ['submission', 'reason'], fn: (t, b) => work.dispute(t, b.submission, b), code: 201 },
+  evidence: { keys: ['dispute', 'note'], fn: (t, b) => work.evidence(t, b.dispute, b), code: 201 },
   decide: { keys: ['submission', 'verdict', 'size', 'reason'], fn: (t, b) => work.decide(t, b.submission, b), adminOnly: true },
   settle: { keys: ['dispute', 'decision', 'reason'], fn: (t, b) => work.settle(t, b.dispute, b), adminOnly: true },
   review: { keys: ['check', 'decision', 'reason'], fn: (t, b) => work.review(t, b.check, b), adminOnly: true },

@@ -240,7 +240,7 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.deepStrictEqual([sub.json.status, sub.json.jevs.verdict, sub.json.jevs.rules], ['review', 'person', 'W11']);
   let p = await page(id);
   assert.strictEqual(p.submissions[0].note, 'Done; write to [email hidden]');
-  assert.deepStrictEqual([p.submissions[0].route, p.submissions[0].audit], ['poster', { by: 'poster', third_look: 'not_built' }]);
+  assert.deepStrictEqual([p.submissions[0].route, p.submissions[0].audit], ['poster', { by: 'poster', third_look: 'shadow' }]);
   // The poster is told, in-app; nothing goes to Aaron.
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id = '${ada.id}' and dedupe_key = 'work:check:${sub.json.submission}'`))[0].n, 1);
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:person:%'`))[0].n, 0);
@@ -348,7 +348,7 @@ test('disputes: anyone but the worker, while points are pending; the points wait
   const p = await page(id);
   assert.deepStrictEqual([p.status, p.submissions[0].status, p.submissions[0].points.status, p.submissions[0].disputes[0].status], ['open', 'reversed', 'removed', 'upheld']);
   assert.ok((await q(`select count(*)::int as n from app.notices where member_id = '${cy.id}' and kind = 'work_decided'`))[0].n === 1);
-  // A dispute on work Aaron posted waits for Third Look: he doesn't decide it.
+  // A dispute on work Aaron posted: he doesn't decide it (another administrator would).
   const apj = await project(aaron, 'Aaron’s second project');
   const at = await task(aaron, apj, { size: 1 });
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: at } });
@@ -358,6 +358,70 @@ test('disputes: anyone but the worker, while points are pending; the points wait
   const own = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d2, decision: 'dismiss', reason: 'It is done.' } });
   assert.deepStrictEqual([own.status, own.json.reason], [403, 'work_own']);
   assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d2).party, true);
+});
+
+test('the disputes pages (046): the list, one dispute with its window, evidence from its parties only, the outcome with its log entry; the worker and poster are told', async () => {
+  const ada = await member('Ada46');
+  const bo = await member('Bo46');
+  const cy = await member('Cy46');
+  const dan = await member('Dan46');
+  const pj = await project(ada, 'Evidence project');
+  const id = await task(ada, pj, { size: 3 });
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
+  const sub = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/ev' } })).json.submission;
+  await work('POST', 'check', { cookie: ada.cookie, json: { submission: sub, verdict: 'pass' } });
+  const did = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: sub, reason: 'The numbers in it don’t add up.' } })).json.id;
+  // The worker and the poster are told, with a link to the dispute.
+  for (const m of [bo, ada]) {
+    const [n] = await q(`select link from app.notices where member_id = '${m.id}' and dedupe_key like 'work:dispute:%'`);
+    assert.strictEqual(n && n.link, '/disputes/' + did);
+  }
+  const list = await work('GET', 'disputes', { search: '?status=open' });
+  assert.strictEqual(list.status, 200);
+  const row = list.json.disputes.find((x) => x.id === did);
+  assert.deepStrictEqual([row.status, row.opener.name, row.worker.name, row.task.id, row.evidence], ['open', 'Cy46', 'Bo46', id, 0]);
+  assert.ok(list.json.counts.open >= 1);
+  // Evidence: the opener, the worker, the poster and an administrator who isn't a party; no one else.
+  const add = (m, note) => work('POST', 'evidence', { cookie: m.cookie, json: { dispute: did, note } });
+  assert.strictEqual((await add(cy, 'Row 3 says 12 but the sum is 15. Ask me at cy@example.org')).status, 201);
+  assert.strictEqual((await add(bo, 'Row 3 is a subtotal, as the heading says.')).status, 201);
+  assert.strictEqual((await add(ada, 'The task asked for subtotals.')).status, 201);
+  assert.strictEqual((await add(aaron, 'Checked the file myself.')).status, 201);
+  const out = await add(dan, 'I have a view too.');
+  assert.deepStrictEqual([out.status, out.json.reason], [403, 'work_party']);
+  for (let i = 0; i < 4; i++) assert.strictEqual((await add(cy, 'More on row ' + i)).status, 201);
+  assert.deepStrictEqual([(await add(cy, 'A sixth')).status, (await add(cy, 'A sixth')).json.reason], [429, 'work_cap']);
+  const one = await work('GET', 'dispute', { search: '?id=' + did });
+  assert.strictEqual(one.status, 200);
+  const d = one.json;
+  assert.deepStrictEqual([d.status, d.opener.name, d.decidable, d.task.id, d.submission.worker.name, d.submission.poster.name], ['open', 'Cy46', true, id, 'Bo46', 'Ada46']);
+  assert.ok(d.window && d.window.closes_at && d.window.points_status === 'pending');
+  assert.deepStrictEqual(d.evidence.slice(0, 4).map((e) => [e.role, e.by.name]), [['opener', 'Cy46'], ['worker', 'Bo46'], ['poster', 'Ada46'], ['admin', 'Aaron']]);
+  assert.ok(d.evidence[0].note.includes('[email hidden]') && !d.evidence[0].note.includes('cy@example.org'), 'contact details hidden before they are stored');
+  assert.strictEqual((await page(id)).submissions[0].disputes[0].evidence, 8);
+  assert.strictEqual((await page(id)).submissions[0].disputes[0].opener.name, 'Cy46');
+  // Upheld: the outcome is the reversal's log entry; no more evidence.
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: did, decision: 'uphold', reason: 'Row 3 is wrong.' } })).status, 200);
+  const up = (await work('GET', 'dispute', { search: '?id=' + did })).json;
+  const [rev] = await q(`select max(seq)::int as seq from app.log_entries where type = 'audit.verdict' and subject = 'submission:${sub}'`);
+  assert.deepStrictEqual([up.status, up.outcome_seq, up.decided_by.name, up.decidable], ['upheld', rev.seq, 'Aaron', false]);
+  assert.ok(up.outcome_seq > up.submission.seq, 'the reversal comes after the pass');
+  assert.deepStrictEqual([(await add(bo, 'Too late')).status, (await add(bo, 'Too late')).json.reason], [409, 'work_state']);
+  // Dismissed: the outcome is the pass's own entry, which stands.
+  const id2 = await task(ada, pj, { size: 1 });
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: id2 } });
+  const sub2 = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: id2, kind: 'link', url: 'https://example.org/ev2' } })).json.submission;
+  await work('POST', 'check', { cookie: ada.cookie, json: { submission: sub2, verdict: 'pass' } });
+  const did2 = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: sub2, reason: 'Same problem here.' } })).json.id;
+  await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: did2, decision: 'dismiss', reason: 'This one adds up.' } });
+  const dis = (await work('GET', 'dispute', { search: '?id=' + did2 })).json;
+  assert.deepStrictEqual([dis.status, dis.outcome_seq], ['dismissed', dis.submission.seq]);
+  assert.ok(Number.isInteger(dis.outcome_seq));
+  assert.ok((await work('GET', 'disputes', { search: '?status=settled' })).json.disputes.some((x) => x.id === did2));
+  assert.ok(!(await work('GET', 'disputes', { search: '?status=open' })).json.disputes.some((x) => x.id === did2));
+  for (const [r, sr, code] of [['dispute', '?id=' + crypto.randomUUID(), 404], ['dispute', '?id=nope', 404], ['disputes', '?status=bogus', 400], ['disputes', '?limit=0', 400]]) {
+    assert.strictEqual((await work('GET', r, { search: sr })).status, code, r + sr);
+  }
 });
 
 test('what the worker can fix waits for them: a merged pull request without the claim’s code passes once the code is added, and fails if the claim runs out first', async () => {

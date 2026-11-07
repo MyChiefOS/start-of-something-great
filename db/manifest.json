@@ -179,6 +179,10 @@
     {
       "version": "045_leaderboard",
       "sha256": "c053075091edcd64b59d59aea9235ccd86edb328170878595a390113401b2a90"
+    },
+    {
+      "version": "046_disputes",
+      "sha256": "338ce35b688e6f6fe958a2cdd55f40a8a43aa20361642e560238cbd3cf34cbf2"
     }
   ]
 }

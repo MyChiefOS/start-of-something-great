@@ -571,6 +571,11 @@ constraint app.work_claims work_claims_member_id_fkey FOREIGN KEY (member_id) RE
 constraint app.work_claims work_claims_pkey PRIMARY KEY (id)
 constraint app.work_claims work_claims_status_check CHECK ((status = ANY (ARRAY['active'::text, 'submitted'::text, 'released'::text, 'expired'::text, 'handed'::text, 'done'::text])))
 constraint app.work_claims work_claims_task_id_fkey FOREIGN KEY (task_id) REFERENCES app.work_tasks(id) ON DELETE CASCADE
+constraint app.work_dispute_evidence work_dispute_evidence_dispute_id_fkey FOREIGN KEY (dispute_id) REFERENCES app.work_disputes(id) ON DELETE CASCADE
+constraint app.work_dispute_evidence work_dispute_evidence_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.work_dispute_evidence work_dispute_evidence_note_check CHECK (((char_length(note) >= 3) AND (char_length(note) <= 1000)))
+constraint app.work_dispute_evidence work_dispute_evidence_pkey PRIMARY KEY (id)
+constraint app.work_dispute_evidence work_dispute_evidence_role_check CHECK ((role = ANY (ARRAY['opener'::text, 'worker'::text, 'poster'::text, 'admin'::text])))
 constraint app.work_disputes work_disputes_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.work_disputes work_disputes_decision_check CHECK (((char_length(decision) >= 3) AND (char_length(decision) <= 300)))
 constraint app.work_disputes work_disputes_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
@@ -971,6 +976,8 @@ default app.work_checks.status = 'open'::text
 default app.work_claims.created_at = now()
 default app.work_claims.id = app.uuid_v7()
 default app.work_claims.status = 'active'::text
+default app.work_dispute_evidence.created_at = now()
+default app.work_dispute_evidence.id = app.uuid_v7()
 default app.work_disputes.created_at = now()
 default app.work_disputes.id = app.uuid_v7()
 default app.work_disputes.status = 'open'::text
@@ -1268,13 +1275,16 @@ function app.work_brake_check(p_member uuid) owner=dog_work execute=dog_work lan
 function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=b481b141924d4de435423d31c7b8faaf
 function app.work_cap(p_agent uuid, p_root uuid, p_kind text, p_new_claim boolean) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=023b626206cf906f98900fde64a05f3b
 function app.work_card(p_task uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d7b60f17e3dd2a7e9805740af9fe72c1
-function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=60d86b900dc6e5e4bab0eae3f8dd7f47
+function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d8dd76b2315bbb22daea2d5331631f45
 function app.work_citizen(p_kind text, p_ref text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=53e435a822c38d112351c7fddafccf22
 function app.work_claim(p_task uuid, p_code_hash text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e197c4ae1c535a34356691c397cdbd4
 function app.work_confirmed_size(p_sub uuid, p_by text) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=smallint body_md5=17268c22ad5a3e0dbe598e040dca3d6d
 function app.work_display(p_member uuid, p_agent uuid, p_github text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e5dbe77c9b350b1ca967f865a1fb60a
-function app.work_dispute(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=4f41fd754e8c7e60224270c969c47867
-function app.work_dispute_decide(p_dispute uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=463b82cd4b6ed6510509a02f0505f5dc
+function app.work_dispute(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=9f0cafd7c5dad956ab6feb0de07c8d4a
+function app.work_dispute_decide(p_dispute uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=e6778949dfc3d4c50eb031ab68636947
+function app.work_dispute_page(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=0c8ea9b371b27a4fa132b4c3858cccce
+function app.work_disputes_list(p_status text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eb8b09e55fae21d1249b346263d25f37
+function app.work_evidence_add(p_dispute uuid, p_note text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=1033cabfb44daccacc27b6e74c2adb29
 function app.work_facts(p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=846462e32a40db7d2abb896d9b05db27
 function app.work_finish(p_sub uuid, p_verdict text, p_by text, p_confidence integer, p_reason text) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=5ba31004d328733c17ff93d01192a0bd
 function app.work_github_sync(p jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=d7d9acc46e3875cd59b7477ba55ef62b
@@ -1305,7 +1315,7 @@ function app.work_sort_value(p_sort text, s app.work_stat) owner=dog_owner execu
 function app.work_stats(p_room uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF app.work_stat body_md5=9801c908a33e5f7f7ad11b8f1c536ebc
 function app.work_submit(p_task uuid, p_kind text, p_url text, p_sha256 text, p_note text, p_hits integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0f36a558848bbe70e645ccedc825e228
 function app.work_summary() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1587b0ae36be6aa3ab7518a811114776
-function app.work_task(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1ac162b6b3692b3b086d0f3bd4521d52
+function app.work_task(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=ea5f727f358e1a7957a51692f4254daf
 function app.work_task_create(p_project uuid, p_title text, p_description text, p_class text, p_size integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=4526f944079120d74230ec01a1831ceb
 function app.work_task_of(p_sub uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=f89e623568c43d1ddc2e87846bfdea13
 function app.work_tasks(p_status text, p_room text, p_project uuid, p_q text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=b5c34b8a3e08c291904cadd04329987a
@@ -2136,6 +2146,8 @@ grant app.work_claims dog_work DELETE
 grant app.work_claims dog_work INSERT
 grant app.work_claims dog_work SELECT
 grant app.work_claims dog_work UPDATE
+grant app.work_dispute_evidence dog_work INSERT
+grant app.work_dispute_evidence dog_work SELECT
 grant app.work_disputes dog_work INSERT
 grant app.work_disputes dog_work SELECT
 grant app.work_disputes dog_work UPDATE
@@ -2491,6 +2503,7 @@ policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=
 policy app.work_actions work_actions_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_checks work_checks_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_claims work_claims_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_dispute_evidence work_dispute_evidence_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_disputes work_disputes_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_github_codes work_github_codes_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_github_names work_github_names_work cmd=* permissive=true to=dog_work using=true check=true

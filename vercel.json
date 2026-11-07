@@ -259,6 +259,10 @@
     {
       "source": "/citizens/github/:ref([a-z0-9-]{1,39})",
       "destination": "/citizen"
+    },
+    {
+      "source": "/disputes/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+      "destination": "/dispute"
     }
   ],
   "crons": [

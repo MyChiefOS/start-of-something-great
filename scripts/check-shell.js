@@ -260,7 +260,9 @@ async function main() {
                 const isOpen = () => p.evaluate(() => document.querySelector('.hd details.mnav').open);
                 await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.querySelector('.hd details.mnav').open = true; });
                 const panel = await p.locator('.hd .mpanel').boundingBox();
-                await p.mouse.click(panel.x + 4, panel.y + panel.height - 4); // the panel's own bottom padding
+                // The panel's own bottom padding, scrolled into view first: signed in, with five live modules, the open
+                // Menu runs past the first screen at 390 by 844, and a tap there needs a scroll (046).
+                await p.locator('.hd .mpanel').click({ position: { x: 4, y: panel.height - 4 } });
                 if (!(await isOpen())) fail(where, 'a tap inside the open Menu closed it');
                 // A point outside the Menu that is no link or control, so the tap only closes the Menu.
                 const spot = await p.evaluate(() => {

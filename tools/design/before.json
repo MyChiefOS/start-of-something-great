@@ -227,6 +227,16 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "dispute.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
+ "disputes.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "errors/rate-limited.html": {
   "ids": [],
   "links": {

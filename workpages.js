@@ -252,14 +252,18 @@
         var dl = slot(c, 'disputes');
         (s.disputes || []).forEach(function (x) {
           var pp = document.createElement('p'); pp.className = 'fine';
-          pp.textContent = 'Dispute (' + ({ open: 'open: the points wait for Aaron', upheld: 'upheld: the pass was reversed', dismissed: 'dismissed' }[x.status] || '') + '): ' + txt(x.reason) + (x.decision ? ' · Decision: ' + txt(x.decision) : '');
+          var a = document.createElement('a');
+          link(a, isId(x.id) ? '/disputes/' + x.id : null, 'Dispute (' + ({ open: 'open: the points wait for an administrator', upheld: 'upheld: the pass was reversed', dismissed: 'dismissed' }[x.status] || '') + ')');
+          pp.appendChild(a);
+          pp.appendChild(document.createTextNode((x.opener ? ' by ' + who(x.opener) : '') + ': ' + txt(x.reason) + (n(x.evidence) ? ' · ' + plural(n(x.evidence), 'note') + ' of evidence' : '')
+            + (x.decision ? ' · Decision: ' + txt(x.decision) : '')));
           dl.appendChild(pp);
         });
         var open = s.status === 'passed' && s.points && s.points.status === 'pending' && !(s.disputes || []).some(function (x) { return x.status === 'open'; });
         var dw = slot(c, 'dispute-wrap');
         dw.hidden = !open;
         if (open && isId(s.id)) slot(c, 'dispute-send').addEventListener('click', function () {
-          act('/api/work/dispute', { submission: s.id, reason: slot(c, 'dispute-reason').value }, function () { return 'Dispute sent. The points wait until Aaron decides it.'; });
+          act('/api/work/dispute', { submission: s.id, reason: slot(c, 'dispute-reason').value }, function (d) { return 'Dispute sent. The points wait until an administrator decides it. Add evidence on its page: ' + (d && isId(d.id) ? location.origin + '/disputes/' + d.id : location.origin + '/disputes') + '.'; });
         });
         if (s.route === 'poster' && s.status === 'review' && isId(s.id)) checkable = s.id;
         subs.appendChild(c);
@@ -670,6 +674,107 @@
     }, 'the profile');
   }
 
+  // ---- /disputes and /disputes/<id> (046) ----
+  var DSTATE = { open: ['Open', 'a'], upheld: ['Upheld: pass reversed', 'm'], dismissed: ['Dismissed: pass stands', 'f'] };
+  function dpill(el, st) { var x = DSTATE[st] || [txt(st), '']; el.textContent = x[0]; el.className = 'pill' + (x[1] ? ' ' + x[1] : ''); }
+  function disputesPage() {
+    var status = 'open', before = null;
+    var chips = Array.prototype.slice.call(document.querySelectorAll('[data-status]'));
+    function load(more) {
+      $('retry-row').hidden = true;
+      $('status').textContent = 'Loading the disputes…';
+      if (!more) { before = null; $('disputes').textContent = ''; }
+      get('/api/work/disputes?status=' + status + (before ? '&before=' + before : '')).then(function (x) {
+        if (!x.ok) throw new Error(said(x, ''));
+        $('status').textContent = '';
+        var d = x.d, ct = d.counts || {};
+        $('counts').textContent = n(ct.open) + ' open · ' + n(ct.upheld) + ' upheld · ' + n(ct.dismissed) + ' dismissed';
+        (d.disputes || []).forEach(function (r) {
+          if (!r || !isId(r.id) || !r.task || !isId(r.task.id)) return;
+          var tr = clone('dispute-tpl');
+          link(slot(tr, 'task'), '/tasks/' + r.task.id, txt(r.task.title));
+          slot(tr, 'reason').textContent = txt(r.reason);
+          slot(tr, 'opener').textContent = who(r.opener);
+          slot(tr, 'worker').textContent = who(r.worker);
+          var st = slot(tr, 'state');
+          st.href = '/disputes/' + r.id;
+          st.textContent = (DSTATE[r.status] || [txt(r.status)])[0] + (r.status === 'open' ? ' since ' + when(r.created_at) : ' ' + day(r.decided_at));
+          slot(tr, 'evidence').textContent = String(n(r.evidence));
+          $('disputes').appendChild(tr);
+        });
+        before = isId(d.next) ? d.next : null;
+        $('more-row').hidden = !before;
+        $('disputes-empty').hidden = $('disputes').children.length > 0;
+      }).catch(function (e) { $('status').textContent = (e && e.message) || 'The disputes couldn’t be loaded.'; $('retry-row').hidden = false; });
+    }
+    chips.forEach(function (b) {
+      b.addEventListener('click', function () {
+        status = b.getAttribute('data-status');
+        chips.forEach(function (c) { var on = c === b; c.className = on ? 'on' : ''; c.setAttribute('aria-pressed', String(on)); });
+        load(false);
+      });
+    });
+    $('more').addEventListener('click', function () { load(true); });
+    $('retry').addEventListener('click', function () { load(false); });
+    load(false);
+  }
+  var ROLE = { opener: 'opened the dispute', worker: 'the worker', poster: 'the task’s poster', admin: 'an administrator' };
+  function disputePage(id) {
+    function draw(d) {
+      $('dispute').hidden = false;
+      $('title').textContent = 'Dispute on “' + txt(d.task && d.task.title) + '”';
+      document.title = 'Dispute: Day One Great';
+      $('dek').textContent = 'Opened by ' + who(d.opener) + ' on ' + when(d.created_at) + '.';
+      var at = d.status === 'open' ? ((d.evidence || []).length ? 1 : 0) : 3;
+      Array.prototype.forEach.call($('steps').children, function (s, i) { s.className = i <= at ? 'done' : ''; });
+      dpill($('state'), d.status);
+      link($('task'), d.task && isId(d.task.id) ? '/tasks/' + d.task.id : null, txt(d.task && d.task.title));
+      $('reason').textContent = txt(d.reason);
+      var w = d.window;
+      $('window').textContent = !w ? '–' : d.status !== 'open' ? 'Closed: the dispute was decided on ' + when(d.decided_at) + '.'
+        : (Date.parse(w.closes_at) > Date.now() ? Math.max(0, Math.round((Date.parse(w.closes_at) - Date.now()) / 3600000)) + ' of 72 hours left to open a dispute on this pass (until ' + when(w.closes_at) + ').'
+          : 'The 72-hour window closed on ' + when(w.closes_at) + '.') + ' The ' + n(w.points) + ' points stay pending while this dispute is open.';
+      var sb = d.submission || {};
+      $('worker').textContent = who(sb.worker) + (sb.poster ? ' · task posted by ' + who(sb.poster) : '');
+      var sq = Number.isSafeInteger(sb.seq) ? sb.seq : null;
+      var pass = $('pass'); pass.textContent = '';
+      pass.appendChild(document.createTextNode('Passed by ' + (DECIDER[sb.decided_by] || 'the audit') + ' on ' + when(sb.decided_at) + (sb.confidence !== null && sb.confidence !== undefined ? ', ' + n(sb.confidence) + '% confidence' : '') + (sq !== null ? ' · ' : '')));
+      if (sq !== null) { var pa = document.createElement('a'); link(pa, '/receipts/' + sq, 'log entry #' + sq); pass.appendChild(pa); }
+      $('settle').textContent = d.status === 'open' ? (d.decidable ? 'Waiting for an administrator who isn’t a party.' : 'Every administrator is a party to this work, so it stays open until another can decide it; the points stay pending.')
+        : (d.status === 'upheld' ? 'Upheld' : 'Dismissed') + ' by ' + who(d.decided_by) + ' on ' + when(d.decided_at) + ': ' + txt(d.decision);
+      var oc = $('outcome'); oc.textContent = '';
+      var os = Number.isSafeInteger(d.outcome_seq) ? d.outcome_seq : null;
+      if (d.status === 'open') oc.textContent = 'Not yet.';
+      else {
+        oc.appendChild(document.createTextNode(d.status === 'upheld' ? 'The pass was reversed and its points removed' : 'The pass stands'));
+        if (os !== null) { oc.appendChild(document.createTextNode(': ')); var oa = document.createElement('a'); link(oa, '/receipts/' + os, 'log entry #' + os); oc.appendChild(oa); oc.appendChild(document.createTextNode(d.outcome_anchored ? ', in a signed checkpoint.' : ', waiting for a checkpoint.')); }
+        else oc.appendChild(document.createTextNode('.'));
+      }
+      var ev = $('evidence'); ev.textContent = '';
+      (d.evidence || []).forEach(function (e) {
+        if (!e) return;
+        var tr = clone('evidence-tpl');
+        slot(tr, 'by').textContent = who(e.by) + ', ' + (ROLE[e.role] || '');
+        slot(tr, 'note').textContent = txt(e.note);
+        slot(tr, 'at').textContent = when(e.at);
+        ev.appendChild(tr);
+      });
+      $('evidence-empty').hidden = (d.evidence || []).length > 0;
+      $('evidence-form').hidden = d.status !== 'open';
+    }
+    loader('/api/work/dispute?id=' + id, draw, 'the dispute');
+    $('evidence-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      $('evidence-status').textContent = 'Sending…';
+      post('/api/work/evidence', { dispute: id, note: $('note').value }).then(function (x) {
+        if (!x.ok) { $('evidence-status').textContent = said(x, 'That didn’t work.'); return; }
+        $('evidence-status').textContent = 'Added. It shows here within 30 seconds.';
+        $('note').value = '';
+        get('/api/work/dispute?id=' + id).then(function (y) { if (y.ok) draw(y.d); });
+      }).catch(function () { $('evidence-status').textContent = 'That couldn’t be sent. Please try again.'; });
+    });
+  }
+
   // ---- Which page ----
   var parts = location.pathname.split('/');
   if ($('packages')) {
@@ -689,6 +794,10 @@
     if (parts[1] === 'rooms' && isRoom(parts[2])) room(parts[2]); else $('status').textContent = 'No room has that address.';
   } else if ($('post-form')) projects();
   else if ($('filters')) leaderboard();
+  else if ($('disputes')) disputesPage();
+  else if ($('evidence-form')) {
+    if (parts[1] === 'disputes' && isId(parts[2])) disputePage(parts[2]); else $('status').textContent = 'No dispute has that address.';
+  }
   else if ($('profile')) {
     if (parts[1] === 'citizens' && (((parts[2] === 'member' || parts[2] === 'agent') && isId(parts[3])) || (parts[2] === 'github' && isLogin(parts[3])))) citizen(parts[2], parts[3]);
     else $('status').textContent = 'No citizen has that address.';
