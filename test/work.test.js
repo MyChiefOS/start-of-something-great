@@ -240,7 +240,7 @@ test('a person posts, another claims and submits; the rules can’t decide a lin
   assert.deepStrictEqual([sub.json.status, sub.json.jevs.verdict, sub.json.jevs.rules], ['review', 'person', 'W11']);
   let p = await page(id);
   assert.strictEqual(p.submissions[0].note, 'Done; write to [email hidden]');
-  assert.deepStrictEqual([p.submissions[0].route, p.submissions[0].audit], ['poster', { by: 'poster', third_look: 'shadow' }]);
+  assert.deepStrictEqual([p.submissions[0].route, p.submissions[0].audit], ['poster', { by: 'poster', third_look: 'on' }]);
   // The poster is told, in-app; nothing goes to Aaron.
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id = '${ada.id}' and dedupe_key = 'work:check:${sub.json.submission}'`))[0].n, 1);
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'work:person:%'`))[0].n, 0);

@@ -193,7 +193,7 @@ test('the gate: only work waiting for a person that is a merged pull request, on
   await claimNow();
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0);
   await run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('shadow')`);
-  await assert.rejects(run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('on')`), /bad mode/);
+  await assert.rejects(run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('live')`), /bad mode/);
   // The daily cap.
   await q('update app.tl_settings set daily_call_cap = 1');
   await claimNow();
@@ -207,6 +207,7 @@ test('the runner records its suggestion once; in shadow nothing changes, the peo
   const ada = await member('AdaTL2');
   const bo = await member('BoTL2');
   await q('update app.work_settings set pair_limit = 100, poster_daily_points = 10000'); // this test is about Third Look, not the poster's limits
+  await asWork("update app.tl_settings set mode = 'shadow'"); // 047 switched it on; this test is about shadow
   const items = [];
   for (let i = 0; i < 6; i++) items.push(await prWork(ada, bo));
   // The runner, with GitHub and the gateway stood in for: five would-be passes and one "a person".
@@ -237,4 +238,49 @@ test('the runner records its suggestion once; in shadow nothing changes, the peo
   assert.strictEqual((await work('POST', 'check', { cookie: ada.cookie, json: { submission: items[5].s, verdict: 'pass' } })).json.result, 'pass');
   f = (await work('GET', 'summary')).json.third_look;
   assert.deepStrictEqual([f.agreed, f.disagreed], [5, null]);
+});
+
+test('on (047, the default now): its pass passes the work, held work included; "a person" and work decided first change nothing; one in five is checked again after', async () => {
+  assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'on', '047 switched Second Look on too');
+  await asWork("update app.tl_settings set mode = 'on'");
+  await q('update app.work_settings set pair_limit = 100, poster_daily_points = 10000, tl_check_rate = 1, check_daily = 100');
+  const ada = await member('AdaTL3');
+  const bo = await member('BoTL3');
+  const yes = await prWork(ada, bo);
+  const no = await prWork(ada, bo);
+  const first = await prWork(ada, bo);
+  // Held: the poster is an administrator and past a limit is a party, so no administrator may decide it.
+  const held = await prWork(aaron, bo);
+  await q(`update app.work_submissions set route = 'held', held_reason = 'An administrator is a party.' where id = '${held.s}'`);
+  // The poster decides one first.
+  await work('POST', 'check', { cookie: ada.cookie, json: { submission: first.s, verdict: 'fail', reason: 'Not what I asked.' } });
+  const gh = async () => FILES;
+  const answers = { [yes.n]: ['yes', 'yes', 'no'], [no.n]: ['unsure', 'yes', 'no'], [held.n]: ['yes', 'yes', 'no'] };
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const n = Object.keys(answers).find((k) => body.messages[1].content.includes('PULL REQUEST: PR ' + k));
+    const [a1, a2, a3] = answers[n] || ['yes', 'yes', 'no'];
+    return { status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ a1, a2, a3, reason: 'It adds the toggle the task asks for.' }) } }] }) };
+  };
+  for (let i = 0; i < 3; i++) { await claimNow(); await runner.run(run, TOKEN, { gh, fetchImpl }); }
+  const row = async (s) => (await q(`select s.status, s.decided_by, s.confidence, s.route, p.status as pts, t.status as task
+    from app.work_submissions s join app.work_tasks t on t.id = s.task_id left join app.work_points p on p.submission_id = s.id where s.id = '${s}'`))[0];
+  assert.deepStrictEqual(Object.values(await row(yes.s)), ['passed', 'third_look', 90, null, 'pending', 'audited']);
+  assert.deepStrictEqual(Object.values(await row(held.s)).slice(0, 2), ['passed', 'third_look'], 'held work no longer waits out the clock');
+  assert.deepStrictEqual(Object.values(await row(no.s)).slice(0, 2), ['review', null], '"a person": the poster still decides');
+  assert.deepStrictEqual(Object.values(await row(first.s)).slice(0, 2), ['failed', 'poster']);
+  // The worker is told; the poster is asked to approve, as after any audit.
+  const [n1] = await q(`select count(*)::int as n from app.notices where member_id = '${ada.id}' and dedupe_key = 'work:audited:${yes.s}'`);
+  assert.strictEqual(n1.n, 1);
+  // The check after: on its pass when no administrator is a party (rate 1 here), never on held work.
+  const checks = await q(`select submission_id, why from app.work_checks where submission_id in ('${yes.s}', '${held.s}')`);
+  assert.deepStrictEqual(checks.map((x) => [x.submission_id, x.why]), [[yes.s, 'third_look']]);
+  // Its pass can be disputed and reversed like any other.
+  const cy = await member('CyTL3');
+  const did = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: yes.s, reason: 'It changes the wrong file.' } })).json.id;
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: did, decision: 'uphold', reason: 'Wrong file.' } })).status, 200);
+  assert.strictEqual((await row(yes.s)).status, 'reversed');
+  const f = (await work('GET', 'summary')).json.third_look;
+  assert.strictEqual(f.mode, 'on');
+  assert.ok(f.passed === null || f.passed >= 2);
 });

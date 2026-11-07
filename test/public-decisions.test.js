@@ -36,6 +36,10 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  // 047 switches Second Look on and its sample re-read to 5% (Aaron, Nov 6: no shadow modes); these tests start from
+  // shadow and no sample, as before, to test each step.
+  await su.unsafe("update app.sl_settings set mode = 'shadow'");
+  await su.unsafe('update app.review_settings set sample_rate = 0');
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 2 });
 });

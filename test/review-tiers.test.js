@@ -72,6 +72,10 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  // 047 switches Second Look on and its sample re-read to 5% (Aaron, Nov 6: no shadow modes); these tests start from
+  // shadow and no sample, as before, to test each step.
+  await su.unsafe("update app.sl_settings set mode = 'shadow'");
+  await su.unsafe('update app.review_settings set sample_rate = 0');
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
@@ -275,7 +279,7 @@ test('2.6: over the budget, items wait with their age shown and nothing is ever 
   assert.strictEqual((await feed('POST', { cookie: aaron.cookie, json: { review_settings: { daily_budget: 0 } } })).status, 400);
   assert.strictEqual((await feed('POST', { cookie: poster.cookie, json: { review_settings: { daily_budget: 30 } } })).status, 403);
   assert.strictEqual((await q(`select daily_budget from app.review_settings`))[0].daily_budget, 30);
-  assert.strictEqual((await q(`select count(*)::int as n from app.audit_log where action = 'review.settings'`))[0].n, 1);
+  assert.strictEqual((await q(`select count(*)::int as n from app.audit_log where action = 'review.settings' and detail ? 'daily_budget'`))[0].n, 1); // 047's sample switch is the other
   await drain(aaron);
 });
 

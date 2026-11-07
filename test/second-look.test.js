@@ -64,14 +64,14 @@ test('v0 learned only from public data people labelled, never from Claude or mem
 });
 
 test('it is described honestly where people read about it: /team, /privacy, llms.txt', () => {
-  assert.match(read('team.html'), /A narrow AI · starts in shadow mode/);
+  assert.match(read('team.html'), /A narrow AI · live/); // on since 047 (Aaron, Nov 6: no shadow modes)
   const p = read('privacy.html');
   assert.match(p, /is also read by Second Look, our narrow automated reviewer/);
-  assert.match(p, /In shadow mode it changes nothing, and a person decides every held post\./);
+  assert.match(p, /It is on: it may publish easy held posts itself \(in shadow mode, which it returns to if too many of those are removed, it changes nothing and a person decides every held post\)/);
   assert.match(p, /It never removes or hides anything\./);
   assert.match(p, /Vercel and the company that runs the model process the text to answer/);
   assert.match(p, /never from posts on GitHub/);
-  assert.match(read('llms.txt'), /it never removes anything\)\. In shadow mode it only logs\./);
+  assert.match(read('llms.txt'), /it never removes anything\)\. It is on: it publishes easy held posts itself/);
   assert.match(read('terms.html'), /Second Look, our automated reviewer, may publish an easy held post itself/);
 });
 
