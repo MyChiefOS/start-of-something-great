@@ -277,6 +277,7 @@ const DEFINERS = {
   'app.work_board(text, text, text)': 'dog_work',
   'app.work_citizen(text, text)': 'dog_work',
   'app.work_network()': 'dog_work',
+  'app.work_points_ledger_backfill()': { owner: 'dog_work', callers: '' },
   'app.work_evidence_add(uuid, text)': 'dog_work',
   'app.work_dispute_page(uuid)': 'dog_work',
   'app.work_disputes_list(text, uuid, integer)': 'dog_work',
