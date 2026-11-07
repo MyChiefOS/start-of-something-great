@@ -92,7 +92,12 @@
     function showCheck() {
       $('check-form').hidden = !(checkable && mine && mine.indexOf(checkable) >= 0);
     }
-    get('/api/work/mine').then(function (x) { if (x.ok && Array.isArray(x.d.to_check)) { mine = x.d.to_check.map(function (c) { return c.submission; }); showCheck(); } }).catch(function () {});
+    // Your own claims, only once /auth/me says you're signed in: a visitor's page asks nothing that answers 401 (it
+    // logged one in the browser's console on every signed-out task page).
+    get('/auth/me').then(function (me) {
+      if (!me.ok || !me.d || me.d.signed_in !== true) return;
+      return get('/api/work/mine').then(function (x) { if (x.ok && Array.isArray(x.d.to_check)) { mine = x.d.to_check.map(function (c) { return c.submission; }); showCheck(); } });
+    }).catch(function () {});
     function draw(d) {
       checkable = null;
       t = d;

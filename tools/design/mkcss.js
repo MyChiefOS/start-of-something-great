@@ -35,7 +35,8 @@ css = css.replace('.d1 [style*="grid-template-columns"]{grid-template-columns:1f
 
 const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, static/css/styles.css), as written. Changes for production
    only: the site's own font files, the theme from the visitor's system setting, --rule-strong on form fields (spec 5.1) and unselected tabs,
-   and the design's inline styles as classes (x...) with the same values, since the security policy allows no inline style. */
+   the Menu in two columns on phones (Nov 7), and the design's inline styles as classes (x...) with the same values, since the security
+   policy allows no inline style. */
 [hidden]{display:none!important}
 /* The search filters are buttons (so they can be pressed), drawn as the design's chips. */
 .d1 .chips button{min-height:0;padding:4px 14px;border:1px solid var(--rule);border-radius:999px;background:transparent;font-family:var(--display);font-size:14px;line-height:inherit;color:var(--muted);cursor:pointer}
@@ -75,6 +76,13 @@ html,body{background:#0d0f14}
 const { cls } = require('./port');
 const revoke = cls('border-color:#c2413b;color:#f1857f');
 const lightRevoke = styles[revoke] ? '\n@media (prefers-color-scheme: light){.d1 .' + revoke + '{color:#a3302a!important}}\n' : '';
-const served = (head + css + '\n' + classes(styles) + lightRevoke).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
+// Phones (the mobile fixes of Nov 7; a design change named in that PR for Aaron's approval): the open Menu fits one 390
+// by 844 screen, signed in too. Five live work modules made it a column of 16 links that ran past the screen, so on
+// phones its links sit in two columns of the same 44 px rows, the headings and the Join or Account pill across both.
+// And a pill in a row the 820 px rule stacks keeps its own width instead of stretching across the row. After the
+// design's own rules, so it wins.
+const phones = '@media(max-width:820px){.d1 .mpanel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}'
+  + '.d1 .mpanel .k,.d1 .mpanel [data-nav="account"]{grid-column:1/-1}.d1 .li .pill{justify-self:start}}\n';
+const served = (head + css + '\n' + phones + classes(styles) + lightRevoke).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
 fs.writeFileSync(out, '/* Day One Great: Aaron\'s design (the handoff of Nov 5, 2026). Built by tools/design/mkcss.js and css.js, which say what changed for production. */\n' + served);
 console.log('wrote', out, Object.keys(styles).length, 'shared inline classes');
