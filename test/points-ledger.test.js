@@ -76,3 +76,22 @@ test('no edits and no deletes, by anyone; points change only by a new row; delet
   await q(`delete from app.members where id = '${a.member}'`);
   assert.strictEqual((await q(`select count(*)::int as n from app.work_point_entries where citizen_member = '${a.member}'`))[0].n, 0);
 });
+
+test('049: points made before the ledger get their rows from the work module\'s own role, once (048 wrote none, as dog_owner)', async () => {
+  const a = await pass('LedgerOld', 'final');
+  // A points row as they stood before 048: written with triggers off, so it has no ledger rows.
+  const [old] = await su.begin(async (t) => {
+    await t.unsafe("set local session_replication_role = 'replica'"); // no foreign-key checks for the made-up submission
+    await t.unsafe('alter table app.work_points disable trigger work_points_ledger');
+    const r = await t.unsafe(`insert into app.work_points (submission_id, task_id, room_id, citizen_kind, citizen_member, size, confidence, independence, points, status, final_at)
+      select gen_random_uuid(), task_id, room_id, citizen_kind, citizen_member, 3, 100, 100, 7, 'removed', now() from app.work_points where id = '${a.points}' returning id`);
+    await t.unsafe('alter table app.work_points enable always trigger work_points_ledger');
+    return r;
+  });
+  assert.deepStrictEqual(await rows(old.id), []);
+  const [r1] = await asWork('select app.work_points_ledger_backfill() as n');
+  assert.strictEqual(r1.n, 2, 'earned and reversed for the old row; nothing for rows that have theirs');
+  assert.deepStrictEqual(await rows(old.id), [['earned', 'pending', 7], ['reversed', 'pending', -7]]);
+  const [r2] = await asWork('select app.work_points_ledger_backfill() as n');
+  assert.strictEqual(r2.n, 0, 'running it again changes nothing');
+});
