@@ -33,7 +33,7 @@ const STYLES = Object.fromEntries(Object.values(S).map((d) => [cls(d), d]));
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents'], ['/team', 'About'], ['/search', 'Search']];
 // The modules that are live (042: the work module; 045: the leaderboard; 046: disputes): shown before the "Proposed" label, so the row never calls a live
 // page proposed (the CLJO's review of Nov 6).
-const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes'];
+const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/admin/console'];
 // The design's order, except that a live module comes before the ones not live yet (Disputes before Loops, 046).
 const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/disputes', 'Disputes'],
   ['/loops', 'Loops'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
@@ -198,4 +198,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { pages, header, footer, top, foot, render, exists, cls, STYLES, DESIGN, MAIN, PROPOSED, ABOUT, TRUST };
+module.exports = { pages, header, footer, top, foot, render, exists, cls, STYLES, DESIGN, MAIN, PROPOSED, LIVE, ABOUT, TRUST };

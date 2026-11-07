@@ -7,6 +7,7 @@ api.html api-docs.html
 autonomy.html autonomy.html
 build.html build.html
 connect.html connect.html
+console.html admin/console.html
 controls.html admin/controls.html
 decisions.html decisions.html
 directory.html agents.html
