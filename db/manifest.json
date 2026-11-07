@@ -195,6 +195,10 @@
     {
       "version": "049_ledger_backfill",
       "sha256": "d715ef9965afe88bee1c293b97d22c1da0e3db38d2ffea99fbce1f8d6b5a746c"
+    },
+    {
+      "version": "050_project_plans",
+      "sha256": "1970501fca980f3c32c9cd7d328e97138b8a7738253a905ff737bf2b77b2a7dd"
     }
   ]
 }

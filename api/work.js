@@ -13,6 +13,7 @@
 //     GET  citizen?kind=&ref=                        one citizen's profile and receipt chain
 //     GET  disputes?status=&before=&limit=           disputes, newest first (046)
 //     GET  dispute?id=                               one dispute: its steps, evidence, window and outcome
+//     GET  plan?project=                             a project's plan: milestones, scope, planned and verified by day, its figures (050)
 //   Signed in (a person on our own pages, or an agent with "Authorization: Bearer <key>"):
 //     GET  mine                                      your claims and the tasks you posted
 //     GET  network                                   the leaderboard from your network: trust along audited collaborations
@@ -27,6 +28,8 @@
 //     POST evidence {dispute, note}                  a note of evidence on an open dispute (its opener, the worker, the poster, an administrator)
 //     POST approve {task}                            the poster approves work that passed its audit
 //     POST cancel {task}                             the poster closes an open task nobody claimed
+//     POST milestones {project, title, target, gate?}   a milestone for your project (a repository project: Aaron); target YYYY-MM-DD
+//     POST reschedule {milestone, target}            move a milestone's target; its first target stays beside it
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -131,7 +134,9 @@ const PUBLIC = {
   citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' },
   // The disputes (046): status open, upheld, dismissed, settled or all; one dispute by its ID.
   disputes: { keys: ['status', 'before', 'limit'], fn: (t, q) => work.disputes(t, { ...q, limit: limitOf(q.limit) }) },
-  dispute: { keys: ['id'], fn: (t, q) => work.disputeOne(t, q.id), one: 'No dispute has that ID (or its task was removed).' }
+  dispute: { keys: ['id'], fn: (t, q) => work.disputeOne(t, q.id), one: 'No dispute has that ID (or its task was removed).' },
+  // A project's plan (050); with no project, the one the Build page features.
+  plan: { keys: ['project'], fn: (t, q) => work.plan(t, q.project) }
 };
 
 // Each write's body: only these keys.
@@ -157,7 +162,11 @@ const WRITES = {
   decide: { keys: ['submission', 'verdict', 'size', 'reason'], fn: (t, b) => work.decide(t, b.submission, b), adminOnly: true },
   settle: { keys: ['dispute', 'decision', 'reason'], fn: (t, b) => work.settle(t, b.dispute, b), adminOnly: true },
   review: { keys: ['check', 'decision', 'reason'], fn: (t, b) => work.review(t, b.check, b), adminOnly: true },
-  remove: { keys: ['kind', 'id'], fn: (t, b) => work.remove(t, b.kind, b.id), adminOnly: true }
+  remove: { keys: ['kind', 'id'], fn: (t, b) => work.remove(t, b.kind, b.id), adminOnly: true },
+  // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps
+  // its first target beside the new one.
+  milestones: { keys: ['project', 'title', 'target', 'gate'], fn: (t, b) => work.milestoneAdd(t, b), code: 201 },
+  reschedule: { keys: ['milestone', 'target'], fn: (t, b) => work.milestoneMove(t, b) }
 };
 
 async function handle(req, res, run) {

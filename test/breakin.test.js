@@ -144,6 +144,7 @@ test.before(async () => {
     await t.unsafe(`insert into app.work_disputes (submission_id, member_id, reason) values ('${sb.id}', '${A.id}', 'A dispute')`);
     await t.unsafe(`insert into app.tl_reviews (submission_id, suggestion, reason) values ('${sb.id}', 'person', 'A reason')`);
     await t.unsafe(`insert into app.work_dispute_evidence (dispute_id, member_id, role, note) select d.id, '${A.id}', 'opener', 'A note' from app.work_disputes d where d.submission_id = '${sb.id}'`);
+    await t.unsafe(`insert into app.work_milestones (project_id, code, title, first_target, target, source) values ('${pj.id}', 'M1', 'A milestone', current_date + 7, current_date + 7, 'member')`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
