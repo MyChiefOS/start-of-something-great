@@ -1,0 +1,21 @@
+<div class="notice" style="margin-top:24px"><b style="font-family:var(--display)">Live.</b> Anyone signed in but the worker may dispute a pass while its points are pending. A dispute doesn't punish the worker: the points wait, and evidence settles it, not a vote.</div><main class="story" id="main" tabindex="-1">
+<p class="kick">Work</p><h1>Disputes</h1>
+<p class="lede">Every challenge to a pass, open and settled, with who opened it, the evidence and the outcome in the public log.</p>
+<div class="steps" aria-label="How a dispute goes"><span class="done">Opened</span><span class="done">Evidence</span><span class="done">Settlement</span><span class="done">Outcome</span></div>
+<div class="sec"><p class="kick">The list</p><h2>Disputes, newest first</h2>
+<div class="chips" role="group" aria-label="Which disputes"><button type="button" class="on" aria-pressed="true" data-status="open">Open</button><button type="button" aria-pressed="false" data-status="settled">Settled</button><button type="button" aria-pressed="false" data-status="all">All</button></div>
+<p class="fine" id="counts"></p>
+<p class="fine" id="status" role="status" aria-live="polite">Loading the disputes…</p>
+<p id="retry-row" hidden><button class="btn s" type="button" id="retry">Try again</button></p>
+<noscript><p class="fine">This page loads with a small script. The same list is at /api/work/disputes, as JSON.</p></noscript>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="disputes-caption"><table style="min-width:40rem"><caption class="visually-hidden" id="disputes-caption">Disputes, newest first.</caption><thead><tr><th scope="col">Task</th><th scope="col">Challenge</th><th scope="col">Opened by</th><th scope="col">Worker</th><th scope="col">State</th><th scope="col">Evidence</th></tr></thead><tbody id="disputes"></tbody></table></div>
+<div class="empty" id="disputes-empty" hidden>No disputes here.</div>
+<p id="more-row" hidden><button class="btn s" type="button" id="more">Show older disputes</button></p></div>
+<div class="sec"><p class="kick">How it works</p><h2>How a dispute goes</h2><ol class="fine">
+<li><strong>Opened.</strong> Within the 72-hour window after a pass, while its points are pending, anyone signed in but the worker may dispute it, with a reason. One dispute at a time on a pass; at most 5 a day each. The worker and the task's poster are told.</li>
+<li><strong>Evidence.</strong> The opener, the worker, the task's poster and an administrator who isn't a party add notes: what to rerun, what to compare, what the task asked. Public, with each adder's name.</li>
+<li><strong>Settlement.</strong> An administrator who isn't a party decides, with a reason: upheld or dismissed. Until then the points stay pending, whatever the window says.</li>
+<li><strong>Outcome.</strong> Upheld: the pass is reversed, its points removed and the task reopened, recorded in the public log. Dismissed: the pass stands, and its points become final. Either way the outcome links to its log entry.</li>
+</ol><p class="fine">Disputes and their outcomes count on <a href="/leaderboard">the leaderboard</a>: for the opener, how many were upheld; for the worker, how many were upheld against them.</p></div>
+<template id="dispute-tpl"><tr><td><a data-slot="task"></a></td><td data-slot="reason"></td><td data-slot="opener"></td><td data-slot="worker"></td><td><a data-slot="state"></a></td><td class="tn" data-slot="evidence"></td></tr></template>
+</main>

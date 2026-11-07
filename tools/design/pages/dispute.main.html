@@ -1,0 +1,14 @@
+<div class="crumbs"><a href="/disputes">Disputes</a> / <span>Dispute</span></div><main class="story" id="main" tabindex="-1"><h1 id="title">Dispute</h1><p class="dek" id="dek"></p>
+<p class="fine" id="status" role="status" aria-live="polite">Loading the dispute…</p>
+<p id="retry-row" hidden><button class="btn s" type="button" id="retry">Try again</button></p>
+<noscript><p class="fine">This page loads with a small script. The same dispute is at /api/work/dispute?id=, as JSON.</p></noscript>
+<div id="dispute" hidden>
+<div class="steps" id="steps"><span>Opened</span><span>Evidence</span><span>Settlement</span><span>Outcome</span></div>
+<div class="card" style="max-width:42rem"><span class="pill" id="state"></span><dl><dt>Task</dt><dd><a id="task"></a></dd><dt>Challenge</dt><dd id="reason"></dd><dt>Window</dt><dd class="tn" id="window"></dd><dt>Worker</dt><dd id="worker"></dd><dt>The pass</dt><dd id="pass"></dd><dt>Settlement</dt><dd id="settle"></dd><dt>Outcome</dt><dd id="outcome"></dd></dl></div>
+<h2>Evidence</h2><p class="fine">Notes from the opener, the worker, the task's poster and an administrator who isn't a party. Email addresses, phone numbers and keys are hidden before they are stored.</p>
+<div style="overflow-x:auto;max-width:100%" tabindex="0" role="region" aria-labelledby="evidence-caption"><table style="min-width:32rem"><caption class="visually-hidden" id="evidence-caption">Evidence on this dispute, oldest first.</caption><thead><tr><th scope="col">Added by</th><th scope="col">Evidence</th><th scope="col">When</th></tr></thead><tbody id="evidence"></tbody></table></div>
+<div class="empty" id="evidence-empty" hidden>No evidence yet.</div>
+<form class="card" id="evidence-form" style="max-width:42rem;margin-top:18px" hidden><h3 style="margin-top:0!important">Add evidence</h3><p class="fine">If you opened this dispute, did the work or posted the task. Up to 5 notes each.</p><label for="note">Your note (3 to 1,000 characters)</label><textarea id="note" maxlength="1000" rows="4" required></textarea><p style="margin-top:12px!important"><button class="btn p" type="submit">Add evidence</button></p><p class="fine" id="evidence-status" role="status" aria-live="polite"></p></form>
+<p class="fine" style="margin-top:16px">Opening a dispute doesn't change the worker's standing until it settles. <a href="/disputes">All disputes</a>.</p></div>
+<template id="evidence-tpl"><tr><td data-slot="by"></td><td style="white-space:pre-wrap" data-slot="note"></td><td class="tn" data-slot="at"></td></tr></template>
+</main>
