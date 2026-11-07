@@ -260,8 +260,9 @@ async function main() {
                 const isOpen = () => p.evaluate(() => document.querySelector('.hd details.mnav').open);
                 await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.querySelector('.hd details.mnav').open = true; });
                 const panel = await p.locator('.hd .mpanel').boundingBox();
-                // The panel's own bottom padding, scrolled into view first: signed in, with five live modules, the open
-                // Menu runs past the first screen at 390 by 844, and a tap there needs a scroll (046).
+                // The open Menu fits the first screen at 390 by 844, signed in too (its links in two columns since the
+                // mobile fixes of Nov 7; with five live modules it had run past the screen).
+                if (panel.y + panel.height > 844) fail(where, 'the open Menu runs past the first screen: its bottom is at ' + Math.round(panel.y + panel.height) + ' px');
                 await p.locator('.hd .mpanel').click({ position: { x: 4, y: panel.height - 4 } });
                 if (!(await isOpen())) fail(where, 'a tap inside the open Menu closed it');
                 // A point outside the Menu that is no link or control, so the tap only closes the Menu.
