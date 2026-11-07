@@ -613,6 +613,13 @@ constraint app.work_person_votes work_person_votes_size_check CHECK ((size = ANY
 constraint app.work_person_votes work_person_votes_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.work_person_votes work_person_votes_submission_id_key UNIQUE (submission_id)
 constraint app.work_person_votes work_person_votes_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text])))
+constraint app.work_point_entries work_point_entries_amount_check CHECK ((((amount >= '-1000'::integer) AND (amount <= 1000)) AND (amount <> 0)))
+constraint app.work_point_entries work_point_entries_bucket_check CHECK ((bucket = ANY (ARRAY['pending'::text, 'final'::text])))
+constraint app.work_point_entries work_point_entries_citizen_github_check CHECK ((char_length(citizen_github) <= 39))
+constraint app.work_point_entries work_point_entries_citizen_kind_check CHECK ((citizen_kind = ANY (ARRAY['member'::text, 'agent'::text, 'github'::text])))
+constraint app.work_point_entries work_point_entries_kind_check CHECK ((kind = ANY (ARRAY['earned'::text, 'final'::text, 'reversed'::text])))
+constraint app.work_point_entries work_point_entries_pkey PRIMARY KEY (id)
+constraint app.work_point_entries work_point_entries_points_id_fkey FOREIGN KEY (points_id) REFERENCES app.work_points(id) ON DELETE CASCADE
 constraint app.work_points work_points_citizen_agent_fkey FOREIGN KEY (citizen_agent) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.work_points work_points_citizen_github_check CHECK (((char_length(citizen_github) <= 39) AND (citizen_github ~ '^[a-z0-9-]+$'::text)))
 constraint app.work_points work_points_citizen_kind_check CHECK ((citizen_kind = ANY (ARRAY['member'::text, 'agent'::text, 'github'::text])))
@@ -989,6 +996,8 @@ default app.work_github_prs.refs = ''::text
 default app.work_github_prs.seen_at = now()
 default app.work_person_votes.created_at = now()
 default app.work_person_votes.id = app.uuid_v7()
+default app.work_point_entries.at = now()
+default app.work_point_entries.id = app.uuid_v7()
 default app.work_points.created_at = now()
 default app.work_points.id = app.uuid_v7()
 default app.work_points.status = 'pending'::text
@@ -1299,6 +1308,8 @@ function app.work_mine() owner=dog_work execute=dog_work,dog_app language=plpgsq
 function app.work_network() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=5dbf5122f5d4c345683f0af9c81cc017
 function app.work_party(p_sub uuid, p_member uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=97df34afc309e82126b681f7c7e65c5f
 function app.work_person_decide(p_sub uuid, p_verdict text, p_size integer, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=6317d0a06a5d12a51d8b3e0bc44d0492
+function app.work_point_entries_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=b67e6fc53ed168950ed6d4ff1775e4ab
+function app.work_points_ledger() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=e9ffdd62a1df331776633fd1364161fe
 function app.work_points_of(p_size integer, p_confidence integer, p_independence integer, p_cap integer) owner=dog_owner execute=dog_owner,dog_work,dog_app language=sql volatile=i definer=false config= returns=integer body_md5=d6a44cede4bc837eb722a715f2bc0ad3
 function app.work_poster_decide(p_sub uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=15dd223a6a466630a378d8d3bf362777
 function app.work_profile(s app.work_stat) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=88ee4efc0dfdf458486b312f251882f0
@@ -2164,6 +2175,8 @@ grant app.work_github_prs dog_work SELECT
 grant app.work_github_prs dog_work UPDATE
 grant app.work_person_votes dog_work INSERT
 grant app.work_person_votes dog_work SELECT
+grant app.work_point_entries dog_work INSERT
+grant app.work_point_entries dog_work SELECT
 grant app.work_points dog_work DELETE
 grant app.work_points dog_work INSERT
 grant app.work_points dog_work SELECT
@@ -2512,6 +2525,7 @@ policy app.work_github_codes work_github_codes_work cmd=* permissive=true to=dog
 policy app.work_github_names work_github_names_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_github_prs work_github_prs_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_person_votes work_person_votes_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_point_entries work_point_entries_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_points work_points_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_projects work_projects_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_rooms work_rooms_work cmd=* permissive=true to=dog_work using=true check=true
@@ -2608,3 +2622,6 @@ trigger app.review_flags enabled=A CREATE TRIGGER sl_after_flag_close AFTER UPDA
 trigger app.review_flags enabled=A CREATE TRIGGER sl_after_report AFTER INSERT ON app.review_flags FOR EACH ROW WHEN ((new.source = 'report'::text)) EXECUTE FUNCTION app.sl_after_report()
 trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
+trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_change BEFORE DELETE OR UPDATE ON app.work_point_entries FOR EACH ROW EXECUTE FUNCTION app.work_point_entries_append_only()
+trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_truncate BEFORE TRUNCATE ON app.work_point_entries FOR EACH STATEMENT EXECUTE FUNCTION app.work_point_entries_append_only()
+trigger app.work_points enabled=A CREATE TRIGGER work_points_ledger AFTER INSERT OR UPDATE ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_ledger()
