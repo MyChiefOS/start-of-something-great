@@ -227,3 +227,19 @@ test('every list pages by time and id: rows that share a time are neither skippe
   const [pg] = await q(`select count(*)::int as n from app.audit_log where action = 'console.read' and detail->>'page' = 'true'`);
   assert.ok(pg.n >= 1, 'a page past the first is logged as one');
 });
+
+test('the admins tab lists the sign-in alerts Aaron\'s rules for wrong tries raise (Oct 28, Nov 5), and only those', async () => {
+  const eve = await member('EveSignin');
+  const alert = (key, title) => q(`insert into app.notices (member_id, kind, title, body, link, subject_kind, subject_id, dedupe_key)
+    values (null, 'alert', '${title}', 'x', '/controls', 'member', '${eve.id}', '${key}')`);
+  await alert('watch:paused:' + crypto.randomUUID() + ':202611080101', 'Key-file sign-in paused for one account');
+  await alert('watch:pin5:browser:' + crypto.randomUUID() + ':20261108', 'Wrong PINs for one account');
+  await alert('watch:cancelled:' + crypto.randomUUID(), 'A member\'\'s key file was cancelled');
+  await alert('watch:travel:' + crypto.randomUUID(), 'Travel too fast to be possible'); // another kind of alert: not shown
+  const a = (await work('GET', 'console', { cookie: aaron.cookie, search: '?tab=admins' })).json;
+  assert.deepStrictEqual(a.signin.map((x) => x.what).sort(), ['A member\'s key file was cancelled', 'Key-file sign-in paused for one account', 'Wrong PINs for one account']);
+  assert.ok(a.signin.every((x) => x.member === 'EveSignin'));
+  // Nobody else reads them, and the work module's role sees none without an administrator acting.
+  assert.strictEqual((await work('GET', 'console', { cookie: eve.cookie, search: '?tab=admins' })).status, 403);
+  assert.strictEqual((await asWork(`select count(*)::int as n from app.notices`))[0].n, 0);
+});

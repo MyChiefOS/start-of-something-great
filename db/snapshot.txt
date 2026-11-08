@@ -1299,7 +1299,7 @@ function app.work_check_decide(p_check uuid, p_decision text, p_reason text) own
 function app.work_citizen(p_kind text, p_ref text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=53e435a822c38d112351c7fddafccf22
 function app.work_claim(p_task uuid, p_code_hash text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e197c4ae1c535a34356691c397cdbd4
 function app.work_confirmed_size(p_sub uuid, p_by text) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=smallint body_md5=17268c22ad5a3e0dbe598e040dca3d6d
-function app.work_console(p_tab text, p_status text, p_cursor text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=95b2593d8d5b99be98174845c2708c60
+function app.work_console(p_tab text, p_status text, p_cursor text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=d55e6ea658e63103a515d56be63cb57b
 function app.work_console_integrity() owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=17b4ac8e016b401fa2fc854de867ce22
 function app.work_display(p_member uuid, p_agent uuid, p_github text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e5dbe77c9b350b1ca967f865a1fb60a
 function app.work_dispute(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=9f0cafd7c5dad956ab6feb0de07c8d4a
@@ -1856,17 +1856,20 @@ grant app.notices.body dog_jevs INSERT
 grant app.notices.body dog_log INSERT
 grant app.notices.body dog_signin INSERT
 grant app.notices.body dog_work INSERT
+grant app.notices.created_at dog_work SELECT
 grant app.notices.dedupe_key dog_app INSERT
 grant app.notices.dedupe_key dog_jevs INSERT
 grant app.notices.dedupe_key dog_log INSERT
 grant app.notices.dedupe_key dog_signin INSERT
 grant app.notices.dedupe_key dog_work INSERT
+grant app.notices.dedupe_key dog_work SELECT
 grant app.notices.id dog_erase SELECT
 grant app.notices.kind dog_app INSERT
 grant app.notices.kind dog_jevs INSERT
 grant app.notices.kind dog_log INSERT
 grant app.notices.kind dog_signin INSERT
 grant app.notices.kind dog_work INSERT
+grant app.notices.kind dog_work SELECT
 grant app.notices.link dog_app INSERT
 grant app.notices.link dog_jevs INSERT
 grant app.notices.link dog_log INSERT
@@ -1878,6 +1881,7 @@ grant app.notices.member_id dog_jevs INSERT
 grant app.notices.member_id dog_log INSERT
 grant app.notices.member_id dog_signin INSERT
 grant app.notices.member_id dog_work INSERT
+grant app.notices.member_id dog_work SELECT
 grant app.notices.read_at dog_app UPDATE
 grant app.notices.subject_id dog_app INSERT
 grant app.notices.subject_id dog_erase SELECT
@@ -1885,17 +1889,20 @@ grant app.notices.subject_id dog_jevs INSERT
 grant app.notices.subject_id dog_log INSERT
 grant app.notices.subject_id dog_signin INSERT
 grant app.notices.subject_id dog_work INSERT
+grant app.notices.subject_id dog_work SELECT
 grant app.notices.subject_kind dog_app INSERT
 grant app.notices.subject_kind dog_erase SELECT
 grant app.notices.subject_kind dog_jevs INSERT
 grant app.notices.subject_kind dog_log INSERT
 grant app.notices.subject_kind dog_signin INSERT
 grant app.notices.subject_kind dog_work INSERT
+grant app.notices.subject_kind dog_work SELECT
 grant app.notices.title dog_app INSERT
 grant app.notices.title dog_jevs INSERT
 grant app.notices.title dog_log INSERT
 grant app.notices.title dog_signin INSERT
 grant app.notices.title dog_work INSERT
+grant app.notices.title dog_work SELECT
 grant app.pin_keys dog_signin SELECT
 grant app.post_search dog_public DELETE
 grant app.post_search dog_public INSERT
@@ -2430,6 +2437,7 @@ policy app.members members_signin_select cmd=r permissive=true to=dog_signin usi
 policy app.members members_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.members members_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text))
 policy app.members members_work_select cmd=r permissive=true to=dog_work using=true check=
+policy app.notices notices_console_signin cmd=r permissive=true to=dog_work using=((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL) AND (kind = 'alert'::text) AND (dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail):'::text)) check=
 policy app.notices notices_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.notices notices_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.notices notices_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) <> 'anon'::text) AND (((member_id IS NULL) AND (kind = 'alert'::text)) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) OR ((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])) AND (member_id = ( SELECT app.current_member() AS current_member)))))

@@ -128,6 +128,9 @@
       var what = (ACTIONS[a.action] || txt(a.action)) + (a.detail && a.detail.tab ? ' · ' + txt(a.detail.tab) : '') + (a.detail && a.detail.status ? ' (' + txt(a.detail.status) + ')' : '');
       row(ac, [ago(a.at), txt(a.by) || '–', what]);
     });
+    var si = $('signin'); si.textContent = '';
+    (d.signin || []).forEach(function (e) { row(si, [ago(e.at), txt(e.member) || '–', txt(e.what)]); });
+    $('signin-empty').hidden = si.children.length > 0;
   }
 
   var DRAW = { summary: summary, agents: agents, projects: tasks, submissions: subs, ledger: ledger, admins: admins };

@@ -7,7 +7,12 @@
 --     page's edge and every agent, task, submission, ledger row and administrator action can be reached.
 --   * The ledger tab: the public log's size and its latest signed checkpoints, and the points ledger (048) checked row by
 --     row: each points row's ledger rows must add up to its points in the bucket its state says, for the same citizen.
---   * The admins tab: the administrators and their recent activity from the audit log. The design's "Revoke access"
+--   * The admins tab: the administrators and their recent activity from the audit log, and the sign-in alerts that
+--     Aaron's rules for wrong tries raise (023, 026, 030, 037; FACTS.md, Oct 28 and Nov 5): the 3rd wrong key file
+--     pauses key-file sign-in for that username for 10 minutes, the 5th wrong key file or PIN alerts, the 10th cancels
+--     the key file or browser key, 10 wrong PINs on the change form sign that session out, and a sign-in after wrong
+--     tries alerts. Every wrong try is counted on the key it was tried against; these are the times a count reached a
+--     limit. Read from Aaron's own alerts, nothing new stored. The design's "Revoke access"
 --     isn't built: the site has exactly one administrator (028's members_one_admin), and the design's own rules say you
 --     can't revoke yourself and the last administrator can never be revoked, so the button could never act.
 --   * Read only, apart from the audit row: nothing here changes work, points or people.
@@ -31,6 +36,11 @@ grant execute on function app.current_actor_id() to dog_work;
 create index audit_log_at on app.audit_log (at desc, id desc);
 -- Two more columns for the console: when an agent was made (the agents tab), and a checkpoint's root hash (the ledger
 -- tab; every checkpoint is already public at /api/log/checkpoint).
+-- Aaron's sign-in alerts (the wrong-try ones only), for the admins tab, while an administrator is acting.
+create policy notices_console_signin on app.notices for select to dog_work
+  using ((select app.actor_kind()) = 'admin' and member_id is null and kind = 'alert'
+         and dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail):');
+grant select (title, subject_kind, subject_id, dedupe_key, created_at, member_id, kind) on app.notices to dog_work;
 grant select (created_at) on app.agents to dog_work;
 grant select (root) on app.log_checkpoints to dog_work;
 grant create on schema app to dog_work;
@@ -169,7 +179,13 @@ begin
               'since', (select max(l.at) from app.audit_log l where l.action = 'admin.set' and l.subject_kind = 'member' and l.subject_id = m.id))
             order by m.created_at)
           from app.members m where m.is_admin), '[]'::jsonb),
-      'one_admin', true)
+      'one_admin', true,
+      'signin', coalesce((select jsonb_agg(jsonb_build_object('at', n.created_at, 'what', n.title,
+              'event', split_part(n.dedupe_key, ':', 2),
+              'member', (select m.display_name from app.members m where n.subject_kind = 'member' and m.id = n.subject_id)) order by n.created_at desc)
+          from (select x.title, x.subject_kind, x.subject_id, x.dedupe_key, x.created_at from app.notices x
+                 where x.member_id is null and x.kind = 'alert' and x.dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail):'
+                 order by x.created_at desc limit 50) n), '[]'::jsonb))
       || (select jsonb_build_object(
             'activity', coalesce(jsonb_agg(jsonb_build_object('at', l.at, 'actor_kind', l.actor_kind, 'action', l.action,
                 'by', (select m.display_name from app.members m where m.id = l.actor_id),
