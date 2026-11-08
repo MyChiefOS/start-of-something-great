@@ -251,7 +251,7 @@ test('the runner records its suggestion once; in shadow nothing changes, the peo
   assert.deepStrictEqual([f.agreed, f.disagreed], [5, null]);
 });
 
-test('on: its pass passes work sent for a second look, held work included; "a person" goes to Aaron; the poster\'s own work is left alone; one in five is checked again after; no party decides a dispute', async () => {
+test('on: its pass passes work sent for a second look, held work included; "a person" goes to Aaron; the poster\'s own work is left alone; one in five is checked again after; Aaron decides disputes of his own tasks, with Third Look beside him', async () => {
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'on', '047 switched Second Look on too');
   await asWork("update app.tl_settings set mode = 'on'");
   await q('update app.work_settings set pair_limit = 100, poster_daily_points = 10000, tl_check_rate = 1, check_daily = 100');
@@ -291,12 +291,14 @@ test('on: its pass passes work sent for a second look, held work included; "a pe
   // The check after: on its pass when no administrator is a party (rate 1 here), never on held work.
   const checks = await q(`select submission_id, why from app.work_checks where submission_id in ('${yes.s}', '${held.s}')`);
   assert.deepStrictEqual(checks.map((x) => [x.submission_id, x.why]), [[yes.s, 'third_look']]);
-  // A dispute of work Aaron is a party to: he can't decide it; it stays open and its points pending (Luke 12:14).
+  // A dispute of Aaron's own task: his to decide, with Third Look's review of the work beside it (Aaron, Nov 7: "Third look
+  // can weigh in"); its pass is reversed like any other when he upholds it.
   const cy0 = await member('CyTL3b');
   const hd = (await work('POST', 'dispute', { cookie: cy0.cookie, json: { submission: held.s, reason: 'It changes the wrong file.' } })).json.id;
-  const own = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: hd, decision: 'uphold', reason: 'Wrong file.' } });
-  assert.deepStrictEqual([own.status, own.json.reason], [403, 'work_own']);
-  assert.deepStrictEqual([(await q(`select status from app.work_disputes where id = '${hd}'`))[0].status, (await row(held.s)).pts], ['open', 'pending']);
+  const item = (await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === hd);
+  assert.deepStrictEqual([item.party, item.third_look && item.third_look.suggestion], [false, 'pass']);
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: hd, decision: 'uphold', reason: 'Wrong file.' } })).status, 200);
+  assert.strictEqual((await row(held.s)).status, 'reversed');
   // Its pass on work no administrator is a party to can be disputed and reversed like any other.
   const cy = await member('CyTL3');
   const did = (await work('POST', 'dispute', { cookie: cy.cookie, json: { submission: yes.s, reason: 'It changes the wrong file.' } })).json.id;

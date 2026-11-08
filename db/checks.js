@@ -291,6 +291,8 @@ const DEFINERS = {
   'app.work_console(text, text, text)': 'dog_work',
   'app.work_console_integrity()': { owner: 'dog_work', callers: '' },
   'app.work_risks(uuid, uuid, smallint)': { owner: 'dog_work', callers: '' },
+  'app.work_pair_watch(uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.work_may_settle(uuid, uuid)': { owner: 'dog_work', callers: '' },
   'app.work_ledger_alert()': 'dog_work',
   'app.work_evidence_add(uuid, text)': 'dog_work',
   'app.work_dispute_page(uuid)': 'dog_work',
