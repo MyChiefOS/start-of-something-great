@@ -435,6 +435,12 @@ test('disputes: anyone but the worker, while points are pending; the points wait
   assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d2).party, false);
   const own = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d2, decision: 'dismiss', reason: 'It is done.' } });
   assert.strictEqual(own.status, 200, JSON.stringify(own.json));
+  // A dispute he opens about his own task is his to decide either way: he may reverse a pass on his task himself.
+  const own2 = await work('POST', 'dispute', { cookie: aaron.cookie, json: { submission: as, reason: 'On second look it isn’t done.' } });
+  assert.strictEqual(own2.status, 201, JSON.stringify(own2.json));
+  assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === own2.json.id).may, 'any');
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: own2.json.id, decision: 'uphold', reason: 'Not done after all.' } })).status, 200);
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${as}'`))[0].status, 'reversed');
   // Against himself only (Aaron: "if I agree"): a dispute he opened he may withdraw, not uphold; a dispute of his own work
   // for someone else's task he may uphold (give up the pass), not dismiss.
   const ept = await task(cy, await project(cy, 'Cy’s project'), { size: 1 });

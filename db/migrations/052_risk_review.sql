@@ -55,6 +55,8 @@ alter table app.work_settings
   add column ledger_checked_at timestamptz;
 grant update (ledger_checked_at) on app.work_settings to dog_work;
 comment on column app.work_settings.pair_limit is 'Since 052: from this many passes of the same worker by one poster in 30 days, each further pass is checked after, outside the daily limit; nothing is held back.';
+-- The pair watch reads the last 30 days of passes.
+create index work_submissions_passed_at on app.work_submissions (decided_at) where status in ('passed', 'reversed');
 comment on column app.work_settings.poster_daily_points is 'Since 052: no longer sends work for review (Aaron, Nov 7: review by risk, not by count).';
 
 grant create on schema app to dog_work;
@@ -204,10 +206,13 @@ begin
       select x.id from app.work_submissions x join app.work_github_prs g on g.number = x.pr_number
        where ((x.status = 'review' and x.route in ('admin', 'held'))
               -- A disputed pass it hasn't read: its review goes beside the dispute (Aaron: "Third look can weigh in").
-              or (x.status = 'passed' and exists (select 1 from app.work_disputes d where d.submission_id = x.id and d.status = 'open')))
+              -- At most 10 a day, after the work that waits, so disputes can't use up its daily limit.
+              or (x.status = 'passed' and exists (select 1 from app.work_disputes d where d.submission_id = x.id and d.status = 'open')
+                  and (select count(*) from app.tl_reviews r join app.work_submissions y on y.id = r.submission_id
+                        where r.claimed_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' and y.decided_at < r.claimed_at) < 10))
          and x.artifact_kind = 'pr' and g.merged_at is not null and g.base = 'main'
          and not exists (select 1 from app.tl_reviews r where r.submission_id = x.id)
-       order by x.created_at, x.id
+       order by (x.status = 'passed'), x.created_at, x.id
        limit least(p_n, s.daily_call_cap - today)
        for update of x skip locked),
     claimed as (insert into app.tl_reviews (submission_id) select id from picked returning tl_reviews.submission_id)
@@ -354,16 +359,17 @@ $$;
 
 -- Which way may this administrator decide this dispute? (Aaron, Nov 7: "Disputes that are about my task specifically will
 -- be decided by me" and "Third looks passes could be reversed if I agree that is should be for my work also.") 'any' on
--- his own tasks (his posts, his agents' posts and the repository's, work credited to him there included) and on work he
--- has no part in; 'uphold' only, on his own work for someone else's task (he may give up its pass, never keep it); and
--- 'dismiss' only, on a dispute he opened (he may withdraw it, never win it). So no dispute is left with no one to end it,
+-- his own tasks (his posts, his agents' posts and the repository's, work credited to him there included, and disputes
+-- he opened about them) and on work he has no part in; 'uphold' only, on his own work for someone else's task (he may
+-- give up its pass, never keep it); and 'dismiss' only, on a dispute he opened about someone else's task (he may
+-- withdraw it, never win it). So no dispute is left with no one to end it,
 -- and he never decides one in his own favour on another's task.
 create function app.work_may_settle(p_dispute uuid, p_member uuid)
 returns text
 language sql stable security definer set search_path = pg_catalog
 as $$
-  select case when d.member_id = p_member then 'dismiss'
-              when t.source = 'github' or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member then 'any'
+  select case when t.source = 'github' or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member then 'any'
+              when d.member_id = p_member then 'dismiss'
               when app.work_party(s.id, p_member) then 'uphold'
               else 'any' end
     from app.work_disputes d join app.work_submissions s on s.id = d.submission_id join app.work_tasks t on t.id = s.task_id

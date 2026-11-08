@@ -31,7 +31,7 @@
   }
   // Third Look's review beside a dispute (Aaron, Nov 7: "Third look can weigh in"), in its own words, as text.
   function lookSaid(r) {
-    if (!r) return 'Third Look didn\u2019t read this work (it reads merged pull requests). ';
+    if (!r) return 'Third Look hasn\u2019t reviewed this work (it reads merged pull requests). ';
     return 'Third Look ' + (r.suggestion === 'pass' ? 'found it passable' : 'left it to a person') + (r.reason ? ': \u201c' + txt(r.reason).replace(/[.!?]\s*$/, '') + '\u201d' : '') + '. ';
   }
   function card(item, kind, actions) {
