@@ -27,10 +27,12 @@
 --   * Third Look sees only risky work, and work whose poster never checked it. It no longer passes work still waiting for
 --     its poster, and its passes count when pairs are judged. Aaron hears of work only when it is his to decide: Third
 --     Look can't read it, can't pass it, or hasn't looked at it halfway through its wait.
---   * Disputes of Aaron's own tasks (his posts, and the repository's) are his to decide, as he chose, with Third Look's
---     review of the work beside each one as a second witness on the record; every decision has its reason and is public.
---     He still doesn't decide a dispute he opened, or one about work he did on someone else's task. So Third Look's
---     passes can be disputed and reversed like any other, his work included (Matthew 5:37: the words say what is true).
+--   * Disputes of Aaron's own tasks (his posts, and the repository's, work credited to him there included) are his to
+--     decide, as he chose; Third Look reads every disputed merged pull request and its review shows beside the dispute,
+--     a second witness on the record; every decision has its reason and is public. On his own work for someone else's
+--     task he may only uphold a dispute (give up the pass), and a dispute he opened he may only withdraw: no dispute is
+--     left with no one to end it. So Third Look's passes can be disputed and reversed like any other, his work included
+--     (Matthew 5:37: the words say what is true).
 --   * Where an administrator is a party and Third Look can't read the work, no second witness can exist: the poster's
 --     pass stands, as before 052, rather than failing an honest worker for want of one (Matthew 7:12). Where Third Look
 --     can read it and doubts it, it isn't established: the worker and the poster are told at once, and it closes when
@@ -89,8 +91,9 @@ begin
 end
 $$;
 
--- Gaming between one pair, caught by review after (Aaron, Nov 7): the poster has passed this worker's work pair_limit
--- times in 30 days, or the worker has passed the poster's (by owner; passes by a poster or by Third Look).
+-- Gaming, caught by review after (Aaron, Nov 7): the poster has passed this worker's work pair_limit times in 30 days,
+-- the worker has passed the poster's, or a ring of three (by owner; passes by a poster or by Third Look). Farming split
+-- over many accounts isn't caught here (RK137).
 create function app.work_pair_watch(p_sub uuid, p_poster uuid)
 returns boolean
 language sql stable security definer set search_path = pg_catalog
@@ -103,6 +106,8 @@ as $$
          where x.status in ('passed', 'reversed') and x.decided_by in ('poster', 'third_look') and x.decided_at > now() - interval '30 days' and x.id <> p_sub)
   select (select count(*) from p, w where p.worker = w.wm and p.poster = p_poster) >= (select st.pair_limit from app.work_settings st where st.singleton)
       or exists (select 1 from p, w where p.worker = p_poster and p.poster = w.wm)
+      -- A ring of three: the worker passed someone's work who passed the poster's.
+      or exists (select 1 from p a, p b, w where a.poster = w.wm and b.worker = p_poster and a.worker = b.poster and a.worker <> p_poster)
 $$;
 
 -- The poster's check (043, now by risk): a pass stands unless the work is risky; risky work waits for a second witness.
@@ -178,7 +183,8 @@ end
 $$;
 
 -- Third Look takes only work sent for a second look by a risk, or work whose poster never checked it (043's timer
--- passes that to an administrator, or holds it when one is a party). Never work still waiting for its poster.
+-- passes that to an administrator, or holds it when one is a party), and a disputed pass, to weigh in beside the
+-- dispute (its answer then changes nothing). Never work still waiting for its poster.
 create or replace function app.tl_claim(p_n integer)
 returns table (submission_id uuid, task_title text, task_description text, note text, pr_number integer, pr_title text, jevs_rules text, model text)
 language plpgsql security definer set search_path = pg_catalog
@@ -196,7 +202,10 @@ begin
   return query
     with picked as (
       select x.id from app.work_submissions x join app.work_github_prs g on g.number = x.pr_number
-       where x.status = 'review' and x.route in ('admin', 'held') and x.artifact_kind = 'pr' and g.merged_at is not null and g.base = 'main'
+       where ((x.status = 'review' and x.route in ('admin', 'held'))
+              -- A disputed pass it hasn't read: its review goes beside the dispute (Aaron: "Third look can weigh in").
+              or (x.status = 'passed' and exists (select 1 from app.work_disputes d where d.submission_id = x.id and d.status = 'open')))
+         and x.artifact_kind = 'pr' and g.merged_at is not null and g.base = 'main'
          and not exists (select 1 from app.tl_reviews r where r.submission_id = x.id)
        order by x.created_at, x.id
        limit least(p_n, s.daily_call_cap - today)
@@ -257,7 +266,12 @@ begin
   perform app.work_finish(p_sub, 'pass', 'third_look', 90, 'Passed by Third Look.');
   select * into t from app.work_tasks x where x.id = s.task_id;
   select * into st from app.work_settings where singleton;
-  if random() < st.tl_check_rate and (select count(*) from app.work_checks k where k.created_at > date_trunc('day', now()) and k.why = 'third_look') < st.tl_check_daily
+  if app.work_pair_watch(p_sub, coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)))
+     and not exists (select 1 from app.members m where m.is_admin
+                     and m.id in (s.worker_member, coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent))))
+     and not (t.source = 'github') then
+    insert into app.work_checks (submission_id, why) values (p_sub, 'pair');
+  elsif random() < st.tl_check_rate and (select count(*) from app.work_checks k where k.created_at > date_trunc('day', now()) and k.why = 'third_look') < st.tl_check_daily
      and not exists (select 1 from app.members m where m.is_admin
                      and m.id in (s.worker_member, coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent))))
      and not (t.source = 'github') then
@@ -338,17 +352,22 @@ begin
 end
 $$;
 
--- May this administrator decide this dispute? (Aaron, Nov 7: "Disputes that are about my task specifically will be
--- decided by me.") Not one he opened; not one about work he did on someone else's task; otherwise yes, his own tasks
--- (his posts and the repository's) included.
+-- Which way may this administrator decide this dispute? (Aaron, Nov 7: "Disputes that are about my task specifically will
+-- be decided by me" and "Third looks passes could be reversed if I agree that is should be for my work also.") 'any' on
+-- his own tasks (his posts, his agents' posts and the repository's, work credited to him there included) and on work he
+-- has no part in; 'uphold' only, on his own work for someone else's task (he may give up its pass, never keep it); and
+-- 'dismiss' only, on a dispute he opened (he may withdraw it, never win it). So no dispute is left with no one to end it,
+-- and he never decides one in his own favour on another's task.
 create function app.work_may_settle(p_dispute uuid, p_member uuid)
-returns boolean
+returns text
 language sql stable security definer set search_path = pg_catalog
 as $$
-  select exists (select 1 from app.work_disputes d join app.work_submissions s on s.id = d.submission_id join app.work_tasks t on t.id = s.task_id
-                  where d.id = p_dispute and d.member_id is distinct from p_member and s.worker_member is distinct from p_member
-                    and (not app.work_party(s.id, p_member) or t.source = 'github'
-                         or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member))
+  select case when d.member_id = p_member then 'dismiss'
+              when t.source = 'github' or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) = p_member then 'any'
+              when app.work_party(s.id, p_member) then 'uphold'
+              else 'any' end
+    from app.work_disputes d join app.work_submissions s on s.id = d.submission_id join app.work_tasks t on t.id = s.task_id
+   where d.id = p_dispute
 $$;
 
 -- The dispute decision (046), now under app.work_may_settle.
@@ -365,10 +384,10 @@ begin
   end if;
   select * into d from app.work_disputes x where x.id = p_dispute for update;
   if d.id is null or d.status <> 'open' then return 'not_open'; end if;
-  -- Aaron, Nov 7: disputes of his own tasks are his to decide, with Third Look's review beside them (app.work_admin).
-  -- Never one he opened, nor one about work he did on someone else's task.
-  if not app.work_may_settle(p_dispute, app.current_member()) then
-    raise exception 'work_own' using errcode = 'P0001', hint = 'You opened this dispute, or did this work on someone else''s task, so another administrator decides it. Until one can, it stays open and its points stay pending.';
+  -- Aaron, Nov 7: disputes of his own tasks are his to decide, with Third Look's review beside them when it read the
+  -- work (app.work_admin); against himself only, on his work for another's task or a dispute he opened.
+  if app.work_may_settle(p_dispute, app.current_member()) is distinct from 'any' and app.work_may_settle(p_dispute, app.current_member()) is distinct from p_decision then
+    raise exception 'work_own' using errcode = 'P0001', hint = 'On your own work for someone else''s task you may only uphold the dispute (give up the pass); a dispute you opened you may only dismiss (withdraw).';
   end if;
   update app.work_disputes x set status = case when p_decision = 'uphold' then 'upheld' else 'dismissed' end, decided_by = app.current_member(),
     decision = btrim(p_reason), decided_at = now() where x.id = p_dispute;
@@ -402,7 +421,7 @@ begin
                        from app.work_checks k join app.work_submissions s on s.id = k.submission_id where k.status = 'open'), '[]'::jsonb),
     'disputes', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('dispute', d.id, 'submission', s.id, 'dispute_reason', d.reason,
                            'artifact', jsonb_build_object('kind', s.artifact_kind, 'url', s.artifact_url, 'sha256', s.artifact_sha256),
-                           'decided_by', s.decided_by, 'reason', s.reason, 'party', not app.work_may_settle(d.id, me), 'third_look', (select jsonb_build_object('suggestion', r.suggestion, 'answers', r.answers, 'reason', r.reason, 'at', r.decided_at) from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)) order by d.created_at)
+                           'decided_by', s.decided_by, 'reason', s.reason, 'party', app.work_may_settle(d.id, me) <> 'any', 'may', app.work_may_settle(d.id, me), 'third_look', (select jsonb_build_object('suggestion', r.suggestion, 'answers', r.answers, 'reason', r.reason, 'at', r.decided_at) from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)) order by d.created_at)
                          from app.work_disputes d join app.work_submissions s on s.id = d.submission_id where d.status = 'open'), '[]'::jsonb),
     'held', (select count(*) from app.work_submissions s where s.status = 'review' and s.route = 'held'));
 end
@@ -496,7 +515,7 @@ begin
        + (select count(*) from app.work_checks k where k.status = 'open'
             and exists (select 1 from app.members m where m.is_admin and not app.work_party(k.submission_id, m.id)))
        + (select count(*) from app.work_disputes d where d.status = 'open'
-            and exists (select 1 from app.members m where m.is_admin and app.work_may_settle(d.id, m.id))) into waiting;
+            and exists (select 1 from app.members m where m.is_admin and app.work_may_settle(d.id, m.id) is not null)) into waiting;
   if waiting > 0 and st.last_alert_day is distinct from (now() at time zone 'UTC')::date then
     update app.work_settings set last_alert_day = (now() at time zone 'UTC')::date where singleton;
     perform app.notify(null, 'alert', 'Work waits for you', waiting || case when waiting = 1 then ' item of work waits' else ' items of work wait' end

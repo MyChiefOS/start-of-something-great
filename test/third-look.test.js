@@ -343,6 +343,16 @@ test('052, the real paths: a poster\'s silence sends readable work to Third Look
   assert.deepStrictEqual(Object.values(await route(mine.s)), ['review', 'held']);
   const told = await q(`select member_id from app.notices where dedupe_key like 'work:doubted:${mine.s}:%' order by member_id`);
   assert.deepStrictEqual(told.map((x) => x.member_id).sort(), [aaron.id, bo.id].sort());
+  // A disputed pass of a merged pull request: Third Look reads it, changes nothing, and its review shows beside the dispute.
+  const disp = await prWork(ada, bo);
+  assert.strictEqual((await work('POST', 'check', { cookie: ada.cookie, json: { submission: disp.s, verdict: 'pass' } })).json.result, 'pass');
+  const dz = await member('DzTL5');
+  const did = (await work('POST', 'dispute', { cookie: dz.cookie, json: { submission: disp.s, reason: 'It changes the wrong file.' } })).json.id;
+  await claimNow();
+  await runner.run(run, TOKEN, { gh: async () => FILES, fetchImpl });
+  assert.deepStrictEqual(Object.values(await route(disp.s)), ['passed', null], 'its answer changes nothing');
+  const di = (await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === did);
+  assert.deepStrictEqual([di.may, di.third_look && di.third_look.suggestion], ['any', 'pass']);
   // Third Look off: work sent to it waits; halfway through its wait Aaron is told once.
   await asWork("update app.tl_settings set mode = 'off'");
   const lone = await prWork(ada, bo);

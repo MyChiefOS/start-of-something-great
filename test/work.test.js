@@ -340,6 +340,19 @@ test('a poster’s fail needs a reason and lets the worker try again; legitimate
   const back = await risky(bo, ada, bpj, { size: 1 });
   assert.deepStrictEqual([back.result, back.route], ['pass', null]);
   assert.deepStrictEqual((await q(`select why from app.work_checks where submission_id = '${back.sid}'`)).map((x) => x.why), ['pair'], 'two who pass each other’s work: checked after');
+  // A ring of three: Fay passes Gus's work, Gus passes Hal's, then Hal passes Fay's: checked after.
+  const fay = await member('Fay2'), gus = await member('Gus2'), hal = await member('Hal2');
+  const ring = async (poster, worker) => {
+    const t = await task(poster, await project(poster, 'Ring ' + rn), { size: 1 });
+    await work('POST', 'claim', { cookie: worker.cookie, json: { task: t } });
+    const sid = (await work('POST', 'submit', { cookie: worker.cookie, json: { task: t, kind: 'link', url: 'https://example.org/ring' + (rn++) } })).json.submission;
+    assert.strictEqual((await work('POST', 'check', { cookie: poster.cookie, json: { submission: sid, verdict: 'pass' } })).json.result, 'pass');
+    return sid;
+  };
+  await ring(fay, gus);
+  await ring(gus, hal);
+  const closes = await ring(hal, fay);
+  assert.deepStrictEqual((await q(`select why from app.work_checks where submission_id = '${closes}'`)).map((x) => x.why), ['pair']);
   // A burst of work from one worker (spam): more than burst_hourly pieces in an hour.
   await q('update app.work_settings set burst_hourly = 3');
   assert.match((await risky(ada, bo, pj, { size: 1 })).held_reason, /more than 3 pieces of work in an hour/);
@@ -422,13 +435,17 @@ test('disputes: anyone but the worker, while points are pending; the points wait
   assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d2).party, false);
   const own = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d2, decision: 'dismiss', reason: 'It is done.' } });
   assert.strictEqual(own.status, 200, JSON.stringify(own.json));
-  // Never a dispute he opened himself, nor one about work he did on someone else's task.
+  // Against himself only (Aaron: "if I agree"): a dispute he opened he may withdraw, not uphold; a dispute of his own work
+  // for someone else's task he may uphold (give up the pass), not dismiss.
   const ept = await task(cy, await project(cy, 'Cy’s project'), { size: 1 });
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: ept } });
   const es = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: ept, kind: 'link', url: 'https://example.org/f' } })).json.submission;
   await work('POST', 'check', { cookie: cy.cookie, json: { submission: es, verdict: 'pass' } });
   const d3 = (await work('POST', 'dispute', { cookie: aaron.cookie, json: { submission: es, reason: 'Copied.' } })).json.id;
-  assert.deepStrictEqual(Object.values(await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d3, decision: 'uphold', reason: 'Copied.' } })).slice(0, 1), [403]);
+  const up3 = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d3, decision: 'uphold', reason: 'Copied.' } });
+  assert.deepStrictEqual([up3.status, up3.json.reason], [403, 'work_own']);
+  assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d3).may, 'dismiss');
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d3, decision: 'dismiss', reason: 'I withdraw it.' } })).status, 200);
   const wt = await task(cy, await project(cy, 'Cy’s other project'), { size: 1 });
   await work('POST', 'claim', { cookie: aaron.cookie, json: { task: wt } });
   const ws = (await work('POST', 'submit', { cookie: aaron.cookie, json: { task: wt, kind: 'link', url: 'https://example.org/g' } })).json.submission;
@@ -436,6 +453,9 @@ test('disputes: anyone but the worker, while points are pending; the points wait
   const d4 = (await work('POST', 'dispute', { cookie: bo.cookie, json: { submission: ws, reason: 'Not done.' } })).json.id;
   const mine = await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d4, decision: 'dismiss', reason: 'It is done.' } });
   assert.deepStrictEqual([mine.status, mine.json.reason], [403, 'work_own']);
+  assert.strictEqual((await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === d4).may, 'uphold');
+  assert.strictEqual((await work('POST', 'settle', { cookie: aaron.cookie, json: { dispute: d4, decision: 'uphold', reason: 'I give up the pass.' } })).status, 200);
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${ws}'`))[0].status, 'reversed');
 });
 
 test('the disputes pages (046): the list, one dispute with its window, evidence from its parties only, the outcome with its log entry; the worker and poster are told', async () => {

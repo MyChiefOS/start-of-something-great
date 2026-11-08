@@ -1,7 +1,8 @@
 // /admin/review's Work section (042): what waits for the administrator in the work module, from /api/work/admin:
 // the check after a poster's pass (a sample), disputes, and work on the repository's own tasks the rules couldn't
-// decide. Each decision sends a reason; the database refuses one on work the administrator did or posted (or a
-// dispute they opened), and the page says it waits for Third Look instead. Every word is drawn with textContent.
+// decide. Each decision sends a reason. On a dispute (052) it shows Third Look's review of the work when it read it, and
+// where the administrator is a party offers only the decision against himself: upholding a dispute of his own work,
+// withdrawing one he opened. Every word is drawn with textContent.
 (function () {
   'use strict';
   var $ = function (x) { return document.getElementById(x); };
@@ -14,7 +15,7 @@
   }
   function txt(x) { return x === null || x === undefined ? '' : String(x); }
   function slot(n, s) { return n.querySelector('[data-slot="' + s + '"]'); }
-  var WHY = { random: 'picked at random', size: 'the largest size', pair: 'this poster and worker at their limit', note: 'the note had contact details, now hidden' };
+  var WHY = { random: 'picked at random', size: 'the largest size', pair: 'a poster who keeps passing the same worker, or people who pass each other\u2019s work', third_look: 'one in five of Third Look\u2019s passes', note: 'the note had contact details, now hidden' };
   function artifact(a) {
     var p = document.createElement('span');
     if (!a) return p;
@@ -28,6 +29,11 @@
     return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }, function () { return { ok: false, d: {} }; }); });
   }
+  // Third Look's review beside a dispute (Aaron, Nov 7: "Third look can weigh in"), in its own words, as text.
+  function lookSaid(r) {
+    if (!r) return 'Third Look didn\u2019t read this work (it reads merged pull requests). ';
+    return 'Third Look ' + (r.suggestion === 'pass' ? 'found it passable' : 'left it to a person') + (r.reason ? ': \u201c' + txt(r.reason).replace(/[.!?]\s*$/, '') + '\u201d' : '') + '. ';
+  }
   function card(item, kind, actions) {
     var c = $('work-tpl').content.firstElementChild.cloneNode(true);
     slot(c, 'kind').textContent = kind;
@@ -36,12 +42,18 @@
     if (isId(item.id)) a.href = '/tasks/' + item.id;
     slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by)) + (item.reason ? ': ' + txt(item.reason) : '.')
       : item.held_reason ? 'Sent to you: ' + txt(item.held_reason)
-      : item.dispute_reason ? 'Passed by ' + (item.decided_by === 'poster' ? 'the task\u2019s poster' : item.decided_by === 'jevs' ? 'the JEVs auditor\u2019s rules' : 'an administrator') + '. The dispute:' : 'The rules that sent it here: ' + txt(item.jevs_rules || 'none');
+      : item.dispute_reason ? 'Passed by ' + (item.decided_by === 'poster' ? 'the task\u2019s poster' : item.decided_by === 'jevs' ? 'the JEVs auditor\u2019s rules'
+          : item.decided_by === 'third_look' ? 'Third Look' : 'an administrator') + '. ' + lookSaid(item.third_look) + 'The dispute:' : 'The rules that sent it here: ' + txt(item.jevs_rules || 'none');
     slot(c, 'artifact').appendChild(artifact(item.artifact));
     slot(c, 'text').textContent = txt(item.dispute_reason || item.note);
     var acts = slot(c, 'acts'), said = slot(c, 'said'), reason = slot(c, 'reason');
-    if (item.party) {
-      said.textContent = 'You did or posted this work (or opened the dispute), so it waits for Third Look.';
+    // A dispute where you are a party: only the decision against yourself.
+    if (item.may === 'uphold' || item.may === 'dismiss') {
+      actions = actions.filter(function (x) { return x.decision === item.may; });
+      said.textContent = item.may === 'uphold' ? 'This is your own work: you may uphold the dispute (give up the pass), not dismiss it.'
+        : 'You opened this dispute: you may withdraw it, not uphold it.';
+    } else if (item.party) {
+      said.textContent = 'You did or posted this work, so you don\u2019t decide it.';
       reason.parentNode.hidden = true;
       return c;
     }
@@ -74,8 +86,8 @@
       });
       (d.disputes || []).forEach(function (i) {
         list.appendChild(card(i, 'Dispute', [
-          { label: 'Dismiss the dispute', primary: true, path: '/api/work/settle', body: function (w) { return { dispute: i.dispute, decision: 'dismiss', reason: w }; } },
-          { label: 'Uphold it (reverse the pass)', path: '/api/work/settle', body: function (w) { return { dispute: i.dispute, decision: 'uphold', reason: w }; } }]));
+          { label: i.may === 'dismiss' ? 'Withdraw the dispute' : 'Dismiss the dispute', primary: true, decision: 'dismiss', path: '/api/work/settle', body: function (w) { return { dispute: i.dispute, decision: 'dismiss', reason: w }; } },
+          { label: 'Uphold it (reverse the pass)', decision: 'uphold', path: '/api/work/settle', body: function (w) { return { dispute: i.dispute, decision: 'uphold', reason: w }; } }]));
       });
       (d.waiting || []).forEach(function (i) {
         list.appendChild(card(i, 'The repository’s task', [
