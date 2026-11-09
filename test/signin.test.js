@@ -16,7 +16,7 @@ const { PROVIDERS } = require('../signin/providers');
 const { make, SESSION } = require('../signin/flow');
 const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, TEST_SYSTEM_SECRET, promote, asSignin } = require('./helpers');
+const { trustSystem, TEST_SYSTEM_SECRET, promote, asSignin, clearOfWindow } = require('./helpers');
 // Acting as an administrator straight in the database (the test superuser), with the proof the site gives (fix 3):
 // app.act_as, as db/index.js calls it, with the administrator's own session. Settings set by hand now count for nothing.
 const actAsAdmin = (t, ctx) => t`select app.act_as('admin', ${ctx.memberId}::uuid, null, false, ${ctx.session}, null, null)`;
@@ -469,6 +469,9 @@ test('email links: same answer for every address, a Continue page that changes n
 
 test('S6: too many email links or sign-in attempts are slowed down', async () => {
   const env = setup();
+  // Hourly and 10-minute limits are counted below: start clear of both windows' edges.
+  await clearOfWindow(3600);
+  await clearOfWindow(600);
   const send = async (email, ip) => { const r = res(); await env.flow.emailStart(req('POST', '/auth/email/start', { body: { email, ft: stamp(env) }, origin: ORIGIN, ip }), r); return r.getHeader('Location'); };
   const out = [];
   for (let i = 0; i < 6; i++) out.push(await send('same@example.com', '198.51.100.' + (i + 1)));

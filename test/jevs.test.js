@@ -16,6 +16,7 @@ const store = require('../db/signin');
 const posts = require('../db/posts');
 // 041: decisions carry a reason and the hash of the words (test/helpers.js, reviewWithReasons).
 const review = require('./helpers').reviewWithReasons(require('../db/review'), () => su);
+const { clearOfWindow } = require('./helpers');
 const jevs = require('../db/jevs');
 const region = require('../signin/region');
 const { make, LIMITS, MIN_FILL_MS } = require('../signin/flow');
@@ -1201,6 +1202,7 @@ test('sign-up bot checks: a hidden field, a sealed time stamp at least a second 
   // addresses could fill to lock everyone out (the JEVs review, F8; its repro R10 did).
   assert.ok(!Object.hasOwn(LIMITS, 'signin_all'));
   const outcomes = [];
+  await clearOfWindow(600);
   for (let i = 0; i < 31; i++) { const r = res(); await env.flow.start(getReq('/auth/github/start', { ip: '198.18.200.7' }), r, 'github'); outcomes.push(r.getHeader('Location').startsWith('/join') ? r.getHeader('Location') : 'provider'); }
   assert.deepStrictEqual([outcomes[0], outcomes[29], outcomes[30]], ['provider', 'provider', '/join?error=slow'], 'one network is limited');
   const elsewhere = res();
