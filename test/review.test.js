@@ -17,7 +17,7 @@ const posts = require('../db/posts');
 const review = require('../db/review');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { trustSystem, TEST_SYSTEM_SECRET, promote, shadowMode, asSignin } = require('./helpers');
+const { trustSystem, TEST_SYSTEM_SECRET, promote, shadowMode, asSignin, clearOfWindow } = require('./helpers');
 
 const root = path.join(__dirname, '..');
 const SERVER = process.env.TEST_DATABASE_URL;
@@ -420,6 +420,7 @@ test('S6: reporting is rate limited per member, and a malformed report doesn\'t 
   const send = (json, ip) => call(req('POST', '/api/feed', { cookie: m.cookie, origin: ORIGIN, json, ip }));
   for (let i = 0; i < 5; i++) assert.strictEqual(await send({ report: p.id, reason: 'bad' }), 400);
   const max = REPORT_LIMITS.report_member.max;
+  await clearOfWindow(3600);
   // Spread over many networks, so only the per-member limit applies.
   for (let i = 0; i < max; i++) assert.strictEqual(await send({ report: p.id, reason: 'spam' }, '198.51.' + i + '.1'), 202, 'report ' + (i + 1));
   assert.strictEqual(await send({ report: p.id, reason: 'spam' }, '198.51.200.1'), 429);

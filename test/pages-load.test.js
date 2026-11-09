@@ -115,7 +115,9 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
 test('the menu (the design handoff of Nov 5, 2026, README "Shell"): Post, Talk, Proposals, For agents, About, Search, then Join as a pill', () => {
   const linksOf = (h) => [...h.matchAll(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
   const main = shell.MAIN.map(([h, t]) => h + ' ' + t);
-  const proposed = shell.PROPOSED.filter(([h]) => shell.exists(h)).map(([h, t]) => h + ' ' + t);
+  // The built modules in the design's order, the live ones first (042: a live page is never called proposed).
+  const built = shell.PROPOSED.filter(([h]) => shell.exists(h));
+  const proposed = built.filter(([h]) => shell.LIVE.includes(h)).concat(built.filter(([h]) => !shell.LIVE.includes(h))).map(([h, t]) => h + ' ' + t);
   for (const f of navPages) {
     const top = topOf(f);
     // The wide row: the six links, then Join as the pill (the design's .join).

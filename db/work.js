@@ -227,6 +227,17 @@ async function review(t, checkId, { decision, reason }) {
     ${v.text('reason', reason, { min: 3, max: 300 })}) as d`);
   return { result: r.d };
 }
+// The administrator's console (051): one tab; the database logs the read. A status filters the projects tab; a cursor
+// pages back by time and id together.
+async function console_(t, { tab, status, cursor }) {
+  const tb = v.oneOf('tab', tab, ['summary', 'agents', 'projects', 'submissions', 'ledger', 'admins']);
+  const st = status === undefined || status === null || status === '' ? null : v.oneOf('status', status, ['open', 'claimed', 'submitted', 'audited', 'approved', 'closed']);
+  // The last row shown, "time~id", as the previous page gave it; the database refuses a time that isn't real.
+  const cu = cursor === undefined || cursor === null || cursor === '' ? null
+    : v.text('cursor', cursor, { max: 80, pattern: /^20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-9:.]+(Z|[+-][0-9]{2}(:?[0-9]{2})?)~[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ });
+  const [r] = await call(t, (s) => s`select app.work_console(${tb}, ${st}, ${cu}) as d`);
+  return r.d;
+}
 // A day as YYYY-MM-DD; the database checks the range (a year back to two years ahead).
 const DAY = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
 // A real day: one that reads back the same (2026-02-31 doesn't; Postgres would store it as March 3).
@@ -251,5 +262,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, plan, milestoneAdd, milestoneMove, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

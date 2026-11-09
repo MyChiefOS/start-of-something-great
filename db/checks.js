@@ -287,6 +287,9 @@ const DEFINERS = {
   'app.work_plan_check(uuid)': { owner: 'dog_work', callers: '' },
   'app.work_milestone_card(uuid)': { owner: 'dog_work', callers: '' },
   'app.work_roadmap_milestones()': { owner: 'dog_work', callers: '' },
+  // The administrator's console (051): one tab's figures, every read logged.
+  'app.work_console(text, text, text)': 'dog_work',
+  'app.work_console_integrity()': { owner: 'dog_work', callers: '' },
   'app.work_evidence_add(uuid, text)': 'dog_work',
   'app.work_dispute_page(uuid)': 'dog_work',
   'app.work_disputes_list(text, uuid, integer)': 'dog_work',
@@ -331,7 +334,11 @@ const AUDIT_POLICIES = {
   // 032 (guardrails round 1): JEVs reads the promotion records only, for the never-break rule "every administrator was
   // made one through a recorded promotion" (app.invariants_check); the columns it may read are action, subject_kind
   // and subject_id, never who did it or the detail.
-  audit_jevs_select: { cmd: 'r', using: "action='admin.set'::text", check: '', roles: 'dog_jevs' }
+  audit_jevs_select: { cmd: 'r', using: "action='admin.set'::text", check: '', roles: 'dog_jevs' },
+  // 051 (the administrator's console): the work module's role records each console read, as the one acting, and reads
+  // only the rows the console's admins tab shows (administrators' actions, console reads, promotions, sign-ins).
+  audit_insert_console: { cmd: 'a', using: '', check: "((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (action = 'console.read'::text) AND (actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))", roles: 'dog_work' },
+  audit_select_console: { cmd: 'r', using: "((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND ((actor_kind = 'admin'::text) OR (action = ANY (ARRAY['console.read'::text, 'admin.set'::text])) OR ((action = 'member.signed_in'::text) AND (subject_kind = 'member'::text) AND (subject_id IN ( SELECT m.id FROM app.members m WHERE m.is_admin)))))", check: '', roles: 'dog_work' }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
 

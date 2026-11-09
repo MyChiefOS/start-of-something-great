@@ -226,7 +226,11 @@ const links = (n) => Array.from({ length: n }, () => 'https://' + letters(8) + '
 // other's word print about 1 time in 24 (measured on 50,000 pairs, Oct 31), so a post now and then read as a copy of
 // an earlier live one (J09), fell outside the gate, and a test failed at random (#92's checks). Forty random words make
 // that about 1 in 7,000 per pair; and a post J09 scored anyway is written again with new words, so no test rests on luck.
-const unique = () => Array.from({ length: 40 }, () => letters(7)).join(' ');
+// Random words, so no post reads as a copy of another to J09 (word prints within 10 of 64 bits). The links' shared
+// "https" and "example" pull prints together: with 40 words, 3.7 in 10,000 pairs of these posts came within 10 bits
+// (measured Nov 9, after a CI run failed on one), with 300, 2 in 8 million. 300 words of 7 letters stay under the
+// 5,000-character limit.
+const unique = () => Array.from({ length: 300 }, () => letters(7)).join(' ');
 const j09 = async (id) => Number(((await q(`select d.scores from app.jevs_decisions d where d.subject_id = '${id}' order by d.created_at desc limit 1`))[0] || {}).scores?.J09 || 0);
 const held = async (poster, words = 'Notes from the meetup are on these pages') => {
   for (let tries = 0; ; tries++) {

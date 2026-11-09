@@ -52,6 +52,11 @@
    "<script src=\"/nav.js\" defer></script>"
   ]
  },
+ "admin/console.html": {
+  "ids": [],
+  "links": {},
+  "scripts": null
+ },
  "admin/controls.html": {
   "ids": [
    [

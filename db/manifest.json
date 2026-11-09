@@ -199,6 +199,10 @@
     {
       "version": "050_project_plans",
       "sha256": "1970501fca980f3c32c9cd7d328e97138b8a7738253a905ff737bf2b77b2a7dd"
+    },
+    {
+      "version": "051_console",
+      "sha256": "3a70b3f503da72aac7fcf0883146e4109406e2207eed759edbb1072908dcb1be"
     }
   ]
 }
