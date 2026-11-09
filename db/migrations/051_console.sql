@@ -36,10 +36,11 @@ grant execute on function app.current_actor_id() to dog_work;
 create index audit_log_at on app.audit_log (at desc, id desc);
 -- Two more columns for the console: when an agent was made (the agents tab), and a checkpoint's root hash (the ledger
 -- tab; every checkpoint is already public at /api/log/checkpoint).
--- Aaron's sign-in alerts (the wrong-try ones only), for the admins tab, while an administrator is acting.
+-- Aaron's sign-in alerts (the wrong-try ones only, and the 15-minute lock after 3 failures that 053 adds), for the
+-- admins tab, while an administrator is acting.
 create policy notices_console_signin on app.notices for select to dog_work
   using ((select app.actor_kind()) = 'admin' and member_id is null and kind = 'alert'
-         and dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail):');
+         and dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail|locked):');
 grant select (title, subject_kind, subject_id, dedupe_key, created_at, member_id, kind) on app.notices to dog_work;
 grant select (created_at) on app.agents to dog_work;
 grant select (root) on app.log_checkpoints to dog_work;
@@ -184,7 +185,7 @@ begin
               'event', split_part(n.dedupe_key, ':', 2),
               'member', (select m.display_name from app.members m where n.subject_kind = 'member' and m.id = n.subject_id)) order by n.created_at desc)
           from (select x.title, x.subject_kind, x.subject_id, x.dedupe_key, x.created_at from app.notices x
-                 where x.member_id is null and x.kind = 'alert' and x.dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail):'
+                 where x.member_id is null and x.kind = 'alert' and x.dedupe_key ~ '^watch:(paused|failed|cancelled|pin5|pin10|pinchange|afterfail|locked):'
                  order by x.created_at desc limit 50) n), '[]'::jsonb))
       || (select jsonb_build_object(
             'activity', coalesce(jsonb_agg(jsonb_build_object('at', l.at, 'actor_kind', l.actor_kind, 'action', l.action,
