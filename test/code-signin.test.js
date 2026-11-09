@@ -14,7 +14,7 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem, asSignin } = require('./helpers');
+const { trustSystem, asSignin, clearOfWindow } = require('./helpers');
 const BK = require('./helpers/browser-key');
 
 const root = path.join(__dirname, '..');
@@ -560,6 +560,8 @@ if (!SERVER) {
     // 053 (NIST SP 800-63B 3.2.2; the review of 053, H2): 10 key-file tries per network an hour, so one network can't keep
     // members locked out by sending wrong files for their usernames; the 11th waits, from that network only.
     // Ten hosts of one /24 (keyReq sends a.b.c.d as a.b.d.c: these arrive as 198.51.99.1 to .10), then an 11th host there.
+    // The limit counts in clock hours: start clear of the hour's edge.
+    await clearOfWindow(3600);
     for (let i = 1; i <= 10; i++) assert.notStrictEqual((await key({ login: 'nobody' + i, file: sha('n ' + i) }, '198.51.' + i + '.99')).status, 429);
     const eleventh = await key({ login: 'nobody11', file: sha('n 11') }, '198.51.11.99');
     assert.strictEqual(eleventh.status, 429, 'the 11th in an hour, from another host of the same /24');
