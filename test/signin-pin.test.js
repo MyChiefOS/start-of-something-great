@@ -20,7 +20,7 @@ const c = require('../signin/crypto');
 const session = require('../signin/session');
 const { make, SESSION } = require('../signin/flow');
 const { migrate } = require('../scripts/migrate');
-const { trustSystem } = require('./helpers');
+const { trustSystem, clearOfWindow } = require('./helpers');
 const BK = require('./helpers/browser-key');
 
 const root = path.join(__dirname, '..');
@@ -683,6 +683,7 @@ if (!SERVER) {
     const b = browser();
     assert.strictEqual((await call(b, 'challenge', '/auth/challenge', { origin: 'https://evil.example' })).status, 403);
     const ip = '192.0.2.200';
+    await clearOfWindow(600);
     for (let i = 0; i < 60; i++) assert.match((await call(b, 'challenge', '/auth/challenge', { ip })).challenge, /^[A-Za-z0-9_-]{43}$/);
     assert.strictEqual((await call(b, 'challenge', '/auth/challenge', { ip })).status, 429);
     await owner(`update app.signin_challenges set expires_at = now() - interval '2 hours'`);

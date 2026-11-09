@@ -117,4 +117,14 @@ function reviewWithReasons(review, su) {
   } };
 }
 
-module.exports = { asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, reviewWithReasons, TEST_SYSTEM_SECRET };
+// Rate limits (app.rate_limit_hit) count in windows fixed to the clock (every 10 minutes, every hour), and the network
+// keys change at midnight UTC, so a test that counts up to a limit and crosses a window's edge sees the count start
+// again: on Nov 9 a CI run reached the 31st sign-in start at 21:30:00.05 UTC and it was let through. Before counting,
+// such a test waits, only when it must, until it is at least needMs clear of the next edge.
+async function clearOfWindow(seconds, needMs = 15000) {
+  const span = seconds * 1000;
+  const left = span - (Date.now() % span);
+  if (left < needMs) await new Promise((r) => setTimeout(r, left + 250));
+}
+
+module.exports = { clearOfWindow, asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, reviewWithReasons, TEST_SYSTEM_SECRET };
