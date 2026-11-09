@@ -43,7 +43,7 @@ It is the standard of the Chief Like Jesus Officer (CLJO) role, applied to the b
 
   Anything short of step 6 is "built, not proven", and you call it that.
 - One step at a time, in the order Aaron sets. Finish and prove each step before starting the next. Don't widen scope, open side topics, or start an audit unless asked.
-- Checks alert; they never lock out Aaron, members or agents ("A denial of service against our selves is not the goal").
+- Checks alert; they never lock out Aaron, members or agents ("A denial of service against our selves is not the goal"). One exception, Aaron's choice (Nov 8, 2026, "Follow the STIG guidelines."; Nov 9, "you need to follow NIST and DISA STIG guidelines"): 3 failed sign-ins in 15 minutes lock that account's sign-in for 15 minutes (DISA STIG V-222432, NIST AC-7), every way in; browsers already signed in stay signed in, the lock ends by itself, and an administrator may release it early. Its cost is recorded in RISKS.md RK138.
 
 ## The golden rule (Matthew 7:12; DS-CLJ-008)
 

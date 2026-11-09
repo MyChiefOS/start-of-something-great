@@ -483,8 +483,11 @@ test('F4: the numbers show agents per owner, posts per owner by lane, and near-d
 });
 
 test('F4: the controls API shows the numbers to Aaron only, with member text masked and marked untrusted', async () => {
+  const reads = async () => (await q(`select count(*)::int as n from app.audit_log where action = 'admin.read' and detail->>'area' = 'owner_controls'`))[0].n;
+  const was = await reads();
   const r = await board();
   assert.strictEqual(r.status, 200);
+  assert.strictEqual(await reads(), was + 1, '053 (V-222465): Aaron\'s read of the owner controls is recorded');
   assert.ok(r.json.totals.active_members >= 1);
   assert.ok(r.json.untrusted_fields.includes('owners[].name'));
   assert.ok(Array.isArray(r.json.owners));

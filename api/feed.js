@@ -609,7 +609,8 @@ async function handle(req, res, run, { oidc = null } = {}) {
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see the review queue.' }); }
-    const qd = await run(session.actorFor(who), (t) => review.queue(t, {}));
+    // 053 (V-222465, V-222471): an administrator's read of the queue is recorded; nobody else's call records anything.
+    const qd = await run(session.actorFor(who), async (t) => { await t`select app.audit_admin_read('post_queue')`; return review.queue(t, {}); });
     return reply(res, 200, { open: qd.open, budget: qd.budget, items: qd.items.map(shapeQueued), untrusted_fields: QUEUE_FIELDS, note: UNTRUSTED_NOTE });
   }
 
@@ -635,7 +636,8 @@ async function handle(req, res, run, { oidc = null } = {}) {
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can see the owner controls.' }); }
-    const d = await run(session.actorFor(who), async (t) => ({ ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
+    const d = await run(session.actorFor(who), async (t) => ({ ...(await t`select app.audit_admin_read('owner_controls')`.then(() => ({}))),
+      ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
       deletion_reviews: await controls.deletionReviews(t),
       // Second Look's report (034): counts only. Best effort, so the controls still load before 034 is applied.
       second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null),
@@ -761,3 +763,5 @@ module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;
 module.exports.searchProblem = searchProblem;
 module.exports.shownMatch = shownMatch;
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

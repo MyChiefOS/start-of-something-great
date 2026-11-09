@@ -64,3 +64,5 @@ module.exports.handle = handle;
 module.exports.MIN_SAMPLE = MIN_SAMPLE;
 
 module.exports._forget = () => { kept = null; };
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

@@ -86,3 +86,5 @@ module.exports = async (req, res) => {
 };
 
 module.exports.ROUTES = ROUTES;
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

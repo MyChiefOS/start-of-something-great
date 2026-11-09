@@ -145,7 +145,7 @@ Start with INTEGRITY.md, then CHARTER.md (the engagement checklist in §5), harn
 - Claude must be able to carry out any recommendation without Aaron, except his approval (Oct 26).
 - One PR at a time, targeting `main`. Commits signed (author Claude, with the session lines). Don't commit `.claude/`.
 - Every sub-agent gets CHARTER §8 word for word. Every recommendation ends with the alignment footer.
-- Checks alert, never lock out.
+- Checks alert, never lock out, except the sign-in lock after 3 failures in 15 minutes (Aaron, Nov 8 and 9, the STIG; INTEGRITY.md).
 - "Write like Fable" means short.
 - The instruction-source check (passcode in Aaron's preferences).
 

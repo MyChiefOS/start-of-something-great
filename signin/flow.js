@@ -35,7 +35,8 @@
 //   address; the database checks that signature itself and the member's six-digit PIN. Lane 1 (a code posted through
 //   giscus) sets the PIN; lane 2 (/auth/key: the key file and the PIN) adds a new browser; lane 3 (/auth/browser: the
 //   PIN alone) is this browser again. A wrong PIN counts against the browser key or key file it was tried with: the
-//   5th alerts, the 10th cancels it. The GitHub lane is never closed.
+//   5th alerts, the 10th cancels it. Since 053 (the STIG, V-222432), 3 failed sign-ins in 15 minutes lock the account,
+//   every way in, GitHub's too, for 15 minutes.
 'use strict';
 
 const nodeCrypto = require('crypto');
@@ -75,6 +76,10 @@ const LIMITS = {
   // username, and the 10th cancels the key file (the member then gets a new code; the account is unchanged).
   // 037: one-time challenges, one per sign-in try; a network that asks for more than this in 10 minutes waits.
   challenge_ip: { windowSeconds: 600, max: 60 },
+  // 053 (NIST SP 800-63B 3.2.2, a risk-based limit by network): key-file tries per wider network (IPv6 /48, IPv4 /24) per
+  // hour, so one provider's block can't keep members locked out by sending wrong key files for their usernames (the
+  // reviews of 053; RISKS RK138).
+  keyfile_ip: { windowSeconds: 3600, max: 10 },
   email_ip: { windowSeconds: 3600, max: 10 },
   email_addr: { windowSeconds: 3600, max: 5 },
   // A ceiling on all sign-in emails, so nobody can turn the form into a way to flood inboxes.
@@ -262,7 +267,7 @@ function make(deps) {
   }
 
   // Where a refused sign-in goes.
-  const REFUSED = { banned: '/join?error=unavailable', disabled: '/join?error=disabled', taken: '/join?error=taken' };
+  const REFUSED = { banned: '/join?error=unavailable', disabled: '/join?error=disabled', taken: '/join?error=taken', locked: '/join?error=locked' };
   // Linking or unlinking from a session that didn't begin in the last 10 minutes (PR 15).
   const FRESH_METHOD = '/account?error=fresh_method';
   // A link that didn't go through returns to the account page (the member is still signed in), never /join.
@@ -472,6 +477,9 @@ function make(deps) {
       if (await limited('signin_ip', h.ipKey(req, config.ipKey))) {
         return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
       }
+      if (await limited('keyfile_ip', h.netKey(req, config.ipKey))) {
+        return json(res, 429, { error: 'Too many key-file sign-ins from your network this hour. Please try again within the hour; your PIN in a browser that already has a key, or a new code, still work, unless the account\u2019s sign-in is locked.' });
+      }
       const pub = b64(form.pub, 65);
       const proof = pub && proofOf(form, pub);
       const label = labelOf(form);
@@ -482,7 +490,8 @@ function make(deps) {
         pinAgain: typeof form.pin_again === 'string' ? form.pin_again : null, publicKey: pub, label, ...proof }));
       if (out.status === 'start_again') return json(res, 200, { start_again: true, error: '10 wrong PINs were tried with your key file, so it was cancelled. Please start again: get a new code, post it, and choose a key file. You\u2019ll be back in your same account.' });
       // Aaron (Nov 5): after 3 wrong key files for a username, key-file sign-in for it pauses for 10 minutes; the member is
-      // told in-app. This browser's PIN (if it has a key) and a new code still work.
+      // told in-app. When the same failures also locked the account (053), the answer is 'locked' instead, so 'paused'
+      // means only the pause: this browser's PIN (if it has a key) and a new code still work.
       if (out.status === 'paused') return json(res, 200, { paused: true, wait_seconds: out.waitSeconds, error: 'Signing in with a key file is paused for this username for ' + Math.ceil((out.waitSeconds || 600) / 60) + ' minutes, after 3 wrong key files. Try again then, or sign in with a new code.' });
       // A member from before PINs sets their first one here, typed twice (the review of 037, L3).
       if (out.status === 'confirm_pin') return json(res, 200, { confirm_pin: true, error: 'This is your first PIN. Type it again to set it.' });
@@ -771,6 +780,7 @@ function make(deps) {
       if (out.status === 'signed_out') { h.addCookie(res, h.clear(SESSION)); return h.redirect(res, '/join?error=pin_signed_out'); }
       if (out.status === 'wrong_pin') return h.redirect(res, '/account?error=pin_wrong&left=' + Number(out.tries_left) + '#pin');
       if (out.status === 'weak_pin') return h.redirect(res, '/account?error=pin_weak#pin');
+      if (out.status === 'locked') return h.redirect(res, '/account?error=pin_locked#pin');
       return h.redirect(res, '/account?error=pin_none#pin');
     },
 

@@ -193,7 +193,10 @@ if (!SERVER) {
   const keyReq = async (method, url, opts = {}) => {
     const k = BK.make();
     const body = { pin: BK.PIN, ...(opts.body || {}), pub: k.pub, label: BK.LABEL, ...BK.proof(k, await challenge()) };
-    return req(method, url, { ...opts, body });
+    // 053 limits key-file tries per /24: each test address a.b.c.d is sent as a.b.d.c, its own /24, so the tests' many
+    // addresses stay many networks (the limit's own test sends 10 from one).
+    const m = String(opts.ip || '203.0.113.9').match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    return req(method, url, { ...opts, ip: m ? [m[1], m[2], m[4], m[3]].join('.') : opts.ip, body });
   };
   // A reply without the new browser key's ID, which each test that cares reads itself.
   const parsed = (r) => { const o = JSON.parse(r.body); delete o.key_id; return o; };
@@ -509,7 +512,7 @@ if (!SERVER) {
     assert.strictEqual(codeCookie(later), false);
   });
 
-  test('the key file: the 3rd wrong file pauses it for 10 minutes and tells the member (Aaron, Nov 5), never cancels it; the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
+  test('the key file: the 3rd wrong file pauses it for 10 minutes and tells the member (Aaron, Nov 5), and locks the account for 15 (Nov 8, the STIG), never cancels it; the administrator\'s file works like everyone\'s (Aaron, Oct 28), and a deleted account\'s file is gone', async () => {
     const b = jar();
     const s = await start(b, { login: 'tries', file: FILE_A });
     await post(8021, 'tries', s.code);
@@ -527,26 +530,41 @@ if (!SERVER) {
     assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.41')).signed_in, true, 'the right file reset the count');
     for (let i = 0; i < 2; i++) await key({ login: 'tries', file: sha('more ' + i) }, '198.51.100.' + (i + 21));
     const third = await key({ login: 'TRIES', file: sha('more 2') }, '198.51.100.31');
-    assert.strictEqual(third.paused, true, 'the 3rd wrong file, in any spelling of the username, from any network, pauses it');
-    assert.strictEqual(third.wait_seconds, 600);
-    assert.match(third.error, /paused for this username for 10 minutes, after 3 wrong key files/);
+    // The 3rd wrong file, in any spelling of the username, from any network, pauses it; these 3 came within 15 minutes, so
+    // they also locked the account (053), and the answer says that (the third review of 053, M1).
+    assert.strictEqual(third.refused, 'locked');
     assert.strictEqual(await pausedUntil(), true);
     const during = await key({ login: 'tries', file: FILE_A }, '198.51.100.42');
-    assert.strictEqual(during.paused, true, 'while paused, not even the right file is tried');
-    assert.ok(during.wait_seconds > 0 && during.wait_seconds <= 600);
+    // The 3rd failure also locked the account (053): while locked, not even the right file is tried (the review of 053, H1).
+    assert.strictEqual(during.refused, 'locked', 'while locked and paused, not even the right file is tried');
     const [note] = await owner(`select title, link from app.notices where member_id = '${memberId}' and kind = 'signin_keyfile' and dedupe_key like 'signin:keyfile:paused:%'`);
     assert.deepStrictEqual({ ...note }, { title: 'Key-file sign-in paused for 10 minutes', link: '/account' }, 'the member is told in-app');
     assert.strictEqual((await owner(`select count(*)::int as n from app.file_keys where member_id = '${memberId}'`))[0].n, 1, 'the key file is never cancelled for wrong files');
-    // GitHub still works during the pause.
+    // Aaron, Nov 8 (the STIG, V-222432): 3 failed sign-ins in 15 minutes lock the account, every way in, GitHub's too.
     const s4 = await start(tries, { login: 'tries', file: FILE_A, ip: '203.0.113.72' });
     await post(8021, 'tries', s4.code);
-    assert.strictEqual((await finish(tries)).signed_in, true, 'a new code signs in while the key file is paused');
+    assert.strictEqual((await finish(tries)).refused, 'locked', 'a new code is refused while the account is locked');
+    const [{ n: locks }] = await owner(`select count(*)::int as n from app.audit_log where subject_id = '${memberId}' and action = 'signin.locked' and outcome = 'failure'`);
+    assert.strictEqual(locks, 1, 'the lock is in the audit log');
+    // After 15 minutes (stood in for here) GitHub signs in, and after 10 the right file works again.
+    await owner(`update app.signin_failures set at = at - interval '16 minutes' where member_id = '${memberId}'`);
+    await owner(`update app.signin_locks set until = now() - interval '1 second' where member_id = '${memberId}'`);
+    const s4b = await start(tries, { login: 'tries', file: FILE_A, ip: '203.0.113.73' });
+    await post(8021, 'tries', s4b.code);
+    assert.strictEqual((await finish(tries)).signed_in, true, 'a new code signs in once the lock ends');
     assert.strictEqual((await me(tries)).member_id, memberId, 'the same account');
-    // After 10 minutes the right file works again.
     await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${memberId}'`);
     assert.strictEqual((await key({ login: 'tries', file: FILE_A }, '198.51.100.43')).signed_in, true, 'then it works again');
     // A new code sign-in with a new file replaces the file and starts the count again.
     for (let i = 0; i < 2; i++) await key({ login: 'tries', file: sha('late ' + i) }, '198.51.100.' + (i + 50));
+    // 053 (NIST SP 800-63B 3.2.2; the review of 053, H2): 10 key-file tries per network an hour, so one network can't keep
+    // members locked out by sending wrong files for their usernames; the 11th waits, from that network only.
+    // Ten hosts of one /24 (keyReq sends a.b.c.d as a.b.d.c: these arrive as 198.51.99.1 to .10), then an 11th host there.
+    for (let i = 1; i <= 10; i++) assert.notStrictEqual((await key({ login: 'nobody' + i, file: sha('n ' + i) }, '198.51.' + i + '.99')).status, 429);
+    const eleventh = await key({ login: 'nobody11', file: sha('n 11') }, '198.51.11.99');
+    assert.strictEqual(eleventh.status, 429, 'the 11th in an hour, from another host of the same /24');
+    assert.match(eleventh.error, /this hour/);
+    assert.notStrictEqual((await key({ login: 'nobody12', file: sha('n 12') }, '198.51.12.98')).status, 429, 'another network is untouched');
     const fresh = jar();
     const s5 = await start(fresh, { login: 'tries', file: FILE_B, ip: '203.0.113.74' });
     await post(8021, 'tries', s5.code);

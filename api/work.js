@@ -37,6 +37,7 @@
 //     POST review {check, decision, reason}          confirm or reverse a pass picked for the check after
 //     POST settle {dispute, decision, reason}        uphold (the pass is reversed) or dismiss a dispute
 //     POST remove {kind, id}                         remove a task or project that breaks the terms
+//     POST unlock {member, reason}                   release a sign-in lock (3 failed sign-ins in 15 minutes) early, with a reason
 'use strict';
 
 const db = require('../db');
@@ -164,6 +165,8 @@ const WRITES = {
   settle: { keys: ['dispute', 'decision', 'reason'], fn: (t, b) => work.settle(t, b.dispute, b), adminOnly: true },
   review: { keys: ['check', 'decision', 'reason'], fn: (t, b) => work.review(t, b.check, b), adminOnly: true },
   remove: { keys: ['kind', 'id'], fn: (t, b) => work.remove(t, b.kind, b.id), adminOnly: true },
+  // 053: release a sign-in lock early, with a reason that goes into the audit log (STIG V-222433).
+  unlock: { keys: ['member', 'reason'], fn: (t, b) => work.unlock(t, b.member, b.reason), adminOnly: true },
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps
   // its first target beside the new one.
   milestones: { keys: ['project', 'title', 'target', 'gate'], fn: (t, b) => work.milestoneAdd(t, b), code: 201 },
@@ -199,7 +202,7 @@ async function handle(req, res, run) {
       if (route === 'console' && !who.admin) return reply(res, 403, { error: 'Only an administrator sees the console.' });
       const cq = route === 'console' ? query(req, ['tab', 'status', 'cursor']) : null;
       if (route === 'console' && !cq) return reply(res, 400, { error: 'Ask with tab, status and cursor only, each once.' });
-      const out = await run(who.ctx, (t) => (route === 'admin' ? work.admin(t) : route === 'network' ? work.network(t)
+      const out = await run(who.ctx, (t) => (route === 'admin' ? t`select app.audit_admin_read('work_queue')`.then(() => work.admin(t)) : route === 'network' ? work.network(t)
         : route === 'console' ? work.console(t, cq) : work.mine(t)));
       return reply(res, 200, shown(out));
     }
@@ -239,3 +242,5 @@ module.exports = async (req, res) => {
 };
 module.exports.handle = handle;
 module.exports.shown = shown;
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

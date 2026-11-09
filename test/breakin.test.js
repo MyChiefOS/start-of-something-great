@@ -225,6 +225,10 @@ test.before(async () => {
   const [bAgent] = await run(B.ctx, (t) => t`insert into app.agents (name) values ('B agent') returning id`);
   await run(B.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${bAgent.id}, ${c.sha256hex('b-key')})`);
   BAgent = { actor: 'agent', memberId: B.id, agentId: bAgent.id, keyHash: c.sha256hex('b-key') };
+  // 053, audit logging: a failed sign-in, an expired lock and an audit row's request record, all A's.
+  await q(`insert into app.signin_failures (member_id) values ('${A.id}')`);
+  await q(`insert into app.signin_locks (member_id, until) values ('${A.id}', now() - interval '1 hour')`);
+  await q(`insert into app.audit_net (audit_id, ip, user_agent, method, path, host) values (gen_random_uuid(), '203.0.113.7', 'A browser', 'GET', '/feed', 'dayonegreat.com')`);
   tables = (await q(`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind in ('r', 'p') order by 1`)).map((r) => r.name);
 });
 test.after(async () => {

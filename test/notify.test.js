@@ -667,7 +667,7 @@ test('N11: the cron route runs the timers, JEVs\'s deletion-review timer and mar
   cron._reset();
 });
 
-test('F8: deleting an account deletes its notices, its alerts to Aaron and its pauses', async () => {
+test('F8: deleting an account deletes its notices and its pauses; Aaron\'s alerts about it are kept, as audit records (053; Aaron, Nov 8: the STIG, V-222621)', async () => {
   await asOwner('update app.watch_settings set hard_limit_per_hour = 10');
   let gone;
   try {
@@ -676,13 +676,14 @@ test('F8: deleting an account deletes its notices, its alerts to Aaron and its p
     for (let i = 0; i < 11; i++) await say(ag, 'last words ' + i);
     await timers();
   } finally { await asOwner(QUIET_WATCH); }
-  const counts = async () => (await q(`select (select count(*) from app.notices where member_id = '${gone.id}' or subject_id = '${gone.id}')::int as notices,
+  const counts = async () => (await q(`select (select count(*) from app.notices where member_id = '${gone.id}')::int as notices,
+    (select count(*) from app.notices where member_id is null and subject_id = '${gone.id}')::int as alerts,
     (select count(*) from app.containments where member_id = '${gone.id}')::int as paused`))[0];
   const before = await counts();
-  assert.ok(before.notices > 0 && before.paused === 1, JSON.stringify(before));
+  assert.ok(before.notices > 0 && before.alerts > 0 && before.paused === 1, JSON.stringify(before));
   const out = await run({ ...gone.ctx, fresh: true }, (t) => store.deleteAccount(t));
   assert.ok(!out.refused, JSON.stringify(out));
-  assert.deepStrictEqual({ ...(await counts()) }, { notices: 0, paused: 0 });
+  assert.deepStrictEqual({ ...(await counts()) }, { notices: 0, alerts: before.alerts, paused: 0 }, 'the member\'s inbox goes; Aaron\'s alerts about them stay');
 });
 
 // ---- JEVs (PR 12) speaks through the inbox (PR 13 on top of PR 12) ----
@@ -738,7 +739,7 @@ test('JEVs: a challenge reaches its owner\'s inbox in the same transaction and i
   } finally { await setMode('shadow'); }
 });
 
-test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the member, and the alert goes with the account', async () => {
+test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the member, and the alert is kept when the account goes (053)', async () => {
   await setMode('enforce');
   try {
     const before = (await noticesOf(null)).length;
@@ -762,9 +763,10 @@ test('JEVs: each high-risk item that reaches Aaron alerts his inbox, about the m
     await run({ ...o.ctx, fresh: true }, (t) => jevs.check(t, { action: 'agent.key', subject: ag.id }));
     assert.strictEqual((await noticesOf(null)).slice(before).filter((a) => a.title !== 'A JEVs setting changed').length, 2,
       'still only the hold\'s alert and the first-time alert: the second key is no first');
-    // Deleting the account takes the alert about them with it.
+    // Deleting the account deletes the member's inbox; Aaron's alerts about them are kept, as audit records (053).
     await run({ ...o.ctx, fresh: true }, (t) => store.deleteAccount(t));
-    assert.strictEqual((await q(`select count(*)::int as n from app.notices where subject_id = '${o.id}' or member_id = '${o.id}'`))[0].n, 0);
+    assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id = '${o.id}'`))[0].n, 0);
+    assert.ok((await q(`select count(*)::int as n from app.notices where member_id is null and subject_id = '${o.id}'`))[0].n >= 1);
   } finally {
     await asOwner(`update app.jevs_settings set value = '80' where key = 'high_any'`);
     await setMode('shadow');

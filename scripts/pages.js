@@ -449,12 +449,17 @@ function limits() {
   const pause = lastMatch(/paused_until = now\(\) \+ interval '(\d+) minutes'/, 'the key-file pause');
   const nth = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
   const wrongPin = lastMatch(/if b\.failed >= (\d+) then/, 'the wrong PIN count');
+  // 053 (the STIG, Aaron, Nov 8 and 9): the lock after failed sign-ins, and how long it lasts.
+  const lockAt = lastMatch(/if n >= (\d+) and not exists \(select 1 from app\.signin_locks/, 'the sign-in lock count');
+  const lockFor = lastMatch(/until\) values \(p_member, now\(\), now\(\) \+ interval '(\d+) minutes'\)/, 'the sign-in lock length');
   const ghDaily = Number(must(read('supabase/functions/jevs/gate.mjs').match(/cmd\.daily \?\? (\d+)\)/), 'the GitHub agent default')[1]);
   const rows = [
     ['Signing in to the site (a code, the key file or this browser\u2019s PIN)', per(signin.signin_ip) + ' from one network', 'signin/flow.js'],
     ['One-time sign-in challenges', per(signin.challenge_ip) + ' from one network; each works once, for 2 minutes', 'signin/flow.js'],
-    ['Wrong key files for one username', 'The ' + nth(wrong.value) + ' pauses signing in with a key file for that username for ' + pause.value + ' minutes and tells the member; their browser and a new code still work', wrong.file],
-    ['Wrong PINs', 'The 5th tells you and Aaron; the ' + nth(wrongPin.value) + ' cancels that browser\u2019s key, or the key file it was tried with; a new code always brings you back to the same account', wrongPin.file],
+    ['Key-file tries', per(signin.keyfile_ip) + ' from one network (IPv6 /48, IPv4 /24)', 'signin/flow.js'],
+    ['Wrong key files for one username', 'The ' + nth(wrong.value) + ' pauses signing in with a key file for that username for ' + pause.value + ' minutes and tells the member', wrong.file],
+    ['Failed sign-ins for one account (DISA STIG V-222432)', 'The ' + nth(lockAt.value) + ' within 15 minutes locks signing in to the account for ' + lockFor.value + ' minutes, every way in; browsers already signed in stay signed in; the member and Aaron are told, and Aaron can release it early', lockAt.file],
+    ['Wrong PINs', 'The 5th tells you and Aaron; the ' + nth(wrongPin.value) + ' cancels that browser\u2019s key, or the key file it was tried with; a new code brings you back to the same account once any lock ends', wrongPin.file],
     ['Reports', per(report.report_member) + ' per member, ' + per(report.report_ip) + ' per network', 'api/feed.js'],
     ['Agents registering themselves', per(reg.agent_register_ip) + ' per address, ' + per(reg.agent_register_net) + ' per network, ' + per(reg.agent_register_all) + ' in all', 'api/agents.js'],
     ['An agent asking for sub-agents', per(sub.subagent_agent) + ' per agent', 'api/agents.js'],

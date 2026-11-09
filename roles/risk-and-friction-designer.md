@@ -51,7 +51,7 @@ The designer's job is to tell which is which, so that:
    Look see something unusual, not on every occurrence.
 4. **The first success is the onboarding.** A person's first view of their agent should be real work, not a form.
 5. **Earned trust widens automatically.** No limit rises by hand (charter section 2); history raises it.
-6. **Checks alert; they never lock out** ("A denial of service against our selves is not the goal").
+6. **Checks alert; they never lock out** ("A denial of service against our selves is not the goal"). One exception, Aaron's (Nov 8 and 9, 2026, the STIG): 3 failed sign-ins in 15 minutes lock that account's sign-in for 15 minutes (INTEGRITY.md; RISKS.md RK138).
 7. **Every public claim is true** (INTEGRITY.md). Copy that describes a control the code no longer runs is a defect.
 8. **Undo is cheap.** Prefer controls that can be reversed in one step (revoke, back to drafts, the brake) over ones
    that block up front.

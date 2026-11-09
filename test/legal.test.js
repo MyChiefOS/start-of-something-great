@@ -66,7 +66,11 @@ test('L3: the policies describe the site\'s own sign-in (Aaron, Oct 28) as it is
   // 026: the behaviour watch's keyed hashes, and that it never refuses.
   assert.match(p, /<strong>Behaviour watch<\/strong>: to spot an account being taken over/);
   assert.match(p, /once it has gone 90 days unseen, and all of them with your account/);
-  assert.match(p, /nothing is refused or blocked/);
+  assert.match(p, /nothing is refused or blocked for it/);
+  // 053 (the STIG, V-222432): the one exception, said where the watch is described and in the terms.
+  assert.match(p, /3 failed sign-ins in 15 minutes lock signing in to an account for 15 minutes, every way in/);
+  assert.match(t, /3 failed sign-ins of any kind in 15 minutes also lock signing in to your account for 15 minutes, every way in/);
+  assert.doesNotMatch(t + p, /your browser and a new code still work/);
   // 030: what the web indicators keep, and for how long, as the migration keeps it.
   assert.match(p, /rounded to about 100 km and encrypted, so it is never stored in readable form \(the key is kept in our database host's secret store, so whoever can read that store, our site and the project's owner, could read it\), not used after a day and deleted within about an hour after that/);
   assert.doesNotMatch(p, /our database can't read/);

@@ -103,7 +103,8 @@ if (!SERVER) {
   });
 
   // ---- A browser: its cookies, its key, and requests as /join sends them ----
-  const nextIp = () => { ipN += 1; return '198.19.' + Math.floor(ipN / 250) + '.' + (ipN % 250); };
+  // Each request from its own /24 (053 limits key-file tries per /24 and per /48).
+  const nextIp = () => { ipN += 1; return '198.19.' + (ipN % 250) + '.' + (1 + Math.floor(ipN / 250)); };
   function req(method, url, { cookie = '', origin = ORIGIN, body, ip = nextIp(), country } = {}) {
     const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': ip, 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' };
     if (origin) headers.origin = origin;
@@ -141,6 +142,11 @@ if (!SERVER) {
   const challenge = async (b, opts = {}) => (await call(b, 'challenge', '/auth/challenge', opts)).challenge;
   const me = async (b) => { const r = res(); await flow.me(req('GET', '/auth/me', { cookie: b.header() }), r); return JSON.parse(r.body); };
   const owner = async (q) => [...await su.unsafe(q)];
+  // 053 (Aaron, Nov 8: "Follow the STIG guidelines", V-222432): 3 failed sign-ins in 15 minutes lock the account, every
+  // way in, for 15 minutes. These stand in for the 15 minutes passing.
+  const passLock = (id) => su.unsafe(`update app.signin_failures set at = at - interval '16 minutes' where member_id = '${id}';
+    update app.signin_locks set until = now() - interval '1 second' where member_id = '${id}'`);
+  const audited = async (id, action) => (await owner(`select count(*)::int as n from app.audit_log where subject_id = '${id}' and action = '${action}'`))[0].n;
   const post = (id, login, body) => {
     n += 1;
     return G.handle(su, { event: 'discussion_comment', action: 'created', mode: 'enforce', discussion: 1,
@@ -321,34 +327,49 @@ if (!SERVER) {
     assert.ok(sessions >= 1);
   });
 
-  test('wrong PINs in this browser: the 5th tells Aaron and the member, the 10th cancels this browser\'s key; GitHub still signs in, and the key file adds the browser again', async () => {
+  test('wrong PINs in this browser: the 3rd locks the account for 15 minutes (V-222432), the 5th tells Aaron and the member, the 10th cancels this browser\'s key; after the lock GitHub signs in, and the key file adds the browser again', async () => {
     const b = browser();
     await lane1(b, { id: 9006, login: 'forgetful', file: FILE_A });
     const id = (await me(b)).member_id;
     signedOut(b);
     const keyId = b.keyId;
-    // A right PIN resets the count: 4 wrong, then right, then 9 wrong still leaves the key.
-    for (let i = 0; i < 4; i++) assert.strictEqual((await lane3(b, { pin: '246813' })).tries_left, 9 - i);
+    // A right PIN resets the count: 3 wrong, then (after the lock) right, then 9 wrong still leaves the key.
+    for (let i = 0; i < 2; i++) assert.strictEqual((await lane3(b, { pin: '246813' })).tries_left, 9 - i);
+    assert.strictEqual((await lane3(b, { pin: '246813' })).refused, 'locked', 'the 3rd makes the lock, and the answer says so');
+    // The 3rd failure locked the account (V-222432). While it is locked no PIN is tested or counted: the right PIN and a
+    // wrong one get the same answer, so a guesser learns nothing (the review of 053, H1). Each failure, the lock and each
+    // refusal are in the audit log, as failures.
+    const failedNow = async () => (await owner(`select failed from app.browser_keys where id = '${keyId}'`))[0].failed;
+    assert.strictEqual((await lane3(b)).refused, 'locked', 'the right PIN');
+    assert.strictEqual((await lane3(b, { pin: '246813' })).refused, 'locked', 'a wrong PIN, the same answer');
+    assert.strictEqual(await failedNow(), 3, 'and nothing was counted');
+    assert.deepStrictEqual([await audited(id, 'signin.failed'), await audited(id, 'signin.locked'), await audited(id, 'signin.refused')], [3, 1, 2]);
+    await passLock(id);
     assert.strictEqual((await lane3(b)).signed_in, true);
     signedOut(b);
     const alerts = async () => (await owner(`select title from app.notices where member_id is null and kind = 'alert' and subject_id = '${id}' and dedupe_key like 'watch:pin%' order by created_at`)).map((r) => r.title);
-    const notes = async () => (await owner(`select title from app.notices where member_id = '${id}' and kind = 'signin_pin' order by created_at`)).map((r) => r.title);
+    const notes = async () => (await owner(`select title from app.notices where member_id = '${id}' and kind = 'signin_pin' and title <> 'Sign-in locked for 15 minutes' order by created_at`)).map((r) => r.title);
     for (let i = 1; i <= 9; i++) {
+      // Every 3rd failure locks the account for 15 minutes (stood in for here); the key's own count goes on.
+      if (i > 1 && (i - 1) % 3 === 0) await passLock(id);
       const r = await lane3(b, { pin: '246813' });
-      assert.strictEqual(r.tries_left, 10 - i, 'try ' + i);
+      if (i % 3 === 0) assert.strictEqual(r.refused, 'locked', 'try ' + i + ' makes the lock');
+      else assert.strictEqual(r.tries_left, 10 - i, 'try ' + i);
       if (i === 4) assert.deepStrictEqual(await alerts(), [], 'nothing before the 5th');
       if (i === 5) {
         assert.deepStrictEqual(await alerts(), ['Wrong PINs for one account'], 'the 5th alerts Aaron');
         assert.deepStrictEqual(await notes(), ['Wrong PINs were tried'], 'and tells the member in-app');
       }
     }
+    assert.strictEqual((await lane3(b, { pin: '246813' })).refused, 'locked', 'the 9th locked it again');
+    await passLock(id);
     const tenth = await lane3(b, { pin: '246813' });
     assert.strictEqual(tenth.cancelled, true, 'the 10th cancels this browser\'s key');
     assert.deepStrictEqual(await alerts(), ['Wrong PINs for one account', 'A member\'s browser key was cancelled']);
     assert.deepStrictEqual(await notes(), ['Wrong PINs were tried', 'A browser of yours was cancelled']);
     assert.strictEqual((await owner(`select count(*)::int as n from app.browser_keys where id = '${keyId}'`))[0].n, 0);
     assert.strictEqual((await lane3(b)).no_key, true, 'even the right PIN no longer works with that key');
-    // Never locked out: the key file and PIN add this browser again, and GitHub always works.
+    // The key file and PIN add this browser again, and GitHub works.
     assert.strictEqual((await lane2(b, { login: 'forgetful', file: FILE_A })).signed_in, true);
     assert.strictEqual((await me(b)).member_id, id);
     const c2 = browser();
@@ -356,19 +377,34 @@ if (!SERVER) {
     assert.strictEqual((await me(c2)).member_id, id, 'the same account');
   });
 
-  test('wrong PINs with the key file: the 5th alerts, the 10th cancels the key file; the GitHub lane still works and sets a new PIN', async () => {
+  test('wrong PINs with the key file: the 3rd locks the account for 15 minutes, the 5th alerts, the 10th cancels the key file; then the GitHub lane works and sets a new PIN', async () => {
     const b = browser();
     await lane1(b, { id: 9007, login: 'filepin', file: FILE_A });
     const id = (await me(b)).member_id;
     const thief = browser();
-    for (let i = 1; i <= 9; i++) assert.strictEqual((await lane2(thief, { login: 'filepin', file: FILE_A, pin: '975318' })).tries_left, 10 - i);
+    const pinFailed = async () => (await owner(`select pin_failed from app.file_keys where member_id = '${id}'`))[0].pin_failed;
+    for (let i = 1; i <= 9; i++) {
+      if (i === 4) {
+        // The 3rd failure locked the account, every way in (V-222432): with the right file, the right PIN and a wrong one
+        // get the same answer and nothing is counted; the member's own browser is locked too (the review of 053, H1).
+        assert.strictEqual((await lane2(thief, { login: 'filepin', file: FILE_A, pin: '975318' })).refused, 'locked');
+        assert.strictEqual((await lane2(thief, { login: 'filepin', file: FILE_A })).refused, 'locked', 'the right PIN, the same answer');
+        assert.strictEqual(await pinFailed(), 3, 'nothing counted while locked');
+        assert.strictEqual((await lane3(b)).refused, 'locked', 'locked, every way in');
+      }
+      if (i > 1 && (i - 1) % 3 === 0) await passLock(id);
+      const r = await lane2(thief, { login: 'filepin', file: FILE_A, pin: '975318' });
+      if (i % 3 === 0) assert.strictEqual(r.refused, 'locked', 'try ' + i + ' makes the lock');
+      else assert.strictEqual(r.tries_left, 10 - i, 'try ' + i);
+    }
+    await passLock(id);
     const alerts = (await owner(`select title from app.notices where member_id is null and subject_id = '${id}' and dedupe_key like 'watch:pin5:file:%'`)).map((r) => r.title);
     assert.deepStrictEqual(alerts, ['Wrong PINs for one account']);
     const tenth = await lane2(thief, { login: 'filepin', file: FILE_A, pin: '975318' });
     assert.strictEqual(tenth.start_again, true);
     assert.strictEqual((await owner(`select count(*)::int as n from app.file_keys where member_id = '${id}'`))[0].n, 0, 'the key file is cancelled');
     assert.match((await lane2(browser(), { login: 'filepin', file: FILE_A })).error, /don’t match/, 'even with the right PIN');
-    assert.strictEqual((await lane3(b)).signed_in, true, 'the member\'s own browser still signs in: it was never the key file that was tried');
+    assert.strictEqual((await lane3(b)).signed_in, true, 'the member\'s own browser still signs in');
     const back = browser();
     assert.strictEqual((await lane1(back, { id: 9007, login: 'filepin', file: FILE_B, pin: '520741' })).signed_in, true, 'GitHub, a new file and a new PIN');
     assert.strictEqual((await me(back)).member_id, id);
@@ -529,7 +565,7 @@ if (!SERVER) {
     assert.match(read('signin/flow.js'), /if \(!pub \|\| !c\.p256Verify\(/);
   });
 
-  test('the review of 037, M3 (Aaron, Nov 5): 3 wrong key files tell the member and pause the key file for 10 minutes for that username only; a stranger can\'t cancel it or shut the member out', async () => {
+  test('the review of 037, M3 (Aaron, Nov 5), with 053 (Nov 8, the STIG): 3 wrong key files tell the member, pause the key file for 10 minutes and lock the account for 15; a stranger can\'t cancel the key file', async () => {
     const b = browser();
     await lane1(b, { id: 9302, login: 'm3member', file: FILE_A });
     const id = (await me(b)).member_id;
@@ -538,15 +574,19 @@ if (!SERVER) {
     const answers = [];
     for (let round = 0; round < 4; round++) {
       for (let i = 0; i < 3; i++) answers.push(await lane2(stranger, { login: 'm3member', file: sha('guess ' + round + ' ' + i) }));
-      // The member's own browser and GitHub still work while it is paused.
+      // Aaron, Nov 8 (V-222432): the account is locked, every way in, this browser too, for 15 minutes; the member and
+      // Aaron are told. (Before, under "checks alert, never lock out", this browser and GitHub stayed open.)
       if (round === 0) {
-        assert.strictEqual((await lane3(b)).signed_in, true, 'this browser (lane 3) stays open');
-        signedOut(b);
-        assert.strictEqual((await lane2(browser(), { login: 'm3member', file: FILE_A })).paused, true, 'even the right file waits out the pause');
+        assert.strictEqual((await lane3(b)).refused, 'locked', 'this browser (lane 3) is locked too');
+        assert.strictEqual((await owner(`select count(*)::int as n from app.notices where member_id = '${id}' and title = 'Sign-in locked for 15 minutes'`))[0].n, 1);
+        assert.strictEqual(await audited(id, 'signin.locked'), 1);
+        assert.strictEqual((await lane2(browser(), { login: 'm3member', file: FILE_A })).refused, 'locked', 'even the right file waits out the lock');
       }
       await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${id}'`);
+      await passLock(id);
     }
-    assert.strictEqual(answers.filter((a) => a.paused).length, 4, 'every 3rd wrong file pauses it, 12 in all');
+    // Each 3rd wrong file pauses the key file; these 3 came fast, so they also locked the account, and the answer says so.
+    assert.strictEqual(answers.filter((a) => a.refused === 'locked').length, 4, 'every 3rd wrong file pauses it and, this fast, locks the account');
     assert.ok(!answers.some((a) => a.start_again), 'wrong files never cancel the key file');
     assert.strictEqual((await owner(`select count(*)::int as n from app.file_keys where member_id = '${id}'`))[0].n, 1);
     const notes = await owner(`select title from app.notices where member_id = '${id}' and title = 'Key-file sign-in paused for 10 minutes'`);
@@ -554,11 +594,55 @@ if (!SERVER) {
     assert.strictEqual((await lane2(browser(), { login: 'm3member', file: FILE_A })).signed_in, true, 'after the pause the right file works');
     const c2 = browser();
     assert.strictEqual((await lane1(c2, { id: 9302, login: 'm3member', file: FILE_A })).signed_in, true, 'and GitHub always did');
+    // 053: a new code is refused while the account is locked, and that refusal is recorded too (the second review of 053, 6).
+    for (let i = 0; i < 3; i++) await lane2(stranger, { login: 'm3member', file: sha('code lane ' + i) });
+    assert.strictEqual((await lane1(browser(), { id: 9302, login: 'm3member', file: FILE_A })).refused, 'locked');
+    assert.ok((await owner(`select count(*)::int as n from app.audit_log where subject_id = '${id}' and action = 'signin.refused' and detail->>'lane' = 'code'`))[0].n >= 1);
+    await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${id}'`);
+    await passLock(id);
+    // 053 (V-222462): a key file for a username nobody has is recorded too, with no account to count against.
+    const before = (await owner(`select count(*)::int as n from app.audit_log where action = 'signin.failed' and subject_id is null and detail->>'reason' = 'no_account'`))[0].n;
+    assert.match((await lane2(browser(), { login: 'nobody-here-053', file: FILE_A })).error, /don’t match/);
+    assert.strictEqual((await owner(`select count(*)::int as n from app.audit_log where action = 'signin.failed' and subject_id is null and detail->>'reason' = 'no_account'`))[0].n, before + 1);
     // Only that username is paused.
     const other = browser();
     await lane1(other, { id: 9303, login: 'm3other', file: FILE_B });
     for (let i = 0; i < 3; i++) await lane2(stranger, { login: 'm3member', file: sha('again ' + i) });
-    assert.strictEqual((await lane2(browser(), { login: 'm3other', file: FILE_B })).signed_in, true, 'another member\'s key file is untouched');
+    assert.strictEqual((await lane2(browser(), { login: 'm3other', file: FILE_B })).signed_in, true, 'another member\'s account is untouched');
+  });
+
+  test('the third review of 053, M1: 3 wrong key files more than 15 minutes apart pause the key file but lock nothing, and the words say only that', async () => {
+    const b = browser();
+    await lane1(b, { id: 9310, login: 'slowguess', file: FILE_A });
+    const id = (await me(b)).member_id;
+    signedOut(b);
+    const stranger = browser();
+    const older = () => su.unsafe(`update app.signin_failures set at = at - interval '16 minutes' where member_id = '${id}'`);
+    for (let i = 0; i < 2; i++) { await lane2(stranger, { login: 'slowguess', file: sha('slow ' + i) }); await older(); }
+    const third = await lane2(stranger, { login: 'slowguess', file: sha('slow 2') });
+    assert.strictEqual(third.paused, true, 'paused, not locked');
+    assert.doesNotMatch(third.error, /locked/);
+    assert.strictEqual((await owner(`select count(*)::int as n from app.signin_locks where member_id = '${id}'`))[0].n, 0);
+    const [note] = await owner(`select body from app.notices where member_id = '${id}' and title = 'Key-file sign-in paused for 10 minutes' order by created_at desc limit 1`);
+    assert.match(note.body, /still sign you in/);
+    assert.doesNotMatch(note.body, /locked/);
+    assert.strictEqual((await lane3(b)).signed_in, true, 'the member\'s own browser signs in');
+  });
+
+  test('the fourth review of 053, L-1: whichever wrong try makes the lock answers "locked", never "try again" or "get a new code"', async () => {
+    const b = browser();
+    await lane1(b, { id: 9311, login: 'mixedtries', file: FILE_A });
+    const id = (await me(b)).member_id;
+    signedOut(b);
+    for (let i = 0; i < 2; i++) assert.ok((await lane3(b, { pin: '246813' })).tries_left > 0);
+    // A wrong key file is the 3rd failure in 15 minutes: the answer is the lock, not "don't match".
+    assert.strictEqual((await lane2(browser(), { login: 'mixedtries', file: sha('mixed') })).refused, 'locked');
+    assert.strictEqual((await owner(`select count(*)::int as n from app.signin_locks where member_id = '${id}'`))[0].n, 1);
+    await passLock(id);
+    // The same with a wrong PIN as the 3rd.
+    await lane2(browser(), { login: 'mixedtries', file: sha('mixed 2') });
+    await lane3(b, { pin: '246813' });
+    assert.strictEqual((await lane3(b, { pin: '246813' })).refused, 'locked');
   });
 
   test('the review of 037, L1: a sign-in the database refuses (a banned member) still uses up its challenge, so the same signed request never works again', async () => {
@@ -655,10 +739,22 @@ if (!SERVER) {
     assert.strictEqual((await lane3(b, { pin: '864209' })).signed_in, true, 'the new PIN signs in');
     // 10 wrong current PINs sign that session out (the account stays open).
     let last;
-    for (let i = 0; i < 10; i++) last = await form(b, 'pinChange', '/auth/account/pin', { current: '000002', next: '975318', again: '975318' });
+    // Wrong current PINs are failed checks too: the 3rd locks the account (V-222432), and while it is locked no current
+    // PIN is tested or counted; this browser stays signed in (the review of 053, H1).
+    for (let i = 0; i < 3; i++) last = await form(b, 'pinChange', '/auth/account/pin', { current: '000002', next: '975318', again: '975318' });
+    assert.strictEqual(last, '/account?error=pin_locked#pin', 'the 3rd makes the lock, and says so');
+    assert.strictEqual(await form(b, 'pinChange', '/auth/account/pin', { current: '864209', next: '975318', again: '975318' }), '/account?error=pin_locked#pin', 'even the right PIN, while locked');
+    assert.strictEqual((await me(b)).signed_in, true, 'still signed in');
+    const acct = (await owner(`select member_id from app.browser_keys where id = '${b.keyId}'`))[0].member_id;
+    // Past each lock (stood in for here), 10 wrong current PINs sign that session out (the account stays open).
+    for (let i = 3; i < 10; i++) {
+      if (i % 3 === 0) await passLock(acct);
+      last = await form(b, 'pinChange', '/auth/account/pin', { current: '000002', next: '975318', again: '975318' });
+    }
     assert.strictEqual(last, '/join?error=pin_signed_out');
     assert.strictEqual((await me(b)).signed_in, false);
-    assert.strictEqual((await lane3(b, { pin: '864209' })).signed_in, true, 'and signs straight back in');
+    // The last lock was passed before the 10th, so the member signs straight back in.
+    assert.strictEqual((await lane3(b, { pin: '864209' })).signed_in, true, 'and signs back in');
     // Sign out everywhere: every session, the key file and every browser key go; GitHub brings the member back.
     const out = res(); await flow.logout(req('POST', '/auth/logout-all', { cookie: b.header() }), out, true); b.take(out);
     assert.strictEqual((await owner(`select count(*)::int as n from app.browser_keys where id = '${b.keyId}'`))[0].n, 0, 'every browser key of the member is gone');
