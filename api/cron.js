@@ -58,6 +58,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
     // it opens an issue if the checks haven't finished for 3 hours (the fresh review of round 1). This route logs
     // nothing (027).
   }
+  // The points against the points ledger, row by row (052): an alert to Aaron at most once a day if they differ. Its
+  // own transaction; it changes nothing, and a failure changes nothing else.
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.work_ledger_alert()`);
+  } catch { /* logs nothing (027) */ }
   // Review oversight (041): the 5% sample of low-risk posts for Second Look to re-read, and the alerts to Aaron (in-app,
   // once a day each while they hold). The database runs it at most once every 10 minutes, in its own transaction; a
   // failure here changes nothing else and this reply stays the same.

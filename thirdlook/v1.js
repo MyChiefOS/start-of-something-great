@@ -51,6 +51,10 @@ function diffText(files) {
   let truncated = false;
   for (const f of Array.isArray(files) ? files : []) {
     if (!f || typeof f.filename !== 'string') continue;
+    // A file GitHub gives no text diff for (a binary file, or a change too large to show) is a change Third Look can't
+    // see, so the work is never passed on it (the fresh review of #112 to #116, M3). A rename with no changes has
+    // nothing to see.
+    if (typeof f.patch !== 'string' && !(f.status === 'renamed' && Number(f.changes) === 0)) truncated = true;
     const part = '--- ' + f.filename.slice(0, 300) + ' (' + String(f.status || 'changed').slice(0, 20) + ')\n' + (typeof f.patch === 'string' ? f.patch : '[no text diff]') + '\n';
     if (out.length + part.length > MAX_DIFF) { out += part.slice(0, Math.max(0, MAX_DIFF - out.length)); truncated = true; break; }
     out += part;

@@ -217,6 +217,15 @@ test('From my network: a ring of 20 gets nothing from an honest viewer; trust ha
   const t = out.json.citizens.map((x) => x.trust);
   assert.strictEqual(t[0], 100);
   assert.ok(t[1] < t[0] && t[2] < t[1]);
+  // A banned member is left out of the network, as the board leaves them out (052; the review of 044 to 049, L2).
+  const setStatus = (st) => su.begin(async (x) => {
+    await x.unsafe('alter table app.members disable trigger members_guard');
+    await x.unsafe(`update app.members set status = '${st}' where id = '${chain[1].id}'`);
+    await x.unsafe('alter table app.members enable always trigger members_guard');
+  });
+  await setStatus('banned'); // as a ban leaves it
+  assert.ok(!(await work('network', { cookie: viewer.cookie })).json.citizens.some((x) => x.id === chain[1].id), 'a banned member doesn’t show');
+  await setStatus('active');
   // The ring's own members see each other: the rule is about honest viewers.
   const inRing = await work('network', { cookie: ring[0].cookie });
   assert.ok(inRing.json.citizens.length > 0);
