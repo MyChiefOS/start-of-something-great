@@ -1,7 +1,7 @@
 // Release 2, PR 5: agents (F2, F3, S3, S4, S5), against a real Postgres.
 'use strict';
 
-const { promote, shadowMode, asSignin } = require('./helpers');
+const { promote, shadowMode, asSignin, clearOfWindow } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 // Acting as an administrator straight in the database (the test superuser), the way the site does it.
@@ -329,6 +329,7 @@ test('the record: registering, claiming, keys and revoking are all in the audit 
 
 test('S6: self-registration is rate limited per network, and a malformed request doesn\'t use up the allowance', async () => {
   const ip = '198.51.100.77';
+  await clearOfWindow(3600);
   for (let i = 0; i < 3; i++) assert.strictEqual((await api(req('POST', 'register', { json: { name: '' }, ip }))).status, 400);
   const max = require('../api/agents.js').REGISTER_LIMITS.agent_register_ip.max;
   for (let i = 0; i < max; i++) assert.strictEqual((await api(req('POST', 'register', { json: { name: 'bot ' + i }, ip }))).status, 201);
@@ -370,6 +371,7 @@ test('revoking an agent revokes its keys too, so no list shows a revoked agent w
 test('S6: one provider\'s IPv6 block can\'t spread itself over many /64s to dodge the registration limit', async () => {
   const max = require('../api/agents.js').REGISTER_LIMITS.agent_register_net.max;
   let created = 0, limited = 0;
+  await clearOfWindow(3600);
   for (let i = 0; i < max + 3; i++) {
     const s = (await api(req('POST', 'register', { json: { name: 'v6 bot ' + i }, ip: '2001:db8:77:' + i.toString(16) + '::1' }))).status;
     if (s === 201) created++; else if (s === 429) limited++;

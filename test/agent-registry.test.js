@@ -22,7 +22,7 @@ const agentsDb = require('../db/agents');
 const agentkey = require('../signin/agentkey');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
-const { promote, shadowMode, asSignin } = require('./helpers');
+const { promote, shadowMode, asSignin, clearOfWindow } = require('./helpers');
 const controls = require('../db/controls');
 const jevsDb = require('../db/jevs');
 
@@ -554,6 +554,7 @@ test('L1: there is no recovery limit for everyone: junk from many networks doesn
   ip += 256;
   const fixed = { ...req('POST', 'recover', { json: { recovery_key: 'dogr_' + c.token(32) } }) };
   const codes = [];
+  await clearOfWindow(3600);
   for (let i = 0; i < 11; i++) { const r = { ...fixed, body: JSON.stringify({ recovery_key: 'dogr_' + c.token(32) }) }; codes.push((await api(r)).status); }
   assert.deepStrictEqual([codes.slice(0, 10).every((x) => x === 404), codes[10]], [true, 429]);
 });
