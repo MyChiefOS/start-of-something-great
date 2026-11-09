@@ -124,7 +124,11 @@ async function publicDecisions() {
 }
 const letters = (k) => Array.from(crypto.randomBytes(k), (x) => String.fromCharCode(97 + (x % 26))).join('');
 const links = (n) => Array.from({ length: n }, () => 'https://' + letters(8) + '.example/' + letters(10)).join(' ');
-const unique = () => Array.from({ length: 40 }, () => letters(7)).join(' ');
+// Random words, so no post reads as a copy of another to J09 (word prints within 10 of 64 bits). The links' shared
+// "https" and "example" pull prints together: with 40 words, 3.7 in 10,000 pairs of these posts came within 10 bits
+// (measured Nov 9, after a CI run failed on one), with 300, 2 in 8 million. 300 words of 7 letters stay under the
+// 5,000-character limit.
+const unique = () => Array.from({ length: 300 }, () => letters(7)).join(' ');
 // A post JEVs holds for links alone (J07), the kind Second Look may look at.
 const held = async (poster, words = 'Notes from the meetup are on these pages') => {
   const r = await feed('POST', { cookie: poster.cookie, json: { body: words + ', ' + unique() + ' ' + links(4) } });
