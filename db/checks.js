@@ -34,6 +34,23 @@ const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_dele
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
 // Each is pinned to the one narrow role it must run as.
 const DEFINERS = {
+  // 053, audit logging (NIST SP 800-53 AU, the DISA application STIG): the audit log's own triggers and helpers, and
+  // the four the site calls (the session sweep, the hourly upkeep, an administrator's read and a lock's release).
+  'app.audit_fill()': { owner: 'dog_owner', callers: '' },
+  'app.audit_net_add()': { owner: 'dog_owner', callers: '' },
+  'app.audit_add(text, text, uuid, jsonb, text)': { owner: 'dog_owner', callers: 'dog_signin' },
+  'app.signin_is_locked(uuid)': { owner: 'dog_owner', callers: 'dog_signin' },
+  'app.signin_locks_open()': { owner: 'dog_owner', callers: 'dog_app' },
+  'app.keyfile_unpause(uuid)': { owner: 'dog_signin', callers: 'dog_owner' },
+  'app.signin_failed(uuid, text, text)': { owner: 'dog_owner', callers: '' },
+  'app.signin_keys_audit()': { owner: 'dog_owner', callers: '' },
+  'app.sessions_audit()': { owner: 'dog_owner', callers: '' },
+  'app.members_rename_audit()': { owner: 'dog_owner', callers: '' },
+  'app.work_audit()': { owner: 'dog_owner', callers: '' },
+  'app.session_sweep()': { owner: 'dog_owner', callers: 'dog_app' },
+  'app.signin_unlock(uuid, text)': { owner: 'dog_owner', callers: 'dog_app' },
+  'app.audit_admin_read(text)': { owner: 'dog_owner', callers: 'dog_app' },
+  'app.audit_upkeep_run()': { owner: 'dog_owner', callers: 'dog_app' },
   'app.rate_limit_hit(text, text, integer, integer)': 'dog_signin',
   'app.email_token_issue(text, text, text, smallint)': 'dog_signin',
   'app.email_token_redeem(text, text, boolean)': 'dog_signin',

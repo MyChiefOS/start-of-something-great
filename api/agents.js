@@ -621,3 +621,5 @@ module.exports.ROUTES = ROUTES;
 module.exports.REGISTER_LIMITS = REGISTER_LIMITS;
 module.exports.SUBAGENT_LIMITS = SUBAGENT_LIMITS;
 module.exports.RECOVER_LIMITS = RECOVER_LIMITS;
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

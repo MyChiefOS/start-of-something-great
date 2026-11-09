@@ -59,7 +59,7 @@ async function signIn(t, { provider, fingerprints, keyVersion, level, displayNam
         ${args.level}::smallint, ${args.name}, ${args.session}, ${args.days}::integer, ${args.recheck}::timestamptz, null::uuid, ${args.region})`);
       return { memberId: r.member_id, isNew: r.is_new, trustLevel: r.trust_level, isAdmin: r.is_admin };
     } catch (e) {
-      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region', 'admin_code_only'].includes(e.message)) return { refused: e.message };
+      if (e.code === 'P0001' && ['banned', 'disabled', 'taken', 'region', 'admin_code_only', 'locked'].includes(e.message)) return { refused: e.message };
       if (e.code === '23505' && attempt === 0) continue;
       throw e;
     }
@@ -230,7 +230,7 @@ const proof = ({ challenge, origin, signature }) => ({
   signature: bytes('signature', signature, 64)
 });
 const region = (r) => (r === null ? null : v.text('region', r, { min: 2, max: 2, pattern: /^[A-Z]{2}$/ }));
-const REFUSALS = ['banned', 'disabled', 'taken', 'region'];
+const REFUSALS = ['banned', 'disabled', 'taken', 'region', 'locked'];
 // Since the review of 037 (L1) a refusal by the sign-in itself comes back as a status, not an error, so the challenge
 // stays used up: it reads { refused } as before.
 const out = (r) => (REFUSALS.includes(r.status) ? { refused: r.status }

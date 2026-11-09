@@ -58,6 +58,15 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
     // it opens an issue if the checks haven't finished for 3 hours (the fresh review of round 1). This route logs
     // nothing (027).
   }
+  // Audit upkeep (053): sessions past their end are swept, so each expiry is in the audit log; once an hour, request
+  // records a year old are deleted and the database's size is checked against its plan (an alert at 75%). Each in its
+  // own transaction; a failure changes nothing else.
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.session_sweep()`);
+  } catch { /* logs nothing (027) */ }
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.audit_upkeep_run()`);
+  } catch { /* logs nothing (027) */ }
   // The points against the points ledger, row by row (052): an alert to Aaron at most once a day if they differ. Its
   // own transaction; it changes nothing, and a failure changes nothing else.
   try {
@@ -108,3 +117,5 @@ module.exports = async (req, res) => {
 };
 module.exports.handle = handle;
 module.exports._reset = () => { lastAsked = 0; };
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

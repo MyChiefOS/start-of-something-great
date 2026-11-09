@@ -8,6 +8,7 @@
 'use strict';
 
 const postgres = require('postgres');
+const { AsyncLocalStorage } = require('async_hooks');
 const v = require('./validate');
 
 // Connection poolers we accept, by host name and port. Supabase: its shared pooler (Supavisor) in transaction
@@ -132,6 +133,32 @@ function context(ctx) {
   return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '', keyHash: keyHash || '' };
 }
 
+// The request behind each database call, for the audit log (053; Aaron, Nov 8: NIST SP 800-53 AU-3 and the DISA
+// application STIG, V-222447, V-222448, V-222470): the connecting address, as Vercel itself sets it
+// (x-vercel-forwarded-for, which a visitor can't supply), the user agent, the referrer, the method, the path (no query
+// string, so no codes or keys in it) and the host. Each API route runs inside withRequest; every transaction then
+// hands these to the database, which copies them beside each audit row it writes and keeps them a year.
+const requests = new AsyncLocalStorage();
+const cut = (x, n) => (typeof x === 'string' ? x.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, n) : '');
+// The referring page without its query or fragment: a search's words never reach the audit log (the review of 053, L2).
+function origPath(u) {
+  if (typeof u !== 'string' || !u) return '';
+  try { const x = new URL(u); return x.origin + x.pathname; } catch { return ''; }
+}
+function requestOf(req) {
+  if (!req || !req.headers) return null;
+  const h = req.headers;
+  let ip = String(h['x-vercel-forwarded-for'] || '').split(',')[0].trim();
+  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (mapped) ip = mapped[1];
+  if (!/^(\d{1,3}(\.\d{1,3}){3}|[0-9a-fA-F:]{2,45})$/.test(ip)) ip = '';
+  return { ip, ua: cut(h['user-agent'], 512), referer: cut(origPath(h.referer || h.referrer), 512), method: cut(req.method, 10),
+    path: cut(String(req.url || '').split('?')[0], 300), host: cut(h.host, 100) };
+}
+const withRequest = (req, fn) => requests.run(requestOf(req), fn);
+// An API route's entry, run inside its request (its other exports, such as handle, are kept on it).
+const entry = (fn) => Object.assign(function (req, res) { return withRequest(req, () => fn.call(this, req, res)); }, fn);
+
 // Runs fn inside one transaction as dog_app, acting as the caller only if the database accepts the proof (fix 3, 019):
 // app.act_as looks the session or agent key up itself, sets who is acting for this transaction only and stamps it, so
 // nothing the site sets by hand counts. Every setting is written every time, including empty ones, so a pooled
@@ -144,6 +171,10 @@ async function tx(sql, ctx, fn) {
     // session-level locks. The search path is fixed so no other schema's functions can stand in for Postgres's own.
     await t`close all`;
     await t`set local role dog_app`;
+    const r = requests.getStore() || {};
+    await t`select set_config('app.req_ip', ${r.ip || ''}, true), set_config('app.req_ua', ${r.ua || ''}, true),
+                   set_config('app.req_referer', ${r.referer || ''}, true), set_config('app.req_method', ${r.method || ''}, true),
+                   set_config('app.req_path', ${r.path || ''}, true), set_config('app.req_host', ${r.host || ''}, true)`;
     await t`select set_config('app.note', ${c.note}, true),
                    set_config('app.stamp', '', true),
                    set_config('search_path', 'pg_catalog', true),
@@ -171,4 +202,4 @@ async function ping(url, { connectImpl = connect } = {}) {
   try { const [r] = await sql`select 1 as one`; return Boolean(r && r.one === 1); } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping, retryRefused, passwordRefused };
+module.exports = { pooledUrl, connect, tls, tx, run, withRequest, requestOf, entry, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping, retryRefused, passwordRefused };

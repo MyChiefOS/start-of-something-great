@@ -400,3 +400,5 @@ module.exports = async (req, res) => {
 };
 module.exports.setReadPosts = setReadPosts;
 module.exports.POSTS_CACHE_MS = POSTS_CACHE_MS;
+// Every database call in this route knows its request, for the audit log (053).
+module.exports = require('../db').entry(module.exports);

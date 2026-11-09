@@ -7,6 +7,7 @@
     expired: 'That sign-in took too long or was already used. Please start again.',
     provider: 'We couldn’t confirm your account with that provider. Please try again.',
     unavailable: 'Sign-in isn’t available for this account right now.',
+    locked: 'Signing in to this account is locked for 15 minutes, after 3 failed attempts. Browsers already signed in stay signed in. Please try again later.',
     taken: 'That account is already linked to a different member.',
     slow: 'Too many tries in a short time. Please wait a few minutes.',
     email: 'That doesn’t look like an email address.',
@@ -285,7 +286,7 @@
       // then, and carry on with the same code once they confirm (the CSO's re-check, N1).
       if (d.region) { clearInterval(timer); timer = null; document.getElementById('code-wait').textContent = ''; askRegion(d.region, 'finish'); return; }
       if (d.declined) { stop(); forget(); codeShown = false; layout(); say('Day One Great isn\u2019t offered where you live, so we can\u2019t sign you up.', 'declined'); return; }
-      if (d.refused) { stop(); forget(); codeShown = false; layout(); say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn\u2019t available for this account right now.', 'refused'); return; }
+      if (d.refused) { stop(); forget(); codeShown = false; layout(); say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : d.refused === 'locked' ? 'Signing in to this account is locked for 15 minutes, after 3 failed attempts. Browsers already signed in stay signed in. Please try again later.' : 'Sign-in isn\u2019t available for this account right now.', 'refused'); return; }
       if (d.expired) { gone(); return; }
       // Claimed: the PIN is set on /join/pin (M1), which finishes the sign-in with this browser's new key.
       if (d.claimed) { stop(); say('Your post was found. Taking you to set your PIN\u2026', 'claimed'); toPin('step=set'); return; }

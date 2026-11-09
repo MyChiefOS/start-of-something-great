@@ -36,6 +36,7 @@
     'error=pin_weak': 'Nothing was changed: please choose a PIN that’s harder to guess (not one digit repeated, a run like 123456, or a short pattern repeated).',
     'error=pin_again': 'Nothing was changed: the two new PINs weren’t the same.',
     'error=pin_none': 'You don’t have a PIN yet: you set one at your next sign-in.',
+    'error=pin_locked': 'Nothing was changed: signing in to this account is locked for 15 minutes after 3 failed attempts. This browser stays signed in; try again then.',
     'error=browser': 'Nothing was removed: that browser isn’t on your account any more.',
   };
   var note = q.get('saved') ? NOTES['saved=' + q.get('saved')] : q.get('error') ? NOTES['error=' + q.get('error')] : null;

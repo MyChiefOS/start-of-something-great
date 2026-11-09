@@ -283,8 +283,12 @@ if (!SERVER) {
     assert.deepStrictEqual(await alerts('watch:afterfail:%', m.id), [], 'two wrong ones: an ordinary mistake');
     // Aaron, Nov 5: the 3rd wrong one pauses key-file sign-in for 10 minutes; the right file after the pause alerts.
     for (let i = 0; i < 3; i++) await tryFile(c.sha256hex('wrong again ' + i));
-    assert.strictEqual((await tryFile(file)).status, 'paused');
+    // 053 (the STIG): the same 3 lock the account for 15 minutes, and while locked not even the right file is tried (the
+    // review of 053, H1); the lock and the pause are stood in for here.
+    assert.strictEqual((await tryFile(file)).refused, 'locked');
     await owner(`update app.file_keys set paused_until = now() - interval '1 second' where member_id = '${m.id}'`);
+    await owner(`update app.signin_failures set at = at - interval '16 minutes' where member_id = '${m.id}'`);
+    await owner(`update app.signin_locks set until = now() - interval '1 second' where member_id = '${m.id}'`);
     assert.strictEqual((await tryFile(file)).status, 'ok', 'signed in');
     assert.deepStrictEqual(await alerts('watch:afterfail:%', m.id), ['A sign-in after wrong key files']);
     assert.strictEqual((await owner(`select failed from app.file_keys where member_id = '${m.id}'`))[0].failed, 0);

@@ -108,7 +108,7 @@
   }
   function refusedSay(d) {
     if (d.declined) { say('Day One Great isn’t offered where you live, so we can’t sign you up.'); return true; }
-    if (d.refused) { say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : 'Sign-in isn’t available for this account right now.'); return true; }
+    if (d.refused) { say(d.refused === 'disabled' ? 'This account is disabled while a request to delete it is reviewed.' : d.refused === 'locked' ? 'Signing in to this account is locked for 15 minutes, after 3 failed attempts. Browsers already signed in stay signed in. Please try again later.' : 'Sign-in isn’t available for this account right now.'); return true; }
     return false;
   }
   // The region question: a member travelling where we don't sign people up confirms where they live, once per try.

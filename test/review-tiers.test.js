@@ -154,7 +154,10 @@ test('each item has its tier, kind and the SHA-256 of its words; a decision bind
   aaron = await member('Aaron', { admin: true });
   poster = await member('Poster');
   const id = await held(poster);
+  const reads = async () => (await q(`select count(*)::int as n from app.audit_log where action = 'admin.read' and detail->>'area' = 'post_queue'`))[0].n;
+  const was = await reads();
   const i = await itemOf(aaron, id);
+  assert.strictEqual(await reads(), was + 1, '053 (V-222465): Aaron\'s read of the review queue is recorded');
   const [{ body }] = await q(`select body from app.posts where id = '${id}'`);
   assert.strictEqual(i.sha256, crypto.createHash('sha256').update(body, 'utf8').digest('hex'));
   assert.deepStrictEqual([i.tier, i.item_type], [2, 'held']);

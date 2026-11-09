@@ -236,7 +236,19 @@ async function console_(t, { tab, status, cursor }) {
   const cu = cursor === undefined || cursor === null || cursor === '' ? null
     : v.text('cursor', cursor, { max: 80, pattern: /^20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-9:.]+(Z|[+-][0-9]{2}(:?[0-9]{2})?)~[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ });
   const [r] = await call(t, (s) => s`select app.work_console(${tb}, ${st}, ${cu}) as d`);
+  // 053: the sign-in locks in force now, on the Admins tab's first page, each with a way to release it.
+  if (tb === 'admins' && !cu) {
+    const [l] = await call(t, (s) => s`select app.signin_locks_open() as l`);
+    return { ...r.d, locks: l.l };
+  }
   return r.d;
+}
+// 053: an administrator releases a member's sign-in lock early, with a reason (in the audit log).
+async function unlock(t, member, reason) {
+  const m = v.uuid('member', member);
+  const r = v.text('reason', reason, { min: 3, max: 200 });
+  const [x] = await call(t, (s) => s`select app.signin_unlock(${m}::uuid, ${r}) as released`);
+  return { result: x.released ? 'released' : 'not_locked' };
 }
 // A day as YYYY-MM-DD; the database checks the range (a year back to two years ahead).
 const DAY = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
@@ -262,5 +274,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

@@ -131,6 +131,37 @@
     var si = $('signin'); si.textContent = '';
     (d.signin || []).forEach(function (e) { row(si, [ago(e.at), txt(e.member) || '–', txt(e.what)]); });
     $('signin-empty').hidden = si.children.length > 0;
+    if (!more) locks(d.locks || []);
+  }
+  // 053: the locks in force, each released with a reason (POST /api/work/unlock; the database records it).
+  function locks(list) {
+    var lt = $('locks'); lt.textContent = '';
+    list.forEach(function (l) {
+      if (!isId(l.member)) return;
+      var box = document.createElement('span');
+      var why = document.createElement('input');
+      why.type = 'text'; why.maxLength = 200; why.placeholder = 'Reason'; why.setAttribute('aria-label', 'Reason to release ' + txt(l.name));
+      var go = document.createElement('button');
+      go.type = 'button'; go.textContent = 'Release'; go.setAttribute('aria-label', 'Release ' + (txt(l.name) || 'this member'));
+      go.addEventListener('click', function () {
+        var r = why.value.trim();
+        if (r.length < 3) { $('locks-status').textContent = 'Give a reason of at least 3 characters.'; why.focus(); return; }
+        go.disabled = true;
+        fetch('/api/work/unlock', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ member: l.member, reason: r }) })
+          .then(function (x) { return x.json().then(function (d) { return { ok: x.ok, d: d }; }, function () { return { ok: false, d: {} }; }); })
+          .then(function (x) {
+            go.disabled = false;
+            if (!x.ok) { $('locks-status').textContent = typeof x.d.error === 'string' ? x.d.error : 'The lock couldn’t be released.'; return; }
+            $('locks-status').textContent = x.d.result === 'released' ? 'Released: ' + txt(l.name) + ' can sign in again.' : 'That lock had already ended.';
+            // The list redraws without this button: keep keyboard focus on the result.
+            $('locks-status').focus();
+            open('admins');
+          }, function () { go.disabled = false; $('locks-status').textContent = 'The console couldn’t be reached. Please try again.'; });
+      });
+      box.appendChild(why); box.appendChild(document.createTextNode(' ')); box.appendChild(go);
+      row(lt, [txt(l.name) || '–', ago(l.locked_at), clock(l.until) + ' UTC', box]);
+    });
+    $('locks-empty').hidden = lt.children.length > 0;
   }
 
   var DRAW = { summary: summary, agents: agents, projects: tasks, submissions: subs, ledger: ledger, admins: admins };
