@@ -26,10 +26,12 @@ const db = require('../db');
 const store = require('../db/notify');
 
 const SKIP_MS = 25_000;
-// Two clocks (the review of RK134's fix, finding 2): a call carrying a token Vercel signed, which only Vercel Cron has,
-// and any other call. The address is open, so a call without one could otherwise take the 25 seconds and turn away
-// Vercel Cron's own call, and with it Second and Third Look. Each clock lets one run through every 25 seconds per
-// instance; the timers' work itself is held once a minute by the database (timerSlot).
+// Two clocks (the review of RK134's fix, finding 2): a call whose token checks out and any other call, so a call with a
+// junk token header can't take the 25 seconds from one with a good token. Vercel gives a signed token to every call
+// that reaches this function, not only to Vercel Cron's (corrected by the review of #123, F1: OPERATIONS, Oct 27), so
+// the token is never proof that Vercel Cron called, and nothing here may treat it as one; an outsider's call runs the
+// same capped work Cron's would. Each clock lets one run through every 25 seconds per instance; the timers' work itself
+// is held once a minute by the database (timerSlot).
 let lastAsked = { signed: 0, other: 0 };
 
 function reply(res, code, body) {

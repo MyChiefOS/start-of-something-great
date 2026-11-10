@@ -129,9 +129,16 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
   };
 }
 
+// identity_token_verified is each caller's own: its token is read now and checked for this request, outside the
+// minute's shared answer, so the uptime monitor's second look 20 seconds later reads a fresh result, and no caller sets
+// the answer others get (the review of #123, F3). The check is cheap (Vercel's keys are kept an hour) and gives up
+// after 2 seconds.
 async function handle(req, res, deps = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
-  if (cached && Date.now() - cached.at < 60_000) return reply(res, 200, cached.body);
+  const mine = sitekeys.verifiedToken(req, deps.verify ? { verify: deps.verify } : {});
+  const own = async (body) => (body && typeof body === 'object' && !body.error
+    ? { ...body, identity_token_verified: Boolean(await mine) } : body);
+  if (cached && Date.now() - cached.at < 60_000) return reply(res, 200, await own(cached.body));
   if (!running) {
     running = check(req, deps)
       .catch(() => ({ error: 'check_failed' }))
@@ -140,7 +147,7 @@ async function handle(req, res, deps = {}) {
   } else if (req.headers) {
     delete req.headers['x-vercel-oidc-token']; // never left on a request that didn't run the check (M3)
   }
-  return reply(res, 200, await running);
+  return reply(res, 200, await own(await running));
 }
 
 module.exports = async (req, res) => {
