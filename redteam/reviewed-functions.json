@@ -72,15 +72,9 @@
     "kind": "public read",
     "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
   },
-  "log_proposal": {
-    "kind": "open",
-    "risk": "RK112",
-    "why": "Adds Aaron's proposal decisions to the public log as the site reports them."
-  },
-  "log_witness_report": {
-    "kind": "open",
-    "risk": "RK144",
-    "why": "Records the witness's status as the site reports it."
+  "log_witness_check": {
+    "kind": "timer",
+    "why": "Takes no caller input and acts only on time: it marks the witness stopped when its last report is 12 hours old (057), so an early or extra call does nothing a scheduled run wouldn't."
   },
   "profile": {
     "kind": "public read",
@@ -145,16 +139,6 @@
   "stamp_ok": {
     "kind": "the check itself",
     "why": "It is the database's own check of who is acting (019)."
-  },
-  "tl_claim": {
-    "kind": "open",
-    "risk": "RK135",
-    "why": "Claims Third Look work for whoever holds the site's role; it fails toward a person."
-  },
-  "tl_decide": {
-    "kind": "open",
-    "risk": "RK135",
-    "why": "Records a Third Look verdict for whoever holds the site's role."
   },
   "tl_figures": {
     "kind": "public read",

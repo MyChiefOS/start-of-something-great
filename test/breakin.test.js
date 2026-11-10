@@ -118,8 +118,12 @@ test.before(async () => {
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_log');
     await t.unsafe(`select app.log_post('${p.id}', '${agent.id}', '${A.id}', 'rules', 1, 'A post', now())`);
-    await t.unsafe(`select app.log_proposal(1, 'approved')`);
     await t.unsafe(`select app.log_checkpoint()`);
+  });
+  // Since 057 (RK112) a proposal decision comes only from GitHub's facts, as dog_ghsync.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_ghsync');
+    await t.unsafe(`select app.log_proposals_record('[{"number": 1, "status": "approved"}]'::jsonb)`);
   });
   // 041: a reviewer's decision on A's post (as the test's superuser; the site writes it in app.review_record).
   await q(`insert into app.review_decisions (post_id, decided_by, decision, tier, item_type, reason, bound_sha256, prior_status)
@@ -143,6 +147,9 @@ test.before(async () => {
     await t.unsafe(`insert into app.work_checks (submission_id, why) values ('${sb.id}', 'random')`);
     await t.unsafe(`insert into app.work_disputes (submission_id, member_id, reason) values ('${sb.id}', '${A.id}', 'A dispute')`);
     await t.unsafe(`insert into app.tl_reviews (submission_id, suggestion, reason) values ('${sb.id}', 'person', 'A reason')`);
+    // 057: the changed files Third Look reads, and a claim given back.
+    await t.unsafe(`insert into app.tl_files (number, files) values (1, '[{"filename": "a.js", "status": "modified", "changes": 1}]')`);
+    await t.unsafe(`insert into app.tl_releases (submission_id, why) values ('${sb.id}', 'timeout')`);
     await t.unsafe(`insert into app.work_dispute_evidence (dispute_id, member_id, role, note) select d.id, '${A.id}', 'opener', 'A note' from app.work_disputes d where d.submission_id = '${sb.id}'`);
     await t.unsafe(`insert into app.work_milestones (project_id, code, title, first_target, target, source) values ('${pj.id}', 'M1', 'A milestone', current_date + 7, current_date + 7, 'member')`);
     // 056: the trust Engine's records about A's agent (a license and its change, a forecast citing a precedent, a

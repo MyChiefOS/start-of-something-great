@@ -15,7 +15,8 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync',
+  'dog_looks', 'dog_witness'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -31,8 +32,14 @@ const TIMERS = 'dog_timers';
 // 056 it also keeps the trust Engine's tables (licenses, forecasts, precedents, findings, work orders), which are built
 // on the work module's records, inside the Engine's functions.
 // dog_ghsync (055, RK140) only records GitHub's facts, inside app.work_github_sync and app.work_github_wanted, for the
-// dog-github function; it holds no table rights, and the site's role can't act as it.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync'];
+// dog-github function; it holds no table rights, and the site's role can't act as it. Since 057 it also records the
+// changed files Third Look reads (app.tl_files_wanted, app.tl_files_record) and Aaron's proposal decisions
+// (app.log_proposals_record), from the same GitHub facts.
+// dog_looks (057, RK135, RK100) only runs Second and Third Look, inside their claim, decide and release functions, for
+// the dog-looks function; dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for
+// dog-github when the log-witness workflow calls. Neither holds table rights, and the site's role can act as neither.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_looks',
+  'dog_witness'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -187,8 +194,9 @@ const DEFINERS = {
   // the unlock, the weekly report and the two triggers (the stop, and a report on a post it published), called by
   // nobody directly.
   'app.sl_eligible(uuid)': { owner: 'dog_jevs', callers: '' },
-  'app.sl_claim(integer)': 'dog_jevs',
-  'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': 'dog_jevs',
+  // 057 (RK100): only the dog-looks function's role, never the site's.
+  'app.sl_claim(integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
+  'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
   'app.sl_report()': 'dog_jevs',
   'app.sl_report_core()': { owner: 'dog_jevs', callers: '' },
   'app.sl_set_mode(text)': 'dog_jevs',
@@ -252,9 +260,14 @@ const DEFINERS = {
   'app.log_post_live()': { owner: 'dog_log', callers: '' },
   'app.log_unverified(text)': { owner: 'dog_log', callers: '' },
   'app.log_jevs_hours()': 'dog_log',
-  'app.log_proposal(integer, text)': 'dog_log',
+  // 057 (RK112, RK144): proposal decisions only from GitHub's facts (dog_ghsync, through the one batch function), the
+  // witness's report only from the witness (dog_witness), and the timer's check that the witness has stopped, which
+  // takes no input.
+  'app.log_proposal(integer, text)': { owner: 'dog_log', callers: '' },
+  'app.log_proposals_record(jsonb)': { owner: 'dog_log', callers: 'dog_ghsync' },
   'app.log_checkpoint()': 'dog_log',
-  'app.log_witness_report(bigint, bytea, timestamp with time zone, text)': 'dog_log',
+  'app.log_witness_report(bigint, bytea, timestamp with time zone, text)': { owner: 'dog_log', callers: 'dog_witness' },
+  'app.log_witness_check()': 'dog_log',
   'app.log_opening(bigint)': 'dog_log',
   // The review of 038: a random name for each account in the log (M2), the queue's trigger on each new JEVs decision
   // (H4, L1), and clearing an alarm, in a reviewed migration only (M3).
@@ -294,8 +307,16 @@ const DEFINERS = {
   'app.work_check_decide(uuid, text, text)': 'dog_work',
   'app.work_task_of(uuid)': 'dog_work',
   // Third Look (044), in shadow: the timer claims and records; an administrator switches it; its figures are public.
-  'app.tl_claim(integer)': 'dog_work',
-  'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': 'dog_work',
+  // 057 (RK135): claim, answer and release only for the dog-looks function's role; the changed files it reads only from
+  // GitHub's facts (dog_ghsync); whether it still wants a pull request, and whether a number can be an issue (for the
+  // log's proposals), as internal pieces.
+  'app.tl_claim(integer)': { owner: 'dog_work', callers: 'dog_looks' },
+  'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': { owner: 'dog_work', callers: 'dog_looks' },
+  'app.tl_release(uuid, text)': { owner: 'dog_work', callers: 'dog_looks' },
+  'app.tl_wants(integer)': { owner: 'dog_work', callers: '' },
+  'app.tl_files_wanted(integer)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.tl_files_record(jsonb)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.work_github_issue_ok(integer)': { owner: 'dog_work', callers: 'dog_log' },
   'app.tl_figures()': 'dog_work',
   'app.tl_set_mode(text)': 'dog_work',
   'app.work_board(text, text, text)': 'dog_work',
@@ -493,7 +514,8 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
+                                         'dog_looks', 'dog_witness') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
