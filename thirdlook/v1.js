@@ -5,18 +5,25 @@
 // Three layers, as Second Look's (secondlook/v1.js), whose tested pieces it reuses:
 //   1. Fixed checks, in code: on the task's words, the worker's note and the pull request's title, Second Look's checks
 //      (keys, contact details, hidden text, instructions aimed at an AI, code that runs things); on the changed lines,
-//      only instructions aimed at an AI (code in a pull request legitimately spawns processes and pipes downloads).
+//      only instructions aimed at an AI (code in a pull request legitimately spawns processes and pipes downloads) and
+//      invisible characters (bidi controls, as in Trojan Source, and Unicode tag characters: F6 of the review of the AI
+//      parts, Nov 10). Every field is read whole, window by window.
 //   2. A model asked three fixed questions about the work, which it sees only as data between markers made fresh for
 //      each request. It answers yes, no or unsure, in strict JSON.
 //   3. The suggestion, by code, never by the model: "pass" only when the change does what the task asks (a1 yes), is
 //      more than a trivial or unrelated edit (a2 yes), nothing in it tries to instruct the checker (a3 no), no fixed
 //      check found anything, and nothing was cut short. Anything else, and any failure, is "a person".
+// What the model reads (RK142): up to MAX_READ characters, which holds the longest work Third Look is given whole (every
+// field at its limit and MAX_DIFF of changed lines) with room for masking to lengthen it. "Cut short" means anything
+// at all left out: a field over its limit, changed lines past MAX_DIFF or not shown by GitHub, or the text built
+// (after masking and NFKC) longer than MAX_READ. Until Nov 10 the model was sent only Second Look's 5,000 characters
+// while only a change over 30,000 counted as cut, so work could be suggested as a pass with its end never read.
 // Claude's outputs are never training data here: nothing is trained; the model is asked questions.
 'use strict';
 
 const crypto = require('crypto');
 const sl = require('../secondlook/v1');
-const { maskContacts } = require('../api/_proposals');
+const { maskContacts, hasInvisible } = require('../api/_proposals');
 const { maskSecrets } = require('../api/_secrets');
 
 const VERSION = 'v1';
@@ -24,6 +31,8 @@ const MODELS = ['mistral/ministral-14b'];
 const TIMEOUT_MS = 15000;
 const MAX_TASK = 4000;
 const MAX_DIFF = 30000; // characters of changed lines; more is cut, and a cut item is never suggested as a pass
+const LIMITS = { taskTitle: 200, taskDescription: MAX_TASK, note: 2000, prTitle: 200 }; // what the model is given of each
+const MAX_READ = 40000; // characters sent to the model: the longest work built is 36,438, before masking
 
 const QUESTIONS = [
   ['a1', 'Does the change do what the task asks?'],
@@ -63,16 +72,34 @@ function diffText(files) {
   return { text: out, truncated };
 }
 
-function checks({ taskTitle, taskDescription, note, prTitle, diff }) {
-  const words = [taskTitle, taskDescription, note, prTitle].map((x) => clip(x, MAX_TASK)).join('\n');
-  const found = [...sl.checks(words).found];
-  // Second Look's checks read 5,000 characters at a time: the whole change is read, window by window, overlapping so a
-  // phrase can't hide across a boundary.
-  const d = String(diff == null ? '' : diff);
-  for (let i = 0; i < Math.max(1, d.length); i += 4500) {
-    for (const f of sl.checks(d.slice(i, i + 5000)).found) if (f.startsWith('instructions to an AI') && !found.includes(f)) found.push(f);
+// Second Look's checks read 5,000 characters at a time: each text is read whole, window by window, overlapping so a
+// phrase can't hide across a boundary.
+function windows(text, keep, found) {
+  const s = String(text == null ? '' : text);
+  for (let i = 0; i < Math.max(1, s.length); i += 4500) {
+    for (const f of sl.checks(s.slice(i, i + sl.MAX_TEXT)).found) if (keep(f) && !found.includes(f)) found.push(f);
   }
+}
+function checks({ taskTitle, taskDescription, note, prTitle, diff }) {
+  const found = [];
+  windows([clip(taskTitle, LIMITS.taskTitle), clip(taskDescription, LIMITS.taskDescription), clip(note, LIMITS.note), clip(prTitle, LIMITS.prTitle)].join('\n'), () => true, found);
+  const d = String(diff == null ? '' : diff);
+  windows(d, (f) => f.startsWith('instructions to an AI'), found);
+  // A byte-order mark at the start of a changed line is a file saved that way, not hidden text.
+  if (hasInvisible(d.replace(/^([+\- ])\uFEFF/gm, '$1'))) found.push('hidden text');
   return { found };
+}
+
+// Exactly what the model is sent, and whether anything was left out (RK142).
+function workText(item, diff) {
+  const it = item || {};
+  let cut = false;
+  const field = (k) => { const s = String(it[k] == null ? '' : it[k]); if (s.length > LIMITS[k]) cut = true; return clean(s.slice(0, LIMITS[k])); };
+  const built = 'TASK: ' + field('taskTitle') + '\n' + field('taskDescription') + '\nNOTE: ' + field('note') + '\nPULL REQUEST: ' + field('prTitle')
+    + '\nCHANGE:\n' + clean(diff);
+  const norm = built.slice(0, MAX_READ).normalize('NFKC'); // NFKC can lengthen text (U+FDFA becomes 18 characters)
+  if (built.length > MAX_READ || norm.length > MAX_READ) cut = true;
+  return { text: norm.slice(0, MAX_READ), cut };
 }
 
 function parse(content) {
@@ -96,13 +123,11 @@ function suggest({ found, answers, truncated, failed }) {
   return answers.a1 === 'yes' && answers.a2 === 'yes' && answers.a3 === 'no' ? 'pass' : 'person';
 }
 
-async function ask({ item, diff, token, model, fetchImpl = fetch }) {
+async function ask({ text, token, model, fetchImpl = fetch }) {
   if (!MODELS.includes(model)) return { error: 'model not allowed' };
   if (typeof token !== 'string' || token.length < 20) return { error: 'no identity token' };
   const tag = crypto.randomBytes(6).toString('hex').toUpperCase();
-  const data = 'TASK: ' + clean(clip(item.taskTitle, 200)) + '\n' + clean(clip(item.taskDescription, MAX_TASK))
-    + '\nNOTE: ' + clean(clip(item.note, 2000)) + '\nPULL REQUEST: ' + clean(clip(item.prTitle, 200)) + '\nCHANGE:\n' + clean(diff);
-  const w = sl.wrap(data, tag);
+  const w = sl.wrap(text, tag, MAX_READ);
   const user = 'The work is between ' + w.begin + ' and ' + w.end + '.\n\n' + w.block;
   let r;
   try {
@@ -126,18 +151,20 @@ async function ask({ item, diff, token, model, fetchImpl = fetch }) {
 async function review({ item, files, token, model, fetchImpl, now = Date.now }) {
   const t0 = now();
   const d = files ? diffText(files) : { text: '', truncated: true };
+  const w = workText(item, d.text);
+  const truncated = d.truncated || w.cut;
   const c = checks({ ...item, diff: d.text });
   // Nothing to judge (GitHub not read), or a fixed check found something: no model call, a person decides.
-  const got = !files || c.found.length ? { error: files ? null : 'GitHub not read' } : await ask({ item, diff: d.text, token, model, fetchImpl });
+  const got = !files || c.found.length ? { error: files ? null : 'GitHub not read' } : await ask({ text: w.text, token, model, fetchImpl });
   const answers = got.answers || null;
   const failed = Boolean(got.error);
-  const suggestion = suggest({ found: c.found, answers, truncated: d.truncated, failed });
+  const suggestion = suggest({ found: c.found, answers, truncated, failed });
   const reasons = [...c.found];
-  if (d.truncated) reasons.push('the change was too long to read whole');
+  if (truncated) reasons.push('the work was too long to read whole');
   if (got.error) reasons.push('no usable answer (' + got.error + ')');
   else if (got.reason) reasons.push(got.reason);
   return { version: VERSION, model: answers ? model : null, suggestion, answers, reason: reasons.join('; ').slice(0, 600) || 'nothing found',
-    failClosed: failed, truncated: d.truncated, latencyMs: Math.max(0, Math.round(now() - t0)) };
+    failClosed: failed, truncated, latencyMs: Math.max(0, Math.round(now() - t0)) };
 }
 
-module.exports = { review, suggest, parse, checks, diffText, VERSION, MODELS, KEYS, SYSTEM, MAX_DIFF };
+module.exports = { review, suggest, parse, checks, diffText, workText, VERSION, MODELS, KEYS, SYSTEM, MAX_DIFF, MAX_TASK, MAX_READ };

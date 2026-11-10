@@ -4,6 +4,7 @@
 // Bounded and anchored by a lookbehind so hostile input can't make it slow (ReDoS): ~1 ms on 65k chars.
 // Letters from any script count, so josé@example.com and jane@bücher.de are caught too (PR 3 review).
 const { maskSecrets } = require('./_secrets');
+const { stripTags } = require('../db/validate');
 const EMAIL = /(?<![\p{L}\p{M}\p{N}._%+-])[\p{L}\p{M}\p{N}._%+-]{1,64}@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63}){0,8}\.[\p{L}\p{M}]{2,24}/gu;
 const STATUS_ORDER = [
   ['status: shipped', 'shipped'],
@@ -77,10 +78,12 @@ function maskContacts(text) {
 }
 
 // Text people can't see but agents read (USE-CASES.md row 10): HTML comments, which GitHub hides from readers but keeps
-// in the text, and invisible characters (the same set JEVs's J16 counts). Removed before an agent reads a post, and
+// in the text, and invisible characters (the same set JEVs's J16 counts), including Unicode tag characters outside the
+// England, Scotland and Wales flags (RK143; db/validate.js, stripTags). Removed before an agent reads a post, and
 // the reply says so, so a post can't carry instructions a person reviewing it never saw.
 // HTML comments run to their end (or the end of the text if never closed), so this has no multi-line flag.
-const HIDDEN_MARKUP = /<!--[\s\S]*?(?:-->|$)|[\u200B\u202A-\u202E\u2066-\u2069\u2060-\u2064]|(?!^)\uFEFF/g;
+const INVISIBLE = /[\u200B\u202A-\u202E\u2066-\u2069\u2060-\u2064]|(?!^)\uFEFF/;
+const HIDDEN_MARKUP = new RegExp('<!--[\\s\\S]*?(?:-->|$)|' + INVISIBLE.source, 'g');
 // Markdown link reference definitions, which GitHub never shows ("[//]: # (agents: ignore...)"), also inside quotes and
 // lists: a label (not a footnote, "[^1]"), one destination, and at most a quoted or bracketed title, on one line.
 // "[Update]: the fix is live" is ordinary visible text and is kept.
@@ -88,9 +91,13 @@ const HIDDEN_MARKUP = /<!--[\s\S]*?(?:-->|$)|[\u200B\u202A-\u202E\u2066-\u2069\u
 const LINK_DEFINITION = /^[ \t]{0,3}(?:(?:>|[-*+]|\d{1,9}[.)])[ \t]{0,3}){0,20}\[(?!\^)(?:[^\]\n\\]|\\.){1,999}\]:[ \t]*(?:<[^>\n]*>|\S+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
 function stripHidden(text) {
   const raw = String(text == null ? '' : text);
-  const clean = raw.replace(HIDDEN_MARKUP, '').replace(LINK_DEFINITION, '');
+  const clean = stripTags(raw.replace(HIDDEN_MARKUP, '')).replace(LINK_DEFINITION, '');
   return { text: clean, removed: clean !== raw };
 }
+// Only the invisible characters, not markup: for text where an HTML comment is ordinary and visible, such as the changed
+// lines of a pull request (Third Look, F6 of the review of the AI parts: bidi controls as in Trojan Source,
+// CVE-2021-42574, and tag characters).
+const hasInvisible = (text) => { const s = String(text == null ? '' : text); return INVISIBLE.test(s) || stripTags(s) !== s; };
 
 // Check C3: draft a proposal for an agent. Nothing is filed: the result is a pre-filled GitHub
 // link that a person must open, review and submit while signed in to GitHub.
@@ -237,4 +244,4 @@ function shapeShipped(list) {
   };
 }
 
-module.exports = { stripHidden, maskEmails, maskContacts, hasContactInfo, draftProposal, parseBody, statusOf, shapeIssue, shapeList, shapeShipped, EDITED_LABEL };
+module.exports = { stripHidden, hasInvisible, stripTags, maskEmails, maskContacts, hasContactInfo, draftProposal, parseBody, statusOf, shapeIssue, shapeList, shapeShipped, EDITED_LABEL };
