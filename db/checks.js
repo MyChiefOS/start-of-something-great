@@ -15,7 +15,7 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -28,7 +28,9 @@ const TIMERS = 'dog_timers';
 // log's signing key.
 // dog_work (042) only reads and writes the work module's tables (rooms, projects, tasks, claims, submissions, points),
 // inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work'];
+// dog_ghsync (055, RK140) only records GitHub's facts, inside app.work_github_sync and app.work_github_wanted, for the
+// dog-github function; it holds no table rights, and the site's role can't act as it.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -276,8 +278,9 @@ const DEFINERS = {
   'app.work_submit(uuid, text, text, text, text, integer)': 'dog_work',
   'app.work_approve(uuid)': 'dog_work',
   'app.work_cancel(uuid)': 'dog_work',
-  'app.work_github_wanted(integer)': 'dog_work',
-  'app.work_github_sync(jsonb)': 'dog_work',
+  // 055 (RK140): GitHub's facts only from GitHub, through the dog-github function's role, never the site's.
+  'app.work_github_wanted(integer)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.work_github_sync(jsonb)': { owner: 'dog_work', callers: 'dog_ghsync' },
   'app.work_tick()': 'dog_work',
   'app.work_admin()': 'dog_work',
   'app.work_person_decide(uuid, text, integer, text)': 'dog_work',
@@ -465,7 +468,7 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

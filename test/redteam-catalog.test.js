@@ -45,7 +45,8 @@ test('RK141, the catalog: every definer function the site\'s role can run checks
   assert.deepStrictEqual(r.unreviewed, [], 'definer functions the site\'s role can run with no actor check and no reason in redteam/reviewed-functions.json');
   assert.deepStrictEqual(r.stale, [], 'reasons in redteam/reviewed-functions.json for functions that no longer need one: remove them');
   // The open holes, said plainly in the test output until each is fixed.
-  assert.deepStrictEqual(r.open.sort(), ['log_proposal (RK112)', 'log_witness_report (RK144)', 'tl_claim (RK135)', 'tl_decide (RK135)', 'work_github_sync (RK140)']);
+  // RK140 closed by 055: app.work_github_sync is no longer the site's to run (only dog_ghsync's, test/github-facts.test.js).
+  assert.deepStrictEqual(r.open.sort(), ['log_proposal (RK112)', 'log_witness_report (RK144)', 'tl_claim (RK135)', 'tl_decide (RK135)']);
 });
 
 test('RK141, the catalog: a planted hole is caught, and one that checks who is acting is not', async () => {

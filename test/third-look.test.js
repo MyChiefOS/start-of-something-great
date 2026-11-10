@@ -154,7 +154,8 @@ async function work(method, route, { cookie = '', json, search = '' } = {}) {
   await require('../api/work.js').handle({ method, url: '/api/work/' + route + search, headers, query: { route }, body: json ? JSON.stringify(json) : undefined }, r, run);
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null, text: r.body };
 }
-const sync = (payload) => run({ actor: 'anon' }, (t) => t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`);
+// Since 055 (RK140) only dog_ghsync, the dog-github function's role, records GitHub's facts.
+const sync = (payload) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`; });
 const pr = (n, over = {}) => ({ number: n, title: 'PR ' + n, author: 'bo-dev', state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
   refs: '', milestone: null, milestone_title: null, room: null, created_at: '2026-10-31T10:00:00Z', codes: [], ...over });
 const claimNow = () => asWork('update app.tl_settings set last_claim_at = null');
@@ -170,7 +171,9 @@ async function prWork(poster, worker) {
   const n = prn++;
   const s = (await work('POST', 'submit', { cookie: worker.cookie, json: { task: id, kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + n } })).json.submission;
   await sync({ prs: [pr(n, { codes: [c.sha256hex(cl.code)] })] });
-  await sync({ details: [{ number: n, additions: 20, deletions: 0, merged_by: 'mychiefos' }] });
+  // GitHub's read of it: merged into main by Aaron's account (by GitHub ID), so Third Look may take it (055).
+  await sync({ details: [{ number: n, additions: 20, deletions: 0, state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
+    merged_by: 'mychiefos', merged_by_id: 304218593 }] });
   const [row] = await q(`select status, route, jevs_rules from app.work_submissions where id = '${s}'`);
   assert.deepStrictEqual([row.status, row.route, row.jevs_rules], ['review', 'poster', 'W12']);
   return { id, s, n };

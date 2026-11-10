@@ -36,8 +36,8 @@ const REPO_PR = (n) => 'https://github.com/MyChiefOS/start-of-something-great/pu
 function* allFacts() {
   const prs = [null, { state: 'open', merged: false, base: 'main', code_ok: true, author_ok: false, refs_issue: true }];
   for (const state of ['open', 'closed']) for (const merged of [false, true]) for (const base of ['main', 'dev'])
-    for (const code of [false, true]) for (const author of [false, true]) for (const refs of [false, true])
-      prs.push({ state, merged, base, code_ok: code, author_ok: author, refs_issue: refs });
+    for (const code of [false, true]) for (const author of [false, true]) for (const refs of [false, true]) for (const owner of [false, true])
+      prs.push({ state, merged, base, merged_by_owner: owner, code_ok: code, author_ok: author, refs_issue: refs });
   for (const cls of ['agent', 'person', 'either']) for (const wk of ['member', 'agent', 'github'])
     for (const artifact of ['pr', 'link', 'file']) for (const gt of [null, 'pr', 'issue'])
       for (const own of [false, true]) for (const late of [false, true]) for (const hits of [0, 2]) {
@@ -54,10 +54,16 @@ function* allFacts() {
 }
 
 test('the JEVs auditor’s rules in JavaScript: what they decide on plain cases', () => {
-  const merged = { state: 'closed', merged: true, base: 'main', code_ok: true, author_ok: false, refs_issue: true };
+  const merged = { state: 'closed', merged: true, base: 'main', merged_by_owner: true, code_ok: true, author_ok: false, refs_issue: true };
   const r = (f) => audit.rules({ class: 'either', worker_kind: 'member', artifact: 'pr', github_task: null, ...f });
   assert.deepStrictEqual(r({ pr: merged }), { verdict: 'pass', rules: [] });
   assert.deepStrictEqual(r({ task_source: 'member', pr: merged }), { verdict: 'person', rules: ['W12'] });
+  // W14 (055, RK140): merged into main by anyone but Aaron's account (by GitHub ID), or with who merged it unknown: a
+  // person decides; it never passes by rule, and never fails for it.
+  assert.deepStrictEqual(r({ pr: { ...merged, merged_by_owner: false } }), { verdict: 'person', rules: ['W14'] });
+  assert.deepStrictEqual(r({ pr: { ...merged, merged_by_owner: undefined } }), { verdict: 'person', rules: ['W14'] });
+  assert.deepStrictEqual(r({ task_source: 'member', pr: { ...merged, merged_by_owner: false } }), { verdict: 'person', rules: ['W12', 'W14'] });
+  assert.deepStrictEqual(r({ pr: { ...merged, merged_by_owner: false, base: 'dev' } }), { verdict: 'fail', rules: ['W06'] }, 'not into main: W06, as before');
   assert.deepStrictEqual(r({ pr: null }), { verdict: 'waiting', rules: [] });
   assert.deepStrictEqual(r({ pr: { ...merged, merged: false, state: 'open' } }), { verdict: 'waiting', rules: [] });
   assert.deepStrictEqual(r({ pr: { ...merged, merged: false } }), { verdict: 'fail', rules: ['W06'] });
@@ -203,7 +209,13 @@ async function task(owner, pj, over = {}, opts = {}) {
   return r.json.id;
 }
 const page = async (id) => (await work('GET', 'task', { search: '?id=' + id })).json;
-const sync = (payload) => run({ actor: 'anon' }, (t) => t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`).then((r) => r[0].r);
+// Since 055 (RK140) only dog_ghsync records GitHub's facts: the dog-github function's role, as it acts.
+const sync = (payload) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`; }).then((r) => r[0].r);
+const wanted = (n) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select number from app.work_github_wanted(${n}::integer)`; });
+const AARON_ID = 304218593; // MyChiefOS, by GitHub ID
+// GitHub's own read of one pull request (the detail): its lines, its merge and who merged it; by default Aaron's account.
+const det = (n, over = {}) => ({ number: n, additions: 10, deletions: 0, state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
+  merged_by: 'mychiefos', merged_by_id: AARON_ID, ...over });
 const pr = (n, over = {}) => ({ number: n, title: 'PR ' + n, author: 'octo', state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
   refs: '', milestone: null, milestone_title: null, room: null, created_at: '2026-10-31T10:00:00Z', codes: [], ...over });
 
@@ -539,7 +551,7 @@ test('what the worker can fix waits for them: a merged pull request without the 
   const s1 = await work('POST', 'submit', { cookie: bo.cookie, json: { task: foot.id, kind: 'pr', url: REPO_PR(9172) } });
   const s2 = await work('POST', 'submit', { cookie: bo.cookie, json: { task: head.id, kind: 'pr', url: REPO_PR(9173) } });
   await sync({ prs: [pr(9172, { author: 'bo-dev', refs: '9170' }), pr(9173, { author: 'bo-dev', refs: '9171' })] });
-  await sync({ details: [{ number: 9172, additions: 10, deletions: 0, merged_by: 'mychiefos' }, { number: 9173, additions: 10, deletions: 0, merged_by: 'mychiefos' }] });
+  await sync({ details: [det(9172), det(9173)] });
   let p = await page(foot.id);
   assert.deepStrictEqual([p.submissions[0].status, p.submissions[0].jevs.verdict, p.submissions[0].jevs.rules], ['waiting', 'waiting', 'W07']);
   // The worker adds the code to the pull request's description; the next sync reads it.
@@ -556,7 +568,7 @@ test('what the worker can fix waits for them: a merged pull request without the 
 
 test('the repository’s past pull requests are credited to Aaron and Claude; the brake stops new work but not reading or checking', async () => {
   await sync({ prs: [pr(9181, { author: 'mychiefos' })] });
-  await sync({ details: [{ number: 9181, additions: 20, deletions: 0, merged_by: 'mychiefos' }] });
+  await sync({ details: [det(9181, { additions: 20 })] });
   const [t] = (await work('GET', 'tasks', { search: '?q=PR%209181' })).json.tasks;
   const p = await page(t.id);
   assert.deepStrictEqual(p.done_by, { kind: 'github', name: 'Aaron Chandler and Claude', github: 'mychiefos' });
@@ -594,11 +606,11 @@ test('the rules fail what breaks a hard rule: a person’s task for an agent, a 
 });
 
 test('this repository’s merged pull requests are finished work, approved by their merge; an issue labelled "task" is done by a pull request that names it', async () => {
-  const before = await sync({ prs: [pr(9101), pr(9102, { merged_by: null })] });
+  const before = await sync({ prs: [pr(9101), pr(9102, { author: 'mychiefos', merged_by: null })] });
   assert.strictEqual(before.prs, 2);
-  // No detail yet: nothing counted. The detail (changed lines, who merged) comes on a later run.
-  assert.deepStrictEqual((await run({ actor: 'anon' }, (t) => t`select number from app.work_github_wanted(10)`)).map((r) => r.number).filter((n) => n > 9100 && n < 9200), [9101, 9102]);
-  await sync({ details: [{ number: 9101, additions: 30, deletions: 10, merged_by: 'aaron' }, { number: 9102, additions: 500, deletions: 100, merged_by: 'octo' }] });
+  // No detail yet: nothing counted. The detail (GitHub's read: changed lines, the merge, who merged it) comes on a later run.
+  assert.deepStrictEqual((await wanted(10)).map((r) => r.number).filter((n) => n > 9100 && n < 9200), [9101, 9102]);
+  await sync({ details: [det(9101, { additions: 30, deletions: 10 }), det(9102, { additions: 500, deletions: 100 })] });
   const list = (await work('GET', 'tasks', { search: '?q=PR%20910' })).json.tasks;
   const byRef = Object.fromEntries(list.map((x) => [x.ref, x]));
   assert.strictEqual(byRef['PR #9101'].status, 'approved');
@@ -609,7 +621,7 @@ test('this repository’s merged pull requests are finished work, approved by th
   // the public pages' mask ("merged into main on [number hidden] lines changed"; 054).
   assert.match(p1.description, /^Pull request #9101 in this site's repository, merged into main on \d{4}-\d{2}-\d{2}; 40 lines changed\.$/);
   const p2 = await page(byRef['PR #9102'].id);
-  assert.deepStrictEqual([p2.size, p2.submissions[0].points.points, p2.submissions[0].points.independence], [3, 15, 50], 'merged by its author: half');
+  assert.deepStrictEqual([p2.size, p2.submissions[0].points.points, p2.submissions[0].points.independence], [3, 15, 50], 'merged by its author (Aaron\'s own pull request): half');
   // Only issues the site was given are tasks (db/workjobs.js passes only those labelled "task").
   await sync({ issues: [{ number: 9150, title: 'Translate the join page', author: 'aaron', state: 'open', created_at: '2026-11-01T00:00:00Z' }] });
   const [iss] = (await work('GET', 'tasks', { search: '?q=Translate' })).json.tasks;
@@ -618,7 +630,7 @@ test('this repository’s merged pull requests are finished work, approved by th
   const cl = await work('POST', 'claim', { cookie: bo.cookie, json: { task: iss.id } });
   // The merged pull request carries the claim's code and names the issue: the claim's submission, passed by the rules.
   await sync({ prs: [pr(9151, { author: 'bo-dev', refs: '9150', codes: [c.sha256hex(cl.json.code)] })] });
-  await sync({ details: [{ number: 9151, additions: 40, deletions: 0, merged_by: 'aaron' }] });
+  await sync({ details: [det(9151, { additions: 40 })] });
   const pi = await page(iss.id);
   assert.deepStrictEqual([pi.submissions[0].status, pi.submissions[0].worker.name, pi.status], ['passed', 'Bo4', 'approved']);
   assert.strictEqual(pi.submissions[0].points.points, 10, 'an issue’s size (2) never above its merged lines’ band (1)');
@@ -740,6 +752,39 @@ test('the fresh review of #110, H1: a pull request that never merges, or doesn�
   assert.strictEqual((await work('POST', 'claim', { cookie: (await member('CyH1')).cookie, json: { task: t1 } })).status, 201);
 });
 
+test('RK140 (055): while GitHub\u2019s facts aren\u2019t arriving, a claim running out doesn\u2019t fail a pull request (W13 waits); once they arrive again, it does', async () => {
+  const ada = await member('AdaW13');
+  const bo = await member('BoW13');
+  const t1 = await task(ada, await project(ada, 'W13 project'));
+  await work('POST', 'claim', { cookie: bo.cookie, json: { task: t1 } });
+  assert.strictEqual((await work('POST', 'submit', { cookie: bo.cookie, json: { task: t1, kind: 'pr', url: REPO_PR(9999998) } })).json.status, 'waiting');
+  // Time passes: submitted inside the claim's hold, which ran out 73 hours ago (past the audit's 72 hours after it).
+  await asWork(`update app.work_submissions set created_at = now() - interval '80 hours' where task_id = '${t1}'`);
+  await asWork(`update app.work_claims set expires_at = now() - interval '73 hours' where task_id = '${t1}'`);
+  // No fact from GitHub for 7 hours (the workflow or dog-github down): the work waits; nothing fails for our outage.
+  await asWork(`update app.work_github_prs set seen_at = now() - interval '7 hours'`);
+  await tick();
+  assert.strictEqual((await stateOf(t1)).subs, 'waiting/-');
+  // GitHub's facts arrive again: the claim's time counts, and W13 fails it as before (H1).
+  await sync({ prs: [pr(9198, { merged_at: null, state: 'open' })] });
+  await tick();
+  assert.deepStrictEqual(await stateOf(t1), { task: 'open', claims: 'expired', subs: 'failed/-' });
+  assert.strictEqual((await q(`select jevs_rules from app.work_submissions where task_id = '${t1}'`))[0].jevs_rules, 'W13');
+});
+
+test('RK140 (055): a member\u2019s pull request merged by anyone but Aaron\u2019s account never passes by rule: a person decides it', async () => {
+  await sync({ issues: [{ number: 9190, title: 'Tidy the footer links', author: 'mychiefos', state: 'open' }] });
+  const bo = await member('Bo14');
+  const [iss] = (await work('GET', 'tasks', { search: '?q=Tidy%20the%20footer' })).json.tasks;
+  const cl = await work('POST', 'claim', { cookie: bo.cookie, json: { task: iss.id } });
+  await sync({ prs: [pr(9191, { author: 'bo-dev', refs: '9190', codes: [c.sha256hex(cl.json.code)] })] });
+  assert.strictEqual((await page(iss.id)).submissions.length, 0, 'listed as merged, but GitHub\u2019s read of who merged it isn\u2019t in yet');
+  await sync({ details: [det(9191, { merged_by: 'octo', merged_by_id: 583231 })] });
+  const p = await page(iss.id);
+  assert.deepStrictEqual([p.submissions[0].status, p.submissions[0].jevs.rules], ['review', 'W14']);
+  assert.strictEqual((await q(`select route from app.work_submissions where id = '${p.submissions[0].id}'`))[0].route, 'admin', 'the repository\u2019s task: Aaron decides it');
+});
+
 test('the review, M1: nothing waits for a person forever: a poster who doesn’t check in time is passed to an administrator, and what no one decides in time fails, never passes', async () => {
   const ada = await member('AdaM1');
   const bo = await member('BoM1');
@@ -769,7 +814,7 @@ test('the review, M1: nothing waits for a person forever: a poster who doesn’t
   const code = (await work('POST', 'claim', { cookie: cy.cookie, json: { task: at } })).json.code;
   const as = (await work('POST', 'submit', { cookie: cy.cookie, json: { task: at, kind: 'pr', url: REPO_PR(9231) } })).json.submission;
   await sync({ prs: [pr(9231, { codes: [c.sha256hex(code)] })] });
-  await sync({ details: [{ number: 9231, additions: 12, deletions: 0, merged_by: 'mychiefos' }] });
+  await sync({ details: [det(9231, { additions: 12 })] });
   assert.deepStrictEqual(Object.values((await q(`select status, route from app.work_submissions where id = '${as}'`))[0]), ['review', 'poster']);
   assert.strictEqual((await work('POST', 'check', { cookie: aaron.cookie, json: { submission: as, verdict: 'pass' } })).json.result, 'held');
   assert.strictEqual((await q(`select route from app.work_submissions where id = '${as}'`))[0].route, 'held');
@@ -811,7 +856,7 @@ test('the review, M2: deleting an account leaves no task stuck: the worker’s t
 
 test('the review, M3 and M4: a dispute on the repository’s own work is Aaron’s to decide (his task, his decision of Nov 7); a person’s claims are limited to 20 a day', async () => {
   await sync({ prs: [pr(9211, { author: 'mychiefos' })] });
-  await sync({ details: [{ number: 9211, additions: 5, deletions: 0, merged_by: 'mychiefos' }] });
+  await sync({ details: [det(9211, { additions: 5 })] });
   const [t] = (await work('GET', 'tasks', { search: '?q=PR%209211' })).json.tasks;
   const sub = (await page(t.id)).submissions[0].id;
   const cy = await member('CyM3');
@@ -839,7 +884,7 @@ test('the review, L1 and the reversal: a failed submission of someone’s pull r
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
   const s = (await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'pr', url: REPO_PR(9221) } })).json.submission;
   await sync({ prs: [pr(9221, { author: 'real-author' })] });
-  await sync({ details: [{ number: 9221, additions: 5, deletions: 0, merged_by: 'mychiefos' }] });
+  await sync({ details: [det(9221, { additions: 5 })] });
   // W07: it doesn't carry Bo's claim code, so it waits for him to add it while the claim holds, then fails.
   assert.strictEqual((await q(`select status from app.work_submissions where id = '${s}'`))[0].status, 'waiting');
   await asWork(`update app.work_claims set expires_at = now() - interval '1 minute' where task_id = '${id}'`);

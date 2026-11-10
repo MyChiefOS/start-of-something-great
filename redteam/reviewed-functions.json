@@ -184,15 +184,6 @@
     "kind": "public read",
     "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
   },
-  "work_github_sync": {
-    "kind": "open",
-    "risk": "RK140",
-    "why": "Records GitHub's pull request facts as the site reports them, with no actor check, and JEVs's rules trust them."
-  },
-  "work_github_wanted": {
-    "kind": "public read",
-    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
-  },
   "work_ledger_alert": {
     "kind": "timer",
     "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
