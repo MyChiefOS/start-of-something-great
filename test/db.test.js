@@ -67,8 +67,11 @@ test('no placeholder migrations: a migration file that has run anywhere can neve
 });
 
 test('S8 code check: raw SQL, the driver, and identity or session changes appear only where allowed', () => {
-  for (const f of sourceFiles().filter((x) => x.endsWith('.js') && !x.startsWith('test/'))) {
+  // redteam/ is test tooling like test/ (RK141): it builds throwaway databases in CI and is never loaded by the site,
+  // which the second check below holds.
+  for (const f of sourceFiles().filter((x) => x.endsWith('.js') && !x.startsWith('test/') && !x.startsWith('redteam/'))) {
     const s = read(f);
+    assert.ok(!/require\(\s*['"`][./]*redteam\//.test(s), f + ' loads the red-team tooling; only tests and workflows may');
     // Raw SQL only in the migration runner and the production setup run (role and trigger statements can't take
     // parameters); the setup run's statements are pinned by test/setup.test.js.
     if (/(\.unsafe\b|\[\s*['"`]unsafe['"`]\s*\])/.test(s)) assert.ok(RAW_SQL_OK.includes(f), f + ' uses raw SQL; only the migration runner and the setup run may');
