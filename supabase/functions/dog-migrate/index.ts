@@ -17,14 +17,58 @@ import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/github-oidc.mjs";
 import { catalogChecks, leftovers, load, run, status, tokenUsed } from "./core.mjs";
 import { SOURCE_DIGEST } from "./source-digest.mjs";
+// ---- The preview copy (RK141): begin. Everything between these marks is the copy's; outside them this file is
+// byte for byte production's runner as it was (test/preview-migrate.test.js checks the old file's SHA-256).
+import { handleCopy } from "./copy.mjs";
+import { target } from "./target.mjs";
+// ---- The preview copy: end.
 
 const AUDIENCE = "https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-migrate";
 const RAW = "https://raw.githubusercontent.com/MyChiefOS/start-of-something-great/";
 const reply = (status: number, body: unknown) => Response.json(body, { status, headers: { "x-source-digest": SOURCE_DIGEST } });
 
+// ---- The preview copy (RK141): begin. design/preview-copy.md, "Building and reseeding the copy".
+// Which database this runner serves, decided once, here, from its own SUPABASE_URL (./target.mjs), which Supabase
+// sets and no one can set by hand; never from a request. Production's own address, or anything odd, is production,
+// and production's requests never leave the code below. On the preview branch, every request goes to the copy's
+// handler (./copy.mjs): only preview-copy.yml on main, at the branch's own address, may ask it to rebuild the copy.
+const where = target(Deno.env.get("SUPABASE_URL"));
+
+async function copyRequest(req: Request) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return reply(400, { ok: false, error: "body must be JSON" });
+  }
+  const notices: string[] = [];
+  const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, {
+    max: 1, prepare: false, idle_timeout: 5,
+    onnotice: (n: { message?: string }) => { if (notices.length < 20) notices.push(String(n.message || "").slice(0, 200)); },
+  });
+  try {
+    const out = await handleCopy({ body, token: (req.headers.get("authorization") || "").replace(/^Bearer /, "") }, {
+      where, sql, verify, Refused,
+      load: (commit: string) => load(async (path: string) => {
+        const r = await fetch(RAW + commit + "/" + path, { redirect: "error" });
+        if (!r.ok) throw new Error(path + ": fetch " + r.status);
+        return r.text();
+      }),
+    });
+    return reply(out.status, { ...out.body, notices });
+  } catch (e) {
+    return reply(500, { ok: false, error: String((e as Error).message).slice(0, 300), notices });
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+// ---- The preview copy: end.
 Deno.serve(async (req) => {
   if (req.method !== "POST") return reply(405, { ok: false, error: "POST only" });
   if (Number(req.headers.get("content-length") || "0") > 1024) return reply(413, { ok: false, error: "request too large" });
+  // ---- The preview copy (RK141): begin. Taken only when the start-up choice above said "preview".
+  if (where.environment === "preview") return copyRequest(req);
+  // ---- The preview copy: end.
   let mode = "apply";
   try {
     const body = await req.json();

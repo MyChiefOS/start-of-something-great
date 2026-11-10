@@ -22,6 +22,9 @@ const dark = css.match(/\.d1\[data-theme=dark\]\{([^}]*)\}/)[1];
 const light = css.match(/\.d1\[data-theme=light\]\{([^}]*)\}/)[1];
 css = css.replace(/\.d1\[data-theme=dark\]\{[^}]*\}\n?/, '').replace(/\.d1\[data-theme=light\]\{[^}]*\}\n?/, '');
 css = css.replace(/^\/\*[^*]*\*\/\n/, '');
+// The site's serif is Source Serif 4 under its own name (RK139: a smaller copy, which the font's license asks to be
+// renamed; tools/fonts/build.py), so the design's body font names it as the site does.
+css = css.replace(/"Source Serif 4"/g, '"Day One Serif"');
 // Inputs, selects and textareas: --rule-strong (3:1), the handoff's token for interactive borders.
 css = css.replace(/(\.d1 input\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)')
   .replace(/(\.d1 textarea\{[^}]*?)border:1px solid var\(--rule\)/, '$1border:1px solid var(--rule-strong)')

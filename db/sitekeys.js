@@ -21,6 +21,23 @@
 'use strict';
 
 const BROKER = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-keys';
+// The preview copy (RK141; design/preview-copy.md): the project reference of its one Supabase preview branch, fixed here
+// by the pull request that follows the branch's creation (a branch's reference exists only once it is made). Until
+// then null: a preview deployment asks no broker at all, and launch.js keeps it closed.
+const PREVIEW_REF = null;
+const REF = /^[a-z]{20}$/;
+
+// Which broker this deployment asks, from Vercel's own VERCEL_ENV only. Every deployment that isn't a preview
+// (production, and outside Vercel) asks production's broker at its fixed address, exactly as before. A preview asks
+// only the preview branch's broker, at its address fixed above, or nothing. No address ever comes from a request or
+// from any other setting. VERCEL_ENV picks only the address; what a broker hands out is decided by the broker from
+// Vercel's signed token (production's refuses every preview token, the branch's every production token).
+function brokerFor(env = process.env, previewRef = PREVIEW_REF) {
+  const vercel = env.VERCEL_ENV == null ? '' : String(env.VERCEL_ENV).trim().toLowerCase();
+  if (vercel !== 'preview') return BROKER;
+  if (typeof previewRef !== 'string' || !REF.test(previewRef) || previewRef === 'nksagchwpyljvjiwolmp') return null;
+  return 'https://' + previewRef + '.supabase.co/functions/v1/dog-keys';
+}
 const REFRESH_MS = 10 * 60_000;
 const TIMEOUT_MS = 3000;
 const TOKEN_KEEP_MS = 50 * 60_000;
@@ -141,8 +158,8 @@ function takeToken(req) {
   return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
 }
 
-async function ask(token, fetchImpl) {
-  const r = await fetchImpl(BROKER, { method: 'POST', headers: { authorization: 'Bearer ' + token }, redirect: 'error',
+async function ask(token, fetchImpl, broker) {
+  const r = await fetchImpl(broker, { method: 'POST', headers: { authorization: 'Bearer ' + token }, redirect: 'error',
     signal: AbortSignal.timeout(TIMEOUT_MS) });
   let body = null;
   try { body = await r.json(); } catch { /* not JSON */ }
@@ -154,24 +171,27 @@ async function ask(token, fetchImpl) {
   return body;
 }
 
-function askOnce(token, fetchImpl) {
-  if (!inflight.has(token)) inflight.set(token, ask(token, fetchImpl).finally(() => inflight.delete(token)));
+function askOnce(token, fetchImpl, broker) {
+  if (!inflight.has(token)) inflight.set(token, ask(token, fetchImpl, broker).finally(() => inflight.delete(token)));
   return inflight.get(token);
 }
 
 // Makes sure this instance has its settings. Returns where they came from: 'vercel', 'broker', 'cached' (the broker
 // failed; the last good answer is used), 'closed' (not asked) or 'none' (with the reason). With force (the readiness
 // check), it also returns the broker's answer, which is applied only while the site is open.
-async function ensure(req, { fetchImpl = fetch, force = false, env = process.env, stage = () => require('../launch').stage(env) } = {}) {
+// previewRef: for the tests only (the branch's reference, as PREVIEW_REF); no route passes it (test/preview-copy.test.js).
+async function ensure(req, { fetchImpl = fetch, force = false, env = process.env, stage = () => require('../launch').stage(env), previewRef = PREVIEW_REF } = {}) {
   const token = takeToken(req);
   const open = stage() === 'public';
   if (require('./index').hasAddress(env) && !applied && !last) return { source: 'vercel' };
   if (!open && !force) return { source: 'closed' };
   const use = (body, source, extra = {}) => { if (open) apply(body, env); return { source, body, ...extra }; };
+  const broker = brokerFor(env, previewRef);
+  if (!broker) return { source: 'none', error: 'no_broker' };
   if (last && Date.now() - last.at < REFRESH_MS) return use(last.body, 'broker');
   if (!token) return last ? use(last.body, 'cached', { error: 'no_token' }) : { source: 'none', error: 'no_token' };
   try {
-    const body = await askOnce(token, fetchImpl);
+    const body = await askOnce(token, fetchImpl, broker);
     if (open) {
       last = { at: Date.now(), body }; // while closed, the answer stays inside the check (L2)
       kept = { token, at: Date.now() }; // only a token the broker accepted (the CSO's review, N1)
@@ -188,15 +208,17 @@ async function ensure(req, { fetchImpl = fetch, force = false, env = process.env
 // at a time per instance: concurrent refusals share it. A cool-down (the CSO's review, S3): if the last refetch was
 // under 30 seconds ago and gave back the address already set, the broker isn't asked again, since it would only give
 // the same refused password.
-async function refetch({ fetchImpl = fetch, env = process.env, stage = () => require('../launch').stage(env), now = Date.now } = {}) {
+async function refetch({ fetchImpl = fetch, env = process.env, stage = () => require('../launch').stage(env), now = Date.now, previewRef = PREVIEW_REF } = {}) {
   if (stage() !== 'public' || !applied || !kept || now() - kept.at > TOKEN_KEEP_MS) return false;
+  const broker = brokerFor(env, previewRef);
+  if (!broker) return false;
   if (refetching) return refetching;
   if (lastRefetch && lastRefetch.same && now() - lastRefetch.at < REFETCH_COOL_MS) return false;
   const token = kept.token;
   refetching = (async () => {
     const before = applied.url;
     try {
-      const body = await askOnce(token, fetchImpl);
+      const body = await askOnce(token, fetchImpl, broker);
       last = { at: now(), body };
       apply(body, env);
       kept = { token, at: now() };
@@ -217,4 +239,4 @@ function candidates(body = last && last.body) {
 
 const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; keyCache.clear(); keyFetches.clear(); };
 
-module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, tokenCheck, siteKeys, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, tokenCheck, siteKeys, BROKER, PREVIEW_REF, brokerFor, _reset };

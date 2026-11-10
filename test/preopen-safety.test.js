@@ -212,7 +212,8 @@ test('control 3: the broker counts each hand-out and each failure, never a refus
   class Refused extends Error {}
   const good = { dog_web_password: 'p'.repeat(40), dog_session_secret: 's'.repeat(40), dog_ip_hash_key: 'i'.repeat(40), dog_fingerprint_key_1: 'f'.repeat(40) };
   const noted = [];
-  const deps = (over) => ({ verify: async () => {}, Refused, values: async () => good, note: async (o) => { noted.push(o); }, ...over });
+  // Since 057 the check names which of our projects the token is; the site's here.
+  const deps = (over) => ({ verify: async () => ({ our_project: 'site' }), Refused, values: async () => good, note: async (o) => { noted.push(o); }, ...over });
   assert.strictEqual((await core.handle({ method: 'POST', token: 't' }, deps())).status, 200);
   assert.strictEqual((await core.handle({ method: 'POST', token: 't' }, deps({ values: async () => ({}) }))).status, 503);
   await assert.rejects(core.handle({ method: 'POST', token: 't' }, deps({ values: async () => { throw new Error('read failed'); } })), /read failed/);

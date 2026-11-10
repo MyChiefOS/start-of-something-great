@@ -5,11 +5,16 @@
   "license": "MIT",
   "scripts": {
     "test": "node --test --test-concurrency=1 test/*.test.js",
+    "lint": "eslint .",
     "migrate": "node scripts/migrate.js",
     "db:snapshot": "node scripts/db-snapshot.js",
     "harness": "node harness/check.js"
   },
   "dependencies": {
     "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "eslint": "10.14.0",
+    "globals": "17.14.0"
   }
 }

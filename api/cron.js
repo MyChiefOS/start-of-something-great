@@ -43,7 +43,7 @@ function reply(res, code, body) {
 
 const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.headers['user-agent']) || ''));
 
-async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, proposals = null, logFetch = null, workGithub = null } = {}) {
+async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
   if (!run) return reply(res, 503, { ok: false });
   const clock = oidc ? 'signed' : 'other';
@@ -92,20 +92,25 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
   if (oidc) {
     try { await require('../db/secondlook').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
   }
-  // Third Look (044), in shadow: the next work waiting for a person that is a merged pull request, put to its model with
-  // the same identity token, after Second Look. Off, capped or failing, it changes nothing; in shadow it only records.
+  // Third Look (044): the next work waiting for a person that is a merged pull request, with the changed files GitHub's
+  // own workflow recorded (057), put to its model with the same identity token, after Second Look. Off, capped or
+  // failing, it changes nothing; a failed model call gives the work back.
   if (oidc) {
-    try { await require('../db/thirdlook').run(run, oidc, { gh: workGithub, ...(fetchImpl ? { fetchImpl } : {}) }); } catch { /* logs nothing (027) */ }
+    try { await require('../db/thirdlook').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
   }
-  // The public log (038): JEVs's last whole hour, Aaron's proposal decisions from GitHub, the next signed checkpoint and
-  // the witness's copy, each in its own transaction. A failure changes nothing here; the next minute tries again.
+  // The public log (038): JEVs's last whole hour, the next signed checkpoint and, since 057, the check that the witness
+  // has stopped, each in its own transaction. Aaron's proposal decisions and the witness's report no longer come from
+  // here: GitHub's workflows send them to the dog-github function (RK112, RK144). A failure changes nothing here; the
+  // next minute tries again.
   try {
-    await require('../db/logjobs').run(run, { getProposals: proposals, fetchImpl: logFetch });
+    await require('../db/logjobs').run(run);
   } catch { /* logs nothing (027) */ }
-  // The work module (042): its timer, and this repository's pull requests and issues from GitHub (at most every 15
-  // minutes), each in its own transaction. A failure changes nothing here; a later minute tries again.
+  // The work module (042): its timer, in its own transaction. A failure changes nothing here; a later minute tries
+  // again. Since 055 (RK140) the site no longer reads this repository's pull requests and issues for the work module,
+  // and its role can't record them: the GitHub facts workflow does, through the dog-github function. Since 057 the site
+  // reads nothing from GitHub on its timer: Third Look's changed files come through the same workflow.
   try {
-    await require('../db/workjobs').run(run, { gh: workGithub });
+    await require('../db/workjobs').run(run);
   } catch { /* logs nothing (027); before 042 is applied the functions aren't there */ }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
@@ -116,9 +121,7 @@ module.exports = async (req, res) => {
     // a token Vercel signed for this project's production (RK134). Without one, neither runs this minute.
     const oidc = await require('../db/sitekeys').verifiedToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
-    // The log's two reads from GitHub (the proposals and the witness's copy) happen only here, in production.
-    await handle(req, res, db.configured() ? db.run : null, { oidc, proposals: require('./_lib').getProposals, logFetch: globalThis.fetch,
-      workGithub: require('./_lib').githubRead });
+    await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {
     if (!res.headersSent) reply(res, 500, { ok: false });
   }

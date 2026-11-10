@@ -13,3 +13,7 @@ verify_jwt = false
 # proved by Vercel's identity token (supabase/functions/_shared/vercel-oidc.mjs).
 [functions.dog-keys]
 verify_jwt = false
+
+# GitHub's facts for the work module (055, RK140) check their caller the same way: only github-facts.yml on main.
+[functions.dog-github]
+verify_jwt = false

@@ -47,7 +47,9 @@ test('R-14: the preview paths PR #50 made unreachable are gone (no allow-list, n
   const fs = require('fs');
   const path = require('path');
   const root = path.join(__dirname, '..');
-  assert.deepStrictEqual(Object.keys(launch).sort(), ['STAGES', 'envCap', 'repoStage', 'stage'], 'launch.js exports only the stage and its two parts');
+  // previewCopy is the preview copy's rule (Aaron, Nov 10: "Okay you can bring preview back"; test/preview-copy.test.js),
+  // not the dropped private preview stage, which the patterns below still keep out.
+  assert.deepStrictEqual(Object.keys(launch).sort(), ['STAGES', 'envCap', 'previewCopy', 'repoStage', 'stage'], 'launch.js exports only the stage, its two parts and the preview copy\'s rule');
   const files = ['launch.js', 'join.js', 'signin/flow.js', 'api/feed.js', 'api/agents.js', 'api/mcp.js', 'scripts/setup-production.js'];
   for (const f of files) {
     const src = fs.readFileSync(path.join(root, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');

@@ -45,7 +45,12 @@ test('RK141, the catalog: every definer function the site\'s role can run checks
   assert.deepStrictEqual(r.unreviewed, [], 'definer functions the site\'s role can run with no actor check and no reason in redteam/reviewed-functions.json');
   assert.deepStrictEqual(r.stale, [], 'reasons in redteam/reviewed-functions.json for functions that no longer need one: remove them');
   // The open holes, said plainly in the test output until each is fixed.
-  assert.deepStrictEqual(r.open.sort(), ['log_proposal (RK112)', 'log_witness_report (RK144)', 'tl_claim (RK135)', 'tl_decide (RK135)', 'work_github_sync (RK140)']);
+  // RK140 closed by 055: app.work_github_sync is no longer the site's to run (only dog_ghsync's, test/github-facts.test.js).
+  // RK144 and RK112 closed by 057: app.log_witness_report is dog_witness's and app.log_proposal internal to dog_ghsync's
+  // batch (test/holes.test.js). Third Look's functions now check the actor (the site's timer, as 041's Second Look does),
+  // so the catalog counts them as checked; RK135 and RK100 stay open because that actor is the site's own (Aaron, Nov 10:
+  // "using the infrastructure as constructed").
+  assert.deepStrictEqual(r.open.sort(), []);
 });
 
 test('RK141, the catalog: a planted hole is caught, and one that checks who is acting is not', async () => {

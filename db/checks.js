@@ -15,7 +15,8 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work'];
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync',
+  'dog_witness'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -27,8 +28,17 @@ const TIMERS = 'dog_timers';
 // dog_log (038) only adds to the public log and signs its checkpoints, inside the log functions; it alone reads the
 // log's signing key.
 // dog_work (042) only reads and writes the work module's tables (rooms, projects, tasks, claims, submissions, points),
-// inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work'];
+// inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else. Since
+// 056 it also keeps the trust Engine's tables (licenses, forecasts, precedents, findings, work orders), which are built
+// on the work module's records, inside the Engine's functions.
+// dog_ghsync (055, RK140) only records GitHub's facts, inside app.work_github_sync and app.work_github_wanted, for the
+// dog-github function; it holds no table rights, and the site's role can't act as it. Since 057 it also records the
+// changed files Third Look reads (app.tl_files_wanted, app.tl_files_record) and Aaron's proposal decisions
+// (app.log_proposals_record), from the same GitHub facts.
+// dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for dog-github when the log-witness
+// workflow calls. It holds no table rights, and the site's role can't act as it.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
+  'dog_witness'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -38,7 +48,8 @@ const DEFINERS = {
   // the four the site calls (the session sweep, the hourly upkeep, an administrator's read and a lock's release).
   'app.audit_fill()': { owner: 'dog_owner', callers: '' },
   'app.audit_net_add()': { owner: 'dog_owner', callers: '' },
-  'app.audit_add(text, text, uuid, jsonb, text)': { owner: 'dog_owner', callers: 'dog_signin' },
+  // 056: the trust Engine records its administrators' and members' writes with it too.
+  'app.audit_add(text, text, uuid, jsonb, text)': { owner: 'dog_owner', callers: 'dog_signin,dog_work' },
   'app.signin_is_locked(uuid)': { owner: 'dog_owner', callers: 'dog_signin' },
   'app.signin_locks_open()': { owner: 'dog_owner', callers: 'dog_app' },
   'app.keyfile_unpause(uuid)': { owner: 'dog_signin', callers: 'dog_owner' },
@@ -247,9 +258,14 @@ const DEFINERS = {
   'app.log_post_live()': { owner: 'dog_log', callers: '' },
   'app.log_unverified(text)': { owner: 'dog_log', callers: '' },
   'app.log_jevs_hours()': 'dog_log',
-  'app.log_proposal(integer, text)': 'dog_log',
+  // 057 (RK112, RK144): proposal decisions only from GitHub's facts (dog_ghsync, through the one batch function), the
+  // witness's report only from the witness (dog_witness), and the timer's check that the witness has stopped, which
+  // takes no input.
+  'app.log_proposal(integer, text)': { owner: 'dog_log', callers: '' },
+  'app.log_proposals_record(jsonb)': { owner: 'dog_log', callers: 'dog_ghsync' },
   'app.log_checkpoint()': 'dog_log',
-  'app.log_witness_report(bigint, bytea, timestamp with time zone, text)': 'dog_log',
+  'app.log_witness_report(bigint, bytea, timestamp with time zone, text)': { owner: 'dog_log', callers: 'dog_witness' },
+  'app.log_witness_check()': 'dog_log',
   'app.log_opening(bigint)': 'dog_log',
   // The review of 038: a random name for each account in the log (M2), the queue's trigger on each new JEVs decision
   // (H4, L1), and clearing an alarm, in a reviewed migration only (M3).
@@ -276,8 +292,9 @@ const DEFINERS = {
   'app.work_submit(uuid, text, text, text, text, integer)': 'dog_work',
   'app.work_approve(uuid)': 'dog_work',
   'app.work_cancel(uuid)': 'dog_work',
-  'app.work_github_wanted(integer)': 'dog_work',
-  'app.work_github_sync(jsonb)': 'dog_work',
+  // 055 (RK140): GitHub's facts only from GitHub, through the dog-github function's role, never the site's.
+  'app.work_github_wanted(integer)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.work_github_sync(jsonb)': { owner: 'dog_work', callers: 'dog_ghsync' },
   'app.work_tick()': 'dog_work',
   'app.work_admin()': 'dog_work',
   'app.work_person_decide(uuid, text, integer, text)': 'dog_work',
@@ -288,8 +305,16 @@ const DEFINERS = {
   'app.work_check_decide(uuid, text, text)': 'dog_work',
   'app.work_task_of(uuid)': 'dog_work',
   // Third Look (044), in shadow: the timer claims and records; an administrator switches it; its figures are public.
+  // 057 (RK135, in part): the timer claims, answers and gives work back; the changed files it reads only from GitHub's
+  // facts (dog_ghsync); whether it still wants a pull request, and whether a number can be an issue (for the log's
+  // proposals), as internal pieces.
   'app.tl_claim(integer)': 'dog_work',
   'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': 'dog_work',
+  'app.tl_release(uuid, text)': 'dog_work',
+  'app.tl_wants(integer)': { owner: 'dog_work', callers: '' },
+  'app.tl_files_wanted(integer)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.tl_files_record(jsonb)': { owner: 'dog_work', callers: 'dog_ghsync' },
+  'app.work_github_issue_ok(integer)': { owner: 'dog_work', callers: 'dog_log' },
   'app.tl_figures()': 'dog_work',
   'app.tl_set_mode(text)': 'dog_work',
   'app.work_board(text, text, text)': 'dog_work',
@@ -334,7 +359,29 @@ const DEFINERS = {
   'app.work_project_card(uuid)': { owner: 'dog_work', callers: '' },
   'app.work_record(uuid, uuid, text, uuid, uuid, text, text, text, text, text, integer, text, integer)': { owner: 'dog_work', callers: '' },
   'app.log_work(text, text, text, text, jsonb)': { owner: 'dog_log', callers: 'dog_work' },
-  'app.log_work_name(text)': { owner: 'dog_log', callers: '' }
+  'app.log_work_name(text)': { owner: 'dog_log', callers: '' },
+  // 056, the trust Engine's steps E1 to E3 (design/engine-e1-e3.md), as dog_work: the page's two public reads; an
+  // agent's forecast; an administrator's precedents, findings and fixes; an owner's work orders and their resumes. Each
+  // write checks who is acting. Inside them, called by none of them directly: the one writer of licenses, a forecast's
+  // resolution, a work order's state and its watch, the agent as the pages show it, the daily alert; and the three
+  // triggers after the work module's submissions, points and claims change, which never refuse the change.
+  'app.engine_summary()': 'dog_work',
+  'app.engine_agent(uuid)': 'dog_work',
+  'app.engine_forecast(uuid, integer, jsonb, boolean)': 'dog_work',
+  'app.engine_precedent_add(text, text, text, text, uuid)': 'dog_work',
+  'app.engine_finding_add(uuid, text, text, boolean, text)': 'dog_work',
+  'app.engine_finding_fix(uuid, text)': 'dog_work',
+  'app.engine_order_add(uuid, uuid, integer, integer, integer, text)': 'dog_work',
+  'app.engine_order_resume(uuid, integer, integer)': 'dog_work',
+  'app.engine_license_refresh(uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_forecast_settle(uuid, text, uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_order_state(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_order_watch(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_agent_card(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_trouble(text)': { owner: 'dog_work', callers: '' },
+  'app.engine_on_submission()': { owner: 'dog_work', callers: '' },
+  'app.engine_on_points()': { owner: 'dog_work', callers: '' },
+  'app.engine_on_claim()': { owner: 'dog_work', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -465,7 +512,8 @@ async function problems(sql, { snapshot } = {}) {
     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
-      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work') and a.privilege_type = 'USAGE')`;
+      and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
+                                         'dog_witness') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
@@ -597,7 +645,17 @@ async function problems(sql, { snapshot } = {}) {
     ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
     // PR 16: a parent's daily cap counts its whole subtree, before every new post and draft.
     ['posts', 'posts_tree_cap', 7, 'agent_tree_cap', 'every new post'],
-    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft']
+    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft'],
+    // 056, the trust Engine (Rev 4.2): a license's history is only added to; a forecast is fixed but for its one
+    // resolution; a precedent is never edited; a finding only gets its fix, once, from the Engine's own function; a
+    // work order and its resumes never change. Each goes only with what it belongs to (an agent's account, a claim).
+    ['engine_license_history', 'engine_license_history_guard', 27, 'engine_history_guard', 'every updated or deleted license change'],
+    ['engine_forecasts', 'engine_forecasts_guard', 27, 'engine_forecasts_guard', 'every updated or deleted forecast'],
+    ['engine_citations', 'engine_citations_guard', 27, 'engine_citations_guard', 'every updated or deleted citation'],
+    ['engine_precedents', 'engine_precedents_guard', 27, 'engine_precedents_guard', 'every updated or deleted precedent'],
+    ['engine_findings', 'engine_findings_guard', 27, 'engine_findings_guard', 'every updated or deleted finding'],
+    ['engine_orders', 'engine_orders_guard', 27, 'engine_orders_guard', 'every updated or deleted work order'],
+    ['engine_order_resumes', 'engine_order_resumes_guard', 27, 'engine_resumes_guard', 'every updated or deleted resume']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;

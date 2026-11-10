@@ -1,6 +1,7 @@
 // The site's key broker, route B (Aaron, Oct 26; harness/PLAN.md fixes 5 and 8). It hands the site its database login
 // and its three keys, and only to a production function of our own Vercel project, proved by Vercel's identity token
-// (../_shared/vercel-oidc.mjs). Nothing is pasted anywhere: migration 022 made the login's password inside the database,
+// (../_shared/vercel-oidc.mjs). The same code deployed to the preview copy's Supabase branch serves only that branch's
+// own login and keys, and only to preview functions of the same project (./target.mjs; design/preview-copy.md). Nothing is pasted anywhere: migration 022 made the login's password inside the database,
 // and the keys were already in Supabase Vault.
 // The CSO's control 1, "hand out less": exactly what the site needs to sign people in and reach the database, nothing
 // else (not the timer secret: the site never holds one under route B; not the JEVs gate's or the runner's).
@@ -24,17 +25,21 @@ const b64 = (s) => {
   return btoa(bin);
 };
 
-// Reads the four values from Vault in one query. Never logged or kept beyond the reply.
-export async function read(sql) {
-  const names = [LOGIN_ENTRY, ...Object.keys(KEYS)];
+// Reads the four values from Vault in one query. Never logged or kept beyond the reply. extra: on the preview branch
+// only, the preview copy's mark (./target.mjs); production asks for exactly the four.
+export async function read(sql, extra = []) {
+  const names = [LOGIN_ENTRY, ...Object.keys(KEYS), ...extra];
   const rows = await sql`select name, decrypted_secret as v from vault.decrypted_secrets where name = any(${names})`;
   return Object.fromEntries(rows.map((r) => [r.name, r.v]));
 }
 
 // What the site gets, or which part is missing (names only). A key shorter than 32 bytes is reported as unusable
-// rather than sent, so the site never runs with a weak key.
-export function shape(v) {
+// rather than sent, so the site never runs with a weak key. ref: the project whose pooler login is handed out
+// (production's unless this is the preview branch, ./target.mjs). marker: a Vault name that must hold "yes" before
+// anything is handed out (the preview branch's mark; production requires none).
+export function shape(v, { ref = PROJECT_REF, marker = null } = {}) {
   const missing = [];
+  if (marker && v[marker] !== 'yes') missing.push(marker);
   if (typeof v[LOGIN_ENTRY] !== 'string' || v[LOGIN_ENTRY].length < 32) missing.push(LOGIN_ENTRY);
   const keys = {};
   for (const [name, setting] of Object.entries(KEYS)) {
@@ -43,7 +48,7 @@ export function shape(v) {
   }
   if (missing.length) return { missing };
   return {
-    database: { user: 'dog_web.' + PROJECT_REF, password: v[LOGIN_ENTRY], hosts: POOLER_HOSTS, port: 6543, database: 'postgres' },
+    database: { user: 'dog_web.' + ref, password: v[LOGIN_ENTRY], hosts: POOLER_HOSTS, port: 6543, database: 'postgres' },
     keys
   };
 }
@@ -57,8 +62,9 @@ async function count(note, outcome) {
   try { await note(outcome); } catch { /* the answer never depends on the count */ }
 }
 
-// One request: { method, token } -> { status, body }. verify throws Refused for a token that isn't ours.
-export async function handle({ method, token }, { verify, Refused, values, note }) {
+// One request: { method, token } -> { status, body }. verify throws Refused for a token that isn't ours. ref and
+// marker: as shape() takes them, fixed when the function starts (./target.mjs), never from the request.
+export async function handle({ method, token }, { verify, Refused, values, note, ref = PROJECT_REF, marker = null }) {
   if (method !== 'POST') return { status: 405, body: { ok: false, error: 'POST only' } };
   try {
     await verify(token);
@@ -73,7 +79,7 @@ export async function handle({ method, token }, { verify, Refused, values, note 
     await count(note, 'failed');
     throw e;
   }
-  const out = shape(v);
+  const out = shape(v, { ref, marker });
   if (out.missing) {
     await count(note, 'failed');
     return { status: 503, body: { ok: false, error: 'not set up', missing: out.missing } };

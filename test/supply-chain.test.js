@@ -45,7 +45,9 @@ test('SBOM: the command CI runs works on this lockfile with this npm, and lists 
       const name = k.replace(/^.*node_modules\//, '');
       const c = bom.components.find((x) => x.name === name && x.version === v.version);
       assert.ok(c, name + '@' + v.version + ' is in the SBOM');
-      assert.strictEqual(c.purl, 'pkg:npm/' + name + '@' + v.version);
+      // A scoped package's "@" is written %40 in a package URL, as the purl standard says (seen once ESLint brought the
+      // first scoped packages).
+      assert.strictEqual(c.purl, 'pkg:npm/' + name.replace(/^@/, '%40') + '@' + v.version);
       const hex = Buffer.from(v.integrity.replace(/^sha512-/, ''), 'base64').toString('hex');
       assert.deepStrictEqual(c.hashes, [{ alg: 'SHA-512', content: hex }], name + ': the lockfile\'s sha512');
     }

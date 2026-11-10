@@ -345,7 +345,7 @@ function risks() {
   const intro = md.split('\n\n')[1].trim();
   const how = list(md, /^ACCEPTANCE\.md says/);
   const rows = t.rows.map(([id, risk, severity, control, owner, due, signoff]) => {
-    const band = (severity.match(/(Low|Medium|High|Critical)/) || [, 'Unknown'])[1];
+    const band = (severity.match(/(Low|Medium|High|Critical)/) || ['', 'Unknown'])[1];
     return { id, risk, severity, control, owner, due, signoff, band, status: riskStatus({ signoff, risk }) };
   });
   const count = (f) => rows.filter(f).length;

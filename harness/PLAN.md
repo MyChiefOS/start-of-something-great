@@ -209,6 +209,7 @@ The brief is the handoff's CODING_AGENT_SPEC.md (Nov 5, version 1), now in [desi
 1a. The red-team copy (RK141), before RK140, so RK140 and RK135 are attacked before they're merged.
 2. RK140, found by the RK135 design review: GitHub's facts only from a GitHub workflow (GitHub's identity token) through a Supabase function with its own role; the sync revoked from the site's role; a pass needs Aaron's merge.
 3. RK135: Third Look's claim and decide in its own Supabase function and role, reading step 2's facts; failures release the item rather than spend its try.
+   Part built in PR 2 (Nov 10): Third Look reads GitHub's facts, gives failed calls back and has a claim time limit; RK144 and RK112 closed. Second and Third Look stay in the site's timer (Aaron, Nov 10: "Go back to making it work using the infrastructure as constructed"), so their verdicts can still be recorded by the site's role (RK135, RK100 open). Next: Aaron's merge, then Claude redeploys the functions and proves each live in OPERATIONS.md.
 Each proven live (OPERATIONS.md) before the next starts.
 
 ### The standards (Aaron, Nov 10: "use this standards as part of your framework"; and "Add those additional worth adding standards. Also add HIPPA and FedRAMP processes"). Claude. Recorded Nov 10.

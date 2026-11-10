@@ -16,6 +16,7 @@ const hex = (field, s) => v.text(field, s, { min: 64, max: 64, pattern: HEX64 })
 const NAME_MARKS = /[\p{Pd}\u2212\u00b7\u0387\u2022\u2027\u2219\u22c5\u30fb\uff65|]/u;
 // Shown as nothing, or as a blank: soft hyphen, combining grapheme joiner, zero-width (non-)joiner, Mongolian vowel
 // separator, Hangul fillers, and every other invisible "format" character (\p{Cf}).
+// eslint-disable-next-line no-misleading-character-class -- each of these code points is matched on its own, on purpose
 const NAME_HIDDEN = /[\p{Cf}\u00ad\u034f\u115f\u1160\u180e\u200c\u200d\u3164\uffa0]/u;
 const LOOKALIKE = { 'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'ԛ': 'q', 'ԝ': 'w', 'ɡ': 'g',
   'ո': 'n', 'ց': 'g', 'ս': 'u', 'օ': 'o', 'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'ν': 'v', 'ι': 'i', 'κ': 'k', 'τ': 't', 'υ': 'u', 'β': 'b', 'η': 'n',

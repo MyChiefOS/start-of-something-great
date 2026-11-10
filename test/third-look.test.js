@@ -7,6 +7,8 @@
 //     within the daily cap, and never when off;
 //   - in shadow nothing changes for the work, the people deciding never see the suggestion, and the public figures
 //     count agreement only after they decide, with 1 to 4 shown as null.
+// Since 057 (RK135, in part) Third Look reads the changed files the GitHub facts workflow delivers (dog-github's core, as
+// dog_ghsync), never GitHub itself; it still runs in the site's timer, as the site's role.
 // Needs TEST_DATABASE_URL for the database part (skipped without it, required in CI).
 'use strict';
 
@@ -18,7 +20,6 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const tl = require('../thirdlook/v1');
-const runner = require('../db/thirdlook');
 const { migrate } = require('../scripts/migrate');
 const { promote, shadowMode, asSignin } = require('./helpers');
 
@@ -111,6 +112,16 @@ const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sql) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sql); });
 const asWork = (sql) => su.begin(async (t) => { await t.unsafe('set local role dog_work'); return t.unsafe(sql); });
+// The GitHub facts workflow's part (057): the changed files of every pull request Third Look is waiting to read,
+// recorded through dog-github's own code as dog_ghsync.
+async function deliver(files = FILES) {
+  const gh = await import('../supabase/functions/dog-github/core.mjs');
+  const w = await gh.wanted(su);
+  if (w.files.length) await gh.sync(su, { prs: [], issues: [], details: [], refused: 0 }, { files: w.files.map((n) => ({ number: n, files })) });
+}
+// Third Look's own steps, as the site's timer takes them.
+const looks = async (fn) => { await deliver(); return run({ actor: 'anon' }, fn); };
+const third = async (opts) => { await deliver(); return require('../db/thirdlook').run(run, TOKEN, opts); };
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
@@ -154,7 +165,8 @@ async function work(method, route, { cookie = '', json, search = '' } = {}) {
   await require('../api/work.js').handle({ method, url: '/api/work/' + route + search, headers, query: { route }, body: json ? JSON.stringify(json) : undefined }, r, run);
   return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null, text: r.body };
 }
-const sync = (payload) => run({ actor: 'anon' }, (t) => t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`);
+// Since 055 (RK140) only dog_ghsync, the dog-github function's role, records GitHub's facts.
+const sync = (payload) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`; });
 const pr = (n, over = {}) => ({ number: n, title: 'PR ' + n, author: 'bo-dev', state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
   refs: '', milestone: null, milestone_title: null, room: null, created_at: '2026-10-31T10:00:00Z', codes: [], ...over });
 const claimNow = () => asWork('update app.tl_settings set last_claim_at = null');
@@ -170,7 +182,9 @@ async function prWork(poster, worker) {
   const n = prn++;
   const s = (await work('POST', 'submit', { cookie: worker.cookie, json: { task: id, kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + n } })).json.submission;
   await sync({ prs: [pr(n, { codes: [c.sha256hex(cl.code)] })] });
-  await sync({ details: [{ number: n, additions: 20, deletions: 0, merged_by: 'mychiefos' }] });
+  // GitHub's read of it: merged into main by Aaron's account (by GitHub ID), so Third Look may take it (055).
+  await sync({ details: [{ number: n, additions: 20, deletions: 0, state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
+    merged_by: 'mychiefos', merged_by_id: 304218593 }] });
   const [row] = await q(`select status, route, jevs_rules from app.work_submissions where id = '${s}'`);
   assert.deepStrictEqual([row.status, row.route, row.jevs_rules], ['review', 'poster', 'W12']);
   return { id, s, n };
@@ -182,7 +196,7 @@ test('the gate: only work sent for a second look that is a merged pull request, 
   const w = await prWork(ada, bo);
   // Still waiting for its poster: not Third Look's (Aaron, Nov 7: what comes to it is risky work, for a second look).
   await claimNow();
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0, 'the poster decides first');
+  assert.strictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).length, 0, 'the poster decides first');
   await toAdmin(w.s);
   // A link waiting for the poster is out of Third Look's scope: it opens nothing.
   const pj = (await work('POST', 'projects', { cookie: ada.cookie, json: { title: 'Link project', room: '15-0000' } })).json.id;
@@ -190,29 +204,29 @@ test('the gate: only work sent for a second look that is a merged pull request, 
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: lt } });
   await work('POST', 'submit', { cookie: bo.cookie, json: { task: lt, kind: 'link', url: 'https://example.org/summary' } });
   await claimNow();
-  const got = await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`);
+  const got = await looks((t) => t`select * from app.tl_claim(3)`);
   assert.deepStrictEqual(got.map((x) => x.submission_id), [w.s]);
   assert.deepStrictEqual([got[0].task_title, got[0].pr_number, got[0].model], ['Add a theme toggle', w.n, 'mistral/ministral-14b']);
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0, 'not again within 50 seconds');
+  assert.strictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).length, 0, 'not again within 50 seconds');
   await claimNow();
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0, 'each once');
-  await assert.rejects(run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(4)`), /bad Third Look claim/);
+  assert.strictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).length, 0, 'each once');
+  await assert.rejects(looks((t) => t`select * from app.tl_claim(4)`), /bad Third Look claim/);
   // Off: nothing is given. Only an administrator switches it.
   const w2 = await prWork(ada, bo);
   await assert.rejects(run({ actor: 'anon' }, (t) => t`select app.tl_set_mode('off')`), /only an administrator/);
   await run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('off')`);
   await claimNow();
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0);
+  assert.strictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).length, 0);
   await run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('shadow')`);
   await assert.rejects(run({ actor: 'admin', memberId: aaron.id, session: c.sha256hex(aaron.cookie.split('=')[1]) }, (t) => t`select app.tl_set_mode('live')`), /bad mode/);
   // The daily cap.
   await q('update app.tl_settings set daily_call_cap = 1');
   await claimNow();
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).length, 0, 'today’s one call is used');
+  assert.strictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).length, 0, 'today’s one call is used');
   await q('update app.tl_settings set daily_call_cap = 30');
   await toAdmin(w2.s);
   await claimNow();
-  assert.deepStrictEqual((await run({ actor: 'anon' }, (t) => t`select * from app.tl_claim(3)`)).map((x) => x.submission_id), [w2.s]);
+  assert.deepStrictEqual((await looks((t) => t`select * from app.tl_claim(3)`)).map((x) => x.submission_id), [w2.s]);
 });
 
 test('the runner records its suggestion once; in shadow nothing changes, the people deciding never see it, and the public figures count agreement after they decide', async () => {
@@ -224,15 +238,14 @@ test('the runner records its suggestion once; in shadow nothing changes, the peo
   for (let i = 0; i < 6; i++) { const x = await prWork(ada, bo); await toAdmin(x.s); items.push(x); }
   // The runner, with GitHub and the gateway stood in for: five would-be passes and one "a person".
   const g = gateway(answer('yes', 'yes', 'no'));
-  const gh = async (path) => { assert.match(path, /^\/pulls\/\d+\/files\?per_page=100$/); return FILES; };
   let decided = 0;
-  for (let i = 0; i < 2; i++) { await claimNow(); decided += (await runner.run(run, TOKEN, { gh, fetchImpl: g.fetchImpl })).decided; }
+  for (let i = 0; i < 2; i++) { await claimNow(); decided += (await third({ fetchImpl: g.fetchImpl })).decided; }
   assert.strictEqual(decided, 6);
   const rows = await q(`select suggestion, model, fail_closed, truncated from app.tl_reviews where submission_id in (${items.map((x) => `'${x.s}'`).join(',')})`);
   assert.deepStrictEqual([...new Set(rows.map((r) => r.suggestion + '/' + r.model + '/' + r.fail_closed))], ['pass/mistral/ministral-14b/false']);
   // Once only, and a pass the answers don't support is refused.
-  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.tl_decide(${items[0].s}::uuid, 'v1', 'mistral/ministral-14b', 'person', null, 'again', false, false, 1) as r`))[0].r, 'not_claimed');
-  await assert.rejects(run({ actor: 'anon' }, (t) => t`select app.tl_decide(${items[0].s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json({ a1: 'yes', a2: 'no', a3: 'no' })}::jsonb, 'x', false, false, 1)`), /bad Third Look answer/);
+  assert.strictEqual((await looks((t) => t`select app.tl_decide(${items[0].s}::uuid, 'v1', 'mistral/ministral-14b', 'person', null, 'again', false, false, 1) as r`))[0].r, 'not_claimed');
+  await assert.rejects(looks((t) => t`select app.tl_decide(${items[0].s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json({ a1: 'yes', a2: 'no', a3: 'no' })}::jsonb, 'x', false, false, 1)`), /bad Third Look answer/);
   // Shadow: the work still waits for the administrator, untouched.
   assert.deepStrictEqual([...new Set((await q(`select status || '/' || route as s from app.work_submissions where id in (${items.map((x) => `'${x.s}'`).join(',')})`)).map((r) => r.s))], ['review/admin']);
   // Blind: nothing the poster or Aaron reads before deciding carries the suggestion.
@@ -266,7 +279,6 @@ test('on: its pass passes work sent for a second look, held work included; "a pe
   // Held: the poster is an administrator and past a limit is a party, so no administrator may decide it.
   const held = await prWork(aaron, bo);
   await q(`update app.work_submissions set route = 'held', held_reason = 'An administrator is a party.' where id = '${held.s}'`);
-  const gh = async () => FILES;
   const answers = { [yes.n]: ['yes', 'yes', 'no'], [no.n]: ['unsure', 'yes', 'no'], [held.n]: ['yes', 'yes', 'no'] };
   const fetchImpl = async (url, init) => {
     const body = JSON.parse(init.body);
@@ -274,7 +286,7 @@ test('on: its pass passes work sent for a second look, held work included; "a pe
     const [a1, a2, a3] = answers[n] || ['yes', 'yes', 'no'];
     return { status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ a1, a2, a3, reason: 'It adds the toggle the task asks for.' }) } }] }) };
   };
-  for (let i = 0; i < 3; i++) { await claimNow(); await runner.run(run, TOKEN, { gh, fetchImpl }); }
+  for (let i = 0; i < 3; i++) { await claimNow(); await third({ fetchImpl }); }
   const row = async (s) => (await q(`select s.status, s.decided_by, s.confidence, s.route, p.status as pts, t.status as task
     from app.work_submissions s join app.work_tasks t on t.id = s.task_id left join app.work_points p on p.submission_id = s.id where s.id = '${s}'`))[0];
   assert.deepStrictEqual(Object.values(await row(yes.s)), ['passed', 'third_look', 90, null, 'pending', 'audited']);
@@ -336,7 +348,7 @@ test('052, the real paths: a poster\'s silence sends readable work to Third Look
     const [a1, a2, a3] = answers[n] || ['yes', 'yes', 'no'];
     return { status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ a1, a2, a3, reason: 'Checked.' }) } }] }) };
   };
-  for (let i = 0; i < 2; i++) { await claimNow(); await runner.run(run, TOKEN, { gh: async () => FILES, fetchImpl }); }
+  for (let i = 0; i < 2; i++) { await claimNow(); await third({ fetchImpl }); }
   assert.deepStrictEqual(Object.values(await route(quiet.s)), ['passed', null]);
   assert.strictEqual((await q(`select count(*)::int as n from app.work_checks where submission_id = '${quiet.s}'`))[0].n, 0, 'its own daily limit');
   await q('update app.work_settings set tl_check_daily = 5');
@@ -350,7 +362,7 @@ test('052, the real paths: a poster\'s silence sends readable work to Third Look
   const dz = await member('DzTL5');
   const did = (await work('POST', 'dispute', { cookie: dz.cookie, json: { submission: disp.s, reason: 'It changes the wrong file.' } })).json.id;
   await claimNow();
-  await runner.run(run, TOKEN, { gh: async () => FILES, fetchImpl });
+  await third({ fetchImpl });
   assert.deepStrictEqual(Object.values(await route(disp.s)), ['passed', null], 'its answer changes nothing');
   const di = (await work('GET', 'admin', { cookie: aaron.cookie })).json.disputes.find((x) => x.dispute === did);
   assert.deepStrictEqual([di.may, di.third_look && di.third_look.suggestion], ['any', 'pass']);

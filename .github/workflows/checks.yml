@@ -96,6 +96,9 @@ jobs:
           python -m pip install --quiet "semgrep==1.95.0" "setuptools==75.6.0"
           semgrep scan --config .semgrep/ --metrics=off --error api/ scripts/ db/ signin/ notify/ supabase/ .github/workflows/ proposals.js shipped.js join.js pin.js signin.js feed.js review.js agents.js controls.js account.js receipt.js member.js launch.js nav.js search.js account/agents.js agent.js status.js risks.js decisions.js receipts.js errors/ admin/ admin/review.js admin/controls.js verifier/ tools/verify/ security.js log-health.js approval.js workpages.js boardpages.js buildpage.js plan.js progress.js home.js claim.js engine.js secondlook/ thirdlook/
 
+      - name: Lint (ESLint 10.14.0 from the lockfile, eslint.config.cjs; bug rules only, so errors fail and warnings only report)
+        run: npm run lint
+
       - name: Workflow lint (actionlint 1.7.7, checksum verified; report only, never fails the job, R-7)
         # Report only (Aaron: checks alert, never lock out): findings show as warnings on the run, and neither a finding
         # nor a failed download can fail the job. SC2016 is left out: the GraphQL queries in jevs.yml and brake.yml put

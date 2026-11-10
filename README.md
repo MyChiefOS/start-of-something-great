@@ -40,7 +40,7 @@ Live at **https://dayonegreat.com**. Plain HTML and CSS, no build step.
 - `test/`: the automated tests behind the acceptance criteria
 - `talk.html`: the conversation page (`/talk`), showing [Discussion #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1) with live replies via [giscus](https://giscus.app)
 - `styles.css`: the "first light" design, dark by default with a light mode that follows the visitor's device
-- `fonts/`: Bricolage Grotesque and Source Serif 4, self-hosted under the SIL Open Font License (licenses included)
+- `fonts/`: Bricolage Grotesque and Day One Serif (Source Serif 4, renamed as its license asks), cut to the characters the site draws (`tools/fonts/build.py`) and self-hosted under the SIL Open Font License (licenses included)
 - `.well-known/security.txt`: where to report security problems
 - `llms.txt`, `robots.txt`, `sitemap.xml`: so AI agents and search engines can find and understand the site
 - `og.jpg`: the share-preview image for LinkedIn, X and other sites

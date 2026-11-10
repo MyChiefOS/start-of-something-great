@@ -7,7 +7,10 @@
 // "preview" is not a stage (Aaron, Oct 24: "NO preview systems"): LAUNCH_STAGE=preview counts as closed, so setting it
 // can only close the site, never open it. The preview-only paths it once switched on (an allow-list for new accounts,
 // LAUNCH_PREVIEW_ALLOW, and signed-in-only reading) were removed in the dormant-paths clean-up
-// (harness/REVIEW-2026-10-26.md, R-14).
+// (harness/REVIEW-2026-10-26.md, R-14). That stage of the live site stays dropped (Aaron, Nov 10).
+//
+// The separate red-team copy (RK141; Aaron, Nov 10) may run open only under previewCopy's conditions below; the rule,
+// and why it can never open production, is in design/preview-copy.md ("When a deployment of the copy may run open").
 //
 // The stage is the repository's (harness/PLAN.md: Aaron's merge of the go-live release is the go-live decision): launch.json { "stage": "public" | "closed" }, changed only by a pull request he merges. A missing
 // file, or a value that isn't a stage, counts as closed.
@@ -18,6 +21,16 @@
 'use strict';
 
 const STAGES = ['closed', 'public'];
+// Route A's settings (CHARTER.md section 2, Oct 26): a database address, or one of the site's keys or the timer secret.
+// If Vercel gives a preview any of these, the preview copy stays closed. Read once, when this file is first loaded,
+// which is always before db/sitekeys.js puts the broker's answer in the same environment (it asks the stage first), so
+// the copy's own values never count as Vercel's. Whether an address is set is asked of db/index.js, the one place
+// that reads it (G1).
+const ROUTE_A_KEYS = ['SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
+const routeA = (env) => [...(require('./db').hasAddress(env) ? ['database address'] : []),
+  ...ROUTE_A_KEYS.filter((k) => env[k] != null && String(env[k]) !== '')];
+const BOOT = Object.freeze(routeA(process.env));
+const lower = (x) => (x == null ? '' : String(x).trim().toLowerCase());
 
 let FILE = null;
 try { FILE = require('./launch.json'); } catch { FILE = null; }
@@ -33,15 +46,29 @@ function repoStage(f = FILE) {
 // deployment Vercel marks as anything but production (a preview) is always closed (no preview systems, Aaron, Oct 24;
 // the CSO's review of the go-live release, S2), whatever the repository says. Outside Vercel VERCEL_ENV is unset.
 function envCap(env = process.env) {
-  const vercel = env.VERCEL_ENV == null ? '' : String(env.VERCEL_ENV).trim().toLowerCase();
+  const vercel = lower(env.VERCEL_ENV);
   if (vercel !== '' && vercel !== 'production') return 'closed';
-  const raw = env.LAUNCH_STAGE == null ? '' : String(env.LAUNCH_STAGE).trim().toLowerCase();
+  const raw = lower(env.LAUNCH_STAGE);
   return raw === '' || raw === 'public' ? 'public' : 'closed';
 }
 
-function stage(env = process.env, f = FILE) {
-  const a = repoStage(f), b = envCap(env);
-  return STAGES.indexOf(a) <= STAGES.indexOf(b) ? a : b;
+// What a preview deployment of the preview copy allows (the conditions above); closed for anything else.
+// previewRef and boot are for the tests: the branch's reference (db/sitekeys.js PREVIEW_REF) and the route A settings
+// Vercel gave (read at load for the live environment; from the given object otherwise).
+function previewCopy(env = process.env, { previewRef, boot } = {}) {
+  if (lower(env.VERCEL_ENV) !== 'preview') return 'closed';
+  const sitekeys = require('./db/sitekeys');
+  if (!sitekeys.brokerFor(env, previewRef === undefined ? sitekeys.PREVIEW_REF : previewRef)) return 'closed';
+  if ((boot || (env === process.env ? BOOT : routeA(env))).length) return 'closed';
+  const raw = lower(env.LAUNCH_STAGE);
+  return raw === '' || raw === 'public' ? 'public' : 'closed';
 }
 
-module.exports = { stage, repoStage, envCap, STAGES };
+const least = (a, b) => (STAGES.indexOf(a) <= STAGES.indexOf(b) ? a : b);
+function stage(env = process.env, f = FILE, opts = {}) {
+  const a = repoStage(f);
+  if (lower(env.VERCEL_ENV) === 'preview') return least(a, previewCopy(env, opts));
+  return least(a, envCap(env));
+}
+
+module.exports = { stage, repoStage, envCap, previewCopy, STAGES };
