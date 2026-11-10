@@ -51,7 +51,7 @@ Updated Nov 10 with four independent reviews (#123, the web app, the AI parts, t
 
 1. **RK141, a safe copy to red team (Claude, before Release 2):**
    - GitHub Actions builds the site and a throwaway database with test accounts, on demand and on every PR. First, so the fixes below are red teamed before Aaron merges them.
-   - It runs Claude's own attack suite against it. Its first check: every definer function the site's role can run must check who is acting or carry a recorded reason; on Nov 10, 68 had no check of their own, and the review found five of them to be findings (RK140, RK135, RK144, RK112).
+   - It runs Claude's own attack suite against it. Its first check, built Nov 10 (redteam/catalog.js, test/redteam-catalog.test.js, on every PR): every definer function the site's role can run must check who is acting or carry a reviewed reason (redteam/reviewed-functions.json). Of the 60 with no check of their own, 55 are fine by design and 5 are open holes, each named by its risk (RK140, RK135 twice, RK144, RK112); a planted hole fails it.
    - Then every route against every role, injection, cross-site scripting and request forgery.
    - It also runs any attack plan Aaron or an agent he directs writes in an issue, and posts the report.
    - The suite's repeatable results gate; anything found by hand goes to RISKS.md.
