@@ -5,19 +5,14 @@
 #           It can only read this repository, and no step that reads the site's answers holds a token.
 #   record: writes only state.json, checkpoint and README.md to the branch log-witness, after checking they are what
 #           the check writes, and on an alarm opens one issue labelled log-witness (no mentions, no links).
-# The site reads the branch, marks the log unverified on an alarm and alerts Aaron in his inbox. Nothing is ever blocked.
+# report (057, RK144): the witness sends its own result to dog-github (see the job below); the site no longer reads the
+#           branch. On an alarm the log is marked unverified and Aaron is alerted in his inbox. Nothing is ever blocked.
 # No secret but the workflow's own GITHUB_TOKEN, given only to the record job.
 # The witness never forgets what it kept (RK149): a fresh branch only when `git ls-remote --exit-code` exits 2 (GitHub
 # says the branch doesn't exist); any other failure to read it fails the job. The check passes on the commit it built
 # on, and the record job fails if the branch has moved since. record() refuses a state that drops an alarm, lowers the
 # last good checkpoint, changes the pinned key or lowers the run count. Each is a red run: it alerts and blocks nothing.
 # No text from the event reaches a shell: the steps read only GITHUB_REPOSITORY and the check job's outputs, from env.
-# report (057, RK144): once the record job has written it, the witness reports its own result (its last good
-#           checkpoint, when it ran, its alarm) to the Supabase function dog-github with a short-lived GitHub identity
-#           token, which dog-github accepts only from this file on main of this repository; it records it as
-#           dog_witness. The site no longer reads the branch for this, and its database role can't report the witness.
-#           If this job fails or stops, the run is red, and after 12 hours with no report the site alerts that the
-#           witness has stopped (app.log_witness_check); nothing is ever blocked.
 name: Public log witness
 
 on:
@@ -131,6 +126,12 @@ jobs:
           git -c user.name='log-witness' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Witnessed"
           git push -q origin log-witness
 
+  # report (057, RK144): once the record job has written it, the witness reports its own result (its last good
+  #           checkpoint, when it ran, its alarm) to the Supabase function dog-github with a short-lived GitHub identity
+  #           token, which dog-github accepts only from this file on main of this repository; it records it as
+  #           dog_witness. The site no longer reads the branch for this, and its database role can't report the witness.
+  #           If this job fails or stops, the run is red, and after 12 hours with no report the site alerts that the
+  #           witness has stopped (app.log_witness_check); nothing is ever blocked.
   report:
     needs: [check, record]
     if: github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
