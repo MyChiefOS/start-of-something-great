@@ -99,6 +99,29 @@
       }
     },
     {
+      "name": "A3 the administrator's reads refuse another site (RK145)",
+      "as": "admin",
+      "path": "/api/work/admin",
+      "headers": {
+        "origin": "https://evil.example",
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A3 the administrator's reads refuse another site (RK145)",
+      "as": "admin",
+      "path": "/api/feed?queue=1",
+      "headers": {
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
       "name": "A4 hostile input never breaks a read",
       "each": "read-routes",
       "as": "memberA",

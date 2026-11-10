@@ -75,8 +75,11 @@ async function start(server) {
       if (!who) return { status: 0, error: 'no such account: ' + step.as };
       const headers = { host: 'dayonegreat.com', 'x-vercel-forwarded-for': '203.0.113.' + (10 + Object.keys(accounts).indexOf(step.as || 'anon')), 'x-vercel-ip-country': 'US' };
       if (who.cookie) headers.cookie = who.cookie;
+      // As a browser on our own pages sends it (RK145: the administrator's reads require it); a plan sets it to
+      // "cross-site" or null to attack from elsewhere.
+      headers['sec-fetch-site'] = 'same-origin';
       const method = (step.method || 'GET').toUpperCase();
-      if (method !== 'GET') { headers.origin = ORIGIN; headers['sec-fetch-site'] = 'same-origin'; headers['content-type'] = 'application/json'; }
+      if (method !== 'GET') { headers.origin = ORIGIN; headers['content-type'] = 'application/json'; }
       for (const [k, v] of Object.entries(step.headers || {})) {
         if (v === null) delete headers[k.toLowerCase()]; else headers[k.toLowerCase()] = String(v);
       }
