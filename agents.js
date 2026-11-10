@@ -6,6 +6,8 @@
 // drawn with textContent, never as HTML, and every link goes to our own pages.
 (function () {
   'use strict';
+  // A claim link goes straight to /claim, its own page since Nov 10; anything else after "#" to /account/agents.
+  if (/(?:^#|&)claim=/.test(location.hash)) { location.replace('/claim' + location.hash); return; }
   if (location.hash && location.hash.length > 1) { location.replace('/account/agents' + location.hash); return; }
 
   // A UUID, checked character by character against a fixed set after its length, so no pattern runs over what the

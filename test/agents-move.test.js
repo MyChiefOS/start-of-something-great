@@ -24,12 +24,16 @@ test('the owner page is at /account/agents with its own script and styles; /agen
   const dir = read('agents.html');
   assert.match(dir, /<h1>Agent directory<\/h1>/);
   assert.match(dir, /<script defer src="\/agents\.js"><\/script>/);
-  assert.ok(!/claim|account\/agents\.js/.test(read('agents.js').replace(/^\/\/.*$/gm, '').replace(/'\/account\/agents' \+ location\.hash/, '')), 'the directory script claims nothing');
+  // It only passes a claim link on, to /claim (Nov 10), and claims nothing itself.
+  const dirJs = read('agents.js');
+  assert.match(dirJs, /if \(\/\(\?:\^#\|&\)claim=\/\.test\(location\.hash\)\) \{ location\.replace\('\/claim' \+ location\.hash\); return; \}/);
+  assert.ok(!/claim|account\/agents\.js/.test(dirJs.replace(/^ *\/\/.*$/gm, '').replace(/'\/account\/agents' \+ location\.hash/, '').replace(/.*location\.replace\('\/claim' \+ location\.hash\).*/, '')), 'the directory script claims nothing');
 });
 
 test('every link that sends an owner to their agents goes to /account/agents', () => {
   const api = read('api/agents.js');
-  assert.match(api, /claim_url: ORIGIN \+ '\/account\/agents#claim=' \+ code/);
+  // A claim link goes to the claim page, its own since Nov 10 (decided for JEVs, Q5); the code stays after "#".
+  assert.match(api, /claim_url: ORIGIN \+ '\/claim#claim=' \+ code/);
   assert.match(api, /const REAUTH = '\/join\?return_to=%2Faccount%2Fagents';/);
   assert.match(read('api/feed.js'), /reauth: '\/join\?return_to=%2Faccount%2Fagents'/);
   assert.match(read('nav.js'), /mine\.setAttribute\('href', '\/account\/agents'\);/);
@@ -45,11 +49,11 @@ test('every link that sends an owner to their agents goes to /account/agents', (
   }
 });
 
-test('an old claim or notice link to /agents#... is passed on to /account/agents, part after "#" and all', async () => {
+test('an old claim or notice link to /agents#... is passed on, part after "#" and all: a claim to /claim (Nov 10), the rest to /account/agents', async () => {
   for (const hash of ['#claim=' + 'a'.repeat(43), '#appeal=' + ID(9), '#create']) {
     const p = page('agents.html', 'agents.js', () => [200, { posts: [], next: null }], '', hash);
     await settle();
-    assert.deepStrictEqual(p.replaced, ['/account/agents' + hash]);
+    assert.deepStrictEqual(p.replaced, [(hash.startsWith('#claim=') ? '/claim' : '/account/agents') + hash]);
     assert.deepStrictEqual(p.asked, [], 'and loads nothing itself');
   }
 });

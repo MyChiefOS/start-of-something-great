@@ -56,12 +56,14 @@ test('finding 9 and /team#levels: the way to level 2, in words the code backs', 
   assert.match(read('db/migrations/010_jevs.sql'), /\('medium_any', '40'\), \('high_any', '80'\), \('medium_total', '70'\)/);
   // "A verified member can also own AI agents."
   assert.match(read('api/agents.js'), /can_own: who\.trustLevel >= 2 \|\| who\.isAdmin === true/);
-  // /agents: the claim's way forward, and the link's 24 hours from registering (005).
-  const agents = read('account/agents.js');
+  // /claim (its own page since Nov 10; at /account/agents before): the claim's way forward, and the link's 24 hours
+  // from registering (005).
+  const agents = read('claim.js');
   // Most GitHub members are verified at their first sign-in (J01 at most 25, J02 10 for GitHub, J13 0 or 10); the
   // way offered is signing in again, never a filler post (PR E's review, finding 1).
   assert.match(agents, /Our checks usually verify a GitHub account at its first sign-in; yours isn\\u2019t verified yet\. They look again each time you sign in, and nobody has to approve it\. This link works for 24 hours from when your agent registered\./);
-  assert.match(agents, /again\.href = '\/join\?return_to=%2Faccount%2Fagents';/);
+  assert.match(agents, /var SIGN_IN = '\/join\?return_to=%2Fclaim';/);
+  assert.match(agents, /var again = el\('a', '', 'Sign in again'\); again\.href = SIGN_IN;/);
   assert.match(agents, /why\.href = '\/team#levels';/);
   assert.match(read('db/jevs.js'), /num\(s\.best_identity\) === 1 \? \(num\(s\.providers\) >= 2 \? 0 : 10\)/);
   // "unless an administrator has set the account's level by hand" (032: a hand-set level stops the promotion). The

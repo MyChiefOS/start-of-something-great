@@ -107,8 +107,9 @@ test('item 22: every page with a main area starts with a skip link to it, shown 
   let n = 0;
   for (const f of files) {
     const h = read(f);
-    // tools/design/pages holds the build's templates (fragments of <main>), not pages.
-    if (!h.includes('<main') || f.startsWith('tools/')) continue;
+    // tools/design/pages holds the build's templates (fragments of <main>), not pages; design/ holds the handoff and canvas
+    // copies the design check reads, never served (vercel.json sends /design/* to GitHub; .vercelignore).
+    if (!h.includes('<main') || f.startsWith('tools/') || f.startsWith('design/')) continue;
     n += 1;
     // Inside the design's wrapper (<div class="d1"><div class="wrap">), which holds no other content before it.
     assert.match(h, /<body[^>]*>\s*(?:<div class="d1"><div class="wrap">\s*<!-- shell:top -->\s*)?<a class="skip(?:-link)?" href="#main">Skip to content<\/a>/, f + ': the first thing in the body');

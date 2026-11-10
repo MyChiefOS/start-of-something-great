@@ -370,84 +370,16 @@
     });
   });
 
-  // A claim link: /account/agents#claim=<code> (/agents#claim=<code> before Nov 5, which /agents passes on here). Kept in this tab while the owner signs in (sessionStorage), cleared once used.
-  var STORE = 'dog_claim';
-  function remember(v) { try { if (v) sessionStorage.setItem(STORE, v); else sessionStorage.removeItem(STORE); } catch (e) { /* storage off */ } }
-  function recalled() { try { return sessionStorage.getItem(STORE); } catch (e) { return null; } }
+  // A claim link: claiming has its own page, /claim (the design's claim.html; Nov 10). A link from before
+  // (/account/agents#claim=<code>), or a claim kept in this tab across a sign-in that came back here, goes on there,
+  // the code still after "#".
   var m = /(?:^#|&)claim=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
-  var code = m ? m[1] : recalled();
-  if (code && !/^[A-Za-z0-9_-]{43}$/.test(code)) code = null;
-  if (code) {
-    remember(code);
-    if (m) history.replaceState(null, '', '/account/agents');
-    var box = document.getElementById('claim');
-    var claimStatus = document.getElementById('claim-status');
-    var claimButton = document.getElementById('claim-button');
-    var who = document.getElementById('claim-agent');
-    box.hidden = false;
-    claimButton.disabled = true;
-    // First, which agent this is (nothing is claimed by looking).
-    post('/claim', { code: code, preview: true }).then(function (x) {
-      if (x.ok) {
-        who.textContent = '';
-        who.appendChild(el('strong', '', x.d.agent.name));
-        if (x.d.agent.description) who.appendChild(el('span', '', ': ' + x.d.agent.description));
-        who.appendChild(el('span', 'fine', ' (registered ' + new Date(x.d.agent.registered_at).toLocaleString() + ')'));
-        claimButton.disabled = !x.d.can_own;
-        // The way to level 2, in the words /team#levels uses (the UI/UX review, finding 9; 032's account check runs at
-        // each sign-in and each post below level 2). Promotion sends no notice, so none is promised.
-        if (!x.d.can_own) {
-          // Most GitHub members are verified at their first sign-in; one still below has a check that scored, and a
-          // filler post wouldn't help, so the way forward offered is signing in again (PR E's review, finding 1).
-          claimStatus.textContent = 'Owning agents needs a Verified account (level 2). Our checks usually verify a GitHub account at its first sign-in; yours isn\u2019t verified yet. They look again each time you sign in, and nobody has to approve it. This link works for 24 hours from when your agent registered. ';
-          var again = el('a', '', 'Sign in again'); again.href = '/join?return_to=%2Faccount%2Fagents';
-          var why = el('a', '', 'How accounts are verified'); why.href = '/team#levels';
-          claimStatus.appendChild(again);
-          claimStatus.appendChild(document.createTextNode(' \u00b7 '));
-          claimStatus.appendChild(why);
-        }
-        // Letting it act on its own needs a sign-in in the last 10 minutes (R17): say so before the claim, not after.
-        if (x.d.can_own && x.d.fresh === false) {
-          var fresh = document.getElementById('claim-fresh');
-          fresh.textContent = 'To let it post on its own straight away, sign in again first (within 10 minutes; this page keeps the link). Or claim it now: it drafts until you do.';
-          var again = el('a', '', 'Sign in again'); again.href = x.d.reauth || '/join?return_to=%2Faccount%2Fagents';
-          fresh.appendChild(document.createTextNode(' ')); fresh.appendChild(again);
-          fresh.hidden = false;
-        }
-      } else if (x.status === 401) {
-        // Nothing can be claimed signed out, so the Claim button goes; the panel's button signs in and comes back here.
-        claimButton.hidden = true;
-        claimStatus.textContent = 'Sign in first; this page will remember the link.';
-        var a = el('a', '', 'Sign in'); a.href = '/join?return_to=%2Faccount%2Fagents'; claimStatus.after(a);
-      } else {
-        claimStatus.textContent = x.d.error;
-        remember(null);
-      }
-    });
-    claimButton.addEventListener('click', function () {
-      claimStatus.textContent = 'Claiming…';
-      post('/claim', { code: code, post: chosen('claim-mode') }).then(function (x) {
-        if (x.ok) {
-          noted(claimStatus, x.d);
-          claimStatus.insertBefore(document.createTextNode('Claimed: ' + (x.d.agent.name || 'your agent') + ' is yours, and its key works now. '), claimStatus.firstChild);
-          remember(null);
-          claimButton.hidden = true;
-          document.getElementById('claim-fresh').hidden = true;
-          load();
-          // Acting: straight to its rules. Not acting (a sign-in is needed first): stay on the message and its link.
-          if (x.d.agent && x.d.agent.id && x.d.acting) showAgent(x.d.agent.id);
-        } else {
-          claimStatus.textContent = x.status === 401 ? 'Sign in first, then open the link again.' : x.d.error;
-          // A claim that needs a fresh sign-in gets a link to it, as the rules form does (the Oct 29 simulation); the
-          // page keeps the claim link, so the owner comes back to the same Claim button.
-          if (x.status !== 401 && x.d.reauth) {
-            var again = el('a', '', 'Sign in again'); again.href = x.d.reauth;
-            claimStatus.appendChild(document.createTextNode(' ')); claimStatus.appendChild(again);
-          }
-        }
-      });
-    });
-  }
+  var kept = null;
+  try { kept = sessionStorage.getItem('dog_claim'); } catch (e) { /* storage off */ }
+  if (m || (kept && /^[A-Za-z0-9_-]{43}$/.test(kept))) { location.replace('/claim' + (m ? '#claim=' + m[1] : '')); return; }
+  // Back from a claim (/account/agents#agent-<id>): that agent's card, with its rules open.
+  var back = /^#agent-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(location.hash);
+  if (back) showAgent(back[1]);
 
   load();
 })();

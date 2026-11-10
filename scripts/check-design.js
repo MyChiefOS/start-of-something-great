@@ -24,6 +24,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const { DRAWS_NO_ITALIC: NO_ITALIC } = require('./page-weight');
 const DESIGN = path.join(ROOT, 'design/handoff-2026-11-05/static');
 const CANVAS = path.join(ROOT, 'design/canvas-2026-11-07');
 const LIVE = 'https://dayonegreat.com';
@@ -265,11 +266,15 @@ async function sideBySide(browser, a, b, w, file) {
       return r.fulfill({ status, contentType: 'application/json', body });
     });
     const page = await ctx.newPage();
-    const errors = [];
+    const errors = [], fonts = [];
     page.on('pageerror', (e) => errors.push(e.message));
+    page.on('request', (q) => { if (/\.woff2(\?|$)/.test(q.url())) fonts.push(path.basename(new URL(q.url()).pathname)); });
     await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
     await page.waitForTimeout(600);
-    return { ctx, page, errors };
+    // Scrolled to the end, so every font the whole page draws has been asked for.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+    await page.waitForTimeout(300);
+    return { ctx, page, errors, fonts };
   }
 
   for (const { from, to } of pairs()) {
@@ -284,6 +289,8 @@ async function sideBySide(browser, a, b, w, file) {
       const d = await open(base + '/__design/' + from, w);
       const o = await open(base + ours, w, SIGNED_IN.has(to));
       const dm = await d.page.evaluate(probe), om = { ...(await o.page.evaluate(probe)), errors: o.errors.length };
+      // A page scripts/page-weight.js weighs without the italic face must never fetch it.
+      if (NO_ITALIC.has(to) && o.fonts.some((f) => /italic/.test(f))) report.failures.push(key + ' @' + w + ' fetched the italic face, which page-weight.js counts out for it');
       // Keyed by the handoff page, and ours too where one handoff page made several (error.html, join.html).
       const name = from.replace(/\.html$/, '') + (to === from ? '' : '>' + to.replace(/\.html$/, ''));
       const diffs = compare(name, w, dm, om);

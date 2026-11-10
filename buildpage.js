@@ -61,7 +61,7 @@
     // "See the plan": the featured project's page, where its chart, schedule index and forecast are (the Nov 7 canvas).
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(pr.id || ''))) $('plan-link').href = '/projects/' + pr.id;
     $('plan-of').textContent = 'Sizes of the tasks in ' + txt(pr.title) + ', each under the first milestone due on or after the day it was posted.';
-    var pg = P.progress(plan);
+    var pg = window.DOGProgress(plan);
     $('pct').textContent = pg.pct + '%';
     width($('pct-bar'), pg.pct);
     $('pct-note').textContent = pg.note;

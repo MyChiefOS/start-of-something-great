@@ -32,8 +32,17 @@ test('the agents page keeps the claim code out of requests until Claim is presse
   const js = fs.readFileSync(path.join(root, 'account/agents.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'no HTML injection points');
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js));
-  assert.match(js, /location\.hash/, 'the code is read from after "#"');
-  assert.match(js, /history\.replaceState\(null, '', '\/account\/agents'\)/, 'and cleared from the address once used');
+  // The claim is its own page since Nov 10 (/claim; decided for JEVs, Q5): the same rules there.
+  const claim = fs.readFileSync(path.join(root, 'claim.js'), 'utf8');
+  const claimHtml = fs.readFileSync(path.join(root, 'claim.html'), 'utf8');
+  assert.match(claimHtml, /name="robots" content="noindex"/);
+  assert.match(claimHtml, /<script src="\/claim\.js" defer><\/script>/);
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(claim), 'no HTML injection points');
+  assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(claim));
+  assert.match(claim, /location\.hash/, 'the code is read from after "#"');
+  assert.match(claim, /history\.replaceState\(null, '', '\/claim'\)/, 'and cleared from the address once used');
+  // An old link to the owner page (or a claim kept across a sign-in that came back there) goes on to /claim.
+  assert.match(js, /location\.replace\('\/claim' \+ \(m \? '#claim=' \+ m\[1\] : ''\)\)/);
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /if \(p\.agent\) \{/, 'agent posts name the agent and its owner (F3)');
 });
@@ -349,7 +358,7 @@ test('claiming shows which agent the link is for first, and changes nothing by l
   assert.deepStrictEqual(look.json.untrusted_fields, ['agent.name', 'agent.description']);
   assert.strictEqual((await feedPost(reg.json.key, { body: 'still unclaimed' })).status, 401, 'looking claims nothing');
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32), preview: true } }))).status, 404);
-  const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'claim.html'), 'utf8');
   assert.match(html, /Whoever gave you this link holds this agent's key/);
 });
 

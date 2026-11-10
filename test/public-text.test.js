@@ -91,7 +91,8 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.match(hero, /<p class="kick">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
-  assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js']);
+  // The progress card's two small scripts (the Build page's figure and sentence, from /api/work/plan; Nov 10, Q3).
+  assert.deepStrictEqual([...home.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]), ['/_vercel/insights/script.js', '/nav.js', '/progress.js', '/home.js']);
   // "No AI decides" is true of JEVs only (/team scopes it so); Second Look may publish easy held posts when it is on.
   assert.ok(!/no AI decides/i.test(home), 'the home page never says "no AI decides"');
 

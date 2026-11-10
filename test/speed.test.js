@@ -15,7 +15,9 @@ const root = path.join(__dirname, '..');
 // grow, and a page not listed here may not go over at all.
 // 404 KB since the disputes pages went live (046): the shared navigation every page carries gained two links, 15 bytes
 // gzipped; the paper itself didn't change (RK14).
-const KNOWN_OVER = { 'research/decision-loop.html': { risk: 'RK14', maxKB: 404 } };
+// 401 KB for a project's page since the design alignment (Nov 10): the plan chart, its table and its changes, with the
+// italic face counted, which a browser fetches only when a task on the page is unclaimed (RK139).
+const KNOWN_OVER = { 'research/decision-loop.html': { risk: 'RK14', maxKB: 404 }, 'project.html': { risk: 'RK139', maxKB: 401 } };
 
 test('SF2: every page\'s first visit is under 400 KB, apart from the recorded exceptions, which may not grow', () => {
   const risks = fs.readFileSync(path.join(root, 'RISKS.md'), 'utf8');

@@ -105,20 +105,21 @@ test('every page\'s patches are one entry (a second entry for a page silently re
   assert.match(read('.vercelignore'), /^design\/$/m);
 });
 
-test('the home page\'s progress card is the Build page\'s figure and sentence, from plan.js, and never says "done"', () => {
+test('the home page\'s progress card is the Build page\'s figure and sentence, from progress.js, and never says "done"', () => {
   const home = read('index.html');
   assert.match(home, /<p class="kick">Work<\/p><div id="next" class="card [^"]*"><span class="num [^"]*" id="next-pct">–<\/span>/);
-  assert.match(home, /<script src="\/plan\.js" defer><\/script>\n<script src="\/home\.js" defer><\/script>/);
-  assert.match(read('home.js'), /window\.DOGPlan\.progress\(plan\)/);
-  assert.match(read('buildpage.js'), /P\.progress\(plan\)/);
+  assert.match(home, /<script src="\/progress\.js" defer><\/script>\n<script src="\/home\.js" defer><\/script>/);
+  assert.match(read('home.js'), /window\.DOGProgress\(plan\)/);
+  assert.match(read('buildpage.js'), /window\.DOGProgress\(plan\)/);
+  assert.match(read('build.html'), /<script defer src="\/progress\.js"><\/script>\n {2}<script defer src="\/buildpage\.js"><\/script>/);
   // The plan's sentence: all of it verified is "all posted work verified".
   global.window = {};
-  require('../plan.js');
-  const P = global.window.DOGPlan;
+  require('../progress.js');
+  const progress = global.window.DOGProgress;
   delete global.window;
-  const pg = P.progress({ project: { title: 'The site\'s own build' }, milestones: [{ code: 'M1', first_target: '2026-11-20', target: '2026-11-20', gate: true }],
+  const pg = progress({ project: { title: 'The site\'s own build' }, milestones: [{ code: 'M1', first_target: '2026-11-20', target: '2026-11-20', gate: true }],
     figures: { scope: 439, verified: 439, left: 0, tasks: 108 } });
   assert.deepStrictEqual([pg.pct, pg.note], [100, 'The site\'s own build · 1 milestone · 108 tasks · all posted work verified, the gate Fri, Nov 20']);
   assert.doesNotMatch(pg.note, /\bdone\b|complete/i);
-  assert.strictEqual(P.progress({ figures: { scope: 3, verified: 2, left: 1, tasks: 2 }, milestones: [] }).pct, 66, 'rounded down');
+  assert.strictEqual(progress({ figures: { scope: 3, verified: 2, left: 1, tasks: 2 }, milestones: [] }).pct, 66, 'rounded down');
 });

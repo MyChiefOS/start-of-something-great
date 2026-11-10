@@ -163,6 +163,13 @@
   "links": {},
   "scripts": null
  },
+ "claim.html": {
+  "ids": [],
+  "links": {},
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
  "connect.html": {
   "ids": [
    [
@@ -347,7 +354,7 @@
   },
   "scripts": [
    "<script src=\"/nav.js\" defer></script>",
-   "<script src=\"/plan.js\" defer></script>",
+   "<script src=\"/progress.js\" defer></script>",
    "<script src=\"/home.js\" defer></script>"
   ]
  },
