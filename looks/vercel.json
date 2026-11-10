@@ -11,5 +11,11 @@
       "maxDuration": 120,
       "installCommand": "cd .. && npm ci --ignore-scripts --omit=dev"
     }
+  },
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
   }
 }
