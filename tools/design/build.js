@@ -100,6 +100,8 @@ const PLAN = '.d1 .plan-svg{display:block;font-family:var(--display);font-size:1
   + '.d1 .mlist .ms:last-child{border-bottom:1px solid var(--rule)}.d1 .mlist .ms b{font-family:var(--display);font-weight:600}.d1 .mlist .ms .fine{grid-column:1/-1}'
   + '@media(max-width:600px){.d1 .mtab{display:none}.d1 .mlist{display:block}.d1 .lgd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}}\n';
 const ADD = { 'decisions.html': WIDTHS,
+  // The home page's progress card (home.js): its bar in steps of 5%, and on a phone its figure, words and buttons stacked.
+  'index.html': WIDTHS + '@media(max-width:600px){.d1 #next{grid-template-columns:minmax(0,1fr)!important;gap:12px!important}}\n',
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
   // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.
   'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}'

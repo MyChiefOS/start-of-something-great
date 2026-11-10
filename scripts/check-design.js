@@ -113,7 +113,7 @@ const probe = () => {
   const after = (e) => { let p = e && e.previousElementSibling; while (p && !shown(p)) p = p.previousElementSibling; return p; };
   // Like with like: the kicker over the headline; a section heading under a kicker, and one without.
   const kickTop = h1 && after(h1) && after(h1).classList.contains('kick') ? after(h1) : null;
-  const h2s = all('h2');
+  const h2s = all('h2').filter((e) => !e.classList.contains('h3')); // an h2.h3 is drawn as the design's h3 (spec 5.3)
   const h2k = h2s.find((e) => after(e) && after(e).classList.contains('kick')) || null;
   const h2 = h2s.find((e) => !(after(e) && after(e).classList.contains('kick'))) || null;
   const kickSec = h2k ? after(h2k) : null;

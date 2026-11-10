@@ -346,7 +346,9 @@
    "MCP": "/connect#add"
   },
   "scripts": [
-   "<script src=\"/nav.js\" defer></script>"
+   "<script src=\"/nav.js\" defer></script>",
+   "<script src=\"/plan.js\" defer></script>",
+   "<script src=\"/home.js\" defer></script>"
   ]
  },
  "join.html": {

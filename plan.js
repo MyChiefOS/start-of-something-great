@@ -241,5 +241,18 @@
     if (!any) h(box, 'p', 'fine', 'No changes: every milestone keeps its first date.');
   }
 
-  window.DOGPlan = { chart: chart, pills: pills, status: status, figures: figures, table: table, changes: changes, short: short, long: long };
+  // The featured project's progress, as the Build page's hero and the home page's card both show it (one sentence, so
+  // they never differ): the share of its scope verified, rounded down, and what that counts. All of it verified reads
+  // "all posted work verified", never "done": work not yet posted as a task isn't in the plan (RISKS.md RK132).
+  function progress(plan) {
+    var f = (plan && plan.figures) || {}, pr = (plan && plan.project) || {}, ms = milestones(plan);
+    var pct = n(f.scope) ? Math.floor((100 * n(f.verified)) / n(f.scope)) : 0;
+    var gate = ms.filter(function (m) { return m.gate; })[0];
+    var plural = function (k, one) { return k === 1 ? '1 ' + one : k + ' ' + one + 's'; };
+    var note = String(pr.title || '') + ' · ' + plural(ms.length, 'milestone') + ' · ' + plural(n(f.tasks), 'task')
+      + ' · ' + (n(f.left) === 0 && n(f.scope) ? 'all posted work verified' : f.forecast ? 'expected ' + long(f.forecast) : 'no forecast yet')
+      + (gate ? ', the gate ' + long(gate.target) : '');
+    return { pct: pct, note: note, project: pr };
+  }
+  window.DOGPlan = { chart: chart, pills: pills, status: status, figures: figures, table: table, changes: changes, progress: progress, short: short, long: long };
 })();
