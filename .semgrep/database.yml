@@ -38,10 +38,13 @@ rules:
     exclude: [db/index.js, scripts/migrate.js, scripts/setup-production.js, test/]
   pattern-regex: (?i)(set_config|app\.(actor|member_id|agent_id|note|fresh|session)\b|\bset\s+(local\s+)?(session|role|app\.)|\breset\s+(role|session)\b|\bwith\s+hold\b|\bcreate\s+temp)
 - id: dayonegreat.routeb.identity-token-only-to-broker
-  message: Vercel's identity token proves the site to the key broker (route B). Read it only in db/sitekeys.js, which
-    sends it only to the broker's fixed address (and hands it, through peekToken, only to secondlook/v1.js for Vercel's
-    own AI Gateway at a fixed address, 034), and in api/ready.js, which only checks that it arrived. Forwarding it
-    anywhere else would let that place ask the broker for the site's keys (the CSO's control 8).
+  message: Vercel's identity token proves a project of ours to the key broker (route B). Read it only in db/sitekeys.js,
+    which sends it only to the broker's fixed address (and hands it, once checked, only to secondlook/v1.js and
+    thirdlook/v1.js for Vercel's own AI Gateway at a fixed address, 034; since 057 the site's token goes there only for
+    the administrator's advisor, and the looks project's own token, in looks/, for Second and Third Look), and in
+    api/ready.js, which only checks that it arrived. Each project's token goes only to the broker and the gateway, never
+    between services. Forwarding it anywhere else would let that place ask the broker for that project's login and keys
+    (the CSO's control 8).
   languages: [javascript]
   severity: ERROR
   paths:

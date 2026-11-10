@@ -172,9 +172,9 @@ const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
 const setting = (sqlSet) => q(`update app.sl_settings set ${sqlSet}`); // as the test's superuser: the table forces row-level security
-// Since 057 (RK100) Second Look runs in the dog-looks function: its own code, as dog_looks (the site's role can't,
-// test/holes.test.js).
-const second = async (opts) => (await import('../supabase/functions/dog-looks/core.mjs')).runSecond(su, TOKEN, opts);
+// Since 057 (RK100) Second Look runs in its own Vercel project (looks/api/run.js): its runner, through that project's
+// transaction (db/index.js looksTx, acting as dog_looks). The site's role can't (test/holes.test.js).
+const second = (opts) => require('../db/secondlook').run((fn) => db.looksTx(su, fn), TOKEN, opts);
 const looks = (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_looks'); return fn(t); });
 const fresh = () => setting('last_claim_at = null');
 
@@ -411,7 +411,7 @@ test("Aaron's report: counts and the 95% bound, for an administrator only", asyn
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where dedupe_key like 'secondlook:week:%'`))[0].n, 1);
 });
 
-test('the timer route runs it with the identity token and still answers only {ok:true}', async () => {
+test('the looks project\'s route runs it with its own identity token and answers only {ok:true}; the site\'s timer no longer runs it (057)', async () => {
   await setting(`mode = 'shadow', last_claim_at = null, unlock_n = 10000`); // so the unlock above doesn't switch it on again
   // A fresh account (the first poster now has a record) and words unlike the other posts (or copies, J09, would hold it).
   const gardener = await member('Cron poster');
@@ -419,28 +419,23 @@ test('the timer route runs it with the identity token and still answers only {ok
   const g = await feed('POST', { cookie: gardener.cookie, json: { body: 'Quarterly gardening club schedule: tomato seedlings, compost and rain barrels ' + unique() + ' ' + sites } });
   assert.strictEqual(g.status, 202, JSON.stringify(g.json));
   const p = g.json.id;
+  // The site's timer, with the site's token: it runs every timer but Second Look, and sends the token to no model.
   const cron = require('../api/cron.js');
   cron._reset();
-  // Since 057 the route only asks dog-looks to run, with the token; here dog-looks's own code answers that address
-  // (with Vercel's check stood in for), and asks the gateway stand-in.
-  const looksCore = await import('../supabase/functions/dog-looks/core.mjs');
-  const { Refused } = await import('../supabase/functions/_shared/vercel-oidc.mjs');
   const seen = [];
-  const asked = [];
-  const model = gateway(answer(), { seen });
-  const fetchImpl = async (url, opts) => {
-    if (url !== require('../db/secondlook').FN_URL) return model(url, opts);
-    asked.push({ auth: opts.headers.authorization, body: JSON.parse(opts.body), redirect: opts.redirect });
-    const out = await looksCore.handle({ method: opts.method, authorization: opts.headers.authorization, contentLength: null, text: async () => opts.body },
-      { verify: async (t) => { if (t !== TOKEN) throw new Refused('not ours'); return { sub: 'x' }; }, Refused, db: () => su, fetchImpl: model });
-    return { status: out.status, json: async () => out.body };
-  };
+  const r1 = res();
+  await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, r1, run, { oidc: TOKEN });
+  assert.deepStrictEqual([r1.statusCode, JSON.parse(r1.body)], [200, { ok: true }]);
+  assert.strictEqual(await decision(p), undefined, 'the site\'s timer didn\'t look');
+  // The looks project's route (looks/api/run.js), with its own token and its own transaction (dog_looks).
+  const looksRoute = require('../looks/api/run.js');
+  looksRoute._reset();
   const r = res();
-  await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, r, run, { oidc: TOKEN, fetchImpl });
+  await looksRoute.handle({ method: 'GET', headers: {} }, r, { oidc: TOKEN, runTx: (fn) => db.looksTx(su, fn), fetchImpl: gateway(answer(), { seen }) });
   assert.deepStrictEqual([r.statusCode, JSON.parse(r.body)], [200, { ok: true }]);
-  assert.deepStrictEqual(asked.map((x) => [x.auth, x.body.look, x.redirect]), [['Bearer ' + TOKEN, 'second', 'error'], ['Bearer ' + TOKEN, 'third', 'error']]);
   assert.strictEqual((await decision(p)).decision, 'clear');
   assert.strictEqual(seen[0].opts.headers.authorization, 'Bearer ' + TOKEN);
+  assert.strictEqual(seen[0].url, v1.GATEWAY);
 });
 
 test('Aaron switches it and asks it security questions from the owner controls; nobody else can', async () => {

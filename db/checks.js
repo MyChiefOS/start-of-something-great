@@ -36,8 +36,11 @@ const TIMERS = 'dog_timers';
 // changed files Third Look reads (app.tl_files_wanted, app.tl_files_record) and Aaron's proposal decisions
 // (app.log_proposals_record), from the same GitHub facts.
 // dog_looks (057, RK135, RK100) only runs Second and Third Look, inside their claim, decide and release functions, for
-// the dog-looks function; dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for
+// the looks project (its login, LOOKS_LOGIN below, is the one role besides dog_owner that may act as it); dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for
 // dog-github when the log-witness workflow calls. Neither holds table rights, and the site's role can act as neither.
+// 057: the looks project's database login (made as 022 makes the site's, its password only in Vault). It may sign in,
+// has no rights of its own, and may switch to dog_looks alone, with no admin option and no inheritance.
+const LOOKS_LOGIN = 'dog_looks_web';
 const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_looks',
   'dog_witness'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
@@ -557,8 +560,24 @@ async function problems(sql, { snapshot } = {}) {
     if (!r) continue;
     for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (r[k]) add(name + ' can ' + label + '; it must not (S1)');
     if (r.member_of.length) add(name + ' belongs to ' + r.member_of.join(', ') + '; it must belong to no role (S1)');
-    const holders = roles.filter((x) => x.member_of.includes(name) && x.name !== 'dog_owner').map((x) => x.name);
+    const holders = roles.filter((x) => x.member_of.includes(name) && x.name !== 'dog_owner' && !(name === 'dog_looks' && x.name === LOOKS_LOGIN)).map((x) => x.name);
     if (holders.length) add(holders.join(', ') + ' can act as ' + name + '; only dog_owner may, to hand it its functions (S1)');
+  }
+  // The looks login: no powers, nothing inherited, exactly one plain membership (dog_looks), no settings of its own, and
+  // nothing granted to it or owned by it in this database.
+  const [looks] = await sql`
+    select r.rolname, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb, r.rolreplication, r.rolinherit,
+           (select array_agg(g.rolname::text order by g.rolname) from pg_auth_members m join pg_roles g on g.oid = m.roleid where m.member = r.oid) as member_of,
+           exists (select 1 from pg_auth_members m where m.member = r.oid and (m.admin_option or m.inherit_option)) as wide_membership,
+           exists (select 1 from pg_db_role_setting x where x.setrole = r.oid) as settings,
+           exists (select 1 from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = r.oid
+                   and d.dbid = (select oid from pg_database where datname = current_database())) as holds
+    from pg_roles r where r.rolname = ${LOOKS_LOGIN}`;
+  if (looks) {
+    for (const [k, label] of powers.concat([['rolinherit', 'inherit rights']])) if (looks[k]) add(LOOKS_LOGIN + ' can ' + label + '; it must not (057)');
+    if (JSON.stringify(looks.member_of) !== '["dog_looks"]') add(LOOKS_LOGIN + ' belongs to ' + (looks.member_of || []).join(', ') + '; it must belong to dog_looks alone (057)');
+    if (looks.wide_membership) add(LOOKS_LOGIN + '\'s membership passes on rights or may be granted on; it must not (057)');
+    if (looks.settings || looks.holds) add(LOOKS_LOGIN + ' has settings, rights or objects of its own; it must have none (057)');
   }
   if (owner) for (const [k, label] of [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcanlogin', 'sign in directly']]) {
     if (owner[k]) add('dog_owner can ' + label + '; it must not (S1)');

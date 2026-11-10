@@ -24,11 +24,12 @@ Deno.serve(async (req) => {
   let sql: ReturnType<typeof postgres> | null = null;
   try {
     const out = await handle({ method: req.method, token }, {
-      verify: (t: string) => checks.verify(t),
+      // The site's project and, since 057, the looks project (LOOKS_PROJECT_ID; while it is empty, the site's only).
+      verify: (t: string) => checks.verify(t, { projects: ["site", "looks"] }),
       Refused,
-      values: async () => {
+      values: async (project: string) => {
         sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 1, prepare: false, idle_timeout: 5, onnotice: () => {} });
-        return checks.read(sql);
+        return checks.read(sql, project);
       },
       ref: checks.ref,
       marker: checks.marker,

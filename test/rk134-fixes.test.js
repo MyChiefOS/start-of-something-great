@@ -45,15 +45,18 @@ test('RK134: a call whose token didn\'t check out can\'t turn away one whose tok
   const res = () => { const o = { statusCode: 0, setHeader() {}, end(b) { o.body = b; } }; return o; };
   const mods = ['secondlook', 'thirdlook', 'logjobs', 'workjobs'].map((m) => require('../db/' + m));
   const saved = mods.map((m) => m.run);
+  // Since 057 Second and Third Look run in their own project, never here; the clocks are seen through the log jobs.
   mods[0].run = async () => { looked.push('second'); };
   mods[1].run = async () => { looked.push('third'); };
-  mods[2].run = async () => {};
+  mods[2].run = async () => { looked.push('log'); };
   mods[3].run = async () => {};
   try {
     await cron.handle({ method: 'GET', headers: {} }, res(), run, { now: () => clock }); // a call whose token didn't check out (or had none)
+    assert.deepStrictEqual(looked, ['log']);
+    looked.length = 0;
     clock += 10_000;
     await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, res(), run, { now: () => clock, oidc: 'signed-token' });
-    assert.deepStrictEqual(looked, ['second', 'third'], 'the call with a good token still runs Second and Third Look');
+    assert.deepStrictEqual(looked, ['log'], 'the call with a good token still runs, on its own clock; and no look runs in the site');
     looked.length = 0;
     clock += 5_000;
     await cron.handle({ method: 'GET', headers: {} }, res(), run, { now: () => clock, oidc: 'signed-token' });

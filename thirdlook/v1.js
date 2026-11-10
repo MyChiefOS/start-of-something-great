@@ -147,7 +147,13 @@ async function ask({ text, token, model, fetchImpl = fetch }) {
   return parse(content) || { error: 'bad answer' };
 }
 
-// One item, end to end; never throws. files: GitHub's list of the pull request's files, or null if it couldn't be read.
+// The failures that give the work back instead of spending its one try (057, RK135): the gateway refused or failed,
+// the call ran out of time, or the network failed. An answer that isn't the exact JSON is the model's answer, and is
+// recorded as "a person", as before.
+const releases = (error) => typeof error === 'string' && (error === 'timeout' || error === 'network' || /^gateway \d{3}$/.test(error));
+
+// One item, end to end; never throws. files: GitHub's list of the pull request's files (app.tl_files, since 057), or
+// null if there is none. release is set when the work should be given back rather than answered (057).
 async function review({ item, files, token, model, fetchImpl, now = Date.now }) {
   const t0 = now();
   const d = files ? diffText(files) : { text: '', truncated: true };
@@ -164,7 +170,8 @@ async function review({ item, files, token, model, fetchImpl, now = Date.now }) 
   if (got.error) reasons.push('no usable answer (' + got.error + ')');
   else if (got.reason) reasons.push(got.reason);
   return { version: VERSION, model: answers ? model : null, suggestion, answers, reason: reasons.join('; ').slice(0, 600) || 'nothing found',
-    failClosed: failed, truncated, latencyMs: Math.max(0, Math.round(now() - t0)) };
+    failClosed: failed, truncated, latencyMs: Math.max(0, Math.round(now() - t0)),
+    release: !files ? 'github not read' : releases(got.error) ? String(got.error).toLowerCase() : null };
 }
 
-module.exports = { review, suggest, parse, checks, diffText, workText, VERSION, MODELS, KEYS, SYSTEM, MAX_DIFF, MAX_TASK, MAX_READ };
+module.exports = { review, suggest, parse, checks, diffText, workText, releases, VERSION, MODELS, KEYS, SYSTEM, MAX_DIFF, MAX_TASK, MAX_READ };

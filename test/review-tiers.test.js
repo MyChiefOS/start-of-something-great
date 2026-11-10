@@ -59,8 +59,8 @@ const CLEAN = { q1: 'no', q2: 'no', q3: 'no', q4: 'no', q5: 'no', q6: 'no', q7: 
 let server, su, web;
 const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 const run = (ctx, fn) => db.tx(web, ctx, fn);
-// Since 057 (RK100) Second Look runs in the dog-looks function: its own code, as dog_looks.
-const second = async (opts) => (await import('../supabase/functions/dog-looks/core.mjs')).runSecond(su, TOKEN, opts);
+// Since 057 (RK100) Second Look runs in its own Vercel project: its runner, through that project's transaction (dog_looks).
+const second = (opts) => require('../db/secondlook').run((fn) => db.looksTx(su, fn), TOKEN, opts);
 const looks = (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_looks'); return fn(t); });
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });

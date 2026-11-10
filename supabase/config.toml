@@ -17,8 +17,3 @@ verify_jwt = false
 # GitHub's facts for the work module (055, RK140) check their caller the same way: only github-facts.yml on main.
 [functions.dog-github]
 verify_jwt = false
-
-# Second and Third Look (057, RK135 and RK100) check their caller as the key broker does: only a production function
-# of our own Vercel project, proved by Vercel's identity token.
-[functions.dog-looks]
-verify_jwt = false

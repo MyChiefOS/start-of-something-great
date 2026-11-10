@@ -3,9 +3,9 @@
 // lines "<sha256>  <path>\n" below, in this order, paths from supabase/functions/ (as sha256sum prints them). The
 // function returns it as x-source-digest (R-3); the daily watch compares it with main's.
 export const SOURCE_FILES = {
-  "_shared/vercel-oidc.mjs": "178678d3570abbedd2565e55dac7a679b3b9b3231f72155611d33f4729f623fd",
-  "dog-keys/core.mjs": "de0428b06ad691c0455c6ba1a7da7a8c07afc8dd30d49bf90450673f00e97f5b",
-  "dog-keys/index.ts": "ae27c09779cd89fb1130db2e25c31aa1c6b28c9432185e2cf7560903de7b71f1",
-  "dog-keys/target.mjs": "af1ae5a1fdf83d1dbef1d2e2e6fc2cd3f9adb06caee616a24367d24f71730dbb",
+  "_shared/vercel-oidc.mjs": "4f24bf0a1908ff058827ee929344b1050a17303697c23febe7dae535325d2fa3",
+  "dog-keys/core.mjs": "3430612c9daea7aa47db5dca11d7fde9b93dbd202afde3cb1fd7ffa445897704",
+  "dog-keys/index.ts": "403bfe7f931b59dca913e8d72f5443a26f98c0d22139953bd558e6831697723f",
+  "dog-keys/target.mjs": "ac6a9ea4c636f540bfba880062b8a23a61698636c89e2288865f48662ce3ac99",
 };
-export const SOURCE_DIGEST = "8c547e479dd22abdc290ff4f414294f137b412dfb9fb411d39cd266fd17779d8";
+export const SOURCE_DIGEST = "d68be5d7cf3b44dc3432770f3989bf21a9c8899fd649894513a1aea99a0d5d7b";

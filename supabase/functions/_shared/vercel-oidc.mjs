@@ -10,6 +10,12 @@
 export const TEAM_SLUG = 'chief-os';
 export const TEAM_ID = 'team_Hv5YS8LhIiKe06SSiDrUucd4';
 export const PROJECT_ID = 'prj_cXnWySYVpJE9TVZaNPSocXMMzkZI';
+// Second and Third Look's own project (057; Aaron, Nov 10), whose token the broker answers with the looks login only.
+// Empty until Claude creates the project after the merge, and set by a small reviewed commit then; while empty, no
+// token can match it, so every token naming a project but ours is refused, as before.
+export const LOOKS_PROJECT_ID = '';
+// Our projects, by name. A caller says which it accepts; the check hands back which one the token is.
+export const PROJECTS = { site: PROJECT_ID, looks: LOOKS_PROJECT_ID };
 export const ISSUERS = ['https://oidc.vercel.com/' + TEAM_SLUG, 'https://oidc.vercel.com'];
 export const AUDIENCE = 'https://vercel.com/' + TEAM_SLUG;
 const MAX_TOKEN = 8192;
@@ -41,7 +47,10 @@ class Refused extends Error {}
 
 // Returns the token's claims if every check passes; throws Refused otherwise, naming the first failed check.
 // Only production is accepted: a preview deployment of any branch also gets a token, and must get nothing.
-export async function verify(token, { now = Date.now() / 1000, keys = vercelKeys, environment = 'production' } = {}) {
+// projects: the names (PROJECTS) the caller accepts, the site's only unless it says otherwise; the claims come back with
+// our_project set to the one the token is (Vercel's own "project" claim, the project's name, is left as it is). ids is
+// PROJECTS, replaceable only by the tests.
+export async function verify(token, { now = Date.now() / 1000, keys = vercelKeys, environment = 'production', projects = ['site'], ids = PROJECTS } = {}) {
   const no = (why) => { throw new Refused(why); };
   if (typeof token !== 'string' || !token || token.length > MAX_TOKEN) no('token missing or too large');
   const parts = token.split('.');
@@ -67,10 +76,11 @@ export async function verify(token, { now = Date.now() / 1000, keys = vercelKeys
   if (claims.exp - claims.iat > MAX_LIFE) no('lives too long');
   if (typeof claims.nbf === 'number' && claims.nbf > now + SKEW) no('not valid yet');
   if (claims.owner_id !== TEAM_ID) no('wrong team');
-  if (claims.project_id !== PROJECT_ID) no('wrong project');
+  const ours = projects.find((p) => typeof ids[p] === 'string' && ids[p] !== '' && claims.project_id === ids[p]);
+  if (!ours) no('wrong project');
   if (claims.environment !== environment) no('wrong environment');
   if (typeof claims.sub !== 'string' || !claims.sub.startsWith('owner:' + TEAM_SLUG + ':project:') || !claims.sub.endsWith(':environment:' + environment)) no('wrong subject');
-  return claims;
+  return { ...claims, our_project: ours };
 }
 
 export { Refused };

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/run",
+      "schedule": "* * * * *"
+    }
+  ],
+  "functions": {
+    "api/run.js": {
+      "maxDuration": 120,
+      "installCommand": "cd .. && npm ci"
+    }
+  }
+}

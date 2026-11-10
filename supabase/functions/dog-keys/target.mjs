@@ -32,7 +32,7 @@ export function target(supabaseUrl) {
 export function checksFor(where, { verify, read }) {
   return {
     verify: (token, opts = {}) => verify(token, { ...opts, environment: where.environment }),
-    read: (sql) => read(sql, where.marker ? [where.marker] : []),
+    read: (sql, project = 'site') => read(sql, project, where.marker ? [where.marker] : []),
     ref: where.ref,
     marker: where.marker
   };
