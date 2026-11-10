@@ -102,7 +102,7 @@ test('every page\'s patches are one entry (a second entry for a page silently re
   // The handoff and canvas copies the design check reads (scripts/check-design.js) are records, not pages of the site.
   const vercel = JSON.parse(read('vercel.json'));
   assert.ok(vercel.redirects.some((r) => r.source === '/design/:path*' && /^https:\/\/github\.com\/MyChiefOS\/start-of-something-great\/tree\/main\/design\//.test(r.destination) && !r.has), 'vercel.json sends /design/* to GitHub');
-  assert.match(read('.vercelignore'), /^design\/$/m);
+  assert.match(read('.vercelignore'), /^\/design\/$/m);
 });
 
 test('the home page\'s progress card is the Build page\'s figure and sentence, from progress.js, and never says "done"', () => {

@@ -52,6 +52,10 @@ const ACCEPTED = {
   'join:390:card.p': 'comment box within 200 px of Copy at 390 (UX PR A)',
   // The project page follows the Nov 7 canvas over the Nov 5 handoff: the status pills sit beside the title, as drawn.
   'project:1280:column': 'the canvas puts the status pills beside the title',
+  // /join/pin is built on the design's join page; its sections are cards headed as the design's card headings (h2.h3).
+  'join>join/pin:1280:heading': 'card headings only', 'join>join/pin:390:heading': 'card headings only',
+  // and no intro: one line there puts "Sign in" with a key file below the first screen at 1280 by 800 (UX PR A).
+  'join>join/pin:1280:intro': 'first screen (UX PR A)', 'join>join/pin:390:intro': 'first screen (UX PR A)',
   // /controls and /review moved to /admin (Nov 9): one line and the new address, so no "If something else went wrong".
   'error>controls:1280:heading': 'a moved page', 'error>controls:390:heading': 'a moved page',
   'error>review:1280:heading': 'a moved page', 'error>review:390:heading': 'a moved page',

@@ -1,8 +1,9 @@
 // /claim: claiming an AI agent from its link (/claim#claim=<code>), its own page as the design handoff of Nov 5 draws
 // it (static/claim.html; decided for JEVs, Nov 10, Q5: its own page, never merged into another). Moved here unchanged
-// from /account/agents, where it was a section until then. The code is after "#", so it never reaches our server,
-// our request records or anyone's logs until the owner presses Claim; it is kept in this tab while the owner signs in
-// (sessionStorage) and cleared once used. Old links (/account/agents#claim= and /agents#claim=) are forwarded here.
+// from /account/agents, where it was a section until then. The code is after "#", so it is never in an address our
+// server sees, our request records, anyone's logs or a Referer; it is sent only in the body of the two requests that
+// use it: the preview, as the page opens, which says which agent this is and claims nothing, and the claim, when the
+// owner presses Claim. It is kept in this tab while the owner signs in (sessionStorage) and cleared once used. Old links (/account/agents#claim= and /agents#claim=) are forwarded here.
 // Who may claim (level 2), the preview first, the 10-minute fresh sign-in to let it act on its own, the 24-hour link
 // and "On its own" by default (Aaron, Oct 30) are the API's, as before. Names are shown with textContent only.
 (function () {

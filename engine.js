@@ -23,6 +23,8 @@
       pick(tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length].getAttribute('data-tab'), true);
     });
   });
+  // Without this script every part shows, one under another; with it, one tab at a time.
+  pick('licenses');
   var line = document.getElementById('cp-line');
   fetch('/api/log/checkpoint', { headers: { Accept: 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })

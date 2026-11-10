@@ -25,7 +25,7 @@ const SERVER = process.env.TEST_DATABASE_URL;
 const ORIGIN = 'https://dayonegreat.com';
 const CFG = { ipKey: crypto.randomBytes(32) };
 
-test('the agents page keeps the claim code out of requests until Claim is pressed, and shows names as text only', () => {
+test('the claim code stays out of every address our server sees (sent only in the preview and claim requests\' bodies), and names are text only', () => {
   const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
   assert.match(html, /name="robots" content="noindex"/);
   assert.match(html, /<script defer src="\/account\/agents\.js"><\/script>/);
@@ -42,7 +42,8 @@ test('the agents page keeps the claim code out of requests until Claim is presse
   assert.match(claim, /location\.hash/, 'the code is read from after "#"');
   assert.match(claim, /history\.replaceState\(null, '', '\/claim'\)/, 'and cleared from the address once used');
   // An old link to the owner page (or a claim kept across a sign-in that came back there) goes on to /claim.
-  assert.match(js, /location\.replace\('\/claim' \+ \(m \? '#claim=' \+ m\[1\] : ''\)\)/);
+  assert.match(js, /if \(m\) \{ location\.replace\('\/claim#claim=' \+ m\[1\]\); return; \}/);
+  assert.ok(!/sessionStorage/.test(js), 'a claim kept in the tab never sends Your agents away');
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /if \(p\.agent\) \{/, 'agent posts name the agent and its owner (F3)');
 });

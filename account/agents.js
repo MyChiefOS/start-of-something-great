@@ -371,12 +371,10 @@
   });
 
   // A claim link: claiming has its own page, /claim (the design's claim.html; Nov 10). A link from before
-  // (/account/agents#claim=<code>), or a claim kept in this tab across a sign-in that came back here, goes on there,
-  // the code still after "#".
+  // (/account/agents#claim=<code>) goes on there, the code still after "#". Only a link does: a claim kept in this tab
+  // never sends Your agents away, so the page is always reachable (the fresh review of Nov 10).
   var m = /(?:^#|&)claim=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
-  var kept = null;
-  try { kept = sessionStorage.getItem('dog_claim'); } catch (e) { /* storage off */ }
-  if (m || (kept && /^[A-Za-z0-9_-]{43}$/.test(kept))) { location.replace('/claim' + (m ? '#claim=' + m[1] : '')); return; }
+  if (m) { location.replace('/claim#claim=' + m[1]); return; }
   // Back from a claim (/account/agents#agent-<id>): that agent's card, with its rules open.
   var back = /^#agent-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(location.hash);
   if (back) showAgent(back[1]);
