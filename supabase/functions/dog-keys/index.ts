@@ -1,12 +1,17 @@
 // The site's key broker (route B). Accepts only a production function of our own Vercel project, proved by Vercel's
 // identity token, sent as "Authorization: Bearer <token>". Deployed from the merged commit with Supabase's own JWT
-// check off (supabase/config.toml), like dog-migrate and jevs: it checks its callers itself.
+// check off (supabase/config.toml), like dog-migrate and jevs: it checks its callers itself. Deployed to the preview
+// copy's branch too, where it accepts only that project's preview functions and serves only the branch's own values:
+// which one it is, it decides once, here, from its own SUPABASE_URL (./target.mjs), never from a request.
 // Every answer is never cached. A refusal says which check failed, never anything about the keys. The token is never
 // logged or stored.
 import postgres from "npm:postgres@3.4.9";
 import { Refused, verify } from "../_shared/vercel-oidc.mjs";
 import { handle, read } from "./core.mjs";
 import { SOURCE_DIGEST } from "./source-digest.mjs";
+import { checksFor, target } from "./target.mjs";
+
+const checks = checksFor(target(Deno.env.get("SUPABASE_URL")), { verify, read });
 
 // x-source-digest on every answer (R-3): the SHA-256 digest of this function's source files on the commit it was
 // deployed from (./source-digest.mjs), read by the daily watch (.github/workflows/watch.yml).
@@ -19,12 +24,14 @@ Deno.serve(async (req) => {
   let sql: ReturnType<typeof postgres> | null = null;
   try {
     const out = await handle({ method: req.method, token }, {
-      verify: (t: string) => verify(t),
+      verify: (t: string) => checks.verify(t),
       Refused,
       values: async () => {
         sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 1, prepare: false, idle_timeout: 5, onnotice: () => {} });
-        return read(sql);
+        return checks.read(sql);
       },
+      ref: checks.ref,
+      marker: checks.marker,
       // The hour's count of hand-outs or failures (027; migration 027 makes app.broker_note). Counts only.
       note: async (outcome: string) => {
         if (sql) await (sql as ReturnType<typeof postgres>)`select app.broker_note(${outcome})`;
