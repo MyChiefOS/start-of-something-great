@@ -52,8 +52,8 @@ Updated Nov 10 with four independent reviews (#123, the web app, the AI parts, t
 1. **RK141, a safe copy to red team (Claude, before Release 2):**
    - GitHub Actions builds the site and a throwaway database with test accounts, on demand and on every PR. First, so the fixes below are red teamed before Aaron merges them.
    - It runs Claude's own attack suite against it. Its first check, built Nov 10 (redteam/catalog.js, test/redteam-catalog.test.js, on every PR): every definer function the site's role can run must check who is acting or carry a reviewed reason (redteam/reviewed-functions.json). Of the 60 with no check of their own, 55 are fine by design and 5 are open holes, each named by its risk (RK140, RK135 twice, RK144, RK112); a planted hole fails it.
-   - Then every route against every role, injection, cross-site scripting and request forgery.
-   - It also runs any attack plan Aaron or an agent he directs writes in an issue, and posts the report.
+   - Then the attack suite, built Nov 10 (redteam/copy.js, plan.js, baseline.json; test/redteam-attacks.test.js): the real API handlers on a throwaway database with made-up members and an administrator; 238 attacks on every PR, every route read from the handlers themselves; the copy's accounts are proven to work, so refusals mean something.
+   - It also runs any attack plan Aaron or an agent he directs writes in an issue labelled red-team, and posts the report (.github/workflows/red-team.yml, built Nov 10; only the owner's own issues run).
    - The suite's repeatable results gate; anything found by hand goes to RISKS.md.
    - Outside tools such as OWASP ZAP only with Aaron's OK (no outside sources without discussion).
    - The preview (approved Nov 10, about $10 a month): Vercel's preview of each PR on a Supabase preview branch built only from the migrations and made-up data, created only after Aaron merges the PR that builds it.
