@@ -145,6 +145,19 @@ test.before(async () => {
     await t.unsafe(`insert into app.tl_reviews (submission_id, suggestion, reason) values ('${sb.id}', 'person', 'A reason')`);
     await t.unsafe(`insert into app.work_dispute_evidence (dispute_id, member_id, role, note) select d.id, '${A.id}', 'opener', 'A note' from app.work_disputes d where d.submission_id = '${sb.id}'`);
     await t.unsafe(`insert into app.work_milestones (project_id, code, title, first_target, target, source) values ('${pj.id}', 'M1', 'A milestone', current_date + 7, current_date + 7, 'member')`);
+    // 056: the trust Engine's records about A's agent (a license and its change, a forecast citing a precedent, a
+    // finding, a work order and its resume), written directly as the test's superuser; the Engine writes them through
+    // its own functions.
+    await t.unsafe(`insert into app.engine_licenses (agent_id, room_id, level, verified, succeeded, lower_bound, forecasts) values ('${agent.id}', '${room.id}', 0, 1, 1, 0.2065, 0)`);
+    await t.unsafe(`insert into app.engine_license_history (agent_id, room_id, old_level, new_level, reason, verified, succeeded, lower_bound, forecasts)
+      values ('${agent.id}', '${room.id}', 0, 0, 'suspended', 1, 1, 0.2065, 0)`);
+    const [pc] = await t.unsafe(`insert into app.engine_precedents (room_id, facts, decision, reason, decided_by) values ('${room.id}', 'Facts of A''s case.', 'Pass', 'A reason for it.', '${A.id}') returning id`);
+    const [fc] = await t.unsafe(`insert into app.engine_forecasts (claim_id, task_id, room_id, agent_id, chance_bp) values ('${cl.id}', '${tk.id}', '${room.id}', '${agent.id}', 5000) returning id`);
+    await t.unsafe(`insert into app.engine_citations (forecast_id, precedent_id) values ('${fc.id}', '${pc.id}')`);
+    await t.unsafe(`insert into app.engine_findings (agent_id, room_id, attack_class, succeeded, vaccine, found_by) values ('${agent.id}', '${room.id}', 'ASI01', true, 'A vaccine test', '${A.id}')`);
+    const [od] = await t.unsafe(`insert into app.engine_orders (agent_id, project_id, created_by, goal_size, budget, deadline, rollback)
+      values ('${agent.id}', '${pj.id}', '${A.id}', 1, 1, now() + interval '1 day', 'Undo it by hand.') returning id`);
+    await t.unsafe(`insert into app.engine_order_resumes (order_id, member_id, add_budget, add_hours) values ('${od.id}', '${A.id}', 1, 0)`);
   });
   await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, 'FR'));
   // A deletion review of A (PR 12), as JEVs opens one for a high-risk deletion.
