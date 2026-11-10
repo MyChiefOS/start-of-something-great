@@ -128,7 +128,7 @@ async function project(owner, room = '27-0000') {
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   return r.json.id;
 }
-async function task(owner, pj, size = 3) {
+async function task(owner, pj, size = 2) { // size 2: what any agent may claim at level 0
   const r = await work('POST', 'tasks', { cookie: owner.cookie, json: { project: pj, title: 'Write the welcome copy', description: 'Three short paragraphs.', class: 'either', size } });
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   return r.json.id;
@@ -260,7 +260,7 @@ test('E1: an agent forecasts before it works; the forecast resolves itself; sett
   assert.deepStrictEqual(hist.map((h) => [h.old_level, h.new_level, h.reason, h.verified]), [[0, 1, 'evidence', 5]]);
   const notes = await q(`select kind, title, body, link from app.notices where member_id = '${ada.id}' and kind = 'engine'`);
   assert.strictEqual(notes.length, 1);
-  assert.match(notes[0].body, /^Scribe is now at level 1 in Arts, Design, Entertainment, Sports & Media \(it was 0\)\..*holds up none of its work/);
+  assert.match(notes[0].body, /^Scribe is now at level 1 in Arts, Design, Entertainment, Sports & Media \(it was 0\)\..*sets the largest task it may claim there on its own/);
   assert.strictEqual(notes[0].link, '/engine');
   // The history can't be edited or deleted, by anyone.
   await assert.rejects(q(`update app.engine_license_history set new_level = 3 where agent_id = '${ag.id}'`), /engine_history_append_only/);
@@ -279,7 +279,8 @@ test('E1: an agent forecasts before it works; the forecast resolves itself; sett
   assert.strictEqual(row.agent.owner.name, 'Ada');
   assert.strictEqual(s.changes.find((x) => x.agent.id === ag.id).new_level, 1);
   assert.strictEqual(s.calibration.find((x) => x.agent.id === ag.id).brier, null, 'not enough data yet: 5 of 10');
-  assert.match(s.policy.holds_up, /^nothing/);
+  assert.match(s.policy.holds_up, /^claims above the level/);
+  assert.deepStrictEqual(s.policy.size_cap, { 0: 2, 1: 5, 2: 8, 3: 8 });
   const one = await eng('GET', 'agent', { search: '?id=' + ag.id });
   assert.deepStrictEqual([one.status, one.json.licenses[0].level, one.json.forecasts.length, one.json.changes.length], [200, 1, 5, 1]);
   assert.strictEqual((await eng('GET', 'agent', { search: '?id=' + crypto.randomUUID() })).status, 404);
@@ -460,11 +461,40 @@ test('E2: a successful attack drops the agent to level 0 in that room at once; o
   const miss = await eng('POST', 'finding', { cookie: aaron.cookie, json: { ...body, class: 'ASI06', succeeded: false } });
   assert.deepStrictEqual([miss.status, (await license(ag, '25-0000')).level], [201, 1]);
   assert.strictEqual((await eng('POST', 'fixed', { cookie: aaron.cookie, json: { finding: miss.json.finding } })).json.reason, 'engine_not_open');
-  // Aaron's own agent: he can't confirm a fix on it (only a reviewed migration could).
+  // Aaron's own agent: as the only administrator he may confirm its fix himself, but only with a reason (Nov 10), and
+  // the audit log says it was the owner's own confirmation (the database allows one administrator: members_one_admin).
   const mine = await newAgent(aaron, 'Helper bot');
   const own = await eng('POST', 'finding', { cookie: aaron.cookie, json: { ...body, agent: mine.id } });
-  assert.strictEqual((await eng('POST', 'fixed', { cookie: aaron.cookie, json: { finding: own.json.finding } })).json.reason, 'engine_fixer');
+  assert.strictEqual((await eng('POST', 'fixed', { cookie: aaron.cookie, json: { finding: own.json.finding } })).json.reason, 'engine_fixer', 'no reason given');
+  const ok = await eng('POST', 'fixed', { cookie: aaron.cookie, json: { finding: own.json.finding, note: 'Patched the prompt handling and added the test.' } });
+  assert.strictEqual(ok.json.fixed, true, JSON.stringify(ok.json));
+  const [a] = await q(`select detail from app.audit_log where action = 'engine.fixed' and subject_id = '${own.json.finding}'`);
+  assert.strictEqual(a.detail.by_owner, true);
   assert.ok((await q(`select count(*)::int as n from app.audit_log where action in ('engine.finding', 'engine.fixed')`))[0].n >= 4);
+});
+
+// ---- What a level does: the size of task an agent may claim on its own (Aaron, Nov 10) ----
+
+test('a level caps the size of task an agent may claim in that room: up to 2 at level 0, 5 at level 1, any from 2; a larger claim is refused with the reason, and a hand-off counts the parent', async () => {
+  const pam = await member('Pam');
+  const quin = await member('Quin');
+  const ag = await newAgent(quin, 'Sizer');
+  const pj = await project(pam, '29-0000');
+  const big = await task(pam, pj, 3);
+  const r = await work('POST', 'claim', { key: ag.key, json: { task: big } });
+  assert.strictEqual(r.status, 409, JSON.stringify(r.json));
+  assert.match(JSON.stringify(r.json), /level 0, which allows tasks up to size 2; this one is size 3/);
+  await claim(ag, await task(pam, pj, 2)); // small work is always open to it
+  // Level 1 in that room: up to 5, still not 8.
+  await q(`insert into app.engine_licenses (agent_id, room_id, level, verified, succeeded, lower_bound, forecasts)
+    select '${ag.id}', r.id, 1, 5, 5, 0.6, 0 from app.work_rooms r where r.code = '29-0000'`);
+  await claim(ag, await task(pam, pj, 5));
+  const r8 = await work('POST', 'claim', { key: ag.key, json: { task: await task(pam, pj, 8) } });
+  assert.match(JSON.stringify(r8.json), /level 1, which allows tasks up to size 5/);
+  // People are never capped.
+  const pj2 = await project(quin, '29-0000');
+  const ppl = await work('POST', 'claim', { cookie: pam.cookie, json: { task: await task(quin, pj2, 8) } });
+  assert.strictEqual(ppl.status, 201, JSON.stringify(ppl.json));
 });
 
 // ---- E3: work orders ----
@@ -498,10 +528,10 @@ test('E3: an owner gives an agent a work order; it pauses when spending runs ahe
   // The pause stops nothing: the agent's work goes on, and the owner is told once per pause.
   await submit(ag, t2);
   assert.strictEqual(await told(), 1);
-  // Verified progress brings it back: 3 of 6 done (50%) against 40% spent.
+  // Verified progress brings it back: 2 of 6 done (33.3%) against 40% spent (less than 20 points ahead).
   assert.strictEqual(await check(oli, s1, 'pass'), 'pass');
   st = (await summary()).orders.find((x) => x.id === o.json.order);
-  assert.deepStrictEqual([st.state, st.progress, st.progress_pct, st.spend_pct], ['active', 3, 50, 40]);
+  assert.deepStrictEqual([st.state, st.progress, st.progress_pct, st.spend_pct], ['active', 2, 33.3, 40]);
   // Resumes: by its maker or an administrator, adding something.
   assert.strictEqual((await eng('POST', 'resume', { cookie: oli.cookie, json: { order: o.json.order, budget: 5 } })).json.reason, 'engine_not_maker');
   assert.strictEqual((await eng('POST', 'resume', { cookie: ned.cookie, json: { order: o.json.order } })).status, 400);
@@ -519,7 +549,7 @@ test('E3: the budget spent, or the deadline passed, pauses an order; reaching th
   const quin = await member('Quin');
   const ag = await newAgent(pat, 'Runner');
   const pj = await project(quin);
-  const o = (await eng('POST', 'order', { cookie: pat.cookie, json: { agent: ag.id, project: pj, goal: 3, budget: 1, hours: 24, rollback: 'Close the pull request unmerged.' } })).json.order;
+  const o = (await eng('POST', 'order', { cookie: pat.cookie, json: { agent: ag.id, project: pj, goal: 2, budget: 1, hours: 24, rollback: 'Close the pull request unmerged.' } })).json.order;
   const t1 = await task(quin, pj);
   await claim(ag, t1);
   const s1 = await submit(ag, t1);
@@ -527,7 +557,7 @@ test('E3: the budget spent, or the deadline passed, pauses an order; reaching th
   assert.deepStrictEqual([st.state, st.why], ['paused', 'budget']);
   assert.strictEqual(await check(quin, s1, 'pass'), 'pass');
   st = (await summary()).orders.find((x) => x.id === o);
-  assert.deepStrictEqual([st.state, st.progress], ['done', 3], 'the goal reached: done, whatever the budget');
+  assert.deepStrictEqual([st.state, st.progress], ['done', 2], 'the goal reached: done, whatever the budget');
   // A deadline already passed (written here directly, as no request can set one in the past).
   const pj2 = await project(quin);
   const late = (await q(`insert into app.engine_orders (agent_id, project_id, created_by, goal_size, budget, deadline, rollback)

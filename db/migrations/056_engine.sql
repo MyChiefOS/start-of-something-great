@@ -22,8 +22,10 @@
 --     (its claims and submissions there), a deadline and a rollback plan. Its state is worked out from the facts each
 --     time: done, paused (spending more than 20 points ahead of progress, the budget spent, or the deadline passed;
 --     to confirm) or active. Its maker or an administrator resumes it by adding budget or hours.
---   * What none of it does: hold up, refuse or slow any agent's work (checks alert, never lock out: INTEGRITY.md). Which
---     action a level should hold up is Aaron's decision (the design note). Nothing here moves points or money.
+--   * What a level does (Aaron, Nov 10: "Okay, for 1"): it caps the size of task the agent may claim in that room on
+--     its own: level 0 up to size 2, level 1 up to size 5, level 2 and up any size. Every agent can always claim some
+--     work, so nothing is locked out (INTEGRITY.md); a larger claim is refused with the reason and how to earn it. A
+--     hand-off to a sub-agent counts the parent's level. Nothing here moves points or money.
 -- Everything runs as dog_work, the work module's narrow role, which already reads the work tables. The site's role
 -- holds no right on any Engine table; it calls the functions, which check who is acting. The triggers on the work
 -- tables catch their own errors, so a failure here never stops the work it follows (Aaron gets one alert a day).
@@ -434,7 +436,7 @@ begin
       || case why when 'suspended' then 'The red team recorded a successful attack on it there; the level stays 0 until the fix is confirmed. '
                   when 'fix_confirmed' then 'The fix was confirmed, so its level comes from its record again. '
                   else 'Levels come only from verified results and forecasts. ' end
-      || 'A level holds up none of its work; it is shown on the Engine page.',
+      || 'Its level sets the largest task it may claim there on its own: size 2 at level 0, 5 at level 1, any at 2 and up.',
       '/engine', 'agent', p_agent, 'engine:license:' || hid::text);
   end if;
 end
@@ -740,12 +742,19 @@ begin
   if not f.succeeded or f.fixed_at is not null then
     raise exception 'engine_not_open' using errcode = 'P0001', hint = 'Only an open, successful attack has a fix to confirm.';
   end if;
-  -- The one who fixes an agent is its owner; they can't confirm their own fix (Rev 4.2: not the people who fixed it).
+  -- The one who fixes an agent is its owner; they can't confirm their own fix (Rev 4.2: not the people who fixed it),
+  -- unless no other administrator exists (Aaron, Nov 10: the site has one), and then only with a reason of at least 10
+  -- characters, recorded in the audit log as the owner's own confirmation.
   if f.owner_id = app.current_member() then
-    raise exception 'engine_fixer' using errcode = 'P0001', hint = 'The agent''s owner fixes it, so someone else confirms the fix.';
+    if exists (select 1 from app.members m where m.is_admin and m.id <> f.owner_id) then
+      raise exception 'engine_fixer' using errcode = 'P0001', hint = 'The agent''s owner fixes it, so another administrator confirms the fix.';
+    end if;
+    if char_length(btrim(coalesce(p_note, ''))) < 10 then
+      raise exception 'engine_fixer' using errcode = 'P0001', hint = 'You are the only administrator: confirm your own agent''s fix with a reason of at least 10 characters.';
+    end if;
   end if;
   update app.engine_findings x set fixed_at = now(), fixed_by = app.current_member(), fix_note = nullif(p_note, '') where x.id = f.id;
-  perform app.audit_add('engine.fixed', 'finding', f.id, jsonb_build_object('agent', f.agent_id));
+  perform app.audit_add('engine.fixed', 'finding', f.id, jsonb_build_object('agent', f.agent_id, 'by_owner', f.owner_id = app.current_member()));
   perform app.engine_license_refresh(f.agent_id, f.room_id);
   return jsonb_build_object('finding', f.id, 'fixed', true,
     'license', (select l.level from app.engine_licenses l where l.agent_id = f.agent_id and l.room_id = f.room_id));
@@ -852,7 +861,8 @@ as $$
     'policy', jsonb_build_object('levels', (select jsonb_agg(jsonb_build_object('level', p.level, 'min_verified', p.min_verified,
         'min_lower_bound', p.min_lower_bound, 'min_forecasts', p.min_forecasts, 'max_brier', p.max_brier) order by p.level) from app.engine_policy p),
       'shown_from', jsonb_build_object('lower_bound', 5, 'brier', 10), 'order_margin', 20, 'to_confirm', true,
-      'holds_up', 'nothing: no level holds up, refuses or slows any agent''s work; changes are told to the owner'),
+      'size_cap', jsonb_build_object('0', 2, '1', 5, '2', 8, '3', 8),
+      'holds_up', 'claims above the level''s size cap in that room; every agent can always claim small tasks; changes are told to the owner'),
     'counts', jsonb_build_object(
       'licenses', (select count(*) from lic where lic.agent is not null),
       'levels', (select coalesce(jsonb_object_agg(q.level, q.n), '{}'::jsonb) from (select lic.level, count(*) as n from lic where lic.agent is not null group by lic.level) q),
@@ -933,10 +943,38 @@ as $$
       from app.engine_orders o join app.work_projects p on p.id = o.project_id where o.agent_id = p_agent and p.status <> 'removed'), '[]'::jsonb)) end
 $$;
 
+-- ---- What a level does: the size of task an agent may claim in a room on its own (Aaron, Nov 10) ----
+-- Before an agent's claim is made: refused, with the reason, if the task is larger than its level allows in that room.
+-- A hand-off to a sub-agent counts the level of the agent it came from (the sub-agent works for it).
+create function app.engine_claim_cap()
+returns trigger
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  t record;
+  who uuid := new.agent_id;
+  lvl integer;
+  cap smallint;
+begin
+  if new.handed_from is not null then
+    select c.agent_id into who from app.work_claims c where c.id = new.handed_from;
+    who := coalesce(who, new.agent_id);
+  end if;
+  select x.size, x.room_id, r.code into t from app.work_tasks x join app.work_rooms r on r.id = x.room_id where x.id = new.task_id;
+  select l.level into lvl from app.engine_licenses l where l.agent_id = who and l.room_id = t.room_id;
+  cap := case when coalesce(lvl, 0) >= 2 then 8 when lvl = 1 then 5 else 2 end;
+  if t.size > cap then
+    raise exception 'work_license' using errcode = 'P0001', hint = 'This agent''s license in ' || t.code || ' is level ' || coalesce(lvl, 0)
+      || ', which allows tasks up to size ' || cap || '; this one is size ' || t.size || '. Verified work in this room raises the level.';
+  end if;
+  return new;
+end
+$$;
+
 -- Who may call what: the site's role calls the reads and the writes (which check who is acting); the rest nobody.
 revoke execute on function app.engine_agent_card(uuid), app.engine_trouble(text), app.engine_license_refresh(uuid, uuid),
   app.engine_forecast_settle(uuid, text, uuid), app.engine_order_state(uuid), app.engine_order_watch(uuid),
-  app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim(),
+  app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim(), app.engine_claim_cap(),
   app.engine_forecast(uuid, integer, jsonb, boolean), app.engine_precedent_add(text, text, text, text, uuid),
   app.engine_finding_add(uuid, text, text, boolean, text), app.engine_finding_fix(uuid, text),
   app.engine_order_add(uuid, uuid, integer, integer, integer, text), app.engine_order_resume(uuid, integer, integer),
@@ -947,22 +985,25 @@ grant execute on function app.engine_forecast(uuid, integer, jsonb, boolean), ap
   app.engine_summary(), app.engine_agent(uuid) to dog_app;
 
 -- The triggers below are made by the tables' owner, which needs to run their functions for that moment only (038's way).
-grant execute on function app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim() to dog_owner;
+grant execute on function app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim(), app.engine_claim_cap() to dog_owner;
 
 set local role dog_owner;
 revoke create on schema app from dog_work;
 
--- ---- The triggers on the work module's tables (after each change; they never refuse it) ----
+-- ---- The triggers on the work module's tables (after each change, never refusing it; and the size cap before a claim) ----
 create trigger engine_after_submission after insert or update of status on app.work_submissions
   for each row when (new.worker_agent is not null) execute function app.engine_on_submission();
 create trigger engine_after_points after update of status on app.work_points
   for each row when (new.citizen_agent is not null and old.status is distinct from new.status) execute function app.engine_on_points();
 create trigger engine_after_claim after insert or update of status on app.work_claims
   for each row when (new.agent_id is not null) execute function app.engine_on_claim();
+-- The one trigger that refuses: an agent's claim above its level's size cap in that room (Aaron, Nov 10).
+create trigger engine_before_claim before insert on app.work_claims
+  for each row when (new.agent_id is not null) execute function app.engine_claim_cap();
 
 -- ---- The record so far: every agent's settled outcomes on the site today ----
 set local role dog_work;
-revoke execute on function app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim() from dog_owner;
+revoke execute on function app.engine_on_submission(), app.engine_on_points(), app.engine_on_claim(), app.engine_claim_cap() from dog_owner;
 do $backfill$
 declare
   x record;

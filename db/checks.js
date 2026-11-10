@@ -381,7 +381,8 @@ const DEFINERS = {
   'app.engine_trouble(text)': { owner: 'dog_work', callers: '' },
   'app.engine_on_submission()': { owner: 'dog_work', callers: '' },
   'app.engine_on_points()': { owner: 'dog_work', callers: '' },
-  'app.engine_on_claim()': { owner: 'dog_work', callers: '' }
+  'app.engine_on_claim()': { owner: 'dog_work', callers: '' },
+  'app.engine_claim_cap()': { owner: 'dog_work', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
