@@ -60,8 +60,8 @@ Updated Nov 10 with four independent reviews (#123, the web app, the AI parts, t
 2. **#123's review findings, in #123 with Aaron's yes:** the token check requires the claims back; the key fetch gets a time limit; the uptime check confirms against a fresh read; the two-clocks comment and test corrected; the RK134 tests run without a database; the description brought to this guide.
 3. **The AI fixes:** RK142 (Third Look counts anything over what the model reads as cut), then RK143 (checks on normalised text; tag characters stripped except in flags).
 4. **Broken access control (OWASP A01, CWE-862):** RK140, then RK135, then RK144 and RK112, then RK100's sl_claim and sl_decide (the same pattern for Second Look), then RK145.
-5. **Taking in vulnerability reports (RK147):** SECURITY.md with a disclosure policy and response times, linked from security.txt; with Aaron's yes, private vulnerability reporting and Dependabot alerts turned on (free settings).
-6. **The required gate (RK146):** a guard on PRs that change .github/workflows; CodeQL's scope widened; with Aaron's yes, CodeQL made required.
+5. **Taking in vulnerability reports (RK147):** SECURITY.md with a disclosure policy and response times, linked from security.txt; private vulnerability reporting and Dependabot alerts turned on (approved Nov 10; Claude's session can't write repository settings, so these are Aaron's clicks).
+6. **The required gate (RK146):** a guard on PRs that change .github/workflows; CodeQL's scope widened; CodeQL made required and the log-witness ruleset applied (approved Nov 10; Aaron's clicks, for the same reason).
 7. **OWASP A09, HIPAA audit controls:** audit logging part 2, waiting on Aaron's OK for the Vercel Blob store's cost (already planned).
 8. **Supply chain (SSDF, OWASP A03, SLSA, FedRAMP):** in one PR, with no new service:
    - a software bill of materials from the lockfile;
