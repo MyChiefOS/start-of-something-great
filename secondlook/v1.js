@@ -63,12 +63,15 @@ const RUN_CODE = [
 const LOOKALIKE_FROM = '\u0131\u0184\u018D\u0192\u0196\u01A6\u01BD\u01BF\u01C0\u0237\u024C\u0251\u0261\u0263\u0269\u026A\u026F\u0284\u028B\u028F\u037F\u0391\u0392\u0395\u0396\u0397\u0399\u039A\u039C\u039D\u039F\u03A1\u03A4\u03A5\u03A7\u03B1\u03B3\u03B9\u03BD\u03BF\u03C1\u03C3\u03C5\u03D2\u03DC\u03ED\u03F1\u03F2\u03F3\u03F8\u03F9\u03FA\u0405\u0406\u0408\u0410\u0412\u0415\u041A\u041C\u041D\u041E\u0420\u0421\u0422\u0423\u0425\u042C\u0430\u0433\u0435\u043E\u0440\u0441\u0443\u0445\u0448\u0455\u0456\u0458\u0461\u0474\u0475\u04AE\u04AF\u04BA\u04BB\u04BD\u04C0\u04CF\u0501\u050C\u051A\u051B\u051C\u051D\u054D\u054F\u0555\u0561\u0563\u0566\u0570\u0575\u0578\u057C\u057D\u0581\u0582\u0584\u0585';
 const LOOKALIKE_TO = 'ibgflRspljRagyiiwfuyJABEZHIKMNOPTYXayivopouYFopcjpCMSIJABEKMHOPCTYXbareopcyxwsijwVvYyhhelldGQqWwUSOwqqhjnnugifo';
 const LOOKALIKE = new Map([...LOOKALIKE_FROM].map((ch, i) => [ch, LOOKALIKE_TO[i]]));
-function fold(text) {
-  return decodeTags(String(text == null ? '' : text).normalize('NFKC'))
+// Invisible characters can split a word ("ig\u200bnore") or stand in for the space between words ("ignore\u3164all", with
+// a Hangul filler; the review of PR 1, Nov 10), so the checks read both: one view with them taken out, one with them,
+// and blank-looking characters (the Braille blank, Hangul fillers), turned into spaces.
+const BLANKS = /[\p{Default_Ignorable_Code_Point}\u2800\u3164\uFFA0\u115F\u1160]+/gu;
+function fold(text, { spaced = false } = {}) {
+  const s = decodeTags(String(text == null ? '' : text).normalize('NFKC'))
     .normalize('NFD').replace(/\p{M}+/gu, '')
-    .replace(/[^\x00-\x7F]/gu, (ch) => LOOKALIKE.get(ch) || ch)
-    .replace(/\p{Default_Ignorable_Code_Point}+/gu, '')
-    .normalize('NFKC');
+    .replace(/[^\x00-\x7F]/gu, (ch) => LOOKALIKE.get(ch) || ch);
+  return (spaced ? s.replace(BLANKS, ' ') : s.replace(/\p{Default_Ignorable_Code_Point}+/gu, '')).normalize('NFKC');
 }
 
 function checks(text) {
@@ -76,7 +79,7 @@ function checks(text) {
   const t = raw.slice(0, MAX_TEXT);
   // Exactly what ask sends the model, before the bracket runs are removed (which can't hide a phrase).
   const sent = maskContacts(raw).slice(0, MAX_TEXT).normalize('NFKC');
-  const views = [fold(t), fold(sent)];
+  const views = [fold(t), fold(sent), fold(t, { spaced: true }), fold(sent, { spaced: true })];
   const found = [];
   // A key the masking missed because it was written in full-width letters would reach the model in plain form.
   if (maskSecrets(t).hits > 0 || maskSecrets(sent).hits > 0) found.push('a key or password');
