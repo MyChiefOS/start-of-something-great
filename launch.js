@@ -7,7 +7,22 @@
 // "preview" is not a stage (Aaron, Oct 24: "NO preview systems"): LAUNCH_STAGE=preview counts as closed, so setting it
 // can only close the site, never open it. The preview-only paths it once switched on (an allow-list for new accounts,
 // LAUNCH_PREVIEW_ALLOW, and signed-in-only reading) were removed in the dormant-paths clean-up
-// (harness/REVIEW-2026-10-26.md, R-14).
+// (harness/REVIEW-2026-10-26.md, R-14). That private preview stage of the live site stays dropped (Aaron, Nov 10).
+//
+// The preview copy (RK141; Aaron, Nov 10: "Okay you can bring preview back", the separate copy with its own throwaway
+// database and made-up data; design/preview-copy.md) is something else: Vercel's preview deployments of a pull request,
+// each getting its database login and keys from the preview branch's own key broker (db/sitekeys.js brokerFor), never
+// production's. A preview deployment may run open only when all of these hold (previewCopy below), and otherwise stays
+// closed exactly as before:
+//   * the preview branch's address is fixed in the code (db/sitekeys.js PREVIEW_REF; until the PR that sets it, it
+//     isn't, so every preview stays closed);
+//   * Vercel gave this deployment none of route A's settings (a database address or a site key): with any of them it
+//     could reach production's database with production's login, so it stays closed;
+//   * LAUNCH_STAGE doesn't close it, and the repository's stage is public: a preview is never more open than the
+//     repository and the close switch allow. So nothing here can open production, or any deployment the repository or
+//     LAUNCH_STAGE closes, even if a deployment's VERCEL_ENV were set to "preview" by hand (test/preview-copy.test.js
+//     checks every combination). VERCEL_ENV only chooses; the real control is the broker's check of Vercel's signed
+//     token, whose environment no setting changes.
 //
 // The stage is the repository's (harness/PLAN.md: Aaron's merge of the go-live release is the go-live decision): launch.json { "stage": "public" | "closed" }, changed only by a pull request he merges. A missing
 // file, or a value that isn't a stage, counts as closed.
@@ -18,6 +33,13 @@
 'use strict';
 
 const STAGES = ['closed', 'public'];
+// Route A's settings (CHARTER.md section 2, Oct 26): if Vercel gives a preview any of these, the preview copy stays
+// closed. Read once, when this file is first loaded, which is always before db/sitekeys.js puts the broker's answer in
+// the same environment (it asks the stage first), so the copy's own values never count as Vercel's.
+const ROUTE_A = ['DATABASE_URL', 'SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
+const routeA = (env) => ROUTE_A.filter((k) => env[k] != null && String(env[k]) !== '');
+const BOOT = Object.freeze(routeA(process.env));
+const lower = (x) => (x == null ? '' : String(x).trim().toLowerCase());
 
 let FILE = null;
 try { FILE = require('./launch.json'); } catch { FILE = null; }
@@ -33,15 +55,29 @@ function repoStage(f = FILE) {
 // deployment Vercel marks as anything but production (a preview) is always closed (no preview systems, Aaron, Oct 24;
 // the CSO's review of the go-live release, S2), whatever the repository says. Outside Vercel VERCEL_ENV is unset.
 function envCap(env = process.env) {
-  const vercel = env.VERCEL_ENV == null ? '' : String(env.VERCEL_ENV).trim().toLowerCase();
+  const vercel = lower(env.VERCEL_ENV);
   if (vercel !== '' && vercel !== 'production') return 'closed';
-  const raw = env.LAUNCH_STAGE == null ? '' : String(env.LAUNCH_STAGE).trim().toLowerCase();
+  const raw = lower(env.LAUNCH_STAGE);
   return raw === '' || raw === 'public' ? 'public' : 'closed';
 }
 
-function stage(env = process.env, f = FILE) {
-  const a = repoStage(f), b = envCap(env);
-  return STAGES.indexOf(a) <= STAGES.indexOf(b) ? a : b;
+// What a preview deployment of the preview copy allows (the conditions above); closed for anything else.
+// previewRef and boot are for the tests: the branch's reference (db/sitekeys.js PREVIEW_REF) and the route A settings
+// Vercel gave (read at load for the live environment; from the given object otherwise).
+function previewCopy(env = process.env, { previewRef, boot } = {}) {
+  if (lower(env.VERCEL_ENV) !== 'preview') return 'closed';
+  const sitekeys = require('./db/sitekeys');
+  if (!sitekeys.brokerFor(env, previewRef === undefined ? sitekeys.PREVIEW_REF : previewRef)) return 'closed';
+  if ((boot || (env === process.env ? BOOT : routeA(env))).length) return 'closed';
+  const raw = lower(env.LAUNCH_STAGE);
+  return raw === '' || raw === 'public' ? 'public' : 'closed';
 }
 
-module.exports = { stage, repoStage, envCap, STAGES };
+const least = (a, b) => (STAGES.indexOf(a) <= STAGES.indexOf(b) ? a : b);
+function stage(env = process.env, f = FILE, opts = {}) {
+  const a = repoStage(f);
+  if (lower(env.VERCEL_ENV) === 'preview') return least(a, previewCopy(env, opts));
+  return least(a, envCap(env));
+}
+
+module.exports = { stage, repoStage, envCap, previewCopy, STAGES };
