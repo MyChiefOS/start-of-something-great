@@ -24,16 +24,16 @@
   font-display: swap;
 }
 @font-face {
-  font-family: "Source Serif 4";
-  src: url("/fonts/source-serif-4.woff2") format("woff2");
-  font-weight: 200 900;
+  font-family: "Day One Serif";
+  src: url("/fonts/day-one-serif.woff2") format("woff2");
+  font-weight: 400 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Source Serif 4";
-  src: url("/fonts/source-serif-4-italic.woff2") format("woff2");
-  font-weight: 200 900;
+  font-family: "Day One Serif";
+  src: url("/fonts/day-one-serif-italic.woff2") format("woff2");
+  font-weight: 400 900;
   font-style: italic;
   font-display: swap;
 }
@@ -46,7 +46,7 @@
   ascent-override: 97.85%;
   descent-override: 28.41%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-A3, U+A5-AC, U+AE-FF, U+102, U+131, U+152-153, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212;
+  unicode-range: U+20-7E, U+A0-A3, U+A5-AC, U+AE-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 @font-face {
   font-family: "Bricolage Fallback";
@@ -57,10 +57,10 @@
   ascent-override: 101.47%;
   descent-override: 29.46%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-A3, U+A5-AC, U+AE-FF, U+102, U+131, U+152-153, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212;
+  unicode-range: U+20-7E, U+A0-A3, U+A5-AC, U+AE-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 @font-face {
-  font-family: "Source Serif Fallback";
+  font-family: "Day One Serif Fallback";
   src: local("Times New Roman"), local("TimesNewRomanPSMT"), local("Liberation Serif"), local("LiberationSerif");
   font-style: normal;
   font-weight: 100 549;
@@ -68,10 +68,10 @@
   ascent-override: 93.39%;
   descent-override: 30.2%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+329, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+  unicode-range: U+20-7E, U+A0-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 @font-face {
-  font-family: "Source Serif Fallback";
+  font-family: "Day One Serif Fallback";
   src: local("Times New Roman Bold"), local("TimesNewRomanPS-BoldMT"), local("Liberation Serif Bold"), local("LiberationSerif-Bold");
   font-style: normal;
   font-weight: 550 900;
@@ -79,10 +79,10 @@
   ascent-override: 96.25%;
   descent-override: 31.12%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+329, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+  unicode-range: U+20-7E, U+A0-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 @font-face {
-  font-family: "Source Serif Fallback";
+  font-family: "Day One Serif Fallback";
   src: local("Times New Roman Italic"), local("TimesNewRomanPS-ItalicMT"), local("Liberation Serif Italic"), local("LiberationSerif-Italic");
   font-style: italic;
   font-weight: 100 549;
@@ -90,10 +90,10 @@
   ascent-override: 100.75%;
   descent-override: 32.58%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+329, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+  unicode-range: U+20-7E, U+A0-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 @font-face {
-  font-family: "Source Serif Fallback";
+  font-family: "Day One Serif Fallback";
   src: local("Times New Roman Bold Italic"), local("TimesNewRomanPS-BoldItalicMT"), local("Liberation Serif Bold Italic"), local("LiberationSerif-BoldItalic");
   font-style: italic;
   font-weight: 550 900;
@@ -101,14 +101,14 @@
   ascent-override: 96.03%;
   descent-override: 31.05%;
   line-gap-override: 0%;
-  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+329, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+  unicode-range: U+20-7E, U+A0-FF, U+152-153, U+2002, U+2009, U+200B, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2212;
 }
 .d1{--ink:#0d0f14;--text:#ece7dd;--muted:#9a9ba5;--rule:#23262e;--amber:#f2a33a;--glow:rgba(242,163,58,.18);--onamber:#15110a;--rule-strong:#626160}
 @media (prefers-color-scheme: light){.d1{--ink:#f6f7f9;--text:#15171c;--muted:#5b5e68;--rule:#dcdee4;--amber:#a65e00;--glow:rgba(242,163,58,.22);--onamber:#fff;--rule-strong:#8c8e91}}
 html,body{background:#0d0f14}
 @media (prefers-color-scheme: light){html,body{background:#f6f7f9}}
 body{margin:0}
-.d1{--display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;--body:"Source Serif 4",Georgia,serif;width:auto;min-height:100vh;overflow-x:clip;background:var(--ink);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.6;box-sizing:border-box}
+.d1{--display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;--body:"Day One Serif",Georgia,serif;width:auto;min-height:100vh;overflow-x:clip;background:var(--ink);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.6;box-sizing:border-box}
 .d1 *{box-sizing:border-box}.d1 a{color:var(--text);text-decoration-color:var(--amber);text-decoration-thickness:.08em;text-underline-offset:.2em}.d1 a:hover{color:var(--amber)}
 .d1 h1,.d1 h2,.d1 h3{font-family:var(--display);font-weight:700;line-height:1.08;letter-spacing:-.025em;margin:0}
 .d1 .wrap{max-width:1200px;margin:0 auto;padding:0 clamp(16px,4vw,56px)}.d1 .hd{display:flex;align-items:center;justify-content:space-between;padding:14px 0}.d1 .wm{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.01em;text-decoration:none}.d1 .tm{font-size:.55em;font-weight:500;vertical-align:super;line-height:0}
