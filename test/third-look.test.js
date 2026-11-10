@@ -7,10 +7,8 @@
 //     within the daily cap, and never when off;
 //   - in shadow nothing changes for the work, the people deciding never see the suggestion, and the public figures
 //     count agreement only after they decide, with 1 to 4 shown as null.
-// Since 057 (RK135) Third Look runs in its own Vercel project (looks/api/run.js): the database tests here run its runner
-// (db/thirdlook.js) through that project's transaction (db/index.js looksTx, acting as dog_looks), with the changed files
-// delivered the way the GitHub facts workflow delivers them (dog-github's core, as dog_ghsync). The site's role can't
-// claim or answer (test/holes.test.js).
+// Since 057 (RK135, in part) Third Look reads the changed files the GitHub facts workflow delivers (dog-github's core, as
+// dog_ghsync), never GitHub itself; it still runs in the site's timer, as the site's role.
 // Needs TEST_DATABASE_URL for the database part (skipped without it, required in CI).
 'use strict';
 
@@ -121,9 +119,9 @@ async function deliver(files = FILES) {
   const w = await gh.wanted(su);
   if (w.files.length) await gh.sync(su, { prs: [], issues: [], details: [], refused: 0 }, { files: w.files.map((n) => ({ number: n, files })) });
 }
-// Third Look's own steps, as the looks project takes them (dog_looks).
-const looks = async (fn) => { await deliver(); return su.begin(async (t) => { await t.unsafe('set local role dog_looks'); return fn(t); }); };
-const third = async (opts) => { await deliver(); return require('../db/thirdlook').run((fn) => db.looksTx(su, fn), TOKEN, opts); };
+// Third Look's own steps, as the site's timer takes them.
+const looks = async (fn) => { await deliver(); return run({ actor: 'anon' }, fn); };
+const third = async (opts) => { await deliver(); return require('../db/thirdlook').run(run, TOKEN, opts); };
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });

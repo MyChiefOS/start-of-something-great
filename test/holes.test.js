@@ -1,19 +1,13 @@
-// Migration 057: the remaining access holes (RISKS.md RK135, RK144, RK112, RK100). The functions that record a model's
-// or an outside system's answer leave the site's role:
-//   - Second and Third Look run in their own Vercel project, "looks" (Aaron, Nov 10): the key broker gives that
-//     project's identity token its own login, dog_looks_web, which may act as dog_looks only; the site's token never
-//     gets it, the looks token never gets the site's; each token goes only to the broker and the AI Gateway. Third Look
-//     reads only the changed files GitHub gave the GitHub facts workflow; a refused or failed model call gives the work
-//     back; each claim has a 3-minute limit;
+// Migration 057: access holes (RISKS.md RK144, RK112; RK135 in part). The functions that record an outside system's
+// answer leave the site's role:
 //   - the witness reports itself through dog-github (its own GitHub identity token) as dog_witness, and the timer checks
 //     on its own (no input) when it has stopped;
 //   - proposal decisions come with GitHub's facts (dog_ghsync): only real changes, only numbers GitHub can have, at most
-//     30 an hour.
-// These tests check the shared Vercel check and the broker for both projects; the looks route; that every token goes
-// only to the broker and the gateway; with a login made like the site's (it may act as dog_app and nothing else) that
-// each hole is shut; with the real looks login that it can run the looks' functions and nothing else; every refusal;
-// and that a project or workflow that stops leaves work waiting for a person with nothing passed. The database tests
-// need TEST_DATABASE_URL (skipped without it, required in CI).
+//     30 an hour;
+//   - Third Look reads only the changed files GitHub gave the GitHub facts workflow; a refused or failed model call
+//     gives the work back; each claim has a 3-minute limit. Second and Third Look still run in the site's timer, as the
+//     site's role (Aaron, Nov 10: "using the infrastructure as constructed"), so RK135 and RK100 stay open for that part.
+// The database tests need TEST_DATABASE_URL (skipped without it, required in CI).
 'use strict';
 
 const test = require('node:test');
@@ -33,8 +27,6 @@ const imp = (f) => import('../supabase/functions/' + f);
 const { subtle } = globalThis.crypto;
 const enc = (o) => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');
 
-// ---- The looks project's own identity (Aaron, Nov 10): the shared check, the broker, the looks route ----
-
 // A stand-in gateway that records each request and answers with the given content.
 function gateway(content, status = 200) {
   const sent = [];
@@ -43,200 +35,20 @@ function gateway(content, status = 200) {
   return f;
 }
 
-// Vercel tokens signed by a test key, checked by the real shared check (as test/routeb.test.js does).
-const LOOKS_TEST_ID = 'prj_looksTestProject0000000001';
-async function vercel() {
-  const oidc = await imp('_shared/vercel-oidc.mjs');
-  const pair = await subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
-  const jwk = { ...(await subtle.exportKey('jwk', pair.publicKey)), kid: 'v1' };
-  const now = 1_800_000_000;
-  const claims = (projectId, name, over = {}) => ({ iss: 'https://oidc.vercel.com/chief-os', aud: 'https://vercel.com/chief-os', exp: now + 3600, iat: now - 5,
-    owner: 'chief-os', owner_id: oidc.TEAM_ID, project: name, project_id: projectId, environment: 'production',
-    sub: 'owner:chief-os:project:' + name + ':environment:production', ...over });
-  async function sign(c) {
-    const body = enc({ alg: 'RS256', kid: 'v1', typ: 'JWT' }) + '.' + enc(c);
-    return body + '.' + Buffer.from(await subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, Buffer.from(body))).toString('base64url');
-  }
-  const keys = async () => [jwk];
-  return { oidc, sign, keys, now, site: await sign(claims(oidc.PROJECT_ID, 'start-of-something-great')), looks: await sign(claims(LOOKS_TEST_ID, 'looks')),
-    other: await sign(claims('prj_someoneelse', 'other')), claims };
-}
-
-test('057: the shared check accepts only the projects its caller names, says which, and while LOOKS_PROJECT_ID is empty refuses every token but the site\'s, as before', async () => {
-  const { oidc, sign, keys, now, site, looks, other, claims } = await vercel();
-  assert.strictEqual(oidc.LOOKS_PROJECT_ID, '', 'empty until Claude creates the project after the merge');
-  assert.deepStrictEqual(oidc.PROJECTS, { site: oidc.PROJECT_ID, looks: '' });
-  const v = (t, o = {}) => oidc.verify(t, { keys, now, ...o });
-  // The site, as before: its claims come back whole, Vercel's own "project" claim untouched, with our name for it.
-  const c = await v(site);
-  assert.deepStrictEqual([c.our_project, c.project, c.project_id], ['site', 'start-of-something-great', oidc.PROJECT_ID]);
-  // Today (empty): the looks token and any other project are refused, whatever the caller accepts.
-  for (const t of [looks, other]) {
-    await assert.rejects(v(t), /wrong project/);
-    await assert.rejects(v(t, { projects: ['site', 'looks'] }), /wrong project/);
-  }
-  // A token claiming an empty project ID never matches the empty constant.
-  await assert.rejects(v(await sign(claims('', 'blank')), { projects: ['site', 'looks'] }), /wrong project/);
-  // Once set: each project only where its caller accepts it.
-  const ids = { site: oidc.PROJECT_ID, looks: LOOKS_TEST_ID };
-  assert.strictEqual((await v(looks, { projects: ['looks'], ids })).our_project, 'looks');
-  await assert.rejects(v(looks, { ids }), /wrong project/, 'the site\'s callers (the default) never accept the looks token');
-  await assert.rejects(v(site, { projects: ['looks'], ids }), /wrong project/, 'the looks route never accepts the site\'s token');
-  await assert.rejects(v(other, { projects: ['site', 'looks'], ids }), /wrong project/);
-  // Every other check is the same for the looks token: team, environment, subject, signature.
-  for (const [over, why] of [[{ owner_id: 'team_other' }, /wrong team/], [{ environment: 'preview' }, /wrong environment/], [{ sub: 'owner:x:project:looks:environment:production' }, /wrong subject/]]) {
-    await assert.rejects(v(await sign(claims(LOOKS_TEST_ID, 'looks', over)), { projects: ['looks'], ids }), why);
-  }
-});
-
-// A stand-in for Vault, which records which entries were read.
-function vault() {
-  const values = { dog_web_password: 'w'.repeat(40), dog_looks_web_password: 'l'.repeat(40), dog_session_secret: 's'.repeat(40), dog_ip_hash_key: 'i'.repeat(40),
-    dog_fingerprint_key_1: 'f'.repeat(40) };
-  const asked = [];
-  const sql = async (strings, names) => { asked.push([...names]); return names.filter((n) => n in values).map((n) => ({ name: n, v: values[n] })); };
-  return { sql, asked, values };
-}
-
-test('057: the key broker gives the looks project\'s token the looks login and nothing else; the site\'s token gets exactly what it got before, and never the looks login', async () => {
-  const core = await imp('dog-keys/core.mjs');
-  const { oidc, keys, now, site, looks, other } = await vercel();
-  const ids = { site: oidc.PROJECT_ID, looks: LOOKS_TEST_ID };
-  const ask = async (token, idsNow) => {
-    const store = vault();
-    const out = await core.handle({ method: 'POST', token }, { verify: (t) => oidc.verify(t, { keys, now, projects: ['site', 'looks'], ids: idsNow }), Refused: oidc.Refused,
-      values: (project) => core.read(store.sql, [], project), note: null });
-    return { out, asked: store.asked };
-  };
-  const b64 = (s) => Buffer.from(s).toString('base64');
-  // The site's answer, exactly as before 057 (the same shape the broker has always given), with LOOKS_PROJECT_ID empty or set.
-  const before = { status: 200, body: { ok: true, database: { user: 'dog_web.' + core.PROJECT_REF, password: 'w'.repeat(40), hosts: core.POOLER_HOSTS, port: 6543, database: 'postgres' },
-    keys: { SESSION_SECRET: b64('s'.repeat(40)), IP_HASH_KEY: b64('i'.repeat(40)), FINGERPRINT_KEY_1: b64('f'.repeat(40)) } } };
-  for (const idsNow of [oidc.PROJECTS, ids]) {
-    const s = await ask(site, idsNow);
-    assert.deepStrictEqual(s.out, before);
-    assert.deepStrictEqual(s.asked, [['dog_web_password', 'dog_session_secret', 'dog_ip_hash_key', 'dog_fingerprint_key_1']], 'the site never reads the looks login');
-    assert.ok(!JSON.stringify(s.out).includes('dog_looks_web') && !JSON.stringify(s.out).includes('l'.repeat(40)));
-  }
-  // The looks project's token: its login only, read alone from Vault.
-  const l = await ask(looks, ids);
-  assert.deepStrictEqual(l.out, { status: 200, body: { ok: true, database: { user: 'dog_looks_web.' + core.PROJECT_REF, password: 'l'.repeat(40), hosts: core.POOLER_HOSTS,
-    port: 6543, database: 'postgres' } } });
-  assert.deepStrictEqual(l.asked, [['dog_looks_web_password']], 'nothing of the site\'s is even read');
-  // While LOOKS_PROJECT_ID is empty (as committed), the looks token, and any other project's, get nothing.
-  for (const t of [looks, other]) {
-    const r = await ask(t, oidc.PROJECTS);
-    assert.deepStrictEqual([r.out.status, r.out.body.error, r.asked], [401, 'refused: wrong project', []]);
-  }
-  // A check that names no project of ours gets nothing either.
-  const none = await core.handle({ method: 'POST', token: 't' }, { verify: async () => ({ sub: 'x' }), Refused: oidc.Refused, values: async () => { throw new Error('read'); } });
-  assert.deepStrictEqual([none.status, none.body.error], [401, 'refused: wrong project']);
-  // The looks login missing from Vault: named, nothing sent.
-  const missing = await core.handle({ method: 'POST', token: looks }, { verify: (t) => oidc.verify(t, { keys, now, projects: ['looks'], ids }), Refused: oidc.Refused,
-    values: async () => ({}) });
-  assert.deepStrictEqual([missing.status, missing.body.missing], [503, ['dog_looks_web_password']]);
-  // The hour's count names the project (review F6): the looks project's hand-outs are counted apart from the site's.
-  const notes = [];
-  for (const t of [site, looks]) {
-    const store = vault();
-    await core.handle({ method: 'POST', token: t }, { verify: (x) => oidc.verify(x, { keys, now, projects: ['site', 'looks'], ids }), Refused: oidc.Refused,
-      values: (project) => core.read(store.sql, [], project), note: async (o) => { notes.push(o); } });
-  }
-  assert.deepStrictEqual(notes, ['handed', 'handed_looks']);
-  const mig = read('db/migrations/057_access_holes.sql');
-  assert.match(mig, /p_outcome not in \('handed', 'handed_looks', 'failed'\)/);
-  assert.match(mig, /The key broker handed out the looks project''s login unusually often/);
-  // The deployed broker accepts both projects, and nothing else changed about how it reads or answers.
-  const ix = read('supabase/functions/dog-keys/index.ts');
-  assert.match(ix, /checks\.verify\(t, \{ projects: \["site", "looks"\] \}\)/);
-  assert.match(ix, /return checks\.read\(sql, project\);/);
-  // The preview copy's broker (RK141, ./target.mjs) keeps both: the looks token there gets the branch's own looks login,
-  // and only once the branch's Vault carries the preview copy's mark; the project and the mark both reach the read.
-  const tg = await imp('dog-keys/target.mjs');
-  const asked = [];
-  const ck = tg.checksFor(tg.target('https://abcdefghijklmnopqrst.supabase.co'), { verify: async (t, o) => o, read: async (sql, extra, project) => { asked.push([project, extra]); return {}; } });
-  assert.deepStrictEqual(await ck.verify('t', { projects: ['site', 'looks'] }), { projects: ['site', 'looks'], environment: 'preview' });
-  await ck.read(null, 'looks');
-  assert.deepStrictEqual(asked, [['looks', [tg.PREVIEW_MARKER]]]);
-  const lv = { dog_looks_web_password: 'l'.repeat(40) };
-  assert.deepStrictEqual(core.shapeLooks(lv, { ref: 'abcdefghijklmnopqrst', marker: tg.PREVIEW_MARKER }), { missing: [tg.PREVIEW_MARKER] });
-  assert.strictEqual(core.shapeLooks({ ...lv, [tg.PREVIEW_MARKER]: 'yes' }, { ref: 'abcdefghijklmnopqrst', marker: tg.PREVIEW_MARKER }).database.user,
-    'dog_looks_web.abcdefghijklmnopqrst');
-});
-
-test('057 (review F8): the looks project\'s ID, once set, is never the site\'s, and both are Vercel project IDs or empty', async () => {
-  const oidc = await imp('_shared/vercel-oidc.mjs');
-  assert.notStrictEqual(oidc.LOOKS_PROJECT_ID, oidc.PROJECT_ID, 'a pasted site ID would make the looks route fail');
-  assert.match(oidc.PROJECT_ID, /^prj_[A-Za-z0-9]{20,40}$/);
-  assert.match(oidc.LOOKS_PROJECT_ID, /^(prj_[A-Za-z0-9]{20,40})?$/);
-});
-
-test('057: the looks project is one route on a one-minute cron; it runs only on its own project\'s token, gets its login from the broker, and asks the gateway with its own token', async () => {
-  assert.deepStrictEqual(fs.readdirSync(path.join(root, 'looks')).sort(), ['api', 'vercel.json']);
-  assert.deepStrictEqual(fs.readdirSync(path.join(root, 'looks', 'api')), ['run.js'], 'only that route');
-  const cfg = JSON.parse(read('looks/vercel.json'));
-  assert.deepStrictEqual(cfg.crons, [{ path: '/api/run', schedule: '* * * * *' }]);
-  assert.deepStrictEqual(Object.keys(cfg.functions), ['api/run.js']);
-  assert.strictEqual(cfg.functions['api/run.js'].installCommand, 'cd .. && npm ci --ignore-scripts --omit=dev',
-    'the repository\'s one runtime package, installed where db/ finds it, with no install scripts (review F7)');
-  const src = read('looks/api/run.js');
-  assert.match(src, /sitekeys\.verifiedToken\(req, \{ project: 'looks' \}\)/, 'only a token of the looks project');
-  assert.match(src, /db\.looksRun/, 'its own login, acting as dog_looks');
-  assert.doesNotMatch(src, /x-vercel-oidc-token|fetch\(|https?:\/\//, 'it reads no token itself and sends nothing itself');
-  const run = require('../looks/api/run.js');
-  const res = () => { const r = { statusCode: 0, headers: {}, setHeader(k, v) { r.headers[k] = v; }, end(b) { r.body = b; } }; return r; };
-  // No token of the looks project (or no database): nothing runs.
-  run._reset();
-  const ran = [];
-  const runTx = async (fn) => { ran.push('tx'); return fn(async () => []); };
-  for (const [oidc, rt] of [[null, runTx], ['t'.repeat(30), null]]) {
-    const r = res();
-    await run.handle({ method: 'GET', headers: {} }, r, { oidc, runTx: rt });
-    assert.deepStrictEqual([r.statusCode, JSON.parse(r.body), ran], [503, { ok: false }, []]);
-  }
-  const r405 = res();
-  await run.handle({ method: 'POST', headers: {} }, r405, { oidc: TOKEN, runTx });
-  assert.strictEqual(r405.statusCode, 405);
-  // With its token: Second Look, then Third Look, each claim through the looks transaction; again within 25 s: nothing.
-  let clock = 1e6;
-  const r = res();
-  await run.handle({ method: 'GET', headers: {} }, r, { oidc: TOKEN, runTx, now: () => clock });
-  assert.deepStrictEqual([r.statusCode, JSON.parse(r.body), ran], [200, { ok: true }, ['tx', 'tx']]);
-  clock += 10_000;
-  await run.handle({ method: 'GET', headers: {} }, res(), { oidc: TOKEN, runTx, now: () => clock });
-  assert.strictEqual(ran.length, 2);
-  // The route as Vercel calls it: a token that is the site's, not the looks project's, runs nothing (LOOKS_PROJECT_ID empty).
-  run._reset();
-  const out = res();
-  await run({ method: 'GET', headers: { 'x-vercel-oidc-token': 'h.' + 'z'.repeat(40) + '.s' } }, out);
-  assert.deepStrictEqual([out.statusCode, JSON.parse(out.body)], [503, { ok: false }]);
-});
-
-test('057: the site\'s timer no longer runs Second or Third Look, and the site\'s token checks require the site\'s project', async () => {
+test('057: the site\'s timer runs Second and Third Look as before, with the site\'s token; it reads nothing from GitHub for them, and reports neither the witness nor proposals', async () => {
   const cron = read('api/cron.js');
-  assert.doesNotMatch(cron, /require\('\.\.\/db\/(secondlook|thirdlook)'\)|githubRead|getProposals|logFetch|workGithub/);
-  const sk = read('db/sitekeys.js');
-  assert.match(sk, /async function verifiedToken\(req, \{ verify = null, project = 'site' \} = \{\}\)/, 'the site\'s project unless the looks route says otherwise');
-  // The site's own verifiedToken passes only 'site' to the check.
-  const sitekeys = require('../db/sitekeys');
-  const seen = [];
-  const verify = async (t, o) => { seen.push(o.projects); return { our_project: o.projects[0] }; };
-  const req = () => ({ headers: { 'x-vercel-oidc-token': 'h.' + 'z'.repeat(40) + '.s' } });
-  await sitekeys.verifiedToken(req(), { verify });
-  await sitekeys.verifiedToken(req(), { verify, project: 'looks' });
-  assert.deepStrictEqual(seen, [['site'], ['looks']]);
-  // Nothing in the site's code calls the looks' database functions, the witness's report or the proposals'.
+  assert.match(cron, /require\('\.\.\/db\/secondlook'\)\.run\(run, oidc/);
+  assert.match(cron, /require\('\.\.\/db\/thirdlook'\)\.run\(run, oidc/);
+  assert.doesNotMatch(cron, /githubRead|getProposals|logFetch|workGithub/);
   for (const f of ['db/logjobs.js', 'api/cron.js', 'db/workjobs.js']) {
-    assert.doesNotMatch(read(f), /app\.(sl_claim|sl_decide|tl_claim|tl_decide|tl_release|log_witness_report|log_proposal|tl_files_record)\b/, f);
+    assert.doesNotMatch(read(f), /app\.(log_witness_report|log_proposal|tl_files_record)\b/, f);
   }
-  for (const f of fs.readdirSync(path.join(root, 'api'))) assert.doesNotMatch(read('api/' + f), /db\/(secondlook|thirdlook)'|looksRun/, 'api/' + f + ' runs no look');
   assert.doesNotMatch(read('db/logjobs.js'), /fetch\(|require\('\.\/log'\)/, 'the log jobs fetch nothing');
 });
-
-test('control 8: in api/, db/, looks/, secondlook/ and thirdlook/ the only requests carrying a Bearer credential are the reviewed ones; Vercel\'s token goes only to the broker and the gateway', () => {
+test('control 8: in api/, db/, secondlook/ and thirdlook/ the only requests carrying a Bearer credential are the reviewed ones; Vercel\'s token goes only to the broker and the gateway', () => {
   const files = [];
   const walk = (d) => { for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) { const p = d + '/' + e.name; if (e.isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p); } };
-  for (const d of ['api', 'db', 'looks', 'secondlook', 'thirdlook']) walk(d);
+  for (const d of ['api', 'db', 'secondlook', 'thirdlook']) walk(d);
   const found = [];
   for (const f of files) for (const m of read(f).matchAll(/['"]Bearer ['"]\s*\+\s*([A-Za-z_.]+)/g)) found.push(f + ' ' + m[1]);
   assert.deepStrictEqual(found.sort(), ['api/_lib.js token', 'db/sitekeys.js token', 'db/workjobs.js token', 'secondlook/v1.js token', 'secondlook/v1.js token', 'thirdlook/v1.js token']);
@@ -254,11 +66,6 @@ test('control 8: in api/, db/, looks/, secondlook/ and thirdlook/ the only reque
   assert.match(s2, /const GATEWAY = 'https:\/\/ai-gateway\.vercel\.sh\/v1\/chat\/completions';/);
   assert.strictEqual((s2.match(/fetchImpl\(GATEWAY, \{\s*method: 'POST',? ?(?:\n\s*)?redirect: 'error'/g) || []).length, 2);
   assert.match(read('thirdlook/v1.js'), /fetchImpl\(sl\.GATEWAY, \{\s*method: 'POST', redirect: 'error'/);
-  // And Semgrep scans looks/ with the rule that keeps the token there (control 8).
-  const ci = read('.github/workflows/checks.yml').split('\n')[96];
-  assert.match(ci, /semgrep scan --config \.semgrep\/ .* looks\/ /);
-  const rule = read('.semgrep/database.yml');
-  assert.match(rule, /id: dayonegreat\.routeb\.identity-token-only-to-broker[\s\S]*?exclude: \[db\/sitekeys\.js, api\/ready\.js, test\/\]/, 'looks/ is not excluded');
 });
 
 test('057: Third Look gives the work back only for a refused or failed call, or no read of GitHub; the model\'s own answer is one try', async () => {
@@ -396,7 +203,7 @@ const { migrate } = require('../scripts/migrate');
 const NAME = 'dog_holes_' + crypto.randomBytes(4).toString('hex');
 const WEB = NAME + '_web';
 const PW = crypto.randomBytes(18).toString('base64url');
-let server, su, web, looksSql;
+let server, su, web;
 const db = require('../db');
 const at = (d, user, password) => { const u = new URL(SERVER); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 const q = (s) => su.unsafe(s);
@@ -405,10 +212,10 @@ const as = (role, fn) => su.begin(async (t) => { await t.unsafe('set local role 
 const asSite = (fn) => web.begin(async (t) => { await t`set local role dog_app`; return fn(t); });
 const NO = /permission denied for function/;
 let gh;
-// The looks project's own login (057), signing in as production's would, acting as dog_looks through db/index.js.
-const lk = (fn) => db.looksTx(looksSql, fn);
-const third = (opts) => require('../db/thirdlook').run(lk, TOKEN, opts);
-const second = (opts) => require('../db/secondlook').run(lk, TOKEN, opts);
+// The site's timer, as api/cron.js runs Second and Third Look (the site's login, as the anonymous actor).
+const run = (ctx, fn) => db.tx(web, ctx, fn);
+const lk = (fn) => run({ actor: 'anon' }, fn);
+const third = (opts) => require('../db/thirdlook').run(run, TOKEN, opts);
 const facts = { prs: [], issues: [], details: [], refused: 0 };
 const pr = (n) => ({ number: n, title: 'PR ' + n, author: 'octo', state: 'closed', merged_at: '2026-11-01T10:00:00Z', base: 'main', merge_sha: 'b'.repeat(40),
   refs: '', milestone: null, milestone_title: null, room: null, created_at: '2026-10-31T10:00:00Z', codes: [] });
@@ -443,15 +250,10 @@ test.before(async () => {
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = postgres(at(NAME, WEB, PW), { max: 1, ssl: false, onnotice: () => {} });
   gh = await imp('dog-github/core.mjs');
-  // The looks login exists on this server (057 made it); the test gives it a password of its own to sign in with, as
-  // production's comes from Vault through the broker.
-  const LPW = crypto.randomBytes(18).toString('base64url');
-  await su.unsafe(`alter role dog_looks_web password '${LPW}'`);
-  looksSql = postgres(at(NAME, 'dog_looks_web', LPW), { max: 1, ssl: false, onnotice: () => {} });
   await q(`update app.tl_settings set mode = 'on', daily_call_cap = 30`); // as the test's superuser: the table forces row-level security
 });
 test.after(async () => {
-  for (const x of [looksSql, web, su]) if (x) await x.end({ timeout: 5 });
+  for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
   if (server) {
     await server.unsafe(`drop database if exists ${NAME} with (force)`);
     await server.unsafe(`drop role if exists ${WEB}`);
@@ -459,29 +261,18 @@ test.after(async () => {
   }
 });
 
-test('RK135: the site\'s role can\'t claim Third Look\'s work, record its answer or give work back, nor act as dog_looks; the work module\'s own role is refused by each function', async () => {
+test('RK135, in part: the changed files Third Look reads come only from GitHub\'s facts; the site\'s role can\'t ask for or record them, and dog-github\'s role can\'t claim', async () => {
   const w = await waitingWork({ files: false });
   await claimNow();
-  await assert.rejects(asSite((t) => t`select * from app.tl_claim(3)`), NO, 'claim');
-  await assert.rejects(asSite((t) => t`select app.tl_decide(${w.s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json(PASS)}::jsonb, 'x', false, false, 1)`), NO, 'answer');
-  await assert.rejects(asSite((t) => t`select app.tl_release(${w.s}::uuid, 'timeout')`), NO, 'give back');
   await assert.rejects(asSite((t) => t`select * from app.tl_files_wanted(5)`), NO);
   await assert.rejects(asSite((t) => t`select app.tl_files_record('[]'::jsonb)`), NO);
-  await assert.rejects(web.begin((t) => t`set local role dog_looks`), /permission denied to set role "dog_looks"/, 'the site\'s login can never act as it');
-  // The owner of the functions could call them; each refuses any role in force but its own caller's.
-  for (const [sqlText, why] of [['select * from app.tl_claim(3)', /only the looks project hands work to Third Look/],
-    [`select app.tl_decide('${w.s}', 'v1', null, 'person', null, 'x', true, false, 1)`, /only the looks project records Third Look/],
-    [`select app.tl_release('${w.s}', 'timeout')`, /only the looks project gives/],
-    ['select * from app.tl_files_wanted(5)', /only the GitHub facts function/], [`select app.tl_files_record('[]')`, /only the GitHub facts function/]]) {
-    await assert.rejects(as('dog_work', (t) => t.unsafe(sqlText)), why, sqlText);
-    // And each is refused outright to the other narrow role (the looks role can't record files; dog-github's can't claim).
-    await assert.rejects(as(sqlText.includes('files') ? 'dog_looks' : 'dog_ghsync', (t) => t.unsafe(sqlText)), NO, sqlText);
+  for (const sqlText of ['select * from app.tl_claim(3)', `select app.tl_release('${w.s}', 'timeout')`]) {
+    await assert.rejects(as('dog_ghsync', (t) => t.unsafe(sqlText)), NO, sqlText);
   }
   assert.strictEqual(await status(w.s), 'review/admin/-', 'nothing passed');
-  assert.strictEqual((await q(`select count(*)::int as n from app.tl_reviews where submission_id = '${w.s}'`))[0].n, 0, 'nothing claimed');
+  assert.strictEqual((await lk((t) => t`select * from app.tl_claim(3)`)).length, 0, 'without its changed files it isn\'t claimed');
 });
-
-test('RK135: the looks project claims, asks and records Third Look itself; a pass needs GitHub\'s changed files, Aaron\'s merge at the pass, and its claim\'s time limit', async () => {
+test('RK135, in part: the site\'s timer claims, asks and records Third Look; a pass needs GitHub\'s changed files, Aaron\'s merge at the pass, and its claim\'s time limit', async () => {
   const w = await waitingWork();
   const g = yes();
   await claimNow();
@@ -498,24 +289,24 @@ test('RK135: the looks project claims, asks and records Third Look itself; a pas
   // A claim answered after its 3 minutes changes nothing.
   await gh.sync(su, facts, { files: [{ number: nf.n, files: FILES }] });
   await claimNow();
-  const [c] = await as('dog_looks', (t) => t`select submission_id from app.tl_claim(1)`);
+  const [c] = await lk((t) => t`select submission_id from app.tl_claim(1)`);
   assert.strictEqual(c.submission_id, nf.s);
   await q(`update app.tl_reviews set claimed_at = now() - interval '4 minutes' where submission_id = '${nf.s}'`);
-  assert.strictEqual((await as('dog_looks', (t) => t`select app.tl_decide(${nf.s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json(PASS)}::jsonb, 'x', false, false, 1) as r`))[0].r, 'expired');
+  assert.strictEqual((await lk((t) => t`select app.tl_decide(${nf.s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json(PASS)}::jsonb, 'x', false, false, 1) as r`))[0].r, 'expired');
   assert.strictEqual(await status(nf.s), 'review/admin/-', 'nothing passed');
   // The next claim gives it back ("timed out"), and after 10 minutes it is claimed again.
   await claimNow();
-  await as('dog_looks', (t) => t`select * from app.tl_claim(1)`);
+  await lk((t) => t`select * from app.tl_claim(1)`);
   const [rel] = await q(`select why from app.tl_releases where submission_id = '${nf.s}'`);
   assert.strictEqual(rel.why, 'timed out');
   assert.strictEqual((await q(`select count(*)::int as n from app.tl_reviews where submission_id = '${nf.s}'`))[0].n, 0);
   // The gate again at the pass: if GitHub's read no longer credits Aaron, the pass is recorded but passes nothing.
   await q(`update app.tl_releases set released_at = now() - interval '11 minutes' where submission_id = '${nf.s}'`);
   await claimNow();
-  const [c2] = await as('dog_looks', (t) => t`select submission_id from app.tl_claim(1)`);
+  const [c2] = await lk((t) => t`select submission_id from app.tl_claim(1)`);
   assert.strictEqual(c2.submission_id, nf.s, 'claimed again after 10 minutes');
   await as('dog_work', (t) => t`update app.work_github_prs set merged_by_id = 583231 where number = ${nf.n}`);
-  assert.strictEqual((await as('dog_looks', (t) => t`select app.tl_decide(${nf.s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json(PASS)}::jsonb, 'x', false, false, 1) as r`))[0].r, 'not_owner_merged');
+  assert.strictEqual((await lk((t) => t`select app.tl_decide(${nf.s}::uuid, 'v1', 'mistral/ministral-14b', 'pass', ${t.json(PASS)}::jsonb, 'x', false, false, 1) as r`))[0].r, 'not_owner_merged');
   assert.strictEqual(await status(nf.s), 'review/admin/-');
 });
 
@@ -555,13 +346,13 @@ test('RK135: a refused or failed model call gives the work back without spending
   }
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key like 'thirdlook:released:%'`))[0].n, 1, 'still once a day');
   // A release with a reason that isn't one of ours is refused.
-  await assert.rejects(as('dog_looks', (t) => t`select app.tl_release(${items[0].s}::uuid, ${'<b>x</b>'})`), /bad Third Look release/);
+  await assert.rejects(lk((t) => t`select app.tl_release(${items[0].s}::uuid, ${'<b>x</b>'})`), /bad Third Look release/);
 });
 
-test('checks alert, never lock out: if the looks project stops mid-claim, or the facts never come, nothing passes, the work waits for a person, and Aaron is told halfway', async () => {
+test('checks alert, never lock out: if the timer stops mid-claim, or the facts never come, nothing passes, the work waits for a person, and Aaron is told halfway', async () => {
   const w = await waitingWork();
   await claimNow();
-  await lk((t) => t`select * from app.tl_claim(1)`); // the looks project claims, then stops before answering
+  await lk((t) => t`select * from app.tl_claim(1)`); // the timer claims, then stops before answering
   const nf = await waitingWork({ files: false }); // and this one's changed files never come
   await q(`update app.work_submissions set routed_at = now() - make_interval(hours => (select audit_hours from app.work_settings) / 2) - interval '1 minute'
     where id in ('${w.s}', '${nf.s}')`);
@@ -571,16 +362,6 @@ test('checks alert, never lock out: if the looks project stops mid-claim, or the
     assert.strictEqual(await status(x.s), 'review/admin/-', 'nothing passed');
     assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key = 'work:held:${x.s}'`))[0].n, 1, 'Aaron is told');
   }
-});
-
-test('RK100: the site\'s role can\'t claim held posts for Second Look or record its decision, nor act as dog_looks; JEVs\'s own role is refused by the functions', async () => {
-  await assert.rejects(asSite((t) => t`select * from app.sl_claim(1)`), NO);
-  await assert.rejects(asSite((t) => t`select app.sl_decide(${crypto.randomUUID()}::uuid, 'v1', 'mistral/ministral-3b', 'clear', '{}'::jsonb, 0, 'x', false, null, 1)`), NO);
-  await assert.rejects(as('dog_jevs', (t) => t`select * from app.sl_claim(1)`), /only the looks project hands posts to Second Look/);
-  await assert.rejects(as('dog_jevs', (t) => t`select app.sl_decide(${crypto.randomUUID()}::uuid, 'v1', null, 'leave', null, 0, 'x', false, null, 1)`), /only the looks project records Second Look/);
-  // The looks project's own path runs it.
-  await q(`update app.sl_settings set last_claim_at = null`);
-  assert.deepStrictEqual(await second({ fetchImpl: gateway('{}') }), { claimed: 0, decided: 0 });
 });
 
 test('RK144: the site\'s role can\'t report the witness, nor act as dog_witness; only dog-github\'s path for the witness workflow can, and the timer\'s check takes no input', async () => {
@@ -626,52 +407,24 @@ test('RK112: proposal decisions only from GitHub\'s facts: only real changes, on
   assert.strictEqual(await send(many), 10, 'the rest on a later run');
 });
 
-test('057: the looks login signs in with no rights of its own, may act as dog_looks only, and as dog_looks can run the looks\' functions and nothing else', async () => {
-  await assert.rejects(looksSql`select * from app.tl_claim(1)`, /permission denied for schema app/, 'nothing without taking its role (noinherit)');
-  await assert.rejects(looksSql`select count(*) from app.posts`, /permission denied/);
-  for (const role of ['dog_app', 'dog_work', 'dog_jevs', 'dog_ghsync', 'dog_witness', 'dog_owner']) {
-    await assert.rejects(looksSql.begin((t) => t.unsafe('set local role ' + role)), new RegExp('permission denied to set role "' + role + '"'), role);
-  }
-  await claimNow();
-  assert.ok(Array.isArray(await lk((t) => t`select * from app.tl_claim(1)`)), 'as dog_looks, Third Look\'s claim runs');
-  await assert.rejects(lk((t) => t`select count(*) from app.work_submissions`), /permission denied/, 'but no table');
-  await assert.rejects(lk((t) => t`select app.work_tick()`), NO, 'nor another module\'s function');
-  await assert.rejects(lk((t) => t`select app.log_witness_report(null, null, now(), null)`), NO);
-  // And the site's login can't take the looks role, so db/index.js's looks transaction fails there at once.
-  await assert.rejects(db.looksTx(web, (t) => t`select 1`), /permission denied to set role "dog_looks"/);
-  // The coverage check refuses the looks login with more than its one plain membership.
-  const { problems } = require('../db/checks');
-  await q('grant dog_app to dog_looks_web');
-  try {
-    assert.ok((await problems(su)).some((p) => /dog_looks_web belongs to dog_app, dog_looks/.test(p)));
-  } finally { await q('revoke dog_app from dog_looks_web'); }
-});
-
-test('057: the coverage check passes; dog_looks and dog_witness can\'t sign in, belong to no role, hold no table right and run only their own functions', async () => {
+test('057: the coverage check passes; dog_witness can\'t sign in, belongs to no role, holds no table right and runs only the witness\'s report', async () => {
   const { problems } = require('../db/checks');
   const snapshot = read('db/snapshot.txt').split('\n').filter((l) => l && !l.startsWith('#'));
   assert.deepStrictEqual(await problems(su, { snapshot }), []);
-  for (const role of ['dog_looks', 'dog_witness']) {
-    const [r] = await q(`select rolcanlogin, rolinherit, rolbypassrls, (select count(*)::int from pg_auth_members m join pg_roles g on g.oid = m.roleid where m.member = r.oid) as member_of
-      from pg_roles r where rolname = '${role}'`);
-    assert.deepStrictEqual(r, { rolcanlogin: false, rolinherit: false, rolbypassrls: false, member_of: 0 }, role);
-    const [tables] = await q(`select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
-      where n.nspname = 'app' and c.relkind = 'r' and has_table_privilege('${role}', c.oid, 'select, insert, update, delete')`);
-    assert.strictEqual(tables.n, 0, role);
-  }
-  const fns = async (role) => (await q(`select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'app' and has_function_privilege('${role}', p.oid, 'execute') order by 1`)).map((x) => x.fn);
-  assert.deepStrictEqual(await fns('dog_looks'), ['app.sl_claim(integer)', 'app.sl_decide(uuid,text,text,text,jsonb,integer,text,boolean,text,integer)',
-    'app.tl_claim(integer)', 'app.tl_decide(uuid,text,text,text,jsonb,text,boolean,boolean,integer)', 'app.tl_release(uuid,text)']);
-  assert.deepStrictEqual(await fns('dog_witness'), ['app.log_witness_report(bigint,bytea,timestamp with time zone,text)']);
-  // And the site's role runs none of the functions that record a model's or an outside system's answer.
-  for (const f of ['app.sl_claim(integer)', 'app.tl_claim(integer)', 'app.tl_decide(uuid,text,text,text,jsonb,text,boolean,boolean,integer)',
-    'app.sl_decide(uuid,text,text,text,jsonb,integer,text,boolean,text,integer)', 'app.log_witness_report(bigint,bytea,timestamp with time zone,text)',
-    'app.log_proposal(integer,text)', 'app.work_github_sync(jsonb)']) {
+  const [r] = await q(`select rolcanlogin, rolinherit, rolbypassrls, (select count(*)::int from pg_auth_members m join pg_roles g on g.oid = m.roleid where m.member = r.oid) as member_of
+    from pg_roles r where rolname = 'dog_witness'`);
+  assert.deepStrictEqual(r, { rolcanlogin: false, rolinherit: false, rolbypassrls: false, member_of: 0 });
+  const [tables] = await q(`select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'app' and c.relkind = 'r' and has_table_privilege('dog_witness', c.oid, 'select, insert, update, delete')`);
+  assert.strictEqual(tables.n, 0);
+  const [fns] = await q(`select array_agg(p.oid::regprocedure::text order by 1) as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'app' and has_function_privilege('dog_witness', p.oid, 'execute')`);
+  assert.deepStrictEqual(fns.f, ['app.log_witness_report(bigint,bytea,timestamp with time zone,text)']);
+  // And the site's role runs none of the functions that record an outside system's answer.
+  for (const f of ['app.log_witness_report(bigint,bytea,timestamp with time zone,text)', 'app.log_proposal(integer,text)', 'app.work_github_sync(jsonb)', 'app.tl_files_record(jsonb)']) {
     assert.strictEqual((await q(`select has_function_privilege('dog_app', '${f}', 'execute') as x`))[0].x, false, f);
   }
 });
-
 test('057 (review F5): the changed-files list always fits the database\'s 100,000 bytes, and a cut list makes Third Look leave it to a person', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
   const { shapeFiles } = require('../db/workjobs');
   const tl = require('../thirdlook/v1');

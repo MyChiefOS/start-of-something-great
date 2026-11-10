@@ -16,7 +16,7 @@ const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
 const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync',
-  'dog_looks', 'dog_witness'];
+  'dog_witness'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -35,13 +35,9 @@ const TIMERS = 'dog_timers';
 // dog-github function; it holds no table rights, and the site's role can't act as it. Since 057 it also records the
 // changed files Third Look reads (app.tl_files_wanted, app.tl_files_record) and Aaron's proposal decisions
 // (app.log_proposals_record), from the same GitHub facts.
-// dog_looks (057, RK135, RK100) only runs Second and Third Look, inside their claim, decide and release functions, for
-// the looks project (its login, LOOKS_LOGIN below, is the one role besides dog_owner that may act as it); dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for
-// dog-github when the log-witness workflow calls. Neither holds table rights, and the site's role can act as neither.
-// 057: the looks project's database login (made as 022 makes the site's, its password only in Vault). It may sign in,
-// has no rights of its own, and may switch to dog_looks alone, with no admin option and no inheritance.
-const LOOKS_LOGIN = 'dog_looks_web';
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_looks',
+// dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for dog-github when the log-witness
+// workflow calls. It holds no table rights, and the site's role can't act as it.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
   'dog_witness'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
@@ -197,9 +193,8 @@ const DEFINERS = {
   // the unlock, the weekly report and the two triggers (the stop, and a report on a post it published), called by
   // nobody directly.
   'app.sl_eligible(uuid)': { owner: 'dog_jevs', callers: '' },
-  // 057 (RK100): only the looks project's role (dog_looks, through its login dog_looks_web), never the site's.
-  'app.sl_claim(integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
-  'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
+  'app.sl_claim(integer)': 'dog_jevs',
+  'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': 'dog_jevs',
   'app.sl_report()': 'dog_jevs',
   'app.sl_report_core()': { owner: 'dog_jevs', callers: '' },
   'app.sl_set_mode(text)': 'dog_jevs',
@@ -310,12 +305,12 @@ const DEFINERS = {
   'app.work_check_decide(uuid, text, text)': 'dog_work',
   'app.work_task_of(uuid)': 'dog_work',
   // Third Look (044), in shadow: the timer claims and records; an administrator switches it; its figures are public.
-  // 057 (RK135): claim, answer and release only for the looks project's role (dog_looks); the changed files it reads only from
-  // GitHub's facts (dog_ghsync); whether it still wants a pull request, and whether a number can be an issue (for the
-  // log's proposals), as internal pieces.
-  'app.tl_claim(integer)': { owner: 'dog_work', callers: 'dog_looks' },
-  'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': { owner: 'dog_work', callers: 'dog_looks' },
-  'app.tl_release(uuid, text)': { owner: 'dog_work', callers: 'dog_looks' },
+  // 057 (RK135, in part): the timer claims, answers and gives work back; the changed files it reads only from GitHub's
+  // facts (dog_ghsync); whether it still wants a pull request, and whether a number can be an issue (for the log's
+  // proposals), as internal pieces.
+  'app.tl_claim(integer)': 'dog_work',
+  'app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer)': 'dog_work',
+  'app.tl_release(uuid, text)': 'dog_work',
   'app.tl_wants(integer)': { owner: 'dog_work', callers: '' },
   'app.tl_files_wanted(integer)': { owner: 'dog_work', callers: 'dog_ghsync' },
   'app.tl_files_record(jsonb)': { owner: 'dog_work', callers: 'dog_ghsync' },
@@ -518,7 +513,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
       and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
-                                         'dog_looks', 'dog_witness') and a.privilege_type = 'USAGE')`;
+                                         'dog_witness') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.
@@ -560,24 +555,8 @@ async function problems(sql, { snapshot } = {}) {
     if (!r) continue;
     for (const [k, label] of powers.concat([['rolcanlogin', 'sign in directly']])) if (r[k]) add(name + ' can ' + label + '; it must not (S1)');
     if (r.member_of.length) add(name + ' belongs to ' + r.member_of.join(', ') + '; it must belong to no role (S1)');
-    const holders = roles.filter((x) => x.member_of.includes(name) && x.name !== 'dog_owner' && !(name === 'dog_looks' && x.name === LOOKS_LOGIN)).map((x) => x.name);
+    const holders = roles.filter((x) => x.member_of.includes(name) && x.name !== 'dog_owner').map((x) => x.name);
     if (holders.length) add(holders.join(', ') + ' can act as ' + name + '; only dog_owner may, to hand it its functions (S1)');
-  }
-  // The looks login: no powers, nothing inherited, exactly one plain membership (dog_looks), no settings of its own, and
-  // nothing granted to it or owned by it in this database.
-  const [looks] = await sql`
-    select r.rolname, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb, r.rolreplication, r.rolinherit,
-           (select array_agg(g.rolname::text order by g.rolname) from pg_auth_members m join pg_roles g on g.oid = m.roleid where m.member = r.oid) as member_of,
-           exists (select 1 from pg_auth_members m where m.member = r.oid and (m.admin_option or m.inherit_option)) as wide_membership,
-           exists (select 1 from pg_db_role_setting x where x.setrole = r.oid) as settings,
-           exists (select 1 from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = r.oid
-                   and d.dbid = (select oid from pg_database where datname = current_database())) as holds
-    from pg_roles r where r.rolname = ${LOOKS_LOGIN}`;
-  if (looks) {
-    for (const [k, label] of powers.concat([['rolinherit', 'inherit rights']])) if (looks[k]) add(LOOKS_LOGIN + ' can ' + label + '; it must not (057)');
-    if (JSON.stringify(looks.member_of) !== '["dog_looks"]') add(LOOKS_LOGIN + ' belongs to ' + (looks.member_of || []).join(', ') + '; it must belong to dog_looks alone (057)');
-    if (looks.wide_membership) add(LOOKS_LOGIN + '\'s membership passes on rights or may be granted on; it must not (057)');
-    if (looks.settings || looks.holds) add(LOOKS_LOGIN + ' has settings, rights or objects of its own; it must have none (057)');
   }
   if (owner) for (const [k, label] of [['rolsuper', 'superuser'], ['rolbypassrls', 'bypass row-level security'], ['rolcanlogin', 'sign in directly']]) {
     if (owner[k]) add('dog_owner can ' + label + '; it must not (S1)');

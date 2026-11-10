@@ -276,10 +276,10 @@ test('RK140: a merged pull request passes by rule only when GitHub\'s read says 
     assert.deepStrictEqual([subs[n].status, subs[n].route, subs[n].jevs_rules], ['review', 'admin', 'W14'], n + ': a person decides');
     assert.strictEqual((await q(`select count(*)::int as n from app.work_points where submission_id = '${subs[n].id}'`))[0].n, 0, n + ': no points');
   }
-  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account (since 057 it claims as
-  // dog_looks, and reads the changed files the GitHub facts workflow delivers: it doesn't even ask for the others').
+  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account (since 057 it reads the
+  // changed files the GitHub facts workflow delivers: it doesn't even ask for the others').
   await q('update app.tl_settings set mode = \'on\', last_claim_at = null');
-  const claim = () => as('dog_looks', (t) => t`select * from app.tl_claim(3)`).then((r) => r.map((x) => x.pr_number));
+  const claim = () => as('dog_app', (t) => t`select * from app.tl_claim(3)`).then((r) => r.map((x) => x.pr_number));
   const mine = (list) => list.filter((n) => n >= 9501 && n <= 9503);
   assert.deepStrictEqual(mine((await core.wanted(su)).files), [], 'no changed files are asked for: not merged by Aaron\'s account');
   await sync({ files: [9502, 9503].map((n) => ({ number: n, files: [{ filename: 'a.js', status: 'modified', changes: 1, patch: '@@ -1 +1 @@\n-a\n+b' }] })) });

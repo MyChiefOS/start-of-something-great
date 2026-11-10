@@ -12,6 +12,7 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const v1 = require('../secondlook/v1');
+const runner = require('../db/secondlook');
 const { migrate } = require('../scripts/migrate');
 const { trustSystem, promote, asSignin, reviewWithReasons } = require('./helpers');
 // 041: a reviewer's decision goes through app.review_record, with a reason and the hash of the words (the helper adds them).
@@ -172,10 +173,6 @@ const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
 const setting = (sqlSet) => q(`update app.sl_settings set ${sqlSet}`); // as the test's superuser: the table forces row-level security
-// Since 057 (RK100) Second Look runs in its own Vercel project (looks/api/run.js): its runner, through that project's
-// transaction (db/index.js looksTx, acting as dog_looks). The site's role can't (test/holes.test.js).
-const second = (opts) => require('../db/secondlook').run((fn) => db.looksTx(su, fn), TOKEN, opts);
-const looks = (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_looks'); return fn(t); });
 const fresh = () => setting('last_claim_at = null');
 
 test.before(async () => {
@@ -258,36 +255,36 @@ test('shadow: it decides and logs; nothing changes; each post once; never in off
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'shadow');
   const a = await held(poster);
   const contact = (await feed('POST', { cookie: poster.cookie, json: { body: 'Call one@example.com or two@example.com or three@example.com ' + links(4) } })).json.id;
-  const out = await second({ fetchImpl: gateway(answer()) });
+  const out = await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
   assert.deepStrictEqual(out, { claimed: 1, decided: 1 }, 'only the eligible post is put to the model');
   const d = await decision(a);
   assert.deepStrictEqual([d.mode, d.decision, d.published, d.risk, d.model, d.answers], ['shadow', 'clear', false, 0, 'mistral/ministral-3b', CLEAN]);
   assert.strictEqual(await status(a), 'waiting', 'shadow changes nothing');
   assert.strictEqual(await decision(contact), undefined);
   // Each post once; at most once every 50 seconds.
-  assert.deepStrictEqual(await second({ fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
+  assert.deepStrictEqual(await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
   await fresh();
-  assert.deepStrictEqual(await second({ fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
+  assert.deepStrictEqual(await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
   // Off: nothing runs.
   await setting(`mode = 'off'`);
   await held(poster, 'More notes');
   await fresh();
-  assert.deepStrictEqual(await second({ fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
+  assert.deepStrictEqual(await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) }), { claimed: 0, decided: 0 });
   await setting(`mode = 'shadow'`);
   // A model failure is a logged "leave".
   await fresh();
-  await second({ fetchImpl: gateway('nonsense') });
+  await runner.run(run, TOKEN, { fetchImpl: gateway('nonsense') });
   const failed = (await q(`select decision, fail_closed, error from app.sl_decisions where fail_closed`))[0];
   assert.deepStrictEqual(failed, { decision: 'leave', fail_closed: true, error: 'bad answer' });
 });
 
 test('the database checks the decision: a clear its answers do not support, a post it was not given, a second decision', async () => {
   const p = await held(poster, 'Yet more notes');
-  const decide = (post, dec, answers) => looks((t) => t`select app.sl_decide(${post}::uuid, 'v1', 'mistral/ministral-3b', ${dec},
+  const decide = (post, dec, answers) => run({ actor: 'anon' }, (t) => t`select app.sl_decide(${post}::uuid, 'v1', 'mistral/ministral-3b', ${dec},
     ${answers ? t.json(answers) : null}::jsonb, 0, 'x', false, null, 10) as r`).then((r) => r[0].r);
   assert.strictEqual(await decide(p, 'clear', CLEAN), 'refused', 'not given to it');
   await fresh();
-  const [cl] = await looks((t) => t`select post_id from app.sl_claim(1)`);
+  const [cl] = await run({ actor: 'anon' }, (t) => t`select post_id from app.sl_claim(1)`);
   assert.strictEqual(cl.post_id, p);
   await assert.rejects(decide(p, 'clear', { ...CLEAN, q1: 'unsure' }), /answers don't support/);
   await assert.rejects(decide(p, 'clear', null), /answers don't support/);
@@ -299,7 +296,7 @@ test('on: a clear publishes, closes JEVs\'s hold as Second Look\'s, tells the au
   await setting(`mode = 'on', daily_clear_cap = 1`);
   const p1 = await held(poster, 'On-mode notes one');
   await fresh();
-  await second({ fetchImpl: gateway(answer()), n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()), n: 1 });
   assert.strictEqual(await status(p1), 'live');
   const d = await decision(p1);
   assert.deepStrictEqual([d.mode, d.decision, d.published], ['on', 'clear', true]);
@@ -311,13 +308,13 @@ test('on: a clear publishes, closes JEVs\'s hold as Second Look\'s, tells the au
   // The cap: the next clear today is logged, not published.
   const p2 = await held(poster, 'On-mode notes two');
   await fresh();
-  await second({ fetchImpl: gateway(answer()), n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()), n: 1 });
   assert.deepStrictEqual([await status(p2), (await decision(p2)).published], ['waiting', false]);
   // A reject or a leave in on mode changes nothing.
   await setting('daily_clear_cap = 10');
   const p3 = await held(poster, 'On-mode notes three');
   await fresh();
-  await second({ fetchImpl: gateway(answer({ ...CLEAN, q8: 'yes' })), n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer({ ...CLEAN, q8: 'yes' })), n: 1 });
   assert.deepStrictEqual([await status(p3), (await decision(p3)).decision], ['waiting', 'reject']);
 });
 
@@ -329,7 +326,7 @@ test('the re-check: a post that changed while the model was asked is left', asyn
     await run(aaron.ctx, (t) => review.decide(t, { post: p, decision: 'remove' }));
     return gateway(answer())(url, opts);
   };
-  await second({ fetchImpl: slow, n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: slow, n: 1 });
   const d = await decision(p);
   assert.deepStrictEqual([d.decision, d.published], ['leave', false]);
   assert.match(d.reason, /changed while it was checked/);
@@ -339,7 +336,7 @@ test('the re-check: a post that changed while the model was asked is left', asyn
 test('a report on a post it published puts it back on hold for Aaron; his removal of one pauses it back to shadow', async () => {
   const p = await held(poster, 'Report me notes');
   await fresh();
-  await second({ fetchImpl: gateway(answer()), n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()), n: 1 });
   assert.strictEqual(await status(p), 'live');
   const reporter = await member('Reporter');
   const rep = await run(reporter.ctx, (t) => require('../db/review').report(t, { post: p, reason: 'spam' }));
@@ -366,17 +363,17 @@ test('the unlock: on only after Aaron approved its last 80 shadow clears since t
   await outcomes(79, true, 100000);
   await outcomes(1, false, 50000);
   await fresh();
-  await second({ fetchImpl: gateway(answer()) });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'shadow', 'one removal among the last 80');
   await outcomes(80, true, 0); // newer than the removal
   await fresh();
-  await second({ fetchImpl: gateway(answer()) });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'on');
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where dedupe_key like 'secondlook:unlock:%'`))[0].n, 1);
   // Aaron switches it back to shadow: it stays shadow, because the unlock counts only his decisions after his switch.
   await run(aaron.ctx, (t) => t`select app.sl_set_mode('shadow')`);
   await fresh();
-  await second({ fetchImpl: gateway(answer()) });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
   assert.strictEqual((await q('select mode from app.sl_settings'))[0].mode, 'shadow', "Aaron's shadow stands");
 });
 
@@ -391,7 +388,7 @@ test('the gate refuses a held post with an appeal open, and his decisions on its
   const before = (await q('select count(*)::int as n from app.sl_outcomes'))[0].n;
   const p2 = await held(await member('Outcome poster'), 'Outcome notes');
   await fresh();
-  await second({ fetchImpl: gateway(answer()), n: 1 });
+  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()), n: 1 });
   assert.strictEqual((await decision(p2)).decision, 'clear');
   await run(aaron.ctx, (t) => review.decide(t, { post: p2, decision: 'approve' }));
   const after = await q('select approved from app.sl_outcomes order by decided_at desc, id desc limit 1');
@@ -411,7 +408,7 @@ test("Aaron's report: counts and the 95% bound, for an administrator only", asyn
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where dedupe_key like 'secondlook:week:%'`))[0].n, 1);
 });
 
-test('the looks project\'s route runs it with its own identity token and answers only {ok:true}; the site\'s timer no longer runs it (057)', async () => {
+test('the timer route runs it with the identity token and still answers only {ok:true}', async () => {
   await setting(`mode = 'shadow', last_claim_at = null, unlock_n = 10000`); // so the unlock above doesn't switch it on again
   // A fresh account (the first poster now has a record) and words unlike the other posts (or copies, J09, would hold it).
   const gardener = await member('Cron poster');
@@ -419,23 +416,14 @@ test('the looks project\'s route runs it with its own identity token and answers
   const g = await feed('POST', { cookie: gardener.cookie, json: { body: 'Quarterly gardening club schedule: tomato seedlings, compost and rain barrels ' + unique() + ' ' + sites } });
   assert.strictEqual(g.status, 202, JSON.stringify(g.json));
   const p = g.json.id;
-  // The site's timer, with the site's token: it runs every timer but Second Look, and sends the token to no model.
   const cron = require('../api/cron.js');
   cron._reset();
   const seen = [];
-  const r1 = res();
-  await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, r1, run, { oidc: TOKEN });
-  assert.deepStrictEqual([r1.statusCode, JSON.parse(r1.body)], [200, { ok: true }]);
-  assert.strictEqual(await decision(p), undefined, 'the site\'s timer didn\'t look');
-  // The looks project's route (looks/api/run.js), with its own token and its own transaction (dog_looks).
-  const looksRoute = require('../looks/api/run.js');
-  looksRoute._reset();
   const r = res();
-  await looksRoute.handle({ method: 'GET', headers: {} }, r, { oidc: TOKEN, runTx: (fn) => db.looksTx(su, fn), fetchImpl: gateway(answer(), { seen }) });
+  await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, r, run, { oidc: TOKEN, fetchImpl: gateway(answer(), { seen }) });
   assert.deepStrictEqual([r.statusCode, JSON.parse(r.body)], [200, { ok: true }]);
   assert.strictEqual((await decision(p)).decision, 'clear');
   assert.strictEqual(seen[0].opts.headers.authorization, 'Bearer ' + TOKEN);
-  assert.strictEqual(seen[0].url, v1.GATEWAY);
 });
 
 test('Aaron switches it and asks it security questions from the owner controls; nobody else can', async () => {

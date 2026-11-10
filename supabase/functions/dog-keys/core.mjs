@@ -6,9 +6,6 @@
 // The CSO's control 1, "hand out less": exactly what the site needs to sign people in and reach the database, nothing
 // else (not the timer secret: the site never holds one under route B; not the JEVs gate's or the runner's).
 // Plain JavaScript, so the tests run it in Node with a fake database and fake tokens.
-// Since 057 (RK135, RK100; Aaron, Nov 10) it also answers Second and Third Look's own Vercel project ("looks"), proved
-// by that project's own identity token, with the looks login (dog_looks_web) and nothing else: none of the site's
-// keys, not the site's login. The site's token gets exactly what it got before, and never the looks login.
 
 export const PROJECT_REF = 'nksagchwpyljvjiwolmp';
 // Supabase's shared pooler in transaction mode. Which of its two us-east-1 clusters serves this project isn't
@@ -19,8 +16,6 @@ export const POOLER_HOSTS = ['aws-0-us-east-1.pooler.supabase.com', 'aws-1-us-ea
 export const KEYS = { dog_session_secret: 'SESSION_SECRET', dog_ip_hash_key: 'IP_HASH_KEY', dog_fingerprint_key_1: 'FINGERPRINT_KEY_1' };
 // The Vault entry's name (not a secret): migration 022 keeps the site login's password under it.
 const LOGIN_ENTRY = 'dog_web_password';
-// And migration 057 the looks login's.
-const LOOKS_ENTRY = 'dog_looks_web_password';
 const MIN_KEY_BYTES = 32;
 
 const b64 = (s) => {
@@ -30,22 +25,12 @@ const b64 = (s) => {
   return btoa(bin);
 };
 
-// Reads the four values from Vault in one query (for the looks project, its login's password only, 057). Never logged
-// or kept beyond the reply. extra: on the preview branch only, the preview copy's mark (./target.mjs); production asks
-// for exactly the four (or the one). project: which of our projects the token was ('site' or 'looks').
-export async function read(sql, extra = [], project = 'site') {
-  const names = [...(project === 'looks' ? [LOOKS_ENTRY] : [LOGIN_ENTRY, ...Object.keys(KEYS)]), ...extra];
+// Reads the four values from Vault in one query. Never logged or kept beyond the reply. extra: on the preview branch
+// only, the preview copy's mark (./target.mjs); production asks for exactly the four.
+export async function read(sql, extra = []) {
+  const names = [LOGIN_ENTRY, ...Object.keys(KEYS), ...extra];
   const rows = await sql`select name, decrypted_secret as v from vault.decrypted_secrets where name = any(${names})`;
   return Object.fromEntries(rows.map((r) => [r.name, r.v]));
-}
-
-// What the looks project gets (057): its database login, and nothing else. ref and marker: as shape() takes them.
-export function shapeLooks(v, { ref = PROJECT_REF, marker = null } = {}) {
-  const missing = [];
-  if (marker && v[marker] !== 'yes') missing.push(marker);
-  if (typeof v[LOOKS_ENTRY] !== 'string' || v[LOOKS_ENTRY].length < 32) missing.push(LOOKS_ENTRY);
-  if (missing.length) return { missing };
-  return { database: { user: 'dog_looks_web.' + ref, password: v[LOOKS_ENTRY], hosts: POOLER_HOSTS, port: 6543, database: 'postgres' } };
 }
 
 // What the site gets, or which part is missing (names only). A key shorter than 32 bytes is reported as unusable
@@ -77,32 +62,28 @@ async function count(note, outcome) {
   try { await note(outcome); } catch { /* the answer never depends on the count */ }
 }
 
-// One request: { method, token } -> { status, body }. verify throws Refused for a token that isn't ours, and hands back
-// which of our projects it is (057): the site's gets the site's login and keys, the looks project's its login only.
-// ref and marker: as shape() takes them, fixed when the function starts (./target.mjs), never from the request.
+// One request: { method, token } -> { status, body }. verify throws Refused for a token that isn't ours. ref and
+// marker: as shape() takes them, fixed when the function starts (./target.mjs), never from the request.
 export async function handle({ method, token }, { verify, Refused, values, note, ref = PROJECT_REF, marker = null }) {
   if (method !== 'POST') return { status: 405, body: { ok: false, error: 'POST only' } };
-  let claims;
   try {
-    claims = await verify(token);
+    await verify(token);
   } catch (e) {
     if (Refused && e instanceof Refused) return { status: 401, body: { ok: false, error: 'refused: ' + e.message } };
     throw e;
   }
-  const project = claims && claims.our_project;
-  if (project !== 'site' && project !== 'looks') return { status: 401, body: { ok: false, error: 'refused: wrong project' } };
   let v;
   try {
-    v = await values(project);
+    v = await values();
   } catch (e) {
     await count(note, 'failed');
     throw e;
   }
-  const out = project === 'looks' ? shapeLooks(v, { ref, marker }) : shape(v, { ref, marker });
+  const out = shape(v, { ref, marker });
   if (out.missing) {
     await count(note, 'failed');
     return { status: 503, body: { ok: false, error: 'not set up', missing: out.missing } };
   }
-  await count(note, project === 'looks' ? 'handed_looks' : 'handed'); // counted apart, so an alert names the project
+  await count(note, 'handed');
   return { status: 200, body: { ok: true, ...out } };
 }

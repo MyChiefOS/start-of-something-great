@@ -186,20 +186,6 @@ async function tx(sql, ctx, fn) {
   });
 }
 
-// Second and Third Look's own transaction (057; RK135, RK100), for the looks project only: its login (dog_looks_web,
-// from the key broker) may act as dog_looks and nothing else, and the functions it calls check that role, not a
-// person, so no actor is stamped. Cleared and fixed as tx() is, for a pooled connection. The site's login can't take
-// this role (it belongs to dog_app alone), so in the site this fails at its first statement.
-async function looksTx(sql, fn) {
-  return sql.begin(async (t) => {
-    await t`close all`;
-    await t`set local role dog_looks`;
-    await t`select set_config('search_path', 'pg_catalog', true), set_config('statement_timeout', '30s', true), pg_advisory_unlock_all()`;
-    return fn(t);
-  });
-}
-const looksRun = (fn) => retryRefused(() => looksTx(fromEnv(), fn));
-
 // Route B (db/sitekeys.js): the address the key broker made, set only when Vercel set none, and the one place that
 // says whether an address is set. G1: DATABASE_URL is still read and written only in this file.
 const hasAddress = (env = process.env) => Boolean(env.DATABASE_URL);
@@ -216,4 +202,4 @@ async function ping(url, { connectImpl = connect } = {}) {
   try { const [r] = await sql`select 1 as one`; return Boolean(r && r.one === 1); } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
 }
 
-module.exports = { pooledUrl, connect, tls, tx, run, looksTx, looksRun, withRequest, requestOf, entry, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping, retryRefused, passwordRefused };
+module.exports = { pooledUrl, connect, tls, tx, run, withRequest, requestOf, entry, configured, ACTORS, hasAddress, setAddress, replaceAddress, ping, retryRefused, passwordRefused };

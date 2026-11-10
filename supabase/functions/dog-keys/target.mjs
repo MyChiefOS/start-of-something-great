@@ -12,9 +12,8 @@
 //     and it hands out nothing unless the branch's own Vault carries the preview copy's mark, which only the seed
 //     (../_shared/preview-seed.mjs) makes, and only on an empty database. So even if production were ever told it
 //     was a branch, it would still hand out nothing: production's Vault has no mark.
-// The pinned check (../_shared/vercel-oidc.mjs) wasn't edited for the preview copy: its environment option, which
-// production leaves at its default, is the only thing chosen here. It was changed once since, by 057 (PR 2), to accept a
-// named list of our projects (the site and the looks project).
+// The pinned check isn't edited (its digest is pinned): its environment option, which production leaves at its
+// default, is the only thing chosen here.
 import { PROJECT_REF } from './core.mjs';
 
 export const PREVIEW_MARKER = 'dog_preview_copy';
@@ -33,7 +32,7 @@ export function target(supabaseUrl) {
 export function checksFor(where, { verify, read }) {
   return {
     verify: (token, opts = {}) => verify(token, { ...opts, environment: where.environment }),
-    read: (sql, project = 'site') => read(sql, where.marker ? [where.marker] : [], project),
+    read: (sql) => read(sql, where.marker ? [where.marker] : []),
     ref: where.ref,
     marker: where.marker
   };

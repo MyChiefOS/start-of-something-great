@@ -76,11 +76,10 @@ function apply(body, env = process.env) {
   }
 }
 
-// The token, read without removing it, for the one other place it may go: Vercel's own AI Gateway (secondlook/v1.js's
-// fixed address, never redirected). Vercel issues the token and runs the gateway, so this gives no new party anything
-// (an exception to the CSO's control 8 that Aaron approved with the Second Look v1 PR). Since 057 the gateway calls of
-// Second and Third Look are made by their own Vercel project (looks/api/run.js) with that project's own token; the
-// site's token goes there only for the administrator's security advisor. Read before ensure() takes it off the request.
+// Second Look (034): the token, read without removing it, for the one other place it may go: Vercel's own AI Gateway
+// (secondlook/v1.js's fixed address, never redirected). Vercel issues the token and runs the gateway, so this gives no
+// new party anything (an exception to the CSO's control 8 that Aaron approves with the Second Look v1 PR). Read before
+// ensure() below takes the token off the request.
 function peekToken(req) {
   const h = req && req.headers && req.headers['x-vercel-oidc-token'];
   return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
@@ -125,15 +124,13 @@ function siteKeys(fetchImpl = (...a) => globalThis.fetch(...a)) {
     return keyFetches.get(issuer);
   };
 }
-// project: which of our Vercel projects the token must be: the site's ('site'), or Second and Third Look's own ('looks',
-// 057), for looks/api/run.js. Never both.
-async function checkToken(token, verify, project = 'site') {
+async function checkToken(token, verify) {
   if (!token) return null;
   let timer;
   try {
     const check = verify || (await import('../supabase/functions/_shared/vercel-oidc.mjs')).verify;
     const late = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('timed out')), CHECK_MS); });
-    const claims = await Promise.race([check(token, { keys: siteKeys(), projects: [project] }), late]);
+    const claims = await Promise.race([check(token, { keys: siteKeys() }), late]);
     return claims && typeof claims === 'object' ? token : null;
   } catch {
     return null;
@@ -141,8 +138,8 @@ async function checkToken(token, verify, project = 'site') {
     clearTimeout(timer);
   }
 }
-async function verifiedToken(req, { verify = null, project = 'site' } = {}) {
-  return checkToken(peekToken(req), verify, project);
+async function verifiedToken(req, { verify = null } = {}) {
+  return checkToken(peekToken(req), verify);
 }
 // The same, later and only if asked: the token is read now (before ensure() removes it) and checked only when the
 // returned function is called, so a request that never uses it (every feed read) never waits on the check.

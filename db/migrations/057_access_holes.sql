@@ -1,25 +1,14 @@
--- 057 The remaining access holes: the functions that record a model's or an outside system's answer leave the site's
---   role (RISKS.md RK135, RK144, RK112, RK100; the independent reviews of Nov 10, review-webapp F1 to F3 and review-ai
---   F5; harness/STANDARDS.md, OWASP A01, CWE-862). Built on 055 (RK140), whose GitHub facts they now read.
--- Until now whoever held the site's role (dog_app: a leaked site login, or code running in any site function) could:
---   * claim Third Look's work and record any verdict on it (app.tl_claim, app.tl_decide: no caller check), so pass
---     held or administrator's work on a real, Aaron-merged pull request, or burn Third Look's daily allowance;
---   * record Second Look's decision on a held post (app.sl_claim, app.sl_decide accepted the anonymous actor, which
---     is what the site's role is without any proof), and in on mode publish it;
---   * report the witness's status (app.log_witness_report), so show the log as witnessed when the witness had
---     stopped, or raise an alarm only a migration clears;
---   * add any number of permanent proposal decisions in Aaron's name (app.log_proposal), for any number up to
---     10,000,000, flipping between approved and declined on every call.
+-- 057 Access holes: the functions that record an outside system's answer leave the site's role (RISKS.md RK144, RK112;
+--   the independent reviews of Nov 10; harness/STANDARDS.md, OWASP A01, CWE-862), and Third Look reads only GitHub's
+--   facts (RK135, in part). Built on 055 (RK140), whose GitHub facts they now read.
+-- Until now whoever held the site's role (dog_app: a leaked site login, or code running in any site function) could
+--   report the witness's status (app.log_witness_report), so show the log as witnessed when the witness had stopped,
+--   or raise an alarm only a migration clears; and add any number of permanent proposal decisions in Aaron's name
+--   (app.log_proposal), for any number up to 10,000,000, flipping between approved and declined on every call.
+-- Second and Third Look stay where they run today, in the site's timer with the site's role (Aaron, Nov 10: "Go back to
+--   making it work using the infrastructure as constructed"), so the site's role can still record their verdicts
+--   (RK135 and RK100 stay open for that part). Their functions keep 041's and 044's callers.
 -- Now:
---   * Second and Third Look run in their own Vercel project, "looks" (the folder looks/; Aaron, Nov 10: "I want you to
---     implement that solution"), with its own Vercel identity: Vercel stamps its token with its own project ID. The
---     key broker (dog-keys) gives that project's token the looks login, dog_looks_web, made here as 022 makes the
---     site's login (its password made inside the database and kept in Vault; nobody sees it), and nothing else; the
---     site's token never gets it, and the looks token never gets the site's login or keys. Each project's token goes
---     only to the broker and Vercel's AI Gateway (route B, the CSO's control 8): nothing is forwarded between services.
---     dog_looks_web can sign in and may act as dog_looks only, a role made here: no password, no table rights, and the
---     right to run Second and Third Look's claim, decide and release functions only. Each of them refuses any other
---     role in force. The site's role can't run them, and can't switch to dog_looks.
 --   * Third Look judges only what the site can't forge: pull requests whose merge GitHub's own read credits to
 --     Aaron's account (055), with the changed files the GitHub facts workflow read from GitHub (app.tl_files, recorded
 --     as dog_ghsync). A claim has a time limit of 3 minutes; an answer after it changes nothing. A refused or failed
@@ -40,53 +29,18 @@
 --     The workflow reads everything afresh each run, so anything held back is logged on a later run.
 -- Everything else in the replaced functions is unchanged.
 
--- ---- The roles, made by the runner's own login (as dog_ghsync in 055), and the looks project's login (as 022) ----
-do $looks_roles$
+-- ---- The witness's role, made by the runner's own login (as dog_ghsync in 055) ----
+do $witness_role$
 begin
-  if not exists (select 1 from pg_roles where rolname = 'dog_looks') then
-    create role dog_looks nologin noinherit nobypassrls;
-  end if;
   if not exists (select 1 from pg_roles where rolname = 'dog_witness') then
     create role dog_witness nologin noinherit nobypassrls;
   end if;
 end
-$looks_roles$;
-grant dog_looks to dog_owner;
+$witness_role$;
 grant dog_witness to dog_owner;
 
--- The looks project's database login, exactly as 022 makes the site's (dog_web): a password made here, kept only in
--- Vault (dog_looks_web_password), which only the key broker reads and hands only to the looks project's token. It
--- signs in with no rights of its own (noinherit) and may switch to dog_looks alone, which it does for every
--- transaction (db/index.js, looksRun).
-do $looks_login$
-declare
-  pw text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
-  existing uuid;
-begin
-  if exists (select 1 from pg_roles where rolname = 'dog_looks_web') then
-    execute format('alter role dog_looks_web with login noinherit password %L', pw);
-  else
-    execute format('create role dog_looks_web with login noinherit password %L', pw);
-  end if;
-  -- Exactly one membership, with no admin option and no inheritance (db/checks.js refuses anything wider).
-  if not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
-                 where r.rolname = 'dog_looks' and u.rolname = 'dog_looks_web') then
-    execute 'grant dog_looks to dog_looks_web with inherit false';
-  end if;
-  if to_regnamespace('vault') is not null then
-    execute 'select id from vault.secrets where name = $1' into existing using 'dog_looks_web_password';
-    if existing is null then
-      perform vault.create_secret(pw, 'dog_looks_web_password', 'The looks project''s database login (dog_looks_web), made by migration 057');
-    else
-      perform vault.update_secret(existing, pw);
-    end if;
-  end if;
-  pw := null;
-end
-$looks_login$;
-
 set local role dog_owner;
-grant usage on schema app to dog_looks, dog_witness;
+grant usage on schema app to dog_witness;
 
 -- ---- What Third Look reads: the changed files GitHub gave the GitHub facts workflow ----
 create table app.tl_files (
@@ -128,7 +82,7 @@ alter table app.log_proposals_seen add column logged_at timestamptz not null def
 update app.log_proposals_seen set logged_at = now() - interval '25 hours';
 create index log_proposals_seen_logged on app.log_proposals_seen (logged_at);
 
--- ---- Second Look (034, 041): only the looks project ----
+-- ---- Second Look (034, 041): unchanged callers (the site's timer) ----
 grant create on schema app to dog_jevs;
 set local role dog_jevs;
 
@@ -146,9 +100,8 @@ declare
   v_room integer;
   v_can record;
 begin
-  -- 057 (RK100): only the looks project, acting as dog_looks (its login, dog_looks_web, from the key broker).
-  if current_setting('role') is distinct from 'dog_looks' then
-    raise exception 'only the looks project hands posts to Second Look (dog_looks)' using errcode = '42501';
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer hands posts to Second Look' using errcode = '42501';
   end if;
   if p_n is null or p_n < 1 or p_n > 3 then
     raise exception 'bad Second Look claim' using errcode = '22023';
@@ -244,9 +197,8 @@ declare
   today integer;
   v_can record;
 begin
-  -- 057 (RK100): only the looks project, which asked the model itself, acting as dog_looks.
-  if current_setting('role') is distinct from 'dog_looks' then
-    raise exception 'only the looks project records Second Look''s decisions (dog_looks)' using errcode = '42501';
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer records Second Look''s decisions' using errcode = '42501';
   end if;
   if p_post is null or p_version is distinct from 'v1' or p_decision is null or p_risk is null or p_reason is null
      or p_fail_closed is null or p_latency is null then
@@ -339,13 +291,13 @@ begin
 end
 $$;
 
-revoke execute on function app.sl_claim(integer), app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer) from public, dog_app;
-grant execute on function app.sl_claim(integer), app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer) to dog_looks;
+revoke execute on function app.sl_claim(integer), app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer) from public;
+grant execute on function app.sl_claim(integer), app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer) to dog_app;
 
 set local role dog_owner;
 revoke create on schema app from dog_jevs;
 
--- ---- Third Look (044, 047, 052, 055): only the looks project, on GitHub's facts ----
+-- ---- Third Look (044, 047, 052, 055): the site's timer, on GitHub's facts ----
 grant create on schema app to dog_work;
 set local role dog_work;
 
@@ -424,7 +376,7 @@ begin
 end
 $$;
 
--- 055's picker, for the looks project only, with a time limit on each claim and the changed files to read. Claims
+-- 055's picker, for the site's timer, with a time limit on each claim and the changed files to read. Claims
 -- past their limit are released first; released work waits 10 minutes; releases count against the day's calls.
 drop function app.tl_claim(integer);
 create function app.tl_claim(p_n integer)
@@ -436,8 +388,8 @@ declare
   s record;
   today integer;
 begin
-  if current_setting('role') is distinct from 'dog_looks' then
-    raise exception 'only the looks project hands work to Third Look (dog_looks)' using errcode = '42501';
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer hands work to Third Look' using errcode = '42501';
   end if;
   if p_n is null or p_n < 1 or p_n > 3 then raise exception 'bad Third Look claim' using errcode = '22023'; end if;
   select * into s from app.tl_settings where singleton for update skip locked;
@@ -475,7 +427,7 @@ begin
 end
 $$;
 
--- Third Look's answer (052's), for the looks project only, within its claim's time limit, with the gate checked
+-- Third Look's answer (052's), for the site's timer, within its claim's time limit, with the gate checked
 -- again at a pass.
 create or replace function app.tl_decide(p_sub uuid, p_version text, p_model text, p_suggestion text, p_answers jsonb, p_reason text,
                                          p_fail_closed boolean, p_truncated boolean, p_latency_ms integer)
@@ -489,9 +441,8 @@ declare
   st record;
   mode text;
 begin
-  -- 057 (RK135): only the looks project, which asked the model itself, acting as dog_looks.
-  if current_setting('role') is distinct from 'dog_looks' then
-    raise exception 'only the looks project records Third Look''s answers (dog_looks)' using errcode = '42501';
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer records Third Look''s answers' using errcode = '42501';
   end if;
   if p_suggestion is null or p_suggestion <> all (array['pass', 'person']) or p_version is null or char_length(p_version) > 20
      or (p_model is not null and p_model <> all (array['mistral/ministral-14b'])) or p_latency_ms is null or p_latency_ms not between 0 and 600000
@@ -560,8 +511,8 @@ as $$
 declare
   n integer;
 begin
-  if current_setting('role') is distinct from 'dog_looks' then
-    raise exception 'only the looks project gives Third Look''s work back (dog_looks)' using errcode = '42501';
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer gives Third Look''s work back' using errcode = '42501';
   end if;
   if p_sub is null or p_why is null or p_why !~ '^[a-z0-9 ():_-]{1,40}$' then
     raise exception 'bad Third Look release' using errcode = '22023';
@@ -590,11 +541,11 @@ as $$
      and p_number <= coalesce((select max(g.number) from app.work_github_prs g), 0) + 100
 $$;
 
-revoke execute on function app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer) from public, dog_app;
-revoke execute on function app.tl_claim(integer), app.tl_release(uuid, text), app.tl_wants(integer), app.tl_files_wanted(integer),
-  app.tl_files_record(jsonb), app.work_github_issue_ok(integer) from public;
+revoke execute on function app.tl_claim(integer), app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer),
+  app.tl_release(uuid, text), app.tl_wants(integer), app.tl_files_wanted(integer), app.tl_files_record(jsonb),
+  app.work_github_issue_ok(integer) from public;
 grant execute on function app.tl_claim(integer), app.tl_decide(uuid, text, text, text, jsonb, text, boolean, boolean, integer),
-  app.tl_release(uuid, text) to dog_looks;
+  app.tl_release(uuid, text) to dog_app;
 grant execute on function app.tl_files_wanted(integer), app.tl_files_record(jsonb) to dog_ghsync;
 grant execute on function app.work_github_issue_ok(integer) to dog_log;
 
@@ -757,60 +708,3 @@ grant execute on function app.log_witness_check() to dog_app;
 set local role dog_owner;
 revoke create on schema app from dog_log;
 
--- ---- The key broker's hourly count, per project (the independent review of PR 2, F6) ----
--- 027 counted every hand-out as the site's. Since 057 the broker also answers the looks project, so its hand-outs are
--- counted apart (handed_looks), and an unusual number of them is its own alert, naming the looks project: one copy of
--- it asks about 6 times an hour. Counts only, never a value; the alerts never stop anything.
-alter table app.broker_uses add column handed_looks integer not null default 0 check (handed_looks >= 0);
-
-create or replace function app.broker_note(p_outcome text) returns void
-language plpgsql set search_path = pg_catalog
-as $$
-begin
-  if p_outcome is null or p_outcome not in ('handed', 'handed_looks', 'failed') then
-    raise exception 'broker_note: handed, handed_looks or failed' using errcode = '22023';
-  end if;
-  insert into app.broker_uses as u (hour, handed, handed_looks, failed)
-    values (date_trunc('hour', now() at time zone 'UTC') at time zone 'UTC', (p_outcome = 'handed')::int,
-            (p_outcome = 'handed_looks')::int, (p_outcome = 'failed')::int)
-    on conflict (hour) do update set handed = u.handed + excluded.handed, handed_looks = u.handed_looks + excluded.handed_looks,
-      failed = u.failed + excluded.failed;
-  delete from app.broker_uses u where u.hour < now() - interval '30 days';
-end
-$$;
-
-create or replace function app.broker_watch_job() returns jsonb
-language plpgsql
-as $$
-declare
-  r record;
-  n integer := 0;
-  limit_per_hour constant integer := 100;
-  looks_per_hour constant integer := 30;
-begin
-  perform app.require_system();
-  for r in select u.hour, u.handed, u.handed_looks, u.failed from app.broker_uses u
-           where u.hour >= date_trunc('hour', now() at time zone 'UTC') at time zone 'UTC' - interval '1 hour' order by u.hour loop
-    if r.handed >= limit_per_hour and app.notify(null, 'alert', 'The key broker handed out the site''s keys unusually often',
-         r.handed || ' hand-outs in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC; each running copy '
-         || 'of the site asks about 6 times an hour. Someone may be using a production identity token of ours (RISKS.md RK88). '
-         || 'Nothing was stopped.', '/controls', null, null, 'alert:broker:busy:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
-      n := n + 1;
-    end if;
-    if r.handed_looks >= looks_per_hour and app.notify(null, 'alert', 'The key broker handed out the looks project''s login unusually often',
-         r.handed_looks || ' hand-outs in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC; each running '
-         || 'copy of Second and Third Look''s project asks about 6 times an hour. Someone may be using that project''s production identity '
-         || 'token (RISKS.md RK135). Nothing was stopped.', '/controls', null, null,
-         'alert:broker:looks:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
-      n := n + 1;
-    end if;
-    if r.failed > 0 and app.notify(null, 'alert', 'The key broker failed',
-         r.failed || ' failed answers in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC (the login '
-         || 'or a key missing from Vault, or a read error). The site keeps its last good keys meanwhile. Nothing was stopped.',
-         '/controls', null, null, 'alert:broker:failed:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
-      n := n + 1;
-    end if;
-  end loop;
-  return jsonb_build_object('broker_alerts', n);
-end
-$$;
