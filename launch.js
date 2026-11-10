@@ -7,7 +7,7 @@
 // "preview" is not a stage (Aaron, Oct 24: "NO preview systems"): LAUNCH_STAGE=preview counts as closed, so setting it
 // can only close the site, never open it. The preview-only paths it once switched on (an allow-list for new accounts,
 // LAUNCH_PREVIEW_ALLOW, and signed-in-only reading) were removed in the dormant-paths clean-up
-// (harness/REVIEW-2026-10-26.md, R-14). That private preview stage of the live site stays dropped (Aaron, Nov 10).
+// (harness/REVIEW-2026-10-26.md, R-14). That stage of the live site stays dropped (Aaron, Nov 10).
 //
 // The preview copy (RK141; Aaron, Nov 10: "Okay you can bring preview back", the separate copy with its own throwaway
 // database and made-up data; design/preview-copy.md) is something else: Vercel's preview deployments of a pull request,
