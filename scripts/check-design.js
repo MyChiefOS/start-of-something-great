@@ -47,7 +47,36 @@ const ACCEPTED = {
   'join:390:card.p': 'comment box within 200 px of Copy at 390 (UX PR A)',
   // The project page follows the Nov 7 canvas over the Nov 5 handoff: the status pills sit beside the title, as drawn.
   'project:1280:column': 'the canvas puts the status pills beside the title',
+  // /controls and /review moved to /admin (Nov 9): one line and the new address, so no "If something else went wrong".
+  'error>controls:1280:heading': 'a moved page', 'error>controls:390:heading': 'a moved page',
+  'error>review:1280:heading': 'a moved page', 'error>review:390:heading': 'a moved page',
 };
+
+// The signed-in pages, opened signed in as an administrator with stand-in answers shaped like the real ones (the
+// controls and the review queue are scripts/check-review-tiers.js's): signed out they show only the sign-in card.
+const SIGNED_IN = new Set(['account.html', 'account/agents.html', 'admin/controls.html', 'admin/review.html']);
+const AGO = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+const ID = (n) => '0190a000-0000-7000-8000-0000000000' + n;
+function standIn(u) {
+  const tiers = require('./check-review-tiers');
+  if (u.pathname === '/auth/me') return { signed_in: true, unread: 0, admin: true };
+  if (u.pathname === '/auth/account') return { signed_in: true, id: ID('a1'), member_id: ID('a1'), display_name: 'Ada', trust_level: 2, is_admin: true, joined: AGO(500),
+    unread: 0, notices: [], sessions: [], browsers: [], sign_ins: [], key_file: null, pin: null, deletion_review: null };
+  if (u.pathname === '/api/agents') return { can_own: true, trees: [], agents: [
+    { id: ID('b1'), name: 'claude_helper', status: 'active', parent_id: null, depth: 0, created_at: AGO(200), expires_at: null, keys: [{ id: ID('c1'), created_at: AGO(200), revoked_at: null }] },
+    { id: ID('b2'), name: 'build_scribe', status: 'active', parent_id: ID('b1'), depth: 1, created_at: AGO(20), expires_at: AGO(-100), keys: [{ id: ID('c2'), created_at: AGO(20), revoked_at: null }] }] };
+  if (u.pathname === '/api/agents/activity') return { unread_notices: 0, containment: null,
+    agents: [{ id: ID('b1'), rules: { post: 'act', reply: 'act', report: 'off', daily_cap: 20, version: 1 }, today: 3 }, { id: ID('b2'), rules: { post: 'draft', reply: 'draft', report: 'off', daily_cap: 5, version: 1 }, today: 0 }],
+    inbox: [{ id: ID('d1'), agent: { id: ID('b1'), name: 'claude_helper' }, kind: 'post', body: 'Proposal filed: a weekly summary of what shipped, with receipts.', created_at: AGO(2), expires_at: AGO(-46) }] };
+  if (u.pathname === '/api/notify') return { unread: 0, notices: [] };
+  // One paused owner with an appeal, the state the design draws (the section shows only when someone is paused).
+  if (u.pathname === '/api/notify/appeals') return { containments: [{ id: ID('e1'), member: { id: ID('a3'), name: 'Mira' }, ends_at: AGO(-20), reason: 'actions',
+    measured: 120, usual: 12, appeal: { note: 'A batch of replies went out at once; it was one thread.' }, decision: null }] };
+  if (u.pathname === '/api/decisions') return tiers.DECISIONS;
+  if (u.searchParams.has('controls')) return tiers.CONTROLS;
+  if (u.searchParams.has('queue')) return tiers.QUEUE;
+  return null;
+}
 
 // Our pages from their handoff pages (tools/design/built.list), and the address each is opened at.
 function pairs() {
@@ -146,6 +175,8 @@ const probe = () => {
     card: cs ? { p: cs.padding, r: cs.borderRadius, bt: cs.borderTopWidth } : null,
     rows: rows.join(' '),
     sideways: document.documentElement.scrollWidth > innerWidth + 1,
+    // A page that says it couldn't load what it shows was measured half drawn.
+    failed: /could(?: not|n[’']t) be loaded/i.test((document.querySelector('main') || document.body).innerText),
   };
 };
 
@@ -167,6 +198,7 @@ function compare(name, w, d, o) {
   if (!near(d.column.w, o.column.w, 1) || !near(d.column.x, o.column.x, 1)) note('column', d.column, o.column);
   if (d.rows && o.rows && d.rows.split(' ')[0].split('/')[0] !== o.rows.split(' ')[0].split('/')[0]) note('cards.first-row', d.rows, o.rows);
   if (o.sideways) note('sideways', false, true);
+  if (o.failed) note('loaded', 'drawn', 'says it couldn’t be loaded');
   if (o.errors) note('script-errors', 0, o.errors);
   return out;
 }
@@ -215,11 +247,16 @@ async function sideBySide(browser, a, b, w, file) {
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
   const report = { data: EMPTY ? 'empty' : 'live public API', pages: {}, canvas: {}, failures: [] };
 
-  async function open(url, w) {
+  async function open(url, w, signedIn) {
     const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, colorScheme: 'dark' });
-    await ctx.route(base + '/auth/me', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"signed_in":false}' }));
+    if (signedIn) {
+      await ctx.route(base + '/auth/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(standIn(new URL(r.request().url())) || { signed_in: true }) }));
+      await ctx.route(base + '/api/**', (r) => { const x = r.request().method() === 'GET' ? standIn(new URL(r.request().url())) : null;
+        return r.fulfill({ status: x ? 200 : 503, contentType: 'application/json', body: JSON.stringify(x || { error: 'not sent: a local design check' }) }); });
+    }
+    else await ctx.route(base + '/auth/me', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"signed_in":false}' }));
     await ctx.route(/giscus\.app/, (r) => r.abort());
-    await ctx.route(base + '/api/**', async (r) => {
+    if (!signedIn) await ctx.route(base + '/api/**', async (r) => {
       if (r.request().method() !== 'GET') return r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"not sent: a local design check"}' });
       const u = new URL(r.request().url());
       let status = 502, body = '{}';
@@ -245,7 +282,7 @@ async function sideBySide(browser, a, b, w, file) {
     report.pages[key] = {};
     for (const w of WIDTHS) {
       const d = await open(base + '/__design/' + from, w);
-      const o = await open(base + ours, w);
+      const o = await open(base + ours, w, SIGNED_IN.has(to));
       const dm = await d.page.evaluate(probe), om = { ...(await o.page.evaluate(probe)), errors: o.errors.length };
       // Keyed by the handoff page, and ours too where one handoff page made several (error.html, join.html).
       const name = from.replace(/\.html$/, '') + (to === from ? '' : '>' + to.replace(/\.html$/, ''));

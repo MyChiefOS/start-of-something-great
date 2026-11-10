@@ -48,6 +48,9 @@ const CONTROLS = {
     alerts: [], canaries: { revealed: 3, no_answer: 1, bad: 1, bad_caught: 1, good: 1, good_cleared: 1, check: { checked: 3, ok: true, problems: [] } } },
   repeated_texts: [] };
 const W = (o) => ({ decided: 24, approved: 21, removed: null, undone: 0, measured: 24, median_seconds: 14.2, p10_seconds: 4.1, hours: 0.2, ...o });
+// The administrator's own reviewing, as db/review-tiers.js always shapes it: without it /admin/controls stopped drawing
+// partway, and said it couldn't load, while this check still passed (found by scripts/check-design.js, Nov 10).
+CONTROLS.review.mine = { d7: W({ median_wait_minutes: 12 }), d30: W({ decided: 90, median_wait_minutes: 20 }) };
 // One counted window of the public figures, as db/review-tiers.js shapes it.
 const WIN = (o = {}) => ({ days: 7, jevs_held: 7, github_hidden: 0, sample_flagged: null, sl_decisions: 12, sl_clears: 9, sl_published: 2,
   sample: { parts: [8, 0, null], other: null, shown: 8 }, canaries: { used: 0, no_answer: 0, bad: 0, bad_caught: 0, good: 0, good_cleared: 0 }, ...o });
@@ -203,4 +206,6 @@ async function main() {
   else console.log('OK review tiers: ' + views + ' views (/admin/review, /admin/controls, /decisions at 390 and 1280 px, dark and light)' + (SHOTS ? '; screenshots in ' + SHOTS : ''));
 }
 
-main().catch((e) => { console.error(e && e.stack); process.exitCode = 2; });
+// Run as a check; required, it lends its stand-in answers to scripts/check-design.js.
+if (require.main === module) main().catch((e) => { console.error(e && e.stack); process.exitCode = 2; });
+module.exports = { QUEUE, CONTROLS, DECISIONS };
