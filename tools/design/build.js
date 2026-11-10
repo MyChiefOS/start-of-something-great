@@ -102,7 +102,9 @@ const PLAN = '.d1 .plan-svg{display:block;font-family:var(--display);font-size:1
 const ADD = { 'decisions.html': WIDTHS,
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
   // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.
-  'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}\n', 'project.html': WIDTHS + PLAN + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
+  'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}'
+    // The design's four task cards in one row; two to a row below 900 px and one on a phone (spec 5.6), never squeezed.
+    + '@media(max-width:900px){.d1 .k4{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:520px){.d1 .k4{grid-template-columns:minmax(0,1fr)!important}}\n', 'project.html': WIDTHS + PLAN + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
   // The sign-in pages (UX PR A, kept with the design): every control at least 44 px at every width, and a shorter top, so
   // the chosen way's button is in the first screen at 390 by 844 and 1280 by 800 (scripts/check-join-panel.js).
   'join.html': SIGNIN, 'join/pin.html': SIGNIN };

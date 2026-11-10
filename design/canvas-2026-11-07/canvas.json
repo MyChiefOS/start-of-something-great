@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-11-07T12:00:00Z"},
+  "title": "Planned vs actual chart",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1200, "h": 660, "title": "Build: the design's chart, with figures added"},
+    "Project.dc.html": {"x": 0, "y": 900, "w": 1280, "h": 1500, "title": "Project page: plan against verified work", "expand": "fill"},
+    "Phone.dc.html": {"x": 1360, "y": 900, "w": 390, "h": 1720, "title": "Project page at phone width"}
+  },
+  "order": ["Main.dc.html", "Project.dc.html", "Phone.dc.html"],
+  "notes": {
+    "n1": {"x": 1280, "y": 0, "w": 420, "text": "Build board: the chart, pills and receipt card are the handoff's, unchanged. New: the figures strip under the chart and the link to the project's plan.", "color": "orange"},
+    "n2": {"x": 1280, "y": 420, "w": 420, "text": "How the figures work (PMP earned-value style, in points, not money):\n· Planned = points the plan has due by today\n· Verified = points with an anchored receipt\n· Variance = verified − planned\n· SPI = verified ÷ planned (under 1 is behind)\n· Forecast = finish at the current pace\nAll figures here are samples.", "color": "blue"},
+    "n3": {"x": 0, "y": 670, "text": "Plan against verified work", "kind": "title1", "maxW": 1750}
+  },
+  "designSystems": []
+}

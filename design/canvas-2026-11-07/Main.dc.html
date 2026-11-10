@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Build: scope and verified work</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.d1[data-theme=dark]{--ink:#0d0f14;--text:#ece7dd;--muted:#9a9ba5;--rule:#23262e;--amber:#f2a33a;--onamber:#15110a}
+.d1[data-theme=light]{--ink:#f6f7f9;--text:#15171c;--muted:#5b5e68;--rule:#dcdee4;--amber:#a65e00;--onamber:#fff}
+.d1{--display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;--body:"Source Serif 4",Georgia,serif;background:var(--ink);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.6}
+.d1 *{box-sizing:border-box}
+.d1 h2,.d1 h3{font-family:var(--display);font-weight:700;line-height:1.08;letter-spacing:-.025em;margin:0}
+.d1 .kick{font-family:var(--display);font-size:13.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin:0 0 12px}
+.d1 .fine{color:var(--muted);font-size:14.5px;margin:0}
+.d1 .pill{display:inline-block;padding:1px 10px;border-radius:999px;border:1px solid var(--rule);font-family:var(--display);font-size:12.5px;color:var(--text);white-space:nowrap}
+.d1 .pill.a{border-color:var(--amber)}.d1 .pill.f{background:var(--amber);border-color:var(--amber);color:var(--onamber)}.d1 .pill.m{color:var(--muted)}
+.d1 .card{border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:10px;padding:20px 24px 20px}
+.d1 .btn{display:inline-block;padding:3px 14px;font-family:var(--display);font-weight:600;font-size:13px;text-decoration:none;border:1px solid var(--rule);border-radius:999px;color:var(--text)}
+.d1 dl{display:grid;grid-template-columns:90px 1fr;gap:6px 14px;margin:14px 0 16px;font-size:14.5px}
+.d1 dt{font-family:var(--display);color:var(--muted);font-size:13px}.d1 dd{margin:0}
+.d1 code{font-size:13px}
+.d1 .st{border-top:1px solid var(--rule);padding-top:8px}
+.d1 .st b{display:block;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.d1 .st small{color:var(--muted);font-family:var(--display);font-size:12.5px}
+a{color:var(--text)}a:hover{color:var(--amber)}
+</style>
+</helmet>
+<div class="d1" data-theme="{{theme}}" style="width: 1200px; height: 660px; padding: 44px 56px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: start">
+<div>
+<p class="kick">Milestones</p>
+<h2 style="font-size: 30px; margin-bottom: 6px">Scope and verified work</h2>
+<p class="fine" style="margin-bottom: 14px">Dashed line is planned scope. Amber line is work with an anchored receipt.</p>
+<svg viewBox="0 0 520 260" style="width: 100%; display: block; font-family: var(--display); font-size: 11px" role="img" aria-label="Planned scope rises to 115 points by now; verified work rises to 75 points.">
+<g stroke="var(--rule)"><line x1="30" y1="20" x2="510" y2="20"></line><line x1="30" y1="75" x2="510" y2="75"></line><line x1="30" y1="130" x2="510" y2="130"></line><line x1="30" y1="185" x2="510" y2="185"></line></g>
+<line x1="30" y1="230" x2="510" y2="230" stroke="var(--muted)"></line>
+<g fill="var(--muted)"><text x="2" y="23">120</text><text x="2" y="78">80</text><text x="2" y="133">40</text><text x="14" y="233">0</text><text x="62" y="248">W1</text><text x="146" y="248">W2</text><text x="230" y="248">W3</text><text x="314" y="248">W4</text><text x="398" y="248">W5</text><text x="450" y="248">W6</text><text x="486" y="248" fill="var(--amber)">now</text></g>
+<g stroke="var(--rule)" stroke-dasharray="3 4"><line x1="170" y1="20" x2="170" y2="230"></line><line x1="330" y1="20" x2="330" y2="230"></line></g>
+<polyline fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4" points="30,190 100,176 180,132 260,96 340,62 420,38 500,28"></polyline>
+<polyline fill="none" stroke="var(--amber)" stroke-width="2.5" points="30,230 100,216 180,188 260,160 340,136 420,116 494,98"></polyline>
+<circle cx="494" cy="98" r="5" fill="var(--ink)" stroke="var(--amber)" stroke-width="2.5"></circle>
+</svg>
+<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px"><span class="pill m">M1 done</span><span class="pill m">M2 done</span><span class="pill a">M3 · 86%</span><span class="pill">M4 release gate</span></div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 22px">
+<div class="st"><b>115</b><small>Planned scope, points</small></div>
+<div class="st"><b style="color: var(--amber)">75</b><small>Verified, points</small></div>
+<div class="st"><b>65%</b><small>Of scope verified</small></div>
+<div class="st"><b>2 of 4</b><small>Milestones done</small></div>
+</div>
+<p class="fine" style="margin-top: 12px">Planned against verified, the schedule index and the forecast finish are on the project's page. <a href="Project.dc.html">See the plan</a></p>
+</div>
+<div>
+<p class="kick">Latest receipt</p>
+<div class="card">
+<span class="pill f">Anchored</span>
+<h3 style="font-size: 26px; margin-top: 10px">R-99231</h3>
+<p class="fine">The proof behind one finished task. Public, and open to dispute for 72 hours.</p>
+<dl><dt>Task</dt><dd>T-1012 · scaffold verifier crate</dd><dt>Worker</dt><dd>claude-sonnet-4.6, for @aaron · passport AP-7841, model version pinned</dd><dt>Changes</dt><dd>+412 −38 · 6 files · <code>0x9f3a…c21d</code></dd><dt>Proof</dt><dd>44 of 44 tests · coverage +3.2% · 11 ms faster</dd><dt>Audit</dt><dd>gpt-5.2-auditor passed it, 0.97 confidence</dd><dt>Approved</dt><dd>@aaron · <code>0x77be…</code></dd><dt>Anchored</dt><dd>Layer 2 block #48211</dd></dl>
+<a class="btn" href="#receipt">Open receipt</a>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1200,"height":660}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { theme: this.props.theme ?? 'dark' };
+  }
+}
+</script>
+</body>
+</html>
