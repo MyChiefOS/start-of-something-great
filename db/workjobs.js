@@ -1,29 +1,35 @@
-// The work module's jobs (042), run by the timer route every minute (api/cron.js), each in its own transaction, as an
-// anonymous visitor:
+// The work module's jobs (042). The timer route (api/cron.js) runs one of them every minute, in its own transaction,
+// as an anonymous visitor:
 //   * the work timer (app.work_tick: claims whose hold ran out reopen, points whose 72 hours passed become final, and
-//     Aaron's daily alert while work waits for him); the database runs it at most once every 50 seconds;
-//   * this repository's pull requests and issues from GitHub's public API, at most every 15 minutes per running copy:
-//     two pages of pull requests, one of issues, and the detail (changed lines, who merged) of up to 6 merged pull
-//     requests that lack it: at most 9 calls a run, so about 36 an hour for one running copy (verified: the count in
-//     this file). The site's other GitHub reads share the same allowance. GitHub allows about 60 an hour without a
-//     token and about 5,000 with one (api/_lib.js uses GITHUB_TOKEN when it is set; unknown: whether production sets
-//     it), and counts the 60 per network address, which Vercel's functions share with other sites (inferred), so a
-//     run can be refused. A refused read changes nothing; the database alerts Aaron in-app once a day (042).
+//     Aaron's daily alert while work waits for him); the database runs it at most once every 50 seconds.
+// Since 055 (RISKS.md RK140) the site no longer reads this repository's pull requests and issues for the work module,
+// and its role can't record them: GitHub's facts come only from GitHub. The "GitHub facts" workflow
+// (.github/workflows/github-facts.yml) runs gather() below inside GitHub, on GitHub's own events and hourly, with the
+// workflow's own GitHub token, and sends what it read to the dog-github function (supabase/functions/dog-github), which
+// accepts only that workflow on main, proved by GitHub's identity token, and records it as dog_ghsync. Each run reads two
+// pages of pull requests, one of issues, and GitHub's read of up to 20 merged pull requests the database asks for
+// (app.work_github_wanted: their changed lines, their merge and who merged it, by login and GitHub ID): at most 23 calls
+// a run, well inside the 1,000 an hour GitHub gives a workflow's token in one repository (inferred from GitHub's
+// published limits). A refused read changes nothing; the database alerts Aaron in-app once a day.
 // Only public GitHub data reaches the database, and only these fields: a pull request's number, title (hidden markup,
 // contact details and keys removed), author, state, merge, base, merge commit, the issue numbers it names (#N), its
-// milestone, its room label and the SHA-256 of any claim codes in its description; never the description itself.
+// milestone, its room label and the SHA-256 of any claim codes in its description; never the description itself. From
+// GitHub's read of one pull request: its changed lines, state, merge, base, merge commit and who merged it.
 // An issue becomes an open task only when it has the "task" label: the repository's other issues (uptime alarms,
 // JEVs's alerts, proposals) are the site's own business, not work for the public.
-// A failure in one step never stops the other or the timers: it changes nothing, and a later minute tries again.
+// A failure in one step never stops the other or the timers: it changes nothing, and a later run tries again.
 'use strict';
 
 const { stripHidden, maskContacts } = require('../api/_proposals');
 const { maskSecrets } = require('../api/_secrets');
 const work = require('./work');
 
-const SYNC_MS = 15 * 60 * 1000;
-const DETAILS = 6;
-let lastSync = 0;
+const fs = require('fs');
+const path = require('path');
+
+// The detail (GitHub's read of one pull request) of at most this many a run: app.work_github_wanted gives at most 20.
+const DETAILS = 20;
+const REPO_API = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const ROOM_LABEL = /^room:\s?([0-9]{2}-0000)$/i;
@@ -73,42 +79,79 @@ function shapeIssue(x) {
   return { number: x.number, title: title(x.title) || 'Issue', author, state: x.state, ...milestone(x.milestone), room: roomOf(x),
     created_at: at(x.created_at) };
 }
+// GitHub's read of one pull request: its changed lines, its merge and who merged it, by login and by GitHub ID (055: a
+// pass by rule needs Aaron's account by ID, which a rename doesn't change).
+const userId = (u) => (u && Number.isSafeInteger(u.id) && u.id > 0 && u.id < 1e11 ? u.id : null);
 function shapeDetail(p) {
-  if (!p || !Number.isSafeInteger(p.number) || !Number.isSafeInteger(p.additions) || !Number.isSafeInteger(p.deletions)) return null;
-  return { number: p.number, additions: Math.min(p.additions, 99999999), deletions: Math.min(p.deletions, 99999999), merged_by: login(p.merged_by) };
+  if (!p || !Number.isSafeInteger(p.number) || p.number < 1 || !Number.isSafeInteger(p.additions) || !Number.isSafeInteger(p.deletions)
+      || !['open', 'closed'].includes(p.state)) return null;
+  const merged = at(p.merged_at);
+  return { number: p.number, additions: Math.min(Math.max(p.additions, 0), 99999999), deletions: Math.min(Math.max(p.deletions, 0), 99999999),
+    state: p.state, merged_at: merged, base: String((p.base && p.base.ref) || '').slice(0, 100),
+    merge_sha: merged && typeof p.merge_commit_sha === 'string' && /^[0-9a-f]{40}$/.test(p.merge_commit_sha) ? p.merge_commit_sha : null,
+    merged_by: merged ? login(p.merged_by) : null, merged_by_id: merged ? userId(p.merged_by) : null };
 }
 
-// gh(path): GitHub's public API for this repository (api/_lib.js's reader, cached and rate-aware).
-async function run(runDb, { gh = null, now = Date.now } = {}) {
+// The work timer, every minute from the timer route. Since 055 it reads nothing from GitHub.
+async function run(runDb) {
   const out = {};
-  const as = (fn) => runDb({ actor: 'anon' }, fn);
-  await step('tick', out, () => as((t) => t`select app.work_tick() as r`).then((r) => r[0].r));
-  if (gh && now() - lastSync >= SYNC_MS) {
-    lastSync = now();
-    await step('github', out, async () => {
-      let refused = 0;
-      const read = (path) => gh(path).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
-      const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
-      const prs = pages.map((x) => (Array.isArray(x) ? x : [])).flat().map(shapePr).filter(Boolean).slice(0, 200);
-      const iss = await read('/issues?state=all&labels=' + TASK_LABEL + '&per_page=100&sort=updated&direction=desc');
-      const issues = (Array.isArray(iss) ? iss : []).map(shapeIssue).filter(Boolean).slice(0, 100);
-      const wanted = await as((t) => t`select number from app.work_github_wanted(${DETAILS}::integer)`);
-      const details = [];
-      for (const w of wanted) {
-        const d = shapeDetail(await read('/pulls/' + Number(w.number))); // null when refused: the next run asks again
-        if (d) details.push(d);
-      }
-      // At most 100 of each a call (the database's limit).
-      let totals = { prs: 0, tasks: 0, closed: 0 };
-      for (let i = 0; i < Math.max(prs.length, 1); i += 100) {
-        const payload = { prs: prs.slice(i, i + 100), issues: i === 0 ? issues : [], details: i === 0 ? details : [], refused: i === 0 ? refused : 0 };
-        const [r] = await as((t) => t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`);
-        totals = { prs: totals.prs + (r.r.prs || 0), tasks: totals.tasks + (r.r.tasks || 0), closed: totals.closed + (r.r.closed || 0) };
-      }
-      return totals;
-    });
+  await step('tick', out, () => runDb({ actor: 'anon' }, (t) => t`select app.work_tick() as r`).then((r) => r[0].r));
+  return out;
+}
+
+// What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
+// or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
+async function gather({ get, wanted = [] }) {
+  let refused = 0;
+  const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
+  const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
+  const prs = pages.map((x) => (Array.isArray(x) ? x : [])).flat().map(shapePr).filter(Boolean).slice(0, 200);
+  const iss = await read('/issues?state=all&labels=' + TASK_LABEL + '&per_page=100&sort=updated&direction=desc');
+  const issues = (Array.isArray(iss) ? iss : []).map(shapeIssue).filter(Boolean).slice(0, 100);
+  const details = [];
+  for (const n of (Array.isArray(wanted) ? wanted : []).filter((x) => Number.isSafeInteger(x) && x > 0 && x < 1e7).slice(0, DETAILS)) {
+    const d = shapeDetail(await read('/pulls/' + n)); // null when refused: the next run asks again
+    if (d) details.push(d);
+  }
+  return { prs, issues, details, refused };
+}
+
+// The facts as dog-github's sync requests: at most 100 pull requests each (the database's limit); the issues, details
+// and refused count go with the first.
+function requests(facts) {
+  const out = [];
+  for (let i = 0; i < Math.max(facts.prs.length, 1); i += 100) {
+    out.push({ mode: 'sync', facts: { prs: facts.prs.slice(i, i + 100), issues: i === 0 ? facts.issues : [], details: i === 0 ? facts.details : [],
+      refused: i === 0 ? facts.refused : 0 } });
   }
   return out;
 }
 
-module.exports = { run, shapePr, shapeIssue, shapeDetail, refsOf, SYNC_MS, _reset: () => { lastSync = 0; } };
+// GitHub's API for this repository, with the workflow's own token (read-only here).
+function githubGet(token, { fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {}) {
+  return async (p) => {
+    const r = await fetchImpl(REPO_API + p, { redirect: 'error', signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'dayonegreat-github-facts', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+    if (!r.ok) throw Object.assign(new Error('GitHub returned ' + r.status), { githubStatus: r.status });
+    return r.json();
+  };
+}
+
+// The workflow's step: node db/workjobs.js gather <dog-github's wanted answer> <folder>. Writes 1.json, 2.json, ...:
+// the requests to send, in order. Prints counts only.
+async function main(argv, env = process.env) {
+  if (argv[0] !== 'gather' || argv.length !== 3) throw new Error('usage: node db/workjobs.js gather <wanted.json> <folder>');
+  const answer = JSON.parse(fs.readFileSync(argv[1], 'utf8'));
+  if (!answer || answer.ok !== true || !Array.isArray(answer.wanted)) throw new Error('dog-github\'s wanted answer is not usable');
+  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), wanted: answer.wanted });
+  const dir = path.resolve(argv[2]);
+  fs.mkdirSync(dir, { recursive: true });
+  const reqs = requests(facts);
+  reqs.forEach((r, i) => fs.writeFileSync(path.join(dir, String(i + 1) + '.json'), JSON.stringify(r)));
+  console.log('read ' + facts.prs.length + ' pull requests, ' + facts.issues.length + ' task issues, ' + facts.details.length + ' details ('
+    + facts.refused + ' refused); ' + reqs.length + ' request(s)');
+}
+
+if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
+
+module.exports = { run, gather, requests, githubGet, main, shapePr, shapeIssue, shapeDetail, refsOf, DETAILS };

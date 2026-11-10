@@ -102,10 +102,12 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
   try {
     await require('../db/logjobs').run(run, { getProposals: proposals, fetchImpl: logFetch });
   } catch { /* logs nothing (027) */ }
-  // The work module (042): its timer, and this repository's pull requests and issues from GitHub (at most every 15
-  // minutes), each in its own transaction. A failure changes nothing here; a later minute tries again.
+  // The work module (042): its timer, in its own transaction. A failure changes nothing here; a later minute tries
+  // again. Since 055 (RK140) the site no longer reads this repository's pull requests and issues for the work module,
+  // and its role can't record them: the GitHub facts workflow does, through the dog-github function. workGithub is
+  // still read above, for Third Look's model only (a merged pull request's changed files, which it reads, never records).
   try {
-    await require('../db/workjobs').run(run, { gh: workGithub });
+    await require('../db/workjobs').run(run);
   } catch { /* logs nothing (027); before 042 is applied the functions aren't there */ }
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }

@@ -1,0 +1,116 @@
+# GitHub's facts come only from GitHub (RISKS.md RK140; migration 055). This reads this repository's pull requests and
+# its issues labelled "task" from GitHub's API, here inside GitHub, with this run's own token, and sends them to the
+# Supabase function dog-github with a short-lived GitHub identity token. dog-github accepts only this file, on main, in
+# this repository, for the events below, each token once, and records the facts as dog_ghsync, the one database role
+# that may. The site's own role can't. There is no secret anywhere: no database password, no Supabase key, nothing to
+# paste. Each run reads everything afresh (db/workjobs.js, gather), so a missed or repeated event changes nothing.
+# A failed run records nothing and passes nothing; work on a pull request waits for its facts (055: once none has
+# arrived for 6 hours, a claim running out no longer fails it). It alerts on the
+# "JEVs alerts" issue, at most once a day, and GitHub emails the failure as for any run.
+name: GitHub facts
+
+on:
+  # A pull request closed or merged. pull_request_target, not pull_request: it runs main's copy of this file, on main,
+  # so the identity token names main and this file, which is all dog-github accepts. Nothing from the pull request is
+  # checked out or run here, and no text from the event is read: the run reads GitHub's API afresh.
+  pull_request_target:
+    types: [closed]
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned]
+  # The backstop: anything an event missed, hourly.
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write # to read the issues, and to add the alert when a run fails
+  id-token: write # only to ask GitHub for the identity token dog-github checks
+
+# One run at a time. A run waiting behind another is replaced by the newest, which reads everything afresh anyway.
+concurrency:
+  group: github-facts
+  cancel-in-progress: false
+
+jobs:
+  facts:
+    if: github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      FN_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github
+    steps:
+      # main's own code (for pull_request_target too: the default branch), only the files the read needs; no packages.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /db/
+            /api/_proposals.js
+            /api/_secrets.js
+            /signin/crypto.js
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Read GitHub's facts and send them to dog-github
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # $1: the request file, $2: the answer file; sets $code. Each request gets a fresh token: dog-github accepts each once.
+          post() {
+            local t
+            t=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$FN_URL" | jq -r .value)
+            echo "::add-mask::$t"
+            code=$(curl -sS --max-time 120 -o "$2" -w '%{http_code}' -X POST "$FN_URL" \
+              -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data-binary @"$1") || code=none
+            unset t
+          }
+          echo '{"mode":"wanted"}' > ask.json
+          post ask.json wanted.json
+          if [ "$code" != 200 ]; then
+            echo "dog-github answered $code when asked which merged pull requests it wants read"
+            jq -c '{error}' wanted.json 2>/dev/null || true
+            exit 1
+          fi
+          node db/workjobs.js gather wanted.json requests
+          failed=0
+          for f in requests/*.json; do
+            post "$f" answer.json
+            if [ "$code" = 200 ]; then
+              jq -c '{prs, tasks, closed}' answer.json
+            else
+              echo "dog-github answered $code to $(basename "$f")"
+              jq -c '{error}' answer.json 2>/dev/null || true
+              failed=1
+            fi
+          done
+          [ "$failed" = 0 ]
+
+      - name: Alert when a run fails (the "JEVs alerts" issue, at most once a day)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh api "repos/$REPO/labels/jevs-alert" > /dev/null 2>&1 || \
+            gh api "repos/$REPO/labels" -f name=jevs-alert -f color=b60205 -f description='JEVs flagged a post for review' > /dev/null
+          issue=$(gh api "repos/$REPO/issues?labels=jevs-alert&state=open&per_page=1" --jq '.[0].number // empty')
+          [ -n "$issue" ] || issue=$(gh api "repos/$REPO/issues" -f title='JEVs alerts' -f body='JEVs adds a comment here for every post it flags, every run that fails, and any database drift.' -f 'labels[]=jevs-alert' --jq .number)
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          recent=$(gh api "repos/$REPO/issues/$issue/comments?since=$since&per_page=100" --jq '[.[] | select(.body | startswith("GitHub facts:"))] | length' || echo 0)
+          if [ "${recent:-0}" != 0 ]; then echo "Already alerted in the last 24 hours."; exit 0; fi
+          {
+            echo "GitHub facts: a run failed, so this repository's pull requests and issues weren't recorded this time."
+            echo "Nothing passes and nobody is locked out while this lasts: work on a pull request waits for its facts, and once none has arrived for 6 hours a claim running out no longer fails it. Later failures today aren't posted again."
+            echo
+            echo "Run: $RUN_URL"
+          } > alert.txt
+          gh api "repos/$REPO/issues/$issue/comments" -F body=@alert.txt > /dev/null
+          echo "alert added"
