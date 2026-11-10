@@ -15,10 +15,17 @@
 //   * writes checkpoint (the last good one, as signed) and state.json, which the site and the Verify page read.
 // Only a contradiction is an alarm (H2): another key, a smaller tree, another root for the same size, a consistency
 // proof that fails, an entry that doesn't hash to its leaf, entries that don't rebuild the signed root, a proposal
-// decision GitHub has no record of. state.json keeps an alarm (with the checkpoint it saw) until a person removes it by
-// a reviewed change; the last good checkpoint stays as it was; the record job opens one issue labelled log-witness. A
-// site or GitHub that doesn't answer, answers with an error or with something that isn't JSON or a checkpoint is never
-// an alarm: it is recorded as last_error and tried again next run. The site keeps running either way.
+// decision GitHub has no record of. state.json keeps an alarm (with the checkpoint it saw); the last good checkpoint
+// stays as it was; the record job opens one issue labelled log-witness. A site or GitHub that doesn't answer, answers
+// with an error or with something that isn't JSON or a checkpoint is never an alarm: it is recorded as last_error and
+// tried again next run. The site keeps running either way.
+// What the job can't do (RK149): record() refuses a state.json that drops or changes the branch's alarm, lowers its
+// last good checkpoint, changes its pinned key or doesn't raise its run count, and the workflow starts a fresh branch
+// only when GitHub says the branch doesn't exist, and fails if the branch moved between the check and the record. So
+// the job never removes an alarm or forgets what it kept. A person with write access to the repository can still do
+// either with an ordinary commit to the branch: the log-witness ruleset stops deleting the branch or rewriting its
+// history, not adding to it, so that commit stays in the branch's public history. The repository's owner could switch
+// the ruleset off. Each failure is a red run that alerts and blocks nothing.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -168,6 +175,10 @@ const MAX_STATE = 64 * 1024, MAX_CHECKPOINT = 4000;
 
 // The record job: takes the check job's two files (base64, from its outputs), checks they are what the check writes,
 // and writes only state.json, checkpoint and README.md into the branch folder. Returns { alarm }.
+// It never writes a state that forgets what the branch already holds (RK149): one that drops or changes a standing
+// alarm, has a smaller last good checkpoint (or another root for the same size), another pinned key, or a run count no
+// higher than the branch's. Any of these throws, so the run fails red and the branch keeps what it had. Only a person,
+// with a commit to the branch, can remove an alarm or change the key there, and that commit stays in its history.
 export function record(dir, stateB64, checkpointB64) {
   const state = Buffer.from(String(stateB64 || ''), 'base64');
   if (!state.length || state.length > MAX_STATE) throw new Error('state.json is missing or too big');
@@ -175,6 +186,8 @@ export function record(dir, stateB64, checkpointB64) {
   if (!s || s.v !== 1 || s.log !== L.ORIGIN || typeof s.last_run !== 'string') throw new Error('state.json isn’t the witness’s');
   if (s.key !== undefined) L.parseVkey(s.key);
   if (s.good !== undefined && (!Number.isSafeInteger(s.good.size) || !/^[A-Za-z0-9+/]{43}=$/.test(String(s.good.root)))) throw new Error('state.json’s good checkpoint is malformed');
+  if (!Number.isSafeInteger(s.runs) || s.runs < 1) throw new Error('state.json’s run count is malformed');
+  keepsBranch(dir, s);
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(s, null, 1) + '\n');
   if (checkpointB64) {
     const c = Buffer.from(String(checkpointB64), 'base64').toString('utf8');
@@ -185,6 +198,25 @@ export function record(dir, stateB64, checkpointB64) {
   }
   if (!fs.existsSync(path.join(dir, 'README.md'))) fs.writeFileSync(path.join(dir, 'README.md'), README);
   return { alarm: s.alarm ? String(s.alarm.reason || s.alarm) : null };
+}
+
+// The branch's state as checked out, against the new one. No state.json on the branch (its first run): nothing to keep.
+// One that can't be read is not treated as empty, since that is the reset RK149 describes: the run fails until a
+// person repairs the branch.
+function keepsBranch(dir, s) {
+  const f = path.join(dir, 'state.json');
+  if (!fs.existsSync(f)) return;
+  let cur;
+  try { cur = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { cur = null; }
+  if (!cur || typeof cur !== 'object' || Array.isArray(cur)) throw new Error('refused: the branch’s state.json can’t be read, so a new one could drop what it holds; a person must repair the branch');
+  const refuse = (why) => { throw new Error('refused: the new state.json ' + why + ' (RK149); the branch keeps what it had'); };
+  if (cur.alarm && JSON.stringify(s.alarm) !== JSON.stringify(cur.alarm)) refuse('drops or changes the branch’s standing alarm');
+  if (cur.good) {
+    if (!s.good || s.good.size < cur.good.size) refuse('has a smaller last good checkpoint than the branch’s ' + cur.good.size);
+    if (s.good.size === cur.good.size && s.good.root !== cur.good.root) refuse('has another root for the branch’s last good checkpoint of ' + cur.good.size);
+  }
+  if (cur.key !== undefined && s.key !== cur.key) refuse('has another pinned key than the branch’s');
+  if (Number.isSafeInteger(cur.runs) && s.runs <= cur.runs) refuse('has run ' + s.runs + ' times, not more than the branch’s ' + cur.runs);
 }
 
 // The issue's text: the alarm's reason with nobody mentioned and nothing linked, inside a code block.

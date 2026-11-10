@@ -7,6 +7,11 @@
 #           the check writes, and on an alarm opens one issue labelled log-witness (no mentions, no links).
 # The site reads the branch, marks the log unverified on an alarm and alerts Aaron in his inbox. Nothing is ever blocked.
 # No secret but the workflow's own GITHUB_TOKEN, given only to the record job.
+# The witness never forgets what it kept (RK149): a fresh branch only when `git ls-remote --exit-code` exits 2 (GitHub
+# says the branch doesn't exist); any other failure to read it fails the job. The check passes on the commit it built
+# on, and the record job fails if the branch has moved since. record() refuses a state that drops an alarm, lowers the
+# last good checkpoint, changes the pinned key or lowers the run count. Each is a red run: it alerts and blocks nothing.
+# No text from the event reaches a shell: the steps read only GITHUB_REPOSITORY and the check job's outputs, from env.
 name: Public log witness
 
 on:
@@ -27,6 +32,7 @@ jobs:
     permissions:
       contents: read
     outputs:
+      base: ${{ steps.branch.outputs.base }}
       state: ${{ steps.check.outputs.state }}
       checkpoint: ${{ steps.check.outputs.checkpoint }}
     steps:
@@ -38,13 +44,25 @@ jobs:
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
-      - name: Read the witness branch (public, no token; empty on the first run)
+      - name: Read the witness branch (public, no token; empty only when it doesn't exist)
+        id: branch
         run: |
           set -euo pipefail
           git init -q witness
           cd witness
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          if git fetch -q --depth 1 origin log-witness; then git checkout -q -b log-witness FETCH_HEAD; else git checkout -q --orphan log-witness; fi
+          rc=0; git ls-remote --exit-code --heads origin log-witness > /dev/null || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            git checkout -q --orphan log-witness
+            echo "base=none" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -eq 0 ]; then
+            git fetch -q --depth 1 origin log-witness
+            git checkout -q -b log-witness FETCH_HEAD
+            echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Couldn't read the branch log-witness (git ls-remote exited $rc), so the witness won't start a fresh one (RK149)."
+            exit 1
+          fi
       - name: Witness the latest checkpoint
         id: check
         run: node main/tools/verify/witness.mjs witness
@@ -65,16 +83,33 @@ jobs:
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
-      - name: Check out the witness branch (made on the first run)
+      - name: Check out the witness branch, as the check saw it (made on the first run)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITNESS_BASE: ${{ needs.check.outputs.base }}
         run: |
           set -euo pipefail
           git init -q witness
           cd witness
           git config http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          if git fetch -q --depth 1 origin log-witness; then git checkout -q -b log-witness FETCH_HEAD; else git checkout -q --orphan log-witness; fi
+          rc=0; git ls-remote --exit-code --heads origin log-witness > /dev/null || rc=$?
+          if [ "$rc" -eq 2 ] && [ "$WITNESS_BASE" = "none" ]; then
+            git checkout -q --orphan log-witness
+          elif [ "$rc" -eq 0 ]; then
+            git fetch -q --depth 1 origin log-witness
+            git checkout -q -b log-witness FETCH_HEAD
+            if [ "$(git rev-parse HEAD)" != "$WITNESS_BASE" ]; then
+              echo "::error::The branch log-witness moved after the check read it, so this run records nothing (RK149). The next run checks again."
+              exit 1
+            fi
+          elif [ "$rc" -eq 2 ]; then
+            echo "::error::The branch log-witness was there for the check and is gone now; the witness won't start a fresh one (RK149)."
+            exit 1
+          else
+            echo "::error::Couldn't read the branch log-witness (git ls-remote exited $rc), so the witness won't start a fresh one (RK149)."
+            exit 1
+          fi
       - name: Write what the check saw, and raise its alarm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
