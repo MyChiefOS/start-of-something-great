@@ -6,7 +6,7 @@
   'use strict';
   var W = window.DOGW;
   if (!W) return;
-  var $ = W['$'], isId = W.isId, isRoom = W.isRoom, slot = W.slot, clone = W.clone, txt = W.txt, n = W.n, plural = W.plural, day = W.day, when = W.when, who = W.who, link = W.link, roomHref = W.roomHref, get = W.get, post = W.post, said = W.said, loader = W.loader, fillRooms = W.fillRooms, isLogin = W.isLogin, citizenHref = W.citizenHref;
+  var $ = W['$'], width = W.width, isId = W.isId, isRoom = W.isRoom, slot = W.slot, clone = W.clone, txt = W.txt, n = W.n, plural = W.plural, day = W.day, when = W.when, who = W.who, link = W.link, roomHref = W.roomHref, get = W.get, post = W.post, said = W.said, loader = W.loader, fillRooms = W.fillRooms, isLogin = W.isLogin, citizenHref = W.citizenHref;
 
   // ---- /leaderboard and /citizens/<kind>/<ref> (045) ----
   var BAND = { provisional: 'Provisional', established: 'Established', strong: 'Strong', top10: 'Top 10%' };
@@ -59,10 +59,16 @@
       $('empty').hidden = list.length > 0;
       $('empty').textContent = st.kind === 'network' ? 'No one is in your network yet: it grows as work you post or do passes an independent audit.' : 'No audited work here yet.';
       var ct = d.counts || {};
+      // The design's two figures: people and agents with audited work here (not "active"), each with its median impact.
+      $('counts-row').hidden = st.kind === 'network';
+      $('c-people').textContent = String(n(ct.people));
+      $('c-people-note').textContent = (n(ct.people) === 1 ? 'person' : 'people') + ' with audited work'
+        + (ct.median_impact_people !== null && ct.median_impact_people !== undefined ? ' · median impact ' + num(ct.median_impact_people) : '');
+      $('c-agents').textContent = String(n(ct.agents));
+      $('c-agents-note').textContent = (n(ct.agents) === 1 ? 'agent' : 'agents') + ' with audited work'
+        + (ct.median_impact_agents !== null && ct.median_impact_agents !== undefined ? ' · median impact ' + num(ct.median_impact_agents) : '');
       $('counts').textContent = st.kind === 'network' ? 'Trust along audited collaborations, from you: halved at each step, at most ' + n(d.hops) + ' steps.'
-        : plural(n(ct.people), 'person', 'people') + ' and ' + plural(n(ct.agents), 'agent') + ' with audited work here; ' + n(ct.established) + ' established.'
-          + (ct.median_impact_people !== null && ct.median_impact_people !== undefined ? ' Median impact: people ' + num(ct.median_impact_people) : '')
-          + (ct.median_impact_agents !== null && ct.median_impact_agents !== undefined ? ', agents ' + num(ct.median_impact_agents) : '') + '.';
+        : n(ct.established) + ' established (10 or more audited items). Every point on the board comes from work an audit passed.';
       var g = d.integrity;
       if (g) {
         $('i-pairs').textContent = plural(n(g.reciprocal_pairs), 'pair') + ' in the last 30 days';
@@ -107,6 +113,50 @@
     $('filters').addEventListener('submit', function (e) { e.preventDefault(); });
     $('retry').addEventListener('click', load);
     pick(st.kind);
+    cards();
+  }
+  // The design's two cards, from the same public reads: the best-calibrated person who checks work, shown only once
+  // someone has 10 settled passes (with its n and range, never a bare rate); and the profile of the citizen at the top
+  // of the board, with the first and newest receipt of its chain (decided for JEVs, Nov 10, Q1).
+  function cards() {
+    get('/api/work/board?kind=auditors&sort=calibration').then(function (x) {
+      var c = x.ok && x.d && Array.isArray(x.d.citizens) ? x.d.citizens.filter(function (y) { return y && y.calibration && n(y.calibration.n) >= 10; })[0] : null;
+      if (!c) return;
+      var r = c.calibration;
+      link($('a-name'), null, who(c));
+      $('a-pct').textContent = pct(r.rate);
+      width($('a-bar'), n(r.rate) * 100);
+      $('a-note').textContent = 'of ' + plural(n(r.n), 'settled pass', 'settled passes') + ' held';
+      $('a-n').textContent = String(n(r.n));
+      $('a-range').textContent = pct(r.lo) + '–' + pct(r.hi);
+      var dd = c.disputes || {};
+      $('a-disp').textContent = n(dd.against) + ' of ' + n(dd.received);
+      $('a-body').hidden = false;
+      $('a-empty').hidden = true;
+    }).catch(function () {});
+    get('/api/work/board').then(function (x) {
+      var c = x.ok && x.d && Array.isArray(x.d.citizens) ? x.d.citizens[0] : null;
+      var href = citizenHref(c);
+      if (!href) return;
+      var parts = href.split('/');
+      link($('p-name'), href, who(c));
+      $('p-band').textContent = c.place ? '#' + n(c.place) + ' by impact' : (BAND[c.band] || '');
+      var im = c.impact || {};
+      $('p-impact').textContent = num(im.score) + ' (n = ' + n(im.n) + ')';
+      $('p-revert').textContent = rate(c.revert) + ', public';
+      $('p-rooms').textContent = n(c.breadth) + ' of 23';
+      $('p-body').hidden = false;
+      $('p-note').textContent = 'Every point opens to its task and its audit.';
+      var o = $('p-open'); o.href = href; o.hidden = false;
+      return get('/api/work/citizen?kind=' + parts[2] + '&ref=' + encodeURIComponent(parts[3])).then(function (y) {
+        var list = (y.ok && y.d && Array.isArray(y.d.receipts) ? y.d.receipts : []).filter(function (r) { return r && Number.isSafeInteger(r.seq) && r.seq >= 0; });
+        if (list.length < 2) return;
+        var newest = list[0], oldest = list[list.length - 1];
+        link($('p-first'), '/receipts/' + oldest.seq, '#' + oldest.seq);
+        link($('p-last'), '/receipts/' + newest.seq, '#' + newest.seq);
+        $('p-chain').hidden = false;
+      });
+    }).catch(function () {});
   }
   var RSTATE = { passed: ['Passed', 'f'], failed: ['Not passed', 'm'], reversed: ['Reversed', 'm'] };
   var DECIDER = { jevs: 'the JEVs auditor’s rules', poster: 'the task’s poster', person: 'Aaron, as the repository’s owner', timeout: 'the time limit', third_look: 'Third Look, the audit AI' };
