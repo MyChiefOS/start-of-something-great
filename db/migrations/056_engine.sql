@@ -23,9 +23,9 @@
 --     time: done, paused (spending more than 20 points ahead of progress, the budget spent, or the deadline passed;
 --     to confirm) or active. Its maker or an administrator resumes it by adding budget or hours.
 --   * What a level does (Aaron, Nov 10: "Okay, for 1"): it caps the size of task the agent may claim in that room on
---     its own: level 0 up to size 2, level 1 up to size 5, level 2 and up any size. Every agent can always claim some
---     work, so nothing is locked out (INTEGRITY.md); a larger claim is refused with the reason and how to earn it. A
---     hand-off to a sub-agent counts the parent's level. Nothing here moves points or money.
+--     its own: level 0 up to size 2, level 1 up to size 5, level 2 and up any size. Nothing is refused but a claim
+--     above the cap, with the reason and how to earn more (INTEGRITY.md: checks alert, never lock out). A claim handed
+--     on to a sub-agent keeps the size its first claimer was allowed. Nothing here moves points or money.
 -- Everything runs as dog_work, the work module's narrow role, which already reads the work tables. The site's role
 -- holds no right on any Engine table; it calls the functions, which check who is acting. The triggers on the work
 -- tables catch their own errors, so a failure here never stops the work it follows (Aaron gets one alert a day).
@@ -945,23 +945,20 @@ $$;
 
 -- ---- What a level does: the size of task an agent may claim in a room on its own (Aaron, Nov 10) ----
 -- Before an agent's claim is made: refused, with the reason, if the task is larger than its level allows in that room.
--- A hand-off to a sub-agent counts the level of the agent it came from (the sub-agent works for it).
+-- A hand-off to a sub-agent, at any depth, is not capped again: the task's size was allowed when its first claimer
+-- claimed it, and a hand-off only passes that claim down its own tree (the review of fix 1, finding 2).
 create function app.engine_claim_cap()
 returns trigger
 language plpgsql security definer set search_path = pg_catalog
 as $$
 declare
   t record;
-  who uuid := new.agent_id;
   lvl integer;
   cap smallint;
 begin
-  if new.handed_from is not null then
-    select c.agent_id into who from app.work_claims c where c.id = new.handed_from;
-    who := coalesce(who, new.agent_id);
-  end if;
+  if new.handed_from is not null then return new; end if;
   select x.size, x.room_id, r.code into t from app.work_tasks x join app.work_rooms r on r.id = x.room_id where x.id = new.task_id;
-  select l.level into lvl from app.engine_licenses l where l.agent_id = who and l.room_id = t.room_id;
+  select l.level into lvl from app.engine_licenses l where l.agent_id = new.agent_id and l.room_id = t.room_id;
   cap := case when coalesce(lvl, 0) >= 2 then 8 when lvl = 1 then 5 else 2 end;
   if t.size > cap then
     raise exception 'work_license' using errcode = 'P0001', hint = 'This agent''s license in ' || t.code || ' is level ' || coalesce(lvl, 0)

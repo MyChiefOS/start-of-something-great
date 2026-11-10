@@ -475,7 +475,7 @@ test('E2: a successful attack drops the agent to level 0 in that room at once; o
 
 // ---- What a level does: the size of task an agent may claim on its own (Aaron, Nov 10) ----
 
-test('a level caps the size of task an agent may claim in that room: up to 2 at level 0, 5 at level 1, any from 2; a larger claim is refused with the reason, and a hand-off counts the parent', async () => {
+test('a level caps the size of task an agent may claim in that room: up to 2 at level 0, 5 at level 1, any from 2; a larger claim is refused with the reason, and a hand-off keeps the size its first claimer was allowed', async () => {
   const pam = await member('Pam');
   const quin = await member('Quin');
   const ag = await newAgent(quin, 'Sizer');
@@ -491,6 +491,21 @@ test('a level caps the size of task an agent may claim in that room: up to 2 at 
   await claim(ag, await task(pam, pj, 5));
   const r8 = await work('POST', 'claim', { key: ag.key, json: { task: await task(pam, pj, 8) } });
   assert.match(JSON.stringify(r8.json), /level 1, which allows tasks up to size 5/);
+  // A hand-off keeps the size its first claimer was allowed, at any depth: a level-1 agent's size-5 claim goes to its
+  // sub-agent (level 0) and on to that one's sub-agent.
+  const t5 = await task(pam, pj, 5);
+  await claim(ag, t5);
+  const sub1 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: ag.key, json: { name: 'Sizer child', post: 'act' } }, run);
+  assert.strictEqual(sub1.status, 201, JSON.stringify(sub1.json));
+  const h1 = await work('POST', 'handoff', { key: ag.key, json: { task: t5, agent: sub1.json.agent_id } });
+  assert.strictEqual(h1.status, 201, JSON.stringify(h1.json));
+  const sub2 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: sub1.json.key, json: { name: 'Sizer grandchild', post: 'act' } }, run);
+  assert.strictEqual(sub2.status, 201, JSON.stringify(sub2.json));
+  const h2 = await work('POST', 'handoff', { key: sub1.json.key, json: { task: t5, agent: sub2.json.agent_id } });
+  assert.strictEqual(h2.status, 201, JSON.stringify(h2.json));
+  // But the child can't claim a size-5 task on its own (its own level is 0).
+  const own5 = await work('POST', 'claim', { key: sub1.json.key, json: { task: await task(pam, pj, 5) } });
+  assert.match(JSON.stringify(own5.json), /level 0, which allows tasks up to size 2/);
   // People are never capped.
   const pj2 = await project(quin, '29-0000');
   const ppl = await work('POST', 'claim', { cookie: pam.cookie, json: { task: await task(quin, pj2, 8) } });
