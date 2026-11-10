@@ -1,0 +1,49 @@
+# RK146: the required `checks` status runs from the pull request's own copy of checks.yml and scripts/pr-guards.js,
+# so a pull request could change its own gate to pass. This workflow runs the same PR guards again, from main's copy,
+# where the pull request can't reach them: base is main, every commit verified and listed (or Dependabot's own
+# manifest-only update), and every change under .github/ named on a "Workflow change:" line in the description.
+#
+# How it stays out of the pull request's hands (GitHub, "Securely using pull_request_target"):
+#   - pull_request_target runs this file as it is on main, the default branch, never the PR's copy.
+#   - The checkout takes no ref, so it is main's latest commit (GITHUB_SHA on this event), and only the one script.
+#     The pull request's code is never checked out, installed or run; the script only reads GitHub's API.
+#   - The token reads and nothing more, and no secret is used. The only event value used is the PR number, via env:.
+#
+# What it can't do (RK71): one GitHub account holds every role here, so it alerts and shows the change; it does not
+# stop an administrator. Its check, gate-guard, blocks a merge only once Aaron adds it to main's required checks.
+name: Gate guard
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+concurrency:
+  group: gate-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/pr-guards.js
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: PR guards, main's copy (RK146)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/pr-guards.js

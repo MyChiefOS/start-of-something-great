@@ -1,4 +1,7 @@
 # CodeQL settings for S10, saved in the repo so every run checks the same thing.
+# Since Nov 10 (RK146) it also scans the most privileged code it used to skip: the migration runner, the key broker and
+# the JEVs gate (supabase/functions), Second and Third Look, the notifier, the public log's verifier, and the tools.
+# '*.js' is the root folder's files only (CodeQL's * doesn't cross a /).
 name: Day One Great CodeQL
 queries:
   - uses: security-extended
@@ -7,8 +10,16 @@ paths:
   - db
   - signin
   - scripts
+  - supabase
+  - secondlook
+  - thirdlook
+  - notify
+  - verifier
+  - tools
   - '*.js'
 paths-ignore:
   - node_modules
+  - '**/node_modules'
   - test
+  - '**/test'
   - research/code
