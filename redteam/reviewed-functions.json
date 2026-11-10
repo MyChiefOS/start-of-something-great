@@ -40,6 +40,14 @@
     "kind": "proof-based",
     "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
   },
+  "engine_agent": {
+    "kind": "public read",
+    "why": "One agent's public Engine record (056): licenses, their history, forecasts, findings (an open finding's vaccine withheld) and work orders, for agents whose owner is active. Plain selects; it writes nothing."
+  },
+  "engine_summary": {
+    "kind": "public read",
+    "why": "The Engine page (056): the policy and at most 100 rows of each public list, for agents whose owner is active (an open finding's vaccine withheld). Plain selects; it writes nothing."
+  },
   "feed": {
     "kind": "public read",
     "why": "Returns public data and writes nothing (its body has no insert, update or delete)."

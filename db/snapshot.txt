@@ -136,6 +136,74 @@ constraint app.email_tokens email_tokens_key_version_check CHECK (((key_version 
 constraint app.email_tokens email_tokens_pkey PRIMARY KEY (id)
 constraint app.email_tokens email_tokens_token_hash_check CHECK (((char_length(token_hash) = 64) AND (token_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.email_tokens email_tokens_token_hash_key UNIQUE (token_hash)
+constraint app.engine_citations engine_citations_forecast_id_fkey FOREIGN KEY (forecast_id) REFERENCES app.engine_forecasts(id) ON DELETE CASCADE
+constraint app.engine_citations engine_citations_forecast_id_precedent_id_key UNIQUE (forecast_id, precedent_id)
+constraint app.engine_citations engine_citations_pkey PRIMARY KEY (id)
+constraint app.engine_citations engine_citations_precedent_id_fkey FOREIGN KEY (precedent_id) REFERENCES app.engine_precedents(id) ON DELETE CASCADE
+constraint app.engine_findings engine_findings_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.engine_findings engine_findings_attack_class_check CHECK ((attack_class = ANY (ARRAY['ASI01'::text, 'ASI02'::text, 'ASI03'::text, 'ASI04'::text, 'ASI05'::text, 'ASI06'::text, 'ASI07'::text, 'ASI08'::text, 'ASI09'::text, 'ASI10'::text])))
+constraint app.engine_findings engine_findings_check CHECK (((fixed_at IS NULL) = (fixed_by IS NULL)))
+constraint app.engine_findings engine_findings_fix_note_check CHECK ((char_length(fix_note) <= 300))
+constraint app.engine_findings engine_findings_pkey PRIMARY KEY (id)
+constraint app.engine_findings engine_findings_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
+constraint app.engine_findings engine_findings_vaccine_check CHECK (((char_length(vaccine) >= 3) AND (char_length(vaccine) <= 200)))
+constraint app.engine_forecasts engine_forecasts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.engine_forecasts engine_forecasts_chance_bp_check CHECK (((chance_bp >= 0) AND (chance_bp <= 10000)))
+constraint app.engine_forecasts engine_forecasts_check CHECK (((resolution IS NULL) = (resolved_at IS NULL)))
+constraint app.engine_forecasts engine_forecasts_claim_id_fkey FOREIGN KEY (claim_id) REFERENCES app.work_claims(id) ON DELETE CASCADE
+constraint app.engine_forecasts engine_forecasts_claim_id_key UNIQUE (claim_id)
+constraint app.engine_forecasts engine_forecasts_pkey PRIMARY KEY (id)
+constraint app.engine_forecasts engine_forecasts_resolution_check CHECK ((resolution = ANY (ARRAY['held'::text, 'failed'::text, 'reversed'::text, 'released'::text, 'expired'::text, 'handed'::text])))
+constraint app.engine_forecasts engine_forecasts_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
+constraint app.engine_forecasts engine_forecasts_task_id_fkey FOREIGN KEY (task_id) REFERENCES app.work_tasks(id) ON DELETE CASCADE
+constraint app.engine_license_history engine_license_history_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.engine_license_history engine_license_history_brier_check CHECK (((brier >= (0)::numeric) AND (brier <= (1)::numeric)))
+constraint app.engine_license_history engine_license_history_forecasts_check CHECK ((forecasts >= 0))
+constraint app.engine_license_history engine_license_history_lower_bound_check CHECK (((lower_bound >= (0)::numeric) AND (lower_bound <= (1)::numeric)))
+constraint app.engine_license_history engine_license_history_new_level_check CHECK (((new_level >= 0) AND (new_level <= 4)))
+constraint app.engine_license_history engine_license_history_old_level_check CHECK (((old_level >= 0) AND (old_level <= 4)))
+constraint app.engine_license_history engine_license_history_pkey PRIMARY KEY (id)
+constraint app.engine_license_history engine_license_history_reason_check CHECK ((reason = ANY (ARRAY['evidence'::text, 'suspended'::text, 'fix_confirmed'::text])))
+constraint app.engine_license_history engine_license_history_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
+constraint app.engine_license_history engine_license_history_succeeded_check CHECK ((succeeded >= 0))
+constraint app.engine_license_history engine_license_history_verified_check CHECK ((verified >= 0))
+constraint app.engine_licenses engine_licenses_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.engine_licenses engine_licenses_agent_id_room_id_key UNIQUE (agent_id, room_id)
+constraint app.engine_licenses engine_licenses_brier_check CHECK (((brier >= (0)::numeric) AND (brier <= (1)::numeric)))
+constraint app.engine_licenses engine_licenses_check CHECK ((succeeded <= verified))
+constraint app.engine_licenses engine_licenses_forecasts_check CHECK ((forecasts >= 0))
+constraint app.engine_licenses engine_licenses_level_check CHECK (((level >= 0) AND (level <= 4)))
+constraint app.engine_licenses engine_licenses_lower_bound_check CHECK (((lower_bound >= (0)::numeric) AND (lower_bound <= (1)::numeric)))
+constraint app.engine_licenses engine_licenses_pkey PRIMARY KEY (id)
+constraint app.engine_licenses engine_licenses_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
+constraint app.engine_licenses engine_licenses_succeeded_check CHECK ((succeeded >= 0))
+constraint app.engine_licenses engine_licenses_verified_check CHECK ((verified >= 0))
+constraint app.engine_order_resumes engine_order_resumes_add_budget_check CHECK (((add_budget >= 0) AND (add_budget <= 10000)))
+constraint app.engine_order_resumes engine_order_resumes_add_hours_check CHECK (((add_hours >= 0) AND (add_hours <= 2160)))
+constraint app.engine_order_resumes engine_order_resumes_check CHECK (((add_budget > 0) OR (add_hours > 0)))
+constraint app.engine_order_resumes engine_order_resumes_order_id_fkey FOREIGN KEY (order_id) REFERENCES app.engine_orders(id) ON DELETE CASCADE
+constraint app.engine_order_resumes engine_order_resumes_pkey PRIMARY KEY (id)
+constraint app.engine_orders engine_orders_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.engine_orders engine_orders_budget_check CHECK (((budget >= 1) AND (budget <= 10000)))
+constraint app.engine_orders engine_orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.engine_orders engine_orders_goal_size_check CHECK (((goal_size >= 1) AND (goal_size <= 1000)))
+constraint app.engine_orders engine_orders_pkey PRIMARY KEY (id)
+constraint app.engine_orders engine_orders_project_id_fkey FOREIGN KEY (project_id) REFERENCES app.work_projects(id) ON DELETE CASCADE
+constraint app.engine_orders engine_orders_rollback_check CHECK (((char_length(rollback) >= 10) AND (char_length(rollback) <= 1000)))
+constraint app.engine_policy engine_policy_level_check CHECK (((level >= 1) AND (level <= 4)))
+constraint app.engine_policy engine_policy_level_key UNIQUE (level)
+constraint app.engine_policy engine_policy_max_brier_check CHECK (((max_brier >= (0)::numeric) AND (max_brier <= (1)::numeric)))
+constraint app.engine_policy engine_policy_min_forecasts_check CHECK (((min_forecasts >= 0) AND (min_forecasts <= 100000)))
+constraint app.engine_policy engine_policy_min_lower_bound_check CHECK (((min_lower_bound >= (0)::numeric) AND (min_lower_bound <= (1)::numeric)))
+constraint app.engine_policy engine_policy_min_verified_check CHECK (((min_verified >= 1) AND (min_verified <= 100000)))
+constraint app.engine_policy engine_policy_pkey PRIMARY KEY (id)
+constraint app.engine_precedents engine_precedents_decision_check CHECK (((char_length(decision) >= 3) AND (char_length(decision) <= 300)))
+constraint app.engine_precedents engine_precedents_facts_check CHECK (((char_length(facts) >= 10) AND (char_length(facts) <= 2000)))
+constraint app.engine_precedents engine_precedents_overturns_fkey FOREIGN KEY (overturns) REFERENCES app.engine_precedents(id)
+constraint app.engine_precedents engine_precedents_overturns_key UNIQUE (overturns)
+constraint app.engine_precedents engine_precedents_pkey PRIMARY KEY (id)
+constraint app.engine_precedents engine_precedents_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 1000)))
+constraint app.engine_precedents engine_precedents_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
 constraint app.file_keys file_keys_failed_check CHECK (((failed >= 0) AND (failed <= 10)))
 constraint app.file_keys file_keys_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
 constraint app.file_keys file_keys_fingerprint_key UNIQUE (fingerprint)
@@ -306,7 +374,7 @@ constraint app.notices notices_body_check CHECK ((char_length(body) <= 2000))
 constraint app.notices notices_check CHECK (((member_id IS NOT NULL) OR (kind = 'alert'::text)))
 constraint app.notices notices_dedupe_key_check CHECK ((((char_length(dedupe_key) >= 1) AND (char_length(dedupe_key) <= 160)) AND (dedupe_key ~ '^[a-z0-9_:.-]+$'::text)))
 constraint app.notices notices_dedupe_key_key UNIQUE (dedupe_key)
-constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['account_flagged'::text, 'act_expired'::text, 'act_reconfirm'::text, 'agent_recovered'::text, 'agent_recovery_set'::text, 'alert'::text, 'appeal_decided'::text, 'brake_on'::text, 'challenge'::text, 'contained'::text, 'containment_lifted'::text, 'draft_expired'::text, 'draft_waiting'::text, 'post_published'::text, 'report_upheld'::text, 'signin_browser'::text, 'signin_keyfile'::text, 'signin_linked'::text, 'signin_pin'::text, 'signin_unlinked'::text, 'work_claimed'::text, 'work_decided'::text, 'work_submitted'::text])))
+constraint app.notices notices_kind_check CHECK ((kind = ANY (ARRAY['account_flagged'::text, 'act_expired'::text, 'act_reconfirm'::text, 'agent_recovered'::text, 'agent_recovery_set'::text, 'alert'::text, 'appeal_decided'::text, 'brake_on'::text, 'challenge'::text, 'contained'::text, 'containment_lifted'::text, 'draft_expired'::text, 'draft_waiting'::text, 'engine'::text, 'post_published'::text, 'report_upheld'::text, 'signin_browser'::text, 'signin_keyfile'::text, 'signin_linked'::text, 'signin_pin'::text, 'signin_unlinked'::text, 'work_claimed'::text, 'work_decided'::text, 'work_submitted'::text])))
 constraint app.notices notices_link_check CHECK (((char_length(link) <= 200) AND (link ~ '^/([A-Za-z0-9?=&#._~%-][A-Za-z0-9/?=&#._~%-]*)?$'::text)))
 constraint app.notices notices_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.notices notices_pkey PRIMARY KEY (id)
@@ -806,6 +874,24 @@ default app.email_suppressions.created_at = now()
 default app.email_suppressions.id = app.uuid_v7()
 default app.email_tokens.created_at = now()
 default app.email_tokens.id = app.uuid_v7()
+default app.engine_citations.id = app.uuid_v7()
+default app.engine_findings.found_at = now()
+default app.engine_findings.id = app.uuid_v7()
+default app.engine_forecasts.created_at = now()
+default app.engine_forecasts.id = app.uuid_v7()
+default app.engine_forecasts.no_precedent = false
+default app.engine_license_history.changed_at = now()
+default app.engine_license_history.id = app.uuid_v7()
+default app.engine_licenses.computed_at = now()
+default app.engine_licenses.id = app.uuid_v7()
+default app.engine_licenses.suspended = false
+default app.engine_order_resumes.created_at = now()
+default app.engine_order_resumes.id = app.uuid_v7()
+default app.engine_orders.created_at = now()
+default app.engine_orders.id = app.uuid_v7()
+default app.engine_policy.id = app.uuid_v7()
+default app.engine_precedents.created_at = now()
+default app.engine_precedents.id = app.uuid_v7()
 default app.file_keys.created_at = now()
 default app.file_keys.failed = 0
 default app.file_keys.id = app.uuid_v7()
@@ -1126,7 +1212,7 @@ function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql v
 function app.agents_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=d49b0b63509bfd48464899074cdad145
 function app.agents_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c5dd087de8df28ca0356ff2667dcf059
 function app.approve_draft(p_draft uuid, p_hash text) owner=dog_delegate execute=dog_delegate,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, status text) body_md5=5a72f3ac2256e3969ab73849db172e88
-function app.audit_add(p_action text, p_subject_kind text, p_subject uuid, p_detail jsonb, p_outcome text) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=510ce87ceeaefe453c3db7e67a8c3a47
+function app.audit_add(p_action text, p_subject_kind text, p_subject uuid, p_detail jsonb, p_outcome text) owner=dog_owner execute=dog_owner,dog_signin,dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=510ce87ceeaefe453c3db7e67a8c3a47
 function app.audit_admin_read(p_area text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=116d1a41d4f5094e82403dabe5ab0d2f
 function app.audit_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=50178c175a514cca9635fc51955dc4ba
 function app.audit_log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d9ae51d115dd87e702077c0fef83ccc2
@@ -1169,6 +1255,33 @@ function app.deletion_reviews_notify() owner=dog_owner execute=dog_owner languag
 function app.drafts_expire_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=integer body_md5=f175de57296009d3d6c8ec2ee1668dfb
 function app.email_token_issue(p_token_hash text, p_email_fingerprints text, p_browser_hash text, p_key_version smallint) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=3fe206a9383583c62c0fe78273dfdc07
 function app.email_token_redeem(p_token_hash text, p_browser_hash text, p_confirmed boolean) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, email_fingerprints text, key_version smallint) body_md5=f9092e9312e200aff5a8187ea7ff6fc0
+function app.engine_agent(p_agent uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=fee43b5bd8efa141a1ba61306493838f
+function app.engine_agent_card(p_agent uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=15f1331a0cf2af82053dbbdbaeb2c62c
+function app.engine_brier_term(chance_bp integer, held boolean) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=e8f7214a258a9fbcc28eb1fc72c9e5f0
+function app.engine_citations_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=0989b38db9e1205018a0e1cddfdfdf13
+function app.engine_finding_add(p_agent uuid, p_room text, p_class text, p_succeeded boolean, p_vaccine text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=4d7bd3ceb5fbaae13b5aa68504508b47
+function app.engine_finding_fix(p_finding uuid, p_note text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=e6e7343df4510331bd2ec6f7766df4c7
+function app.engine_findings_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=d7682940dd49e5ca077f95bd10e0d7f5
+function app.engine_forecast(p_task uuid, p_bp integer, p_cites jsonb, p_none boolean) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=35b9cb826516154db2270938f0198416
+function app.engine_forecast_settle(p_claim uuid, p_resolution text, p_submission uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=29a304e2825e2eaad0e5ce4297ed24f2
+function app.engine_forecasts_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=29d57935b800cbe680794670b459069e
+function app.engine_history_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=184b74bb97c58c3bbf420784152ee240
+function app.engine_level(p_verified bigint, p_succeeded bigint, p_forecasts bigint, p_brier numeric) owner=dog_owner execute=dog_owner,dog_work language=plpgsql volatile=s definer=false config=search_path=pg_catalog returns=smallint body_md5=546745ae0469842742c50d22d60ef047
+function app.engine_license_refresh(p_agent uuid, p_room uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=441417bed13f4fd7687285b73a661463
+function app.engine_on_claim() owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=34f055d468bfe86bfb462e678885c0d3
+function app.engine_on_points() owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=6955125e0511b6bc9d70d1237b6ce570
+function app.engine_on_submission() owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=cdc13d3eb6c99b4f79cc439b81057eed
+function app.engine_order_add(p_agent uuid, p_project uuid, p_goal integer, p_budget integer, p_hours integer, p_rollback text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=b7e9c8de7e22b357b8c2a69f78f21d5e
+function app.engine_order_resume(p_order uuid, p_budget integer, p_hours integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=f22e2aa5cdd087a220fd1ffd76ba40ac
+function app.engine_order_state(p_order uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=92564c84828c07af5cd077c5accccf16
+function app.engine_order_watch(p_agent uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=243a623473257672ca3ec6bbd21d171e
+function app.engine_orders_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=6f1fb09edce20e8d25373962750e1e5c
+function app.engine_precedent_add(p_room text, p_facts text, p_decision text, p_reason text, p_overturns uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=3929939f7ac6c2cba1f915dd9775e756
+function app.engine_precedents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=aab3073b10f4a44b8a3035572ad7f85e
+function app.engine_resumes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=4c7b690a342aa1dd6ad47e22d3d65d14
+function app.engine_summary() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=179c1eaa08533c08b030478ff940b892
+function app.engine_trouble(p_state text) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=5af89a96833ce2d33eba9959682ad3ec
+function app.engine_wilson_lb(k bigint, n bigint) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=5da5f4a01a94339aa66fae59fd99a42b
 function app.erase_member(p_member uuid) owner=dog_owner execute=dog_owner,dog_erase language=plpgsql volatile=v definer=false config= returns=TABLE(posts integer, reports integer, agents integer, keys integer, sessions integer, identities integer) body_md5=2a4c48de69edb2cf9f8581c2a6dd696a
 function app.feed(p_lane text, p_before uuid, p_limit integer, p_author uuid, p_q text) owner=dog_public execute=dog_public,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(id uuid, lane text, body text, published_at timestamp with time zone, author_id uuid, author_name text, author_level smallint, agent_id uuid, agent_name text, delegation text, rules_version integer, agent_chain jsonb, author_admin boolean) body_md5=20c0921929b5a5fad0e8be2018558471
 function app.file_key_revoke() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=027bf495cf6b96dfe29a7f6a32f3dd21
@@ -1689,6 +1802,30 @@ grant app.email_tokens.expires_at dog_signin INSERT
 grant app.email_tokens.key_version dog_signin INSERT
 grant app.email_tokens.token_hash dog_signin INSERT
 grant app.email_tokens.used_at dog_signin UPDATE
+grant app.engine_citations dog_work INSERT
+grant app.engine_citations dog_work SELECT
+grant app.engine_findings dog_work INSERT
+grant app.engine_findings dog_work SELECT
+grant app.engine_findings.fix_note dog_work UPDATE
+grant app.engine_findings.fixed_at dog_work UPDATE
+grant app.engine_findings.fixed_by dog_work UPDATE
+grant app.engine_forecasts dog_work INSERT
+grant app.engine_forecasts dog_work SELECT
+grant app.engine_forecasts.resolution dog_work UPDATE
+grant app.engine_forecasts.resolved_at dog_work UPDATE
+grant app.engine_forecasts.submission_id dog_work UPDATE
+grant app.engine_license_history dog_work INSERT
+grant app.engine_license_history dog_work SELECT
+grant app.engine_licenses dog_work INSERT
+grant app.engine_licenses dog_work SELECT
+grant app.engine_licenses dog_work UPDATE
+grant app.engine_order_resumes dog_work INSERT
+grant app.engine_order_resumes dog_work SELECT
+grant app.engine_orders dog_work INSERT
+grant app.engine_orders dog_work SELECT
+grant app.engine_policy dog_work SELECT
+grant app.engine_precedents dog_work INSERT
+grant app.engine_precedents dog_work SELECT
 grant app.file_keys dog_signin DELETE
 grant app.file_keys dog_signin SELECT
 grant app.file_keys.failed dog_signin UPDATE
@@ -2411,6 +2548,15 @@ policy app.email_tokens email_tokens_signin_delete cmd=d permissive=true to=dog_
 policy app.email_tokens email_tokens_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.email_tokens email_tokens_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.email_tokens email_tokens_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.engine_citations engine_citations_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_findings engine_findings_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_forecasts engine_forecasts_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_license_history engine_license_history_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_licenses engine_licenses_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_order_resumes engine_order_resumes_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_orders engine_orders_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_policy engine_policy_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.engine_precedents engine_precedents_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.file_keys file_keys_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.file_keys file_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.file_keys file_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -2515,7 +2661,7 @@ policy app.notices notices_owner_insert cmd=a permissive=true to=dog_owner using
 policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)) OR (( SELECT app.actor_kind() AS actor_kind) = 'system'::text)) check=
 policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['agent_recovered'::text, 'agent_recovery_set'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'signin_pin'::text, 'signin_browser'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
-policy app.notices notices_work_insert cmd=a permissive=true to=dog_work using= check=((kind = ANY (ARRAY['work_claimed'::text, 'work_submitted'::text, 'work_decided'::text])) OR ((member_id IS NULL) AND (kind = 'alert'::text)))
+policy app.notices notices_work_insert cmd=a permissive=true to=dog_work using= check=((kind = ANY (ARRAY['work_claimed'::text, 'work_submitted'::text, 'work_decided'::text, 'engine'::text])) OR ((member_id IS NULL) AND (kind = 'alert'::text)))
 policy app.pin_keys pin_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.pin_keys pin_keys_signin cmd=r permissive=true to=dog_signin using=true check=
 policy app.post_search post_search_public cmd=* permissive=true to=dog_public using=true check=true
@@ -2692,6 +2838,13 @@ trigger app.containments enabled=A CREATE TRIGGER containments_guard BEFORE UPDA
 trigger app.containments enabled=A CREATE TRIGGER containments_start AFTER INSERT ON app.containments FOR EACH ROW EXECUTE FUNCTION app.containments_start()
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_guard BEFORE DELETE OR UPDATE ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_guard()
 trigger app.deletion_reviews enabled=A CREATE TRIGGER deletion_reviews_notify AFTER INSERT ON app.deletion_reviews FOR EACH ROW EXECUTE FUNCTION app.deletion_reviews_notify()
+trigger app.engine_citations enabled=A CREATE TRIGGER engine_citations_guard BEFORE DELETE OR UPDATE ON app.engine_citations FOR EACH ROW EXECUTE FUNCTION app.engine_citations_guard()
+trigger app.engine_findings enabled=A CREATE TRIGGER engine_findings_guard BEFORE DELETE OR UPDATE ON app.engine_findings FOR EACH ROW EXECUTE FUNCTION app.engine_findings_guard()
+trigger app.engine_forecasts enabled=A CREATE TRIGGER engine_forecasts_guard BEFORE DELETE OR UPDATE ON app.engine_forecasts FOR EACH ROW EXECUTE FUNCTION app.engine_forecasts_guard()
+trigger app.engine_license_history enabled=A CREATE TRIGGER engine_license_history_guard BEFORE DELETE OR UPDATE ON app.engine_license_history FOR EACH ROW EXECUTE FUNCTION app.engine_history_guard()
+trigger app.engine_order_resumes enabled=A CREATE TRIGGER engine_order_resumes_guard BEFORE DELETE OR UPDATE ON app.engine_order_resumes FOR EACH ROW EXECUTE FUNCTION app.engine_resumes_guard()
+trigger app.engine_orders enabled=A CREATE TRIGGER engine_orders_guard BEFORE DELETE OR UPDATE ON app.engine_orders FOR EACH ROW EXECUTE FUNCTION app.engine_orders_guard()
+trigger app.engine_precedents enabled=A CREATE TRIGGER engine_precedents_guard BEFORE DELETE OR UPDATE ON app.engine_precedents FOR EACH ROW EXECUTE FUNCTION app.engine_precedents_guard()
 trigger app.file_keys enabled=A CREATE TRIGGER file_keys_audit AFTER INSERT OR DELETE OR UPDATE ON app.file_keys FOR EACH ROW EXECUTE FUNCTION app.signin_keys_audit()
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_guard BEFORE UPDATE ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.gh_decisions_guard()
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_log AFTER INSERT ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.log_queue_decision()
@@ -2751,10 +2904,13 @@ trigger app.tl_settings enabled=A CREATE TRIGGER tl_settings_audit AFTER UPDATE 
 trigger app.watch_settings enabled=A CREATE TRIGGER watch_settings_audit AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.work_checks enabled=A CREATE TRIGGER work_checks_audit AFTER UPDATE ON app.work_checks FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_claims enabled=O CREATE TRIGGER engine_after_claim AFTER INSERT OR UPDATE OF status ON app.work_claims FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION app.engine_on_claim()
 trigger app.work_disputes enabled=A CREATE TRIGGER work_disputes_audit AFTER UPDATE ON app.work_disputes FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_change BEFORE DELETE OR UPDATE ON app.work_point_entries FOR EACH ROW EXECUTE FUNCTION app.work_point_entries_append_only()
 trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_truncate BEFORE TRUNCATE ON app.work_point_entries FOR EACH STATEMENT EXECUTE FUNCTION app.work_point_entries_append_only()
 trigger app.work_points enabled=A CREATE TRIGGER work_points_ledger AFTER INSERT OR UPDATE ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_ledger()
+trigger app.work_points enabled=O CREATE TRIGGER engine_after_points AFTER UPDATE OF status ON app.work_points FOR EACH ROW WHEN (((new.citizen_agent IS NOT NULL) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION app.engine_on_points()
 trigger app.work_settings enabled=A CREATE TRIGGER work_settings_audit AFTER UPDATE ON app.work_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_submissions enabled=A CREATE TRIGGER work_submissions_audit AFTER UPDATE OF status ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_submissions enabled=O CREATE TRIGGER engine_after_submission AFTER INSERT OR UPDATE OF status ON app.work_submissions FOR EACH ROW WHEN ((new.worker_agent IS NOT NULL)) EXECUTE FUNCTION app.engine_on_submission()
 trigger app.work_tasks enabled=A CREATE TRIGGER work_tasks_audit AFTER UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.work_audit()

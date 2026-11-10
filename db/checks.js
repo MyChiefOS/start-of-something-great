@@ -27,7 +27,9 @@ const TIMERS = 'dog_timers';
 // dog_log (038) only adds to the public log and signs its checkpoints, inside the log functions; it alone reads the
 // log's signing key.
 // dog_work (042) only reads and writes the work module's tables (rooms, projects, tasks, claims, submissions, points),
-// inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else.
+// inside the work functions; it reads members' names and levels and agents' trees and rules, and nothing else. Since
+// 056 it also keeps the trust Engine's tables (licenses, forecasts, precedents, findings, work orders), which are built
+// on the work module's records, inside the Engine's functions.
 // dog_ghsync (055, RK140) only records GitHub's facts, inside app.work_github_sync and app.work_github_wanted, for the
 // dog-github function; it holds no table rights, and the site's role can't act as it.
 const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync'];
@@ -40,7 +42,8 @@ const DEFINERS = {
   // the four the site calls (the session sweep, the hourly upkeep, an administrator's read and a lock's release).
   'app.audit_fill()': { owner: 'dog_owner', callers: '' },
   'app.audit_net_add()': { owner: 'dog_owner', callers: '' },
-  'app.audit_add(text, text, uuid, jsonb, text)': { owner: 'dog_owner', callers: 'dog_signin' },
+  // 056: the trust Engine records its administrators' and members' writes with it too.
+  'app.audit_add(text, text, uuid, jsonb, text)': { owner: 'dog_owner', callers: 'dog_signin,dog_work' },
   'app.signin_is_locked(uuid)': { owner: 'dog_owner', callers: 'dog_signin' },
   'app.signin_locks_open()': { owner: 'dog_owner', callers: 'dog_app' },
   'app.keyfile_unpause(uuid)': { owner: 'dog_signin', callers: 'dog_owner' },
@@ -337,7 +340,29 @@ const DEFINERS = {
   'app.work_project_card(uuid)': { owner: 'dog_work', callers: '' },
   'app.work_record(uuid, uuid, text, uuid, uuid, text, text, text, text, text, integer, text, integer)': { owner: 'dog_work', callers: '' },
   'app.log_work(text, text, text, text, jsonb)': { owner: 'dog_log', callers: 'dog_work' },
-  'app.log_work_name(text)': { owner: 'dog_log', callers: '' }
+  'app.log_work_name(text)': { owner: 'dog_log', callers: '' },
+  // 056, the trust Engine's steps E1 to E3 (design/engine-e1-e3.md), as dog_work: the page's two public reads; an
+  // agent's forecast; an administrator's precedents, findings and fixes; an owner's work orders and their resumes. Each
+  // write checks who is acting. Inside them, called by none of them directly: the one writer of licenses, a forecast's
+  // resolution, a work order's state and its watch, the agent as the pages show it, the daily alert; and the three
+  // triggers after the work module's submissions, points and claims change, which never refuse the change.
+  'app.engine_summary()': 'dog_work',
+  'app.engine_agent(uuid)': 'dog_work',
+  'app.engine_forecast(uuid, integer, jsonb, boolean)': 'dog_work',
+  'app.engine_precedent_add(text, text, text, text, uuid)': 'dog_work',
+  'app.engine_finding_add(uuid, text, text, boolean, text)': 'dog_work',
+  'app.engine_finding_fix(uuid, text)': 'dog_work',
+  'app.engine_order_add(uuid, uuid, integer, integer, integer, text)': 'dog_work',
+  'app.engine_order_resume(uuid, integer, integer)': 'dog_work',
+  'app.engine_license_refresh(uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_forecast_settle(uuid, text, uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_order_state(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_order_watch(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_agent_card(uuid)': { owner: 'dog_work', callers: '' },
+  'app.engine_trouble(text)': { owner: 'dog_work', callers: '' },
+  'app.engine_on_submission()': { owner: 'dog_work', callers: '' },
+  'app.engine_on_points()': { owner: 'dog_work', callers: '' },
+  'app.engine_on_claim()': { owner: 'dog_work', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 
@@ -600,7 +625,17 @@ async function problems(sql, { snapshot } = {}) {
     ['deletion_reviews', 'deletion_reviews_guard', 27, 'deletion_reviews_guard', 'every updated or deleted deletion review'],
     // PR 16: a parent's daily cap counts its whole subtree, before every new post and draft.
     ['posts', 'posts_tree_cap', 7, 'agent_tree_cap', 'every new post'],
-    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft']
+    ['agent_drafts', 'agent_drafts_tree_cap', 7, 'agent_tree_cap', 'every new draft'],
+    // 056, the trust Engine (Rev 4.2): a license's history is only added to; a forecast is fixed but for its one
+    // resolution; a precedent is never edited; a finding only gets its fix, once, from the Engine's own function; a
+    // work order and its resumes never change. Each goes only with what it belongs to (an agent's account, a claim).
+    ['engine_license_history', 'engine_license_history_guard', 27, 'engine_history_guard', 'every updated or deleted license change'],
+    ['engine_forecasts', 'engine_forecasts_guard', 27, 'engine_forecasts_guard', 'every updated or deleted forecast'],
+    ['engine_citations', 'engine_citations_guard', 27, 'engine_citations_guard', 'every updated or deleted citation'],
+    ['engine_precedents', 'engine_precedents_guard', 27, 'engine_precedents_guard', 'every updated or deleted precedent'],
+    ['engine_findings', 'engine_findings_guard', 27, 'engine_findings_guard', 'every updated or deleted finding'],
+    ['engine_orders', 'engine_orders_guard', 27, 'engine_orders_guard', 'every updated or deleted work order'],
+    ['engine_order_resumes', 'engine_order_resumes_guard', 27, 'engine_resumes_guard', 'every updated or deleted resume']
   ]) {
     const t = trig.find((x) => x.tbl === tbl && x.name === name);
     const label = 'the app.' + tbl + ' trigger ' + name;
