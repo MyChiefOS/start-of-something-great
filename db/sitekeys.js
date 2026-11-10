@@ -72,18 +72,34 @@ function peekToken(req) {
 // makes: supabase/functions/_shared/vercel-oidc.mjs; our team and project, production only, not expired), before
 // Second Look or Third Look hands it to the AI Gateway. The timer's address is open, and Vercel's documents don't say
 // whether a caller's own x-vercel-oidc-token header is replaced; a token that fails here is never used, so a forged one
-// can't spend a work item's one try with Third Look. Never throws: an unchecked token is no token. Read without removing
-// it, before ensure() takes it off the request.
-async function verifiedToken(req, { verify = null } = {}) {
-  const token = peekToken(req);
+// can't spend a work item's one try with Third Look. Never throws: an unchecked token is no token. At most 2 seconds
+// (fetching Vercel's keys, at most once an hour, has no timeout of its own, and nothing else may wait on it: the
+// review of RK134's fix, finding 1); a check that runs out of time is no token. Read without removing it, before
+// ensure() takes it off the request. (ensure() still hands the raw header to the key broker, which checks it itself.)
+const CHECK_MS = 2000;
+async function checkToken(token, verify) {
   if (!token) return null;
+  let timer;
   try {
     const check = verify || (await import('../supabase/functions/_shared/vercel-oidc.mjs')).verify;
-    await check(token);
+    const late = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('timed out')), CHECK_MS); });
+    await Promise.race([check(token), late]);
     return token;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+async function verifiedToken(req, { verify = null } = {}) {
+  return checkToken(peekToken(req), verify);
+}
+// The same, later and only if asked: the token is read now (before ensure() removes it) and checked only when the
+// returned function is called, so a request that never uses it (every feed read) never waits on the check.
+function tokenCheck(req, { verify = null } = {}) {
+  const token = peekToken(req);
+  let done = null;
+  return () => (done || (done = checkToken(token, verify)));
 }
 
 // Reads the token and removes it from the request (M3).
@@ -171,4 +187,4 @@ function candidates(body = last && last.body) {
 
 const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; };
 
-module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, tokenCheck, BROKER, _reset };

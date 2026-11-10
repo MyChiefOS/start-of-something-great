@@ -619,3 +619,59 @@ test('R-10: the emergency migration, applied to a throwaway database, refuses th
     await q('alter role dog_web login password null'); // as the other tests expect it: a login with no usable password here
   }
 });
+
+// ---- RK134's fix, after its review (Nov 10) ----
+test('RK134: the uptime monitor alerts (only) when Vercel\'s identity token stops checking out while the site is open', () => {
+  const uptime = require('../scripts/uptime');
+  const id = uptime.CHECKS.find((x) => x.name === 'Identity token');
+  assert.ok(id && id.path === '/api/ready' && !id.when({ stage: 'closed' }) && id.when({ stage: 'public' }));
+  const r = (json) => [{ status: 200 }, JSON.stringify(json)];
+  assert.ok(id.test(...r({ identity_token: true, identity_token_verified: true })));
+  for (const v of [false, undefined, null]) assert.ok(!id.test(...r({ identity_token: true, identity_token_verified: v })), String(v));
+});
+
+test('RK134: the token check gives up after 2 seconds, and the feed checks only when Second Look is asked', async () => {
+  const sitekeys = require('../db/sitekeys');
+  const req = () => ({ headers: { 'x-vercel-oidc-token': 'h.' + 'z'.repeat(40) + '.s' } });
+  const started = Date.now();
+  assert.strictEqual(await sitekeys.verifiedToken(req(), { verify: () => new Promise(() => {}) }), null, 'a check that never answers is no token');
+  const took = Date.now() - started;
+  assert.ok(took >= 1900 && took < 4000, 'about 2 seconds: ' + took);
+  // tokenCheck reads now, checks later and once.
+  let checks = 0;
+  const r = req();
+  const later = sitekeys.tokenCheck(r, { verify: async () => { checks++; } });
+  delete r.headers['x-vercel-oidc-token']; // as ensure() does
+  assert.strictEqual(checks, 0, 'nothing is checked until asked');
+  assert.match(await later(), /^h\./);
+  await later();
+  assert.strictEqual(checks, 1, 'checked once');
+  assert.match(fs.readFileSync(path.join(root, 'api', 'feed.js'), 'utf8'), /const oidc = require\('\.\.\/db\/sitekeys'\)\.tokenCheck\(req\);/);
+});
+
+test('RK134: a call to the open timer without a signed token can\'t turn away Vercel Cron\'s own call (two clocks)', async () => {
+  const cron = require('../api/cron.js');
+  cron._reset();
+  let clock = 5_000_000;
+  const looked = [];
+  const run = async () => ({}); // the timers' transactions, answered without a database
+  const res = () => { const o = { statusCode: 0, setHeader() {}, end(b) { o.body = b; } }; return o; };
+  const mods = ['secondlook', 'thirdlook', 'logjobs', 'workjobs'].map((m) => require('../db/' + m));
+  const saved = mods.map((m) => m.run);
+  mods[0].run = async () => { looked.push('second'); };
+  mods[1].run = async () => { looked.push('third'); };
+  mods[2].run = async () => {};
+  mods[3].run = async () => {};
+  try {
+    await cron.handle({ method: 'GET', headers: {} }, res(), run, { now: () => clock }); // anyone, no token
+    clock += 10_000;
+    await cron.handle({ method: 'GET', headers: { 'user-agent': 'vercel-cron/1.0' } }, res(), run, { now: () => clock, oidc: 'signed-token' });
+    assert.deepStrictEqual(looked, ['second', 'third'], 'Vercel Cron\'s call still runs Second and Third Look');
+    looked.length = 0;
+    clock += 5_000;
+    await cron.handle({ method: 'GET', headers: {} }, res(), run, { now: () => clock, oidc: 'signed-token' });
+    assert.deepStrictEqual(looked, [], 'and its own clock still holds it to once in 25 seconds');
+  } finally {
+    mods.forEach((m, i) => { m.run = saved[i]; }); cron._reset();
+  }
+});

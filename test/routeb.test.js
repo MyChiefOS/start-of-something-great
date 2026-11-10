@@ -281,7 +281,7 @@ test('RK134: Second and Third Look get Vercel\'s identity token only once its si
   // The timer and the feed hand the AI Gateway only a checked token; nothing else reads the raw header for a model call.
   for (const f of ['api/cron.js', 'api/feed.js']) {
     const src = fs.readFileSync(path.join(root, f), 'utf8');
-    assert.match(src, /const oidc = await require\('\.\.\/db\/sitekeys'\)\.verifiedToken\(req\);/, f);
+    assert.match(src, f === 'api/cron.js' ? /const oidc = await require\('\.\.\/db\/sitekeys'\)\.verifiedToken\(req\);/ : /const oidc = require\('\.\.\/db\/sitekeys'\)\.tokenCheck\(req\);/, f);
     assert.doesNotMatch(src, /peekToken\(req\)/, f);
   }
 });

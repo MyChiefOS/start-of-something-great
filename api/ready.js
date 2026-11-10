@@ -3,7 +3,8 @@
 // failed: never a value, a key, a password or an address with its login.
 //   identity_token  Vercel's identity token reached this function (x-vercel-oidc-token)
 //   identity_token_verified  and its signature and claims check out (RK134), as Second and Third Look require: false
-//                   here means they can't run, so the check after a deploy reads it
+//                   here means they can't run, so the check after a deploy reads it, and so does the uptime
+//                   monitor's "Identity token" check while the site is open (scripts/uptime.js)
 //   broker          the key broker answered with the login and keys ("ok"), or why not
 //   keys            the three keys the site signs people in with are present (from Vercel, or in the broker's answer)
 //   github_signin   the GitHub sign-in app's settings are present in Vercel, under the names the site reads

@@ -144,12 +144,12 @@ test("the identity token goes only to Vercel's own AI Gateway, at one fixed addr
   assert.strictEqual((src.match(/fetchImpl\(/g) || []).length, 2, 'two calls');
   assert.strictEqual((src.match(/fetchImpl\(GATEWAY, \{\s*method: 'POST',? ?(?:\n\s*)?redirect: 'error'/g) || []).length, 2, 'both to GATEWAY, no redirects');
   // Only the two routes take it for a model, and only once its Vercel signature and claims check out (RK134,
-  // db/sitekeys.js verifiedToken); /api/ready checks it too, and reports only true or false.
+  // db/sitekeys.js verifiedToken, or tokenCheck where only one action needs it); /api/ready checks it too, and reports only true or false.
   const uses = [];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'api'))) {
     const src2 = fs.readFileSync(path.join(__dirname, '..', 'api', f), 'utf8');
     assert.ok(!/peekToken/.test(src2), f + ' reads the raw token');
-    if (/verifiedToken/.test(src2)) uses.push(f);
+    if (/verifiedToken|tokenCheck/.test(src2)) uses.push(f);
   }
   assert.deepStrictEqual(uses.sort(), ['cron.js', 'feed.js', 'ready.js']);
 });

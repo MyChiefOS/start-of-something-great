@@ -26,7 +26,11 @@ const db = require('../db');
 const store = require('../db/notify');
 
 const SKIP_MS = 25_000;
-let lastAsked = 0;
+// Two clocks (the review of RK134's fix, finding 2): a call carrying a token Vercel signed, which only Vercel Cron has,
+// and any other call. The address is open, so a call without one could otherwise take the 25 seconds and turn away
+// Vercel Cron's own call, and with it Second and Third Look. Each clock lets one run through every 25 seconds per
+// instance; the timers' work itself is held once a minute by the database (timerSlot).
+let lastAsked = { signed: 0, other: 0 };
 
 function reply(res, code, body) {
   res.statusCode = code;
@@ -40,8 +44,9 @@ const fromCron = (req) => /^vercel-cron\//i.test(String((req.headers && req.head
 async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, proposals = null, logFetch = null, workGithub = null } = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
   if (!run) return reply(res, 503, { ok: false });
-  if (now() - lastAsked < SKIP_MS) return reply(res, 200, { ok: true });
-  lastAsked = now();
+  const clock = oidc ? 'signed' : 'other';
+  if (now() - lastAsked[clock] < SKIP_MS) return reply(res, 200, { ok: true });
+  lastAsked[clock] = now();
   let out;
   try {
     out = await run({ actor: 'anon' }, (t) => store.timerSlot(t, fromCron(req)));
@@ -117,6 +122,6 @@ module.exports = async (req, res) => {
   }
 };
 module.exports.handle = handle;
-module.exports._reset = () => { lastAsked = 0; };
+module.exports._reset = () => { lastAsked = { signed: 0, other: 0 }; };
 // Every database call in this route knows its request, for the audit log (053).
 module.exports = require('../db').entry(module.exports);
