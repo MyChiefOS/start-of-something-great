@@ -10,6 +10,7 @@ INTEGRITY.md still supersedes this file, and Aaron's standing decisions still st
 
 ## How they are used
 
+- **The first "Bad news first" bullet of every PR** (Aaron, Nov 10: "acknowledge that you don't apply these coding principle unless specifically asked to for coding as the first line in the next few PR bad first bullet. Until the system is reasonably cleaned up with JEVs concurrence") says: "Claude didn't build to these standards until Aaron asked for them on Nov 10, 2026, so parts of the code fall short of them until it is cleaned up." It stays until the gaps below, 1 to 6, are fixed and an independent reviewer for JEVs agrees the code is reasonably cleaned up; that agreement is recorded in FACTS.
 - **Before building:** name the standard's controls the change touches (the tables below).
 - **In every PR:** the alignment footer's "Standards" line names them and says how each was met, or why not.
 - **A gap found** goes to RISKS.md like any other risk, with its control named (for example "OWASP A01", "CWE-862").

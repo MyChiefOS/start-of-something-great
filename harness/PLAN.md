@@ -221,6 +221,7 @@ harness/STANDARDS.md maps each standard to the project. Its gaps in order:
 6. A written incident response plan, tested yearly.
 7. PCI DSS with payments.
 8. After go-live, a yearly penetration test, brought to Aaron as a costed choice.
+Until 1 to 6 are done and an independent reviewer for JEVs agrees the code is reasonably cleaned up, every PR opens its bad news with the standards acknowledgment (harness/STANDARDS.md).
 
 ### Design alignment (Aaron, Nov 9: "Why don't the page align to design ... the design should align", "provide a detailed list of all of the items needed"). Claude. Built Nov 10 in one PR (#122; Aaron, Nov 9: "Address it ALL in the 1 PR"); Aaron merged it Nov 10, and it was proven live the same day (OPERATIONS.md).
 
