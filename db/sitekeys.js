@@ -68,6 +68,70 @@ function peekToken(req) {
   return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
 }
 
+// RK134 (Nov 10): the token, only once Vercel's signature and every claim check out (the same check the key broker
+// makes: supabase/functions/_shared/vercel-oidc.mjs; our team and project, production only, not expired), before
+// Second Look or Third Look hands it to the AI Gateway. The timer's address is open, and Vercel's documents don't say
+// whether a caller's own x-vercel-oidc-token header is replaced; a token that fails here is never used, so a forged one
+// can't spend a work item's one try with Third Look. Never throws: an unchecked token is no token. At most 2 seconds
+// (Vercel's public keys are fetched here, not by the verifier's own fetch: with a 2-second limit, one fetch shared by
+// every request waiting on it, kept an hour, and a failure kept 30 seconds so a slow or failing key address isn't asked
+// again by every request: the review of #123, F5); a check that runs out of time is no token, and so is a check that
+// doesn't hand back the token's claims (F4: the verifier throws on every refusal today, and a later change that only
+// returned false must not let a token through). Read without removing it, before ensure() takes it off the request.
+// (ensure() still hands the raw header to the key broker, which checks it itself.)
+const CHECK_MS = 2000;
+const KEYS_MS = 2000;
+const keyCache = new Map(); // issuer -> { at, keys, failed }
+const keyFetches = new Map(); // issuer -> the fetch in flight
+function siteKeys(fetchImpl = (...a) => globalThis.fetch(...a)) {
+  return async (issuer, { refresh = false } = {}) => {
+    const c = keyCache.get(issuer);
+    const age = c ? Date.now() - c.at : Infinity;
+    if (c && c.failed && age < 30_000) throw new Error('Vercel keys unavailable');
+    if (c && c.keys && age < 3600_000 && !(refresh && age > 60_000)) return c.keys;
+    if (!keyFetches.has(issuer)) {
+      keyFetches.set(issuer, (async () => {
+        try {
+          const r = await fetchImpl(issuer + '/.well-known/jwks', { redirect: 'error', signal: AbortSignal.timeout(KEYS_MS) });
+          if (!r.ok) throw new Error('Vercel keys unavailable: ' + r.status);
+          const body = await r.json();
+          const keys = Array.isArray(body && body.keys) ? body.keys : [];
+          keyCache.set(issuer, { at: Date.now(), keys });
+          return keys;
+        } catch (e) {
+          keyCache.set(issuer, { at: Date.now(), keys: c && c.keys, failed: true });
+          throw e;
+        } finally { keyFetches.delete(issuer); }
+      })());
+    }
+    return keyFetches.get(issuer);
+  };
+}
+async function checkToken(token, verify) {
+  if (!token) return null;
+  let timer;
+  try {
+    const check = verify || (await import('../supabase/functions/_shared/vercel-oidc.mjs')).verify;
+    const late = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('timed out')), CHECK_MS); });
+    const claims = await Promise.race([check(token, { keys: siteKeys() }), late]);
+    return claims && typeof claims === 'object' ? token : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function verifiedToken(req, { verify = null } = {}) {
+  return checkToken(peekToken(req), verify);
+}
+// The same, later and only if asked: the token is read now (before ensure() removes it) and checked only when the
+// returned function is called, so a request that never uses it (every feed read) never waits on the check.
+function tokenCheck(req, { verify = null } = {}) {
+  const token = peekToken(req);
+  let done = null;
+  return () => (done || (done = checkToken(token, verify)));
+}
+
 // Reads the token and removes it from the request (M3).
 function takeToken(req) {
   const headers = req && req.headers;
@@ -151,6 +215,6 @@ function candidates(body = last && last.body) {
   return body ? body.database.hosts.map((h) => ({ host: h, url: urlFor(body.database, h) })) : [];
 }
 
-const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; };
+const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; keyCache.clear(); keyFetches.clear(); };
 
-module.exports = { ensure, refetch, candidates, peekToken, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, tokenCheck, siteKeys, BROKER, _reset };

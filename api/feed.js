@@ -524,7 +524,10 @@ async function secondLook(req, res, run, who, body, oidc) {
     return reply(res, 200, { mode: r.mode, message: 'Second Look is now in ' + r.mode + ' mode.' });
   }
   if (body.second_look === 'ask') {
-    const out = await require('../secondlook/v1').askQuestion({ question: body.question, context: body.context || '', token: oidc });
+    // The token is checked only here, where it's used (RK134): a function from tokenCheck(), or a token in tests.
+    const token = typeof oidc === 'function' ? await oidc() : oidc;
+    if (!token) return reply(res, 503, { error: 'Second Look couldn\u2019t answer: the site\u2019s identity token didn\u2019t check out. Try again in a minute.' });
+    const out = await require('../secondlook/v1').askQuestion({ question: body.question, context: body.context || '', token });
     if (out.error) return reply(res, out.error.startsWith('a question') || out.error.startsWith('context') ? 400 : 502, { error: 'Second Look couldn\u2019t answer: ' + out.error + '.' });
     return reply(res, 200, { answer: out.answer, model: out.model, note: 'Advice from an automated model: check it before acting on it.' });
   }
@@ -748,8 +751,9 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
 module.exports = async (req, res) => {
   try {
-    // The identity token, for Second Look's questions, before sitekeys takes it off the request (M3).
-    const oidc = require('../db/sitekeys').peekToken(req);
+    // The identity token, for Second Look's questions, before sitekeys takes it off the request (M3); checked (only a
+    // token Vercel signed for this project's production, RK134) only if a question is asked, so no other request waits.
+    const oidc = require('../db/sitekeys').tokenCheck(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {

@@ -2,6 +2,9 @@
 // proven live while the site is still closed (harness/STATUS.md). It answers only present/absent and which step
 // failed: never a value, a key, a password or an address with its login.
 //   identity_token  Vercel's identity token reached this function (x-vercel-oidc-token)
+//   identity_token_verified  and its signature and claims check out (RK134), as Second and Third Look require: false
+//                   here means they can't run, so the check after a deploy reads it, and so does the uptime
+//                   monitor's "Identity token" check while the site is open (scripts/uptime.js)
 //   broker          the key broker answered with the login and keys ("ok"), or why not
 //   keys            the three keys the site signs people in with are present (from Vercel, or in the broker's answer)
 //   github_signin   the GitHub sign-in app's settings are present in Vercel, under the names the site reads
@@ -89,9 +92,10 @@ const readRulesAge = () => {
   return db.run({ actor: 'anon' }, (t) => require('../db/notify').rulesAge(t));
 };
 
-async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge } = {}) {
+async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge, verify } = {}) {
   // Noted before ensure(), which removes the token from the request (M3).
   const identityToken = Boolean(req.headers && req.headers['x-vercel-oidc-token']);
+  const identityTokenVerified = identityToken && Boolean(await sitekeys.verifiedToken(req, verify ? { verify } : {}));
   const got = await sitekeys.ensure(req, { force: true, env, ...(fetchImpl ? { fetchImpl } : {}) });
   const database = {};
   if (got.source === 'vercel') {
@@ -109,6 +113,7 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
   const keys = got.body ? KEY_NAMES.every((k) => Boolean(env[k] || (got.body.keys && got.body.keys[k]))) : KEY_NAMES.every((k) => Boolean(env[k]));
   return {
     identity_token: identityToken,
+    identity_token_verified: identityTokenVerified,
     broker: got.source === 'broker' ? 'ok' : got.source === 'cached' ? 'stale' : got.source === 'vercel' ? 'not_used' : (got.error || 'none'),
     keys,
     github_signin: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
@@ -124,9 +129,16 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
   };
 }
 
+// identity_token_verified is each caller's own: its token is read now and checked for this request, outside the
+// minute's shared answer, so the uptime monitor's second look 20 seconds later reads a fresh result, and no caller sets
+// the answer others get (the review of #123, F3). The check is cheap (Vercel's keys are kept an hour) and gives up
+// after 2 seconds.
 async function handle(req, res, deps = {}) {
   if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed.' });
-  if (cached && Date.now() - cached.at < 60_000) return reply(res, 200, cached.body);
+  const mine = sitekeys.verifiedToken(req, deps.verify ? { verify: deps.verify } : {});
+  const own = async (body) => (body && typeof body === 'object' && !body.error
+    ? { ...body, identity_token_verified: Boolean(await mine) } : body);
+  if (cached && Date.now() - cached.at < 60_000) return reply(res, 200, await own(cached.body));
   if (!running) {
     running = check(req, deps)
       .catch(() => ({ error: 'check_failed' }))
@@ -135,7 +147,7 @@ async function handle(req, res, deps = {}) {
   } else if (req.headers) {
     delete req.headers['x-vercel-oidc-token']; // never left on a request that didn't run the check (M3)
   }
-  return reply(res, 200, await running);
+  return reply(res, 200, await own(await running));
 }
 
 module.exports = async (req, res) => {

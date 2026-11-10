@@ -74,6 +74,14 @@ const CHECKS = [
     // Vercel's settings are (route A). "stale" means the site is running on the last good keys after a broker failure.
     name: 'Key broker', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
     test: (r, t) => r.status === 200 && ['ok', 'not_used'].includes(JSON.parse(t).broker)
+  },
+  {
+    // RK134 (the review of its fix, finding 3): once the site is open, Vercel's identity token must check out, or
+    // Second and Third Look can't run and held work quietly waits for a person. It only opens the uptime issue. (Whoever
+    // calls /api/ready first in a minute sets its answer for that minute, so a lone failure may be a caller's junk
+    // header: the issue says which check failed, and the next run looks again.)
+    name: 'Identity token', path: '/api/ready', when: (ctx) => ctx.stage === 'public',
+    test: (r, t) => r.status === 200 && JSON.parse(t).identity_token_verified === true
   }
 ];
 const HEARTBEAT_S = 15 * 60;

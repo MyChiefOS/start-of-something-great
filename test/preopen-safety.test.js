@@ -619,3 +619,4 @@ test('R-10: the emergency migration, applied to a throwaway database, refuses th
     await q('alter role dog_web login password null'); // as the other tests expect it: a login with no usable password here
   }
 });
+
