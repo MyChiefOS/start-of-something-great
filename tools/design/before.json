@@ -388,7 +388,10 @@
  "join/pin.html": {
   "ids": [],
   "links": {},
-  "scripts": null
+  "scripts": [
+   "<script src=\"/pin.js\" defer></script>",
+   "<script src=\"/nav.js\" defer></script>"
+  ]
  },
  "leaderboard.html": {
   "ids": [],

@@ -41,6 +41,12 @@ const ACCEPTED = {
   // The design draws Build's four task cards four to a row at every width (70 px each on a phone); the spec stacks
   // them (CODING_AGENT_SPEC.md 5.6; decided for JEVs, Nov 10, Q2).
   'build:390:cards.first-row': 'four cards stack on a phone (spec 5.6)',
+  // /join on a phone: a smaller intro and tighter sign-in cards keep the chosen way's button in the first screen at 390
+  // by 844 and the comment box within 200 px of Copy (UX PR A, the review of Oct 31; scripts/check-join-panel.js).
+  'join:390:intro.size': 'first screen at 390 (UX PR A)', 'join:390:intro.below': 'first screen at 390 (UX PR A)',
+  'join:390:card.p': 'comment box within 200 px of Copy at 390 (UX PR A)',
+  // The project page follows the Nov 7 canvas over the Nov 5 handoff: the status pills sit beside the title, as drawn.
+  'project:1280:column': 'the canvas puts the status pills beside the title',
 };
 
 // Our pages from their handoff pages (tools/design/built.list), and the address each is opened at.
@@ -48,8 +54,10 @@ function pairs() {
   const list = fs.readFileSync(path.join(ROOT, 'tools/design/built.list'), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   return list.map((l) => { const [from, to] = l.split(/\s+/); return { from, to }; }).filter((p) => !ONLY || ONLY.includes(p.from.replace(/\.html$/, '')));
 }
+// The search page is opened with the design's own query ("receipt"), so its result groups show.
 const ADDRESS = { 'index.html': '/', 'project.html': '/projects/:project', 'task.html': '/tasks/:task', 'agent.html': '/agents/:agent', 'room.html': '/rooms/:room',
-  'receipt.html': '/receipts/:receipt', 'member.html': '/members/:member', 'citizen.html': '/citizens/:citizen', 'dispute.html': '/disputes/:dispute' };
+  'receipt.html': '/receipts/:receipt', 'member.html': '/member?id=:member', 'citizen.html': '/citizens/:citizen', 'dispute.html': '/disputes/:dispute',
+  'search.html': '/search?q=receipt' };
 
 // One real id of each kind, from the live public API (or none: the page then shows its "not found" state).
 async function ids() {
@@ -60,8 +68,16 @@ async function ids() {
   const pg = p0 && await get('/api/work/project?id=' + p0.id); const t0 = pg && (pg.tasks || [])[0];
   if (t0) out.task = t0.id;
   if (p0 && p0.room) out.room = p0.room.code;
-  const ag = await get('/api/agents/'); const a0 = ag && (ag.agents || [])[0];
-  if (a0) out.agent = a0.id || a0.agent_id;
+  const ag = await get('/api/directory'); const a0 = ag && (ag.agents || [])[0];
+  if (a0) out.agent = a0.id;
+  const fd = await get('/api/feed'); const m0 = fd && (fd.posts || []).map((x) => x.author && x.author.id).filter(Boolean)[0];
+  if (m0) out.member = m0;
+  const bd = await get('/api/work/board'); const c0 = bd && (bd.citizens || [])[0];
+  if (c0) out.citizen = c0.kind === 'github' ? 'github/' + c0.github : c0.kind + '/' + c0.id;
+  const rc = await get('/api/work/summary'); const r0 = rc && rc.latest_receipt;
+  if (r0 && Number.isSafeInteger(r0.seq)) out.receipt = String(r0.seq);
+  const ds = await get('/api/work/disputes?status=all'); const d0 = ds && (ds.disputes || [])[0];
+  if (d0) out.dispute = d0.id;
   return out;
 }
 
@@ -120,9 +136,10 @@ const probe = () => {
   const intro = all('.dek, .lede')[0] || null;
   const col = h1 ? h1.parentElement : document.body;
   const card = all('.card')[0], cs = card && getComputedStyle(card);
-  // Rows of cards: for each element holding three or more cards, how many sit in its first row.
-  const rows = all('*').filter((e) => [...e.children].filter((c) => c.classList.contains('card')).length >= 3)
-    .map((e) => { const cards = [...e.children].filter((c) => c.classList.contains('card')); const top = cards[0].getBoundingClientRect().top; return cards.filter((c) => Math.abs(c.getBoundingClientRect().top - top) < 2).length + '/' + cards.length; });
+  // Rows of cards: for each element holding three or more cards on screen, how many sit in its first row.
+  const cardsOf = (e) => [...e.children].filter((c) => c.classList.contains('card') && shown(c)); // shown only: hidden ones all sit at 0
+  const rows = all('*').filter((e) => cardsOf(e).length >= 3)
+    .map((e) => { const cards = cardsOf(e); const top = cards[0].getBoundingClientRect().top; return cards.filter((c) => Math.abs(c.getBoundingClientRect().top - top) < 2).length + '/' + cards.length; });
   return {
     column: { w: Math.round(col.getBoundingClientRect().width), x: Math.round(col.getBoundingClientRect().left) },
     h1: box(h1), kick: box(kickTop), intro: box(intro), 'section kicker': box(kickSec), 'heading under a kicker': box(h2k), heading: box(h2),
@@ -221,14 +238,18 @@ async function sideBySide(browser, a, b, w, file) {
   for (const { from, to } of pairs()) {
     const tmpl = ADDRESS[to] || '/' + to.replace(/\.html$/, '').replace(/(^|\/)index$/, '');
     const missing = (tmpl.match(/:([a-z]+)/g) || []).map((m) => m.slice(1)).filter((k) => !known[k]);
-    const ours = tmpl.replace(/:([a-z]+)/g, (m, k) => encodeURIComponent(known[k] || 'none'));
+    // Ids are checked here: a hex id, a room code, a receipt number, or a citizen's kind and ref (one slash).
+    const ours = tmpl.replace(/:([a-z]+)/g, (m, k) => (/^[a-z0-9-]+(\/[a-z0-9-]+)?$/i.test(known[k] || '') ? known[k] : 'none'));
+    if (missing.length) { report.pages[from + ' → ' + ours] = { note: 'no live ' + missing.join(', ') + ' to open it with: not compared' }; console.log('  not compared: ' + from + ' (no live ' + missing.join(', ') + ')'); continue; }
     const key = from + ' → ' + ours;
     report.pages[key] = {};
     for (const w of WIDTHS) {
       const d = await open(base + '/__design/' + from, w);
       const o = await open(base + ours, w);
       const dm = await d.page.evaluate(probe), om = { ...(await o.page.evaluate(probe)), errors: o.errors.length };
-      const diffs = compare(from.replace(/\.html$/, ''), w, dm, om);
+      // Keyed by the handoff page, and ours too where one handoff page made several (error.html, join.html).
+      const name = from.replace(/\.html$/, '') + (to === from ? '' : '>' + to.replace(/\.html$/, ''));
+      const diffs = compare(name, w, dm, om);
       report.pages[key][w] = { differences: diffs, note: missing.length ? 'no live ' + missing.join(', ') + ' to open it with' : undefined };
       for (const x of diffs) report.failures.push(key + ' @' + w + ' ' + x.key.split(':').pop() + ': design ' + JSON.stringify(x.design) + ', ours ' + JSON.stringify(x.ours));
       if (CANVAS_CHECKS[tmpl] && !EMPTY) {
