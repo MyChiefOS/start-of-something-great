@@ -215,3 +215,42 @@ test('the site\'s own build gets ROADMAP.md\'s milestones once; only an administ
   assert.strictEqual(ch.base, 'main');
   assert.strictEqual((await work('GET', 'plan', { search: '?project=nope' })).status, 400);
 });
+
+test('054: a milestone finished in full carries the day its last task was done; a project counts its tasks and lists them 25 at a time', async () => {
+  const cy = await member('Cy');
+  const pj = await project(cy, 'Paged and finished');
+  await work('POST', 'milestones', { cookie: cy.cookie, json: { project: pj, title: 'Done early', target: day(-5) } });
+  await work('POST', 'milestones', { cookie: cy.cookie, json: { project: pj, title: 'Under way', target: day(5) } });
+  await task(pj, cy, { size: 2, posted: day(-20), approved: day(-9) });
+  await task(pj, cy, { size: 3, posted: day(-18), approved: day(-7) });    // M1's last task: done 7 days ago
+  await task(pj, cy, { size: 1, posted: day(-2), approved: day(-1) });     // M2: one of two done
+  await task(pj, cy, { size: 1, posted: day(-1) });
+  const p = await plan(pj);
+  assert.deepStrictEqual(p.milestones.map((m) => [m.code, m.tasks, m.tasks_done, m.done_on]), [['M1', 2, 2, day(-7)], ['M2', 2, 1, null]]);
+  // Work approved but not yet in a signed checkpoint doesn't finish a milestone.
+  const pk = await project(cy, 'Not yet anchored');
+  await work('POST', 'milestones', { cookie: cy.cookie, json: { project: pk, title: 'Waiting', target: day(-1) } });
+  await task(pk, cy, { size: 1, posted: day(-3), approved: day(-2), seq: 5000 });
+  assert.strictEqual((await plan(pk)).milestones[0].done_on, null);
+  // 26 more tasks (30 in all): the project page has the count, the newest 25 and a cursor; the cursor gives the other 5.
+  for (let i = 0; i < 26; i += 1) await task(pj, cy, { size: 1, posted: day(-1) });
+  const first = await work('GET', 'project', { search: '?id=' + pj });
+  assert.strictEqual(first.status, 200);
+  assert.strictEqual(first.json.task_count, 30);
+  assert.strictEqual(first.json.tasks.length, 25);
+  assert.strictEqual(first.json.next, first.json.tasks[24].id);
+  const ids = first.json.tasks.map((t) => t.id);
+  assert.deepStrictEqual(ids, [...ids].sort().reverse(), 'newest first');
+  const rest = await work('GET', 'project', { search: '?id=' + pj + '&before=' + first.json.next });
+  assert.strictEqual(rest.status, 200);
+  assert.strictEqual(rest.json.tasks.length, 5);
+  assert.strictEqual(rest.json.next, null);
+  assert.strictEqual(new Set([...ids, ...rest.json.tasks.map((t) => t.id)]).size, 30, 'every task once');
+  // A removed task leaves the count and the list; a missing project is not found either way.
+  await q(`update app.work_tasks set status = 'removed' where id = '${ids[0]}'`);
+  assert.strictEqual((await work('GET', 'project', { search: '?id=' + pj })).json.task_count, 29);
+  const none = crypto.randomUUID();
+  assert.strictEqual((await work('GET', 'project', { search: '?id=' + none })).status, 404);
+  assert.strictEqual((await work('GET', 'project', { search: '?id=' + none + '&before=' + first.json.next })).status, 404);
+  assert.strictEqual((await work('GET', 'project', { search: '?id=' + pj + '&before=not-an-id' })).status, 400);
+});

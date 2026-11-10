@@ -84,7 +84,21 @@ const PLAN = '.d1 .plan-svg{display:block;font-family:var(--display);font-size:1
   + '.d1 .plan-box{min-height:260px}.d1 .figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:22px}'
   + '.d1 .figs div{border-top:1px solid var(--rule);padding-top:8px;min-width:0}.d1 .figs b{display:block;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}'
   + '.d1 .figs small{display:block;color:var(--muted);font-family:var(--display);font-size:12.5px;line-height:1.35;margin-top:2px}'
-  + '@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}\n';
+  + '@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+  // Aaron's chart canvas of Nov 7 (design/canvas-2026-11-07): the shaded time after the planned finish, the values at
+  // now, the forecast's label, the milestone rows and their marks, the legend, five figures, and the milestone table
+  // that stacks on a phone.
+  + '.d1 .plan-svg .shade{fill:var(--amber);opacity:.06}.d1 .plan-svg .after,.d1 .plan-svg .val{fill:var(--muted)}.d1 .plan-svg .val.strong{fill:var(--text)}'
+  + '.d1 .plan-svg .pdot{fill:var(--muted)}.d1 .plan-svg .fl{fill:var(--amber)}.d1 .plan-svg .row{stroke:var(--rule)}'
+  + '.d1 .plan-svg .span{stroke:var(--muted);stroke-width:1.5}.d1 .plan-svg .span.fc{stroke:var(--amber);stroke-dasharray:2 3}'
+  + '.d1 .plan-svg .dia.plan{fill:var(--ink);stroke:var(--muted);stroke-width:1.5}.d1 .plan-svg .dia.done{fill:var(--amber)}'
+  + '.d1 .plan-svg .dia.fc{fill:var(--ink);stroke:var(--amber);stroke-width:1.5;stroke-dasharray:2 2}'
+  + '.d1 .lgd{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 12px}.d1 .lgd span{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-size:13px;color:var(--muted)}'
+  + '.d1 .lgd i{display:inline-block;width:26px;height:0;border-top:1.5px dashed var(--muted)}.d1 .lgd i.v{border-top:2.5px solid var(--amber)}.d1 .lgd i.s{border-top:1px solid var(--muted)}'
+  + '.d1 .lgd i.f{border-top:2px dotted var(--amber)}.d1 .figs.f5{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}'
+  + '.d1 .mlist{list-style:none;margin:0;padding:0;display:none}.d1 .mlist .ms{border-top:1px solid var(--rule);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start}'
+  + '.d1 .mlist .ms:last-child{border-bottom:1px solid var(--rule)}.d1 .mlist .ms b{font-family:var(--display);font-weight:600}.d1 .mlist .ms .fine{grid-column:1/-1}'
+  + '@media(max-width:600px){.d1 .mtab{display:none}.d1 .mlist{display:block}.d1 .lgd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}}\n';
 const ADD = { 'decisions.html': WIDTHS,
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
   // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.

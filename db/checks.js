@@ -266,6 +266,7 @@ const DEFINERS = {
   'app.work_room(text)': 'dog_work',
   'app.work_projects_list(text, text, text, uuid, integer)': 'dog_work',
   'app.work_project(uuid)': 'dog_work',
+  'app.work_project_tasks(uuid, uuid)': 'dog_work',
   'app.work_mine()': 'dog_work',
   'app.work_project_create(text, text, text)': 'dog_work',
   'app.work_task_create(uuid, text, text, text, integer)': 'dog_work',

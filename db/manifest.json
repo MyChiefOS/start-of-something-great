@@ -211,6 +211,10 @@
     {
       "version": "053_audit_logging",
       "sha256": "585834ba4a6d8d445fb3cf2a585f40be1616db4aea235e57c84c9aa72c065d20"
+    },
+    {
+      "version": "054_design_alignment",
+      "sha256": "806ee4c828efb50367e0561135ba40b7aa5146857a8ec040f796b0f20d6c486f"
     }
   ]
 }
