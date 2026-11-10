@@ -58,12 +58,12 @@ Updated Nov 10 with four independent reviews (#123, the web app, the AI parts, t
    - Outside tools such as OWASP ZAP only with Aaron's OK (no outside sources without discussion).
    - The preview (approved Nov 10, about $10 a month): Vercel's preview of each PR on a Supabase preview branch built only from the migrations and made-up data, created only after Aaron merges the PR that builds it.
 2. **#123's review findings, in #123 with Aaron's yes:** the token check requires the claims back; the key fetch gets a time limit; the uptime check confirms against a fresh read; the two-clocks comment and test corrected; the RK134 tests run without a database; the description brought to this guide.
-3. **The AI fixes:** RK142 (Third Look counts anything over what the model reads as cut), then RK143 (checks on normalised text; tag characters stripped except in flags).
+3. **The AI fixes:** RK142 and RK143, built in PR 1 (Nov 10).
 4. **Broken access control (OWASP A01, CWE-862):** RK140, then RK135, then RK144 and RK112, then RK100's sl_claim and sl_decide (the same pattern for Second Look), then RK145.
-5. **Taking in vulnerability reports (RK147):** SECURITY.md with a disclosure policy and response times, linked from security.txt; private vulnerability reporting and Dependabot alerts turned on (approved Nov 10; Claude's session can't write repository settings, so these are Aaron's clicks).
-6. **The required gate (RK146):** a guard on PRs that change .github/workflows; CodeQL's scope widened; CodeQL made required and the log-witness ruleset applied (approved Nov 10; Aaron's clicks, for the same reason).
+5. **Taking in vulnerability reports (RK147), built in PR 1 (Nov 10):** SECURITY.md with a disclosure policy and response times, linked from security.txt; private vulnerability reporting and Dependabot alerts turned on (approved Nov 10; Claude's session can't write repository settings, so these are Aaron's clicks).
+6. **The required gate (RK146), built in PR 1 (Nov 10):** a guard on PRs that change .github/workflows; CodeQL's scope widened; CodeQL made required and the log-witness ruleset applied (approved Nov 10; Aaron's clicks, for the same reason).
 7. **OWASP A09, HIPAA audit controls:** audit logging part 2, waiting on Aaron's OK for the Vercel Blob store's cost (already planned).
-8. **Supply chain (SSDF, OWASP A03, SLSA, FedRAMP):** in one PR, with no new service:
+8. **Supply chain (SSDF, OWASP A03, SLSA, FedRAMP):** the SBOM and the daily KEV check built in PR 1 (Nov 10); still to do:
    - a software bill of materials from the lockfile;
    - the daily watch flags anything on CISA's KEV list;
    - findings carry first-seen dates;
