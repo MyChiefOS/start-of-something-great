@@ -68,6 +68,24 @@ function peekToken(req) {
   return typeof h === 'string' && h.length > 20 && h.length <= 8192 ? h : null;
 }
 
+// RK134 (Nov 10): the token, only once Vercel's signature and every claim check out (the same check the key broker
+// makes: supabase/functions/_shared/vercel-oidc.mjs; our team and project, production only, not expired), before
+// Second Look or Third Look hands it to the AI Gateway. The timer's address is open, and Vercel's documents don't say
+// whether a caller's own x-vercel-oidc-token header is replaced; a token that fails here is never used, so a forged one
+// can't spend a work item's one try with Third Look. Never throws: an unchecked token is no token. Read without removing
+// it, before ensure() takes it off the request.
+async function verifiedToken(req, { verify = null } = {}) {
+  const token = peekToken(req);
+  if (!token) return null;
+  try {
+    const check = verify || (await import('../supabase/functions/_shared/vercel-oidc.mjs')).verify;
+    await check(token);
+    return token;
+  } catch {
+    return null;
+  }
+}
+
 // Reads the token and removes it from the request (M3).
 function takeToken(req) {
   const headers = req && req.headers;
@@ -153,4 +171,4 @@ function candidates(body = last && last.body) {
 
 const _reset = () => { last = null; applied = null; inflight.clear(); kept = null; refetching = null; lastRefetch = null; };
 
-module.exports = { ensure, refetch, candidates, peekToken, BROKER, _reset };
+module.exports = { ensure, refetch, candidates, peekToken, verifiedToken, BROKER, _reset };

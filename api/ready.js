@@ -2,6 +2,8 @@
 // proven live while the site is still closed (harness/STATUS.md). It answers only present/absent and which step
 // failed: never a value, a key, a password or an address with its login.
 //   identity_token  Vercel's identity token reached this function (x-vercel-oidc-token)
+//   identity_token_verified  and its signature and claims check out (RK134), as Second and Third Look require: false
+//                   here means they can't run, so the check after a deploy reads it
 //   broker          the key broker answered with the login and keys ("ok"), or why not
 //   keys            the three keys the site signs people in with are present (from Vercel, or in the broker's answer)
 //   github_signin   the GitHub sign-in app's settings are present in Vercel, under the names the site reads
@@ -89,9 +91,10 @@ const readRulesAge = () => {
   return db.run({ actor: 'anon' }, (t) => require('../db/notify').rulesAge(t));
 };
 
-async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge } = {}) {
+async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge, verify } = {}) {
   // Noted before ensure(), which removes the token from the request (M3).
   const identityToken = Boolean(req.headers && req.headers['x-vercel-oidc-token']);
+  const identityTokenVerified = identityToken && Boolean(await sitekeys.verifiedToken(req, verify ? { verify } : {}));
   const got = await sitekeys.ensure(req, { force: true, env, ...(fetchImpl ? { fetchImpl } : {}) });
   const database = {};
   if (got.source === 'vercel') {
@@ -109,6 +112,7 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
   const keys = got.body ? KEY_NAMES.every((k) => Boolean(env[k] || (got.body.keys && got.body.keys[k]))) : KEY_NAMES.every((k) => Boolean(env[k]));
   return {
     identity_token: identityToken,
+    identity_token_verified: identityTokenVerified,
     broker: got.source === 'broker' ? 'ok' : got.source === 'cached' ? 'stale' : got.source === 'vercel' ? 'not_used' : (got.error || 'none'),
     keys,
     github_signin: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),

@@ -748,8 +748,9 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
 module.exports = async (req, res) => {
   try {
-    // The identity token, for Second Look's questions, before sitekeys takes it off the request (M3).
-    const oidc = require('../db/sitekeys').peekToken(req);
+    // The identity token, for Second Look's questions, before sitekeys takes it off the request (M3); only a token
+    // Vercel signed for this project's production (RK134).
+    const oidc = await require('../db/sitekeys').verifiedToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null, { oidc });
   } catch {

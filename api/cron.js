@@ -105,8 +105,9 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl, p
 
 module.exports = async (req, res) => {
   try {
-    // The identity token, for Second Look's model calls, before sitekeys takes it off the request (M3).
-    const oidc = require('../db/sitekeys').peekToken(req);
+    // The identity token, for Second and Third Look's model calls, before sitekeys takes it off the request (M3); only
+    // a token Vercel signed for this project's production (RK134). Without one, neither runs this minute.
+    const oidc = await require('../db/sitekeys').verifiedToken(req);
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     // The log's two reads from GitHub (the proposals and the witness's copy) happen only here, in production.
     await handle(req, res, db.configured() ? db.run : null, { oidc, proposals: require('./_lib').getProposals, logFetch: globalThis.fetch,

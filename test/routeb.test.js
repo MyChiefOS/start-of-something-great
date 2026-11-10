@@ -175,7 +175,8 @@ test('route B, /api/ready: says what is present and which step failed, never a v
   const env = { GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'x', LAUNCH_STAGE: 'closed' };
   const req = { method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'x'.repeat(40) + '.sig' } };
   const out = await ready.check(req, { env, connect, fetchImpl });
-  assert.deepStrictEqual(out, { identity_token: true, broker: 'ok', keys: true, github_signin: true, github_setting_names: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
+  // A junk token reached the function, but it isn't one Vercel signed (RK134), so Second and Third Look couldn't run.
+  assert.deepStrictEqual(out, { identity_token: true, identity_token_verified: false, broker: 'ok', keys: true, github_signin: true, github_setting_names: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
     database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', stage_repo: 'public', vercel_env: null, launch_stage_set: true, timers: 'closed', rules: 'closed' }, 'stops at the first address that answers');
   assert.ok(!JSON.stringify(out).includes('"x"'), 'names only, never a value');
   // L2: while closed, the check's answer stays inside the check: nothing is written where the site reads settings.
@@ -187,7 +188,11 @@ test('route B, /api/ready: says what is present and which step failed, never a v
   // Without a token, it says so, and the site stays exactly as closed as before.
   sk._reset(); ready._reset();
   const bare = await ready.check({ method: 'GET', headers: {} }, { env: {}, connect, fetchImpl });
-  assert.deepStrictEqual([bare.identity_token, bare.broker, bare.keys, bare.github_signin, bare.github_setting_names, bare.database], [false, 'no_token', false, false, [], {}]);
+  assert.deepStrictEqual([bare.identity_token, bare.identity_token_verified, bare.broker, bare.keys, bare.github_signin, bare.github_setting_names, bare.database], [false, false, 'no_token', false, false, [], {}]);
+  // A token that checks out says so.
+  sk._reset(); ready._reset();
+  const signed = await ready.check({ method: 'GET', headers: { 'x-vercel-oidc-token': 'header.' + 'y'.repeat(40) + '.sig' } }, { env: {}, connect, fetchImpl, verify: async () => ({}) });
+  assert.strictEqual(signed.identity_token_verified, true);
   sk._reset(); ready._reset();
 });
 
@@ -252,4 +257,31 @@ test('route B, /api/ready under load: one check at a time, its answer kept a min
   await ready.handle({ method: 'GET', headers: {} }, res(), { env: {}, connect, fetchImpl });
   assert.strictEqual(logins, 1, 'and a minute of answers from the one check');
   sk._reset(); ready._reset();
+});
+
+test('RK134: Second and Third Look get Vercel\'s identity token only once its signature and every claim check out', async () => {
+  const { oidc, sign, good, now, keys, other } = await signer();
+  const sitekeys = require('../db/sitekeys');
+  const verify = (t) => oidc.verify(t, { now, keys });
+  const asked = (token) => ({ headers: token === undefined ? {} : { 'x-vercel-oidc-token': token } });
+  const real = await sign(good);
+  assert.strictEqual(await sitekeys.verifiedToken(asked(real), { verify }), real);
+  // Forged (signed by a key Vercel never published), another project, a preview, expired, junk, missing: no token.
+  for (const bad of [await sign(good, { key: other.privateKey }), await sign({ ...good, project_id: 'prj_someoneelse' }),
+    await sign({ ...good, environment: 'preview', sub: 'owner:chief-os:project:start-of-something-great:environment:preview' }),
+    await sign({ ...good, iat: now - 9000, nbf: now - 9000, exp: now - 1800 }), 'x'.repeat(40), undefined]) {
+    assert.strictEqual(await sitekeys.verifiedToken(asked(bad), { verify }), null);
+  }
+  // Never throws: a check that fails to run is no token either.
+  assert.strictEqual(await sitekeys.verifiedToken(asked(real), { verify: async () => { throw new Error('keys unavailable'); } }), null);
+  // It reads without removing, so the broker check after it still finds the token (M3 is ensure()'s job).
+  const req = asked(real);
+  await sitekeys.verifiedToken(req, { verify });
+  assert.strictEqual(req.headers['x-vercel-oidc-token'], real);
+  // The timer and the feed hand the AI Gateway only a checked token; nothing else reads the raw header for a model call.
+  for (const f of ['api/cron.js', 'api/feed.js']) {
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    assert.match(src, /const oidc = await require\('\.\.\/db\/sitekeys'\)\.verifiedToken\(req\);/, f);
+    assert.doesNotMatch(src, /peekToken\(req\)/, f);
+  }
 });
