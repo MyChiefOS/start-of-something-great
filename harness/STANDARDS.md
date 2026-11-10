@@ -53,6 +53,7 @@ Verified means read in the repository on Nov 10; inferred means Claude's judgmen
    - It also runs any attack plan Aaron or an agent he directs writes in an issue, and posts the report.
    - The suite's repeatable results gate; anything found by hand goes to RISKS.md.
    - Outside tools such as OWASP ZAP only with Aaron's OK (no outside sources without discussion).
+   - With Aaron's yes on its cost (CHARTER, Nov 10): the preview, a running copy he and his agents can reach and attack by hand. Vercel's preview of each PR, on a Supabase preview branch built only from the migrations and made-up data, never production's (NIST SP 800-53 SA-3, ISO 8.31 and 8.33).
 2. **OWASP A01, CWE-862:** RK140, then RK135, the next two PRs, each red teamed on the copy first.
 3. **OWASP A09, HIPAA audit controls:** audit logging part 2, waiting on Aaron's OK for the Vercel Blob store's cost (already planned).
 4. **Supply chain (SSDF, OWASP A03, SLSA, FedRAMP):** in one PR after RK135, with no new service:
