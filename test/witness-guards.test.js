@@ -131,7 +131,7 @@ test('RK149, the workflow: no text from the event, and no ${{ }} at all, inside 
     for (let j = i + 1; j < lines.length && (!lines[j].trim() || lines[j].match(/^\s*/)[0].length > m[1].length); j++) block.push(lines[j]);
     runs.push(block.join('\n'));
   });
-  assert.strictEqual(runs.length, 5, 'found the five run steps');
+  assert.strictEqual(runs.length, 6, 'found the six run steps (the sixth, the report job\'s, since 057)');
   for (const r of runs) assert.ok(!r.includes('${{'), 'a run step interpolates an expression: ' + r.slice(0, 80));
   for (const m of WORKFLOW.matchAll(/uses: ([^\s]+)/g)) assert.match(m[1], /@[0-9a-f]{40}$/, 'pinned: ' + m[1]);
   assert.match(WORKFLOW, /WITNESS_BASE: \$\{\{ needs\.check\.outputs\.base \}\}/, 'the check’s commit reaches the record job through env');

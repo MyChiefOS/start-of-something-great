@@ -197,7 +197,7 @@ const DEFINERS = {
   // the unlock, the weekly report and the two triggers (the stop, and a report on a post it published), called by
   // nobody directly.
   'app.sl_eligible(uuid)': { owner: 'dog_jevs', callers: '' },
-  // 057 (RK100): only the dog-looks function's role, never the site's.
+  // 057 (RK100): only the looks project's role (dog_looks, through its login dog_looks_web), never the site's.
   'app.sl_claim(integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
   'app.sl_decide(uuid, text, text, text, jsonb, integer, text, boolean, text, integer)': { owner: 'dog_jevs', callers: 'dog_looks' },
   'app.sl_report()': 'dog_jevs',
@@ -310,7 +310,7 @@ const DEFINERS = {
   'app.work_check_decide(uuid, text, text)': 'dog_work',
   'app.work_task_of(uuid)': 'dog_work',
   // Third Look (044), in shadow: the timer claims and records; an administrator switches it; its figures are public.
-  // 057 (RK135): claim, answer and release only for the dog-looks function's role; the changed files it reads only from
+  // 057 (RK135): claim, answer and release only for the looks project's role (dog_looks); the changed files it reads only from
   // GitHub's facts (dog_ghsync); whether it still wants a pull request, and whether a number can be an issue (for the
   // log's proposals), as internal pieces.
   'app.tl_claim(integer)': { owner: 'dog_work', callers: 'dog_looks' },

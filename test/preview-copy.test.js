@@ -138,12 +138,13 @@ test('preview copy, broker: index.ts decides once from SUPABASE_URL, never from 
   assert.match(src, /^const checks = checksFor\(target\(Deno\.env\.get\("SUPABASE_URL"\)\), \{ verify, read \}\);$/m, 'once, at start');
   const serve = src.slice(src.indexOf('Deno.serve('));
   assert.doesNotMatch(serve, /target\(|checksFor\(|SUPABASE_URL/, 'nothing in the request handler chooses the target');
-  assert.match(serve, /verify: \(t: string\) => checks\.verify\(t\)/);
-  assert.match(serve, /return checks\.read\(sql\);/);
+  assert.match(serve, /verify: \(t: string\) => checks\.verify\(t, \{ projects: \["site", "looks"\] \}\)/);
+  assert.match(serve, /return checks\.read\(sql, project\);/);
   assert.match(serve, /ref: checks\.ref,\s+marker: checks\.marker,/);
-  // The pinned identity check (its digest is in dog-keys/source-digest.mjs and was not changed by the preview copy).
+  // The pinned identity check (its digest is in dog-keys/source-digest.mjs). Not changed by the preview copy; changed once,
+  // by 057, to accept a list of our projects (the looks project; Aaron, Nov 10), in PR 2, for its independent review.
   const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'supabase/functions/_shared/vercel-oidc.mjs'))).digest('hex');
-  assert.strictEqual(sha, '178678d3570abbedd2565e55dac7a679b3b9b3231f72155611d33f4729f623fd');
+  assert.strictEqual(sha, '4f24bf0a1908ff058827ee929344b1050a17303697c23febe7dae535325d2fa3');
 });
 
 // ---- The site: which broker it asks ----
@@ -342,7 +343,7 @@ test('preview copy, seed: a fresh copy gets made-up members, an admin, agents, l
     // The branch broker, end to end on the seeded copy: it hands out the branch's login and the copy's own keys.
     const core = await import('../supabase/functions/dog-keys/core.mjs');
     const { target, checksFor } = await import('../supabase/functions/dog-keys/target.mjs');
-    const checks = checksFor(target('https://' + BRANCH_REF + '.supabase.co'), { verify: async () => ({}), read: core.read });
+    const checks = checksFor(target('https://' + BRANCH_REF + '.supabase.co'), { verify: async () => ({ our_project: 'site' }), read: core.read }); // the check names which of our projects (057)
     const r = await core.handle({ method: 'POST', token: 't' }, { verify: checks.verify, Refused: Error, values: () => checks.read(su), ref: checks.ref, marker: checks.marker });
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.body.database.user, 'dog_web.' + BRANCH_REF);

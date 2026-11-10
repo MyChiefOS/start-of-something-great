@@ -32,8 +32,8 @@ const b64 = (s) => {
 
 // Reads the four values from Vault in one query (for the looks project, its login's password only, 057). Never logged
 // or kept beyond the reply. extra: on the preview branch only, the preview copy's mark (./target.mjs); production asks
-// for exactly the four (or the one).
-export async function read(sql, project = 'site', extra = []) {
+// for exactly the four (or the one). project: which of our projects the token was ('site' or 'looks').
+export async function read(sql, extra = [], project = 'site') {
   const names = [...(project === 'looks' ? [LOOKS_ENTRY] : [LOGIN_ENTRY, ...Object.keys(KEYS)]), ...extra];
   const rows = await sql`select name, decrypted_secret as v from vault.decrypted_secrets where name = any(${names})`;
   return Object.fromEntries(rows.map((r) => [r.name, r.v]));

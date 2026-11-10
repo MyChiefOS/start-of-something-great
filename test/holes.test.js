@@ -105,7 +105,7 @@ test('057: the key broker gives the looks project\'s token the looks login and n
   const ask = async (token, idsNow) => {
     const store = vault();
     const out = await core.handle({ method: 'POST', token }, { verify: (t) => oidc.verify(t, { keys, now, projects: ['site', 'looks'], ids: idsNow }), Refused: oidc.Refused,
-      values: (project) => core.read(store.sql, project), note: null });
+      values: (project) => core.read(store.sql, [], project), note: null });
     return { out, asked: store.asked };
   };
   const b64 = (s) => Buffer.from(s).toString('base64');
@@ -137,8 +137,20 @@ test('057: the key broker gives the looks project\'s token the looks login and n
   assert.deepStrictEqual([missing.status, missing.body.missing], [503, ['dog_looks_web_password']]);
   // The deployed broker accepts both projects, and nothing else changed about how it reads or answers.
   const ix = read('supabase/functions/dog-keys/index.ts');
-  assert.match(ix, /verify\(t, \{ projects: \["site", "looks"\] \}\)/);
-  assert.match(ix, /return read\(sql, project\);/);
+  assert.match(ix, /checks\.verify\(t, \{ projects: \["site", "looks"\] \}\)/);
+  assert.match(ix, /return checks\.read\(sql, project\);/);
+  // The preview copy's broker (RK141, ./target.mjs) keeps both: the looks token there gets the branch's own looks login,
+  // and only once the branch's Vault carries the preview copy's mark; the project and the mark both reach the read.
+  const tg = await imp('dog-keys/target.mjs');
+  const asked = [];
+  const ck = tg.checksFor(tg.target('https://abcdefghijklmnopqrst.supabase.co'), { verify: async (t, o) => o, read: async (sql, extra, project) => { asked.push([project, extra]); return {}; } });
+  assert.deepStrictEqual(await ck.verify('t', { projects: ['site', 'looks'] }), { projects: ['site', 'looks'], environment: 'preview' });
+  await ck.read(null, 'looks');
+  assert.deepStrictEqual(asked, [['looks', [tg.PREVIEW_MARKER]]]);
+  const lv = { dog_looks_web_password: 'l'.repeat(40) };
+  assert.deepStrictEqual(core.shapeLooks(lv, { ref: 'abcdefghijklmnopqrst', marker: tg.PREVIEW_MARKER }), { missing: [tg.PREVIEW_MARKER] });
+  assert.strictEqual(core.shapeLooks({ ...lv, [tg.PREVIEW_MARKER]: 'yes' }, { ref: 'abcdefghijklmnopqrst', marker: tg.PREVIEW_MARKER }).database.user,
+    'dog_looks_web.abcdefghijklmnopqrst');
 });
 
 test('057: the looks project is one route on a one-minute cron; it runs only on its own project\'s token, gets its login from the broker, and asks the gateway with its own token', async () => {
@@ -215,7 +227,10 @@ test('control 8: in api/, db/, looks/, secondlook/ and thirdlook/ the only reque
   // Vercel's token: the broker's fixed address, and the gateway's, never redirected.
   const sk = read('db/sitekeys.js');
   assert.match(sk, /const BROKER = 'https:\/\/nksagchwpyljvjiwolmp\.supabase\.co\/functions\/v1\/dog-keys';/);
-  assert.match(sk, /fetchImpl\(BROKER, \{ method: 'POST', headers: \{ authorization: 'Bearer ' \+ token \}, redirect: 'error'/);
+  assert.match(sk, /fetchImpl\(broker, \{ method: 'POST', headers: \{ authorization: 'Bearer ' \+ token \}, redirect: 'error'/);
+  // broker: production's fixed address, or (a preview deployment only) the preview branch's broker at its fixed form (RK141).
+  assert.match(sk, /if \(vercel !== 'preview'\) return BROKER;/);
+  assert.match(sk, /return 'https:\/\/' \+ previewRef \+ '\.supabase\.co\/functions\/v1\/dog-keys';/);
   const s2 = read('secondlook/v1.js');
   assert.match(s2, /const GATEWAY = 'https:\/\/ai-gateway\.vercel\.sh\/v1\/chat\/completions';/);
   assert.strictEqual((s2.match(/fetchImpl\(GATEWAY, \{\s*method: 'POST',? ?(?:\n\s*)?redirect: 'error'/g) || []).length, 2);

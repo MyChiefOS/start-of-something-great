@@ -236,7 +236,7 @@ if (!SERVER) {
       assert.deepStrictEqual((await core.status(su)).map((x) => [x.version, x.sha256]), manifest(), 'the ledger is main\'s');
       const first = await snapshot(su);
       assert.strictEqual(first.members.length, 5);
-      assert.deepStrictEqual(first.vault.map((v) => v.split(':')[0]), ['dog_fingerprint_key_1', 'dog_ip_hash_key', 'dog_preview_copy', 'dog_session_secret', 'dog_web_password']);
+      assert.deepStrictEqual(first.vault.map((v) => v.split(':')[0]), ['dog_fingerprint_key_1', 'dog_ip_hash_key', 'dog_looks_web_password', 'dog_preview_copy', 'dog_session_secret', 'dog_web_password']);
       // The same token can't be used again, though the reset dropped the table it was first recorded in.
       const again = await handleCopy({ body: { mode: 'rebuild' }, token: t1 }, deps);
       assert.deepStrictEqual([again.status, again.body.error], [401, 'refused: token already used']);

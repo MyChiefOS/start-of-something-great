@@ -4,8 +4,8 @@
 // function returns it as x-source-digest (R-3); the daily watch compares it with main's.
 export const SOURCE_FILES = {
   "_shared/vercel-oidc.mjs": "4f24bf0a1908ff058827ee929344b1050a17303697c23febe7dae535325d2fa3",
-  "dog-keys/core.mjs": "3430612c9daea7aa47db5dca11d7fde9b93dbd202afde3cb1fd7ffa445897704",
+  "dog-keys/core.mjs": "2321062f7be2595d1c9b3d1aac0080a6a7017a08086c442f0469321b052506df",
   "dog-keys/index.ts": "403bfe7f931b59dca913e8d72f5443a26f98c0d22139953bd558e6831697723f",
-  "dog-keys/target.mjs": "ac6a9ea4c636f540bfba880062b8a23a61698636c89e2288865f48662ce3ac99",
+  "dog-keys/target.mjs": "0c32ab058fad96d89a8c52b499ee17d017ab2c86a160a0e5174a0ec9bd94a3d6",
 };
-export const SOURCE_DIGEST = "d68be5d7cf3b44dc3432770f3989bf21a9c8899fd649894513a1aea99a0d5d7b";
+export const SOURCE_DIGEST = "b0f659babf3d735b7c40bb3f83724c1ccef75c2e10db7a5e63a520265172be53";
