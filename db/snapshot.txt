@@ -85,6 +85,7 @@ constraint app.brakes brakes_people_per_hour_check CHECK (((people_per_hour >= 0
 constraint app.brakes brakes_pkey PRIMARY KEY (id)
 constraint app.broker_uses broker_uses_failed_check CHECK ((failed >= 0))
 constraint app.broker_uses broker_uses_handed_check CHECK ((handed >= 0))
+constraint app.broker_uses broker_uses_handed_looks_check CHECK ((handed_looks >= 0))
 constraint app.broker_uses broker_uses_hour_key UNIQUE (hour)
 constraint app.broker_uses broker_uses_pkey PRIMARY KEY (id)
 constraint app.browser_keys browser_keys_failed_check CHECK (((failed >= 0) AND (failed <= 10)))
@@ -862,6 +863,7 @@ default app.brakes.created_by = app.current_member()
 default app.brakes.id = app.uuid_v7()
 default app.broker_uses.failed = 0
 default app.broker_uses.handed = 0
+default app.broker_uses.handed_looks = 0
 default app.broker_uses.id = app.uuid_v7()
 default app.browser_keys.created_at = now()
 default app.browser_keys.failed = 0
@@ -1237,8 +1239,8 @@ function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql v
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
 function app.brakes_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=28e005648dc066cc06b44c249b1cdacf
-function app.broker_note(p_outcome text) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=void body_md5=e4edf7f22459d7ba193af2cd633adee2
-function app.broker_watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=1a613dc889bbdb3cb16efae9422287fe
+function app.broker_note(p_outcome text) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=void body_md5=2efb7e5201df9967c5b9c3789995b272
+function app.broker_watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=52a1e102621116a848b7d637e9ea47f6
 function app.browser_key_add(p_member uuid, p_public bytea, p_label text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=d9279899edb7f8eb918f0f497e684359
 function app.browser_key_public(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=5ddb4ef0bc738763a8871ba29c536f44
 function app.browser_key_remove(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d3263de289d756c3e1a4731b1d953ffe

@@ -1,5 +1,6 @@
-// The site's key broker (route B). Accepts only a production function of our own Vercel project, proved by Vercel's
-// identity token, sent as "Authorization: Bearer <token>". Deployed from the merged commit with Supabase's own JWT
+// The key broker (route B). Accepts only a production function of one of our own two Vercel projects, the site or,
+// since 057, the looks project (Second and Third Look), proved by Vercel's identity token, sent as "Authorization:
+// Bearer <token>". The site's token gets the site's login and keys; the looks project's gets its own login only. Deployed from the merged commit with Supabase's own JWT
 // check off (supabase/config.toml), like dog-migrate and jevs: it checks its callers itself. Deployed to the preview
 // copy's branch too, where it accepts only that project's preview functions and serves only the branch's own values:
 // which one it is, it decides once, here, from its own SUPABASE_URL (./target.mjs), never from a request.

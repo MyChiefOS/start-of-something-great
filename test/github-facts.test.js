@@ -123,12 +123,17 @@ test('RK140: the deployed function is dog-github\'s core behind the shared check
 test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s own events, on main, and nothing from the event reaches a command', async () => {
   const core = await import('../supabase/functions/dog-github/core.mjs');
   const y = read('.github/workflows/github-facts.yml');
-  const on = y.split(/^permissions:$/m)[0].split(/^on:$/m)[1];
+  const on = y.split(/^permissions:/m)[0].split(/^on:$/m)[1];
   const events = [...on.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]);
   assert.deepStrictEqual(events.sort(), [...core.EVENTS].sort(), 'its events are exactly the ones dog-github accepts');
   assert.match(on, /pull_request_target:\n {4}types: \[closed\]/);
   assert.match(on, /schedule:\n {4}- cron: '\d+ \* \* \* \*'/, 'hourly, as the backstop');
-  assert.match(y, /^permissions:\n  contents: read\n  pull-requests: read\n  issues: write[^\n]*\n  id-token: write[^\n]*\n\n/m, 'only the rights it needs');
+  // Each job only the rights it needs (review F7): none for the workflow; the reading job can't write to GitHub; only the
+  // alert job, which reads no event text, may comment.
+  assert.match(y, /^permissions: \{\}$/m);
+  assert.match(y, /^ {2}facts:\n[\s\S]*?\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {6}issues: read\n {6}id-token: write[^\n]*\n/m);
+  assert.match(y, /^ {2}alert:\n {4}needs: facts\n {4}if: failure\(\) && github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'\n[\s\S]*?\n {4}permissions:\n {6}issues: write[^\n]*\n {4}steps:/m);
+  assert.strictEqual((y.match(/issues: write/g) || []).length, 1, 'write rights in one place only');
   assert.match(y, /if: github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'/);
   assert.doesNotMatch(y, /\$\{\{\s*(github\.event|github\.head_ref|inputs\.)/, 'no text from the event anywhere');
   assert.doesNotMatch(y, /^\s+ref:/m, 'it checks out main\'s own code, never a pull request\'s');

@@ -9,20 +9,8 @@
 // LAUNCH_PREVIEW_ALLOW, and signed-in-only reading) were removed in the dormant-paths clean-up
 // (harness/REVIEW-2026-10-26.md, R-14). That stage of the live site stays dropped (Aaron, Nov 10).
 //
-// The preview copy (RK141; Aaron, Nov 10: "Okay you can bring preview back", the separate copy with its own throwaway
-// database and made-up data; design/preview-copy.md) is something else: Vercel's preview deployments of a pull request,
-// each getting its database login and keys from the preview branch's own key broker (db/sitekeys.js brokerFor), never
-// production's. A preview deployment may run open only when all of these hold (previewCopy below), and otherwise stays
-// closed exactly as before:
-//   * the preview branch's address is fixed in the code (db/sitekeys.js PREVIEW_REF; until the PR that sets it, it
-//     isn't, so every preview stays closed);
-//   * Vercel gave this deployment none of route A's settings (a database address or a site key): with any of them it
-//     could reach production's database with production's login, so it stays closed;
-//   * LAUNCH_STAGE doesn't close it, and the repository's stage is public: a preview is never more open than the
-//     repository and the close switch allow. So nothing here can open production, or any deployment the repository or
-//     LAUNCH_STAGE closes, even if a deployment's VERCEL_ENV were set to "preview" by hand (test/preview-copy.test.js
-//     checks every combination). VERCEL_ENV only chooses; the real control is the broker's check of Vercel's signed
-//     token, whose environment no setting changes.
+// The separate red-team copy (RK141; Aaron, Nov 10) may run open only under previewCopy's conditions below; the rule,
+// and why it can never open production, is in design/preview-copy.md ("When a deployment of the copy may run open").
 //
 // The stage is the repository's (harness/PLAN.md: Aaron's merge of the go-live release is the go-live decision): launch.json { "stage": "public" | "closed" }, changed only by a pull request he merges. A missing
 // file, or a value that isn't a stage, counts as closed.

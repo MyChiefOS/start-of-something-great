@@ -24,11 +24,9 @@ on:
     - cron: '41 * * * *'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pull-requests: read
-  issues: write # to read the issues, and to add the alert when a run fails
-  id-token: write # only to ask GitHub for the identity token dog-github checks
+# Each job gets only what it needs (the independent review of PR 2, F7): the job that reads public pull request and issue
+# text can't write anything to GitHub; only the alert job, which reads no event text, may comment.
+permissions: {}
 
 # One run at a time. A run waiting behind another is replaced by the newest, which reads everything afresh anyway.
 concurrency:
@@ -39,6 +37,11 @@ jobs:
   facts:
     if: github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write # only to ask GitHub for the identity token dog-github checks
     timeout-minutes: 10
     env:
       FN_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github
@@ -93,8 +96,15 @@ jobs:
           done
           [ "$failed" = 0 ]
 
+  alert:
+    needs: facts
+    if: failure() && github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # only to add the alert to the "JEVs alerts" issue
+    steps:
       - name: Alert when a run fails (the "JEVs alerts" issue, at most once a day)
-        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

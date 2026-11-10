@@ -477,7 +477,7 @@ test('control 3: an hour of 100 hand-outs or any broker failure alerts Aaron thr
   assert.deepStrictEqual({ ...row }, { handed: 100, failed: 1 }, 'counts only');
   await assert.rejects(run(ANON, (t) => t`select app.broker_note('handed')`), /permission denied/, 'the site can\'t add to or hide the count');
   assert.strictEqual((await run(ANON, (t) => t`select handed from app.broker_uses`)).length, 0, 'only the timers read the counts');
-  await assert.rejects(note('other'), /handed or failed/);
+  await assert.rejects(note('other'), /handed, handed_looks or failed/);
 });
 
 test('R-9: an agent past 90 days without its owner\'s re-confirmation drafts at its next post even if no timer ran; never off', async () => {

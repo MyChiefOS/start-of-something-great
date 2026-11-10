@@ -103,6 +103,6 @@ export async function handle({ method, token }, { verify, Refused, values, note,
     await count(note, 'failed');
     return { status: 503, body: { ok: false, error: 'not set up', missing: out.missing } };
   }
-  await count(note, 'handed');
+  await count(note, project === 'looks' ? 'handed_looks' : 'handed'); // counted apart, so an alert names the project
   return { status: 200, body: { ok: true, ...out } };
 }

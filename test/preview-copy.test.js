@@ -133,7 +133,7 @@ test('preview copy, broker: the environment is the target\'s, whatever a caller 
   assert.deepStrictEqual(seen, ['production', 'preview']);
 });
 
-test('preview copy, broker: index.ts decides once from SUPABASE_URL, never from the request; the pinned check is untouched', () => {
+test('preview copy, broker: index.ts decides once from SUPABASE_URL, never from the request; the pinned check changed only by 057\'s list of our projects', () => {
   const src = fs.readFileSync(path.join(root, 'supabase/functions/dog-keys/index.ts'), 'utf8');
   assert.match(src, /^const checks = checksFor\(target\(Deno\.env\.get\("SUPABASE_URL"\)\), \{ verify, read \}\);$/m, 'once, at start');
   const serve = src.slice(src.indexOf('Deno.serve('));

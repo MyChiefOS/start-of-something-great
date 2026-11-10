@@ -135,6 +135,17 @@ test('057: the key broker gives the looks project\'s token the looks login and n
   const missing = await core.handle({ method: 'POST', token: looks }, { verify: (t) => oidc.verify(t, { keys, now, projects: ['looks'], ids }), Refused: oidc.Refused,
     values: async () => ({}) });
   assert.deepStrictEqual([missing.status, missing.body.missing], [503, ['dog_looks_web_password']]);
+  // The hour's count names the project (review F6): the looks project's hand-outs are counted apart from the site's.
+  const notes = [];
+  for (const t of [site, looks]) {
+    const store = vault();
+    await core.handle({ method: 'POST', token: t }, { verify: (x) => oidc.verify(x, { keys, now, projects: ['site', 'looks'], ids }), Refused: oidc.Refused,
+      values: (project) => core.read(store.sql, [], project), note: async (o) => { notes.push(o); } });
+  }
+  assert.deepStrictEqual(notes, ['handed', 'handed_looks']);
+  const mig = read('db/migrations/057_access_holes.sql');
+  assert.match(mig, /p_outcome not in \('handed', 'handed_looks', 'failed'\)/);
+  assert.match(mig, /The key broker handed out the looks project''s login unusually often/);
   // The deployed broker accepts both projects, and nothing else changed about how it reads or answers.
   const ix = read('supabase/functions/dog-keys/index.ts');
   assert.match(ix, /checks\.verify\(t, \{ projects: \["site", "looks"\] \}\)/);
@@ -153,13 +164,21 @@ test('057: the key broker gives the looks project\'s token the looks login and n
     'dog_looks_web.abcdefghijklmnopqrst');
 });
 
+test('057 (review F8): the looks project\'s ID, once set, is never the site\'s, and both are Vercel project IDs or empty', async () => {
+  const oidc = await imp('_shared/vercel-oidc.mjs');
+  assert.notStrictEqual(oidc.LOOKS_PROJECT_ID, oidc.PROJECT_ID, 'a pasted site ID would make the looks route fail');
+  assert.match(oidc.PROJECT_ID, /^prj_[A-Za-z0-9]{20,40}$/);
+  assert.match(oidc.LOOKS_PROJECT_ID, /^(prj_[A-Za-z0-9]{20,40})?$/);
+});
+
 test('057: the looks project is one route on a one-minute cron; it runs only on its own project\'s token, gets its login from the broker, and asks the gateway with its own token', async () => {
   assert.deepStrictEqual(fs.readdirSync(path.join(root, 'looks')).sort(), ['api', 'vercel.json']);
   assert.deepStrictEqual(fs.readdirSync(path.join(root, 'looks', 'api')), ['run.js'], 'only that route');
   const cfg = JSON.parse(read('looks/vercel.json'));
   assert.deepStrictEqual(cfg.crons, [{ path: '/api/run', schedule: '* * * * *' }]);
   assert.deepStrictEqual(Object.keys(cfg.functions), ['api/run.js']);
-  assert.strictEqual(cfg.functions['api/run.js'].installCommand, 'cd .. && npm ci', 'the repository\'s one package, installed where db/ finds it');
+  assert.strictEqual(cfg.functions['api/run.js'].installCommand, 'cd .. && npm ci --ignore-scripts --omit=dev',
+    'the repository\'s one runtime package, installed where db/ finds it, with no install scripts (review F7)');
   const src = read('looks/api/run.js');
   assert.match(src, /sitekeys\.verifiedToken\(req, \{ project: 'looks' \}\)/, 'only a token of the looks project');
   assert.match(src, /db\.looksRun/, 'its own login, acting as dog_looks');
@@ -650,5 +669,29 @@ test('057: the coverage check passes; dog_looks and dog_witness can\'t sign in, 
     'app.sl_decide(uuid,text,text,text,jsonb,integer,text,boolean,text,integer)', 'app.log_witness_report(bigint,bytea,timestamp with time zone,text)',
     'app.log_proposal(integer,text)', 'app.work_github_sync(jsonb)']) {
     assert.strictEqual((await q(`select has_function_privilege('dog_app', '${f}', 'execute') as x`))[0].x, false, f);
+  }
+});
+
+test('057 (review F5): the changed-files list always fits the database\'s 100,000 bytes, and a cut list makes Third Look leave it to a person', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
+  const { shapeFiles } = require('../db/workjobs');
+  const tl = require('../thirdlook/v1');
+  const pg = require('postgres')(process.env.TEST_DATABASE_URL, { max: 1, ssl: false, onnotice: () => {} });
+  try {
+    for (const nameLen of [40, 200, 300]) {
+      const list = [{ filename: 'big.js', status: 'modified', changes: 5000, patch: 'x'.repeat(79000) }];
+      for (let i = 1; i < 100; i++) list.push({ filename: ('d/'.repeat(nameLen)).slice(0, nameLen - 4) + i, status: 'modified', changes: 1, patch: '+a' });
+      const out = shapeFiles(list);
+      const [r] = await pg`select octet_length(${pg.json(out)}::jsonb::text) as n`;
+      assert.ok(r.n <= 100000, nameLen + '-character names: ' + r.n + ' bytes');
+      if (out.some((f) => f.status === 'omitted')) {
+        assert.strictEqual(out[out.length - 1].status, 'omitted', 'the note is last');
+        assert.strictEqual(tl.diffText(out).truncated, true, 'a cut list is never read as whole');
+      }
+    }
+    // A normal pull request is unchanged: every file, every patch, no note.
+    const small = [{ filename: 'a.js', status: 'modified', changes: 2, patch: '+x' }, { filename: 'b.js', status: 'added', changes: 1, patch: '+y' }];
+    assert.deepStrictEqual(shapeFiles(small), small);
+  } finally {
+    await pg.end({ timeout: 5 });
   }
 });

@@ -131,3 +131,22 @@ Claude never calls `merge_branch`, `rebase_branch` or `delete_branch` on the cop
 ## Standards
 
 NIST SP 800-53 SA-3 (a separate test environment in the life cycle) and SA-11 (developer testing); NIST SSDF PO.5 (separate and protect the environments); ISO/IEC 27002 8.31 (development, test and production kept apart) and 8.33 (no real data in tests); HIPAA practice (no real people's data in test systems; practice only, Day One Great isn't covered); MITRE's CWE Top 25 and ATT&CK as the red team's catalog of what to try. How each is met is in the choices above; nothing here claims a certification.
+
+## When a deployment of the copy may run open
+
+(Moved from launch.js's comments, so the served file says less; the independent review of PR 2, F4.)
+
+The preview copy (RK141; Aaron, Nov 10: "Okay you can bring preview back", the separate copy with its own throwaway
+database and made-up data; design/preview-copy.md) is something else: Vercel's preview deployments of a pull request,
+each getting its database login and keys from the preview branch's own key broker (db/sitekeys.js brokerFor), never
+production's. A preview deployment may run open only when all of these hold (previewCopy below), and otherwise stays
+closed exactly as before:
+   * the preview branch's address is fixed in the code (db/sitekeys.js PREVIEW_REF; until the PR that sets it, it
+     isn't, so every preview stays closed);
+   * Vercel gave this deployment none of route A's settings (a database address or a site key): with any of them it
+     could reach production's database with production's login, so it stays closed;
+   * LAUNCH_STAGE doesn't close it, and the repository's stage is public: a preview is never more open than the
+     repository and the close switch allow. So nothing here can open production, or any deployment the repository or
+     LAUNCH_STAGE closes, even if a deployment's VERCEL_ENV were set to "preview" by hand (test/preview-copy.test.js
+     checks every combination). VERCEL_ENV only chooses; the real control is the broker's check of Vercel's signed
+     token, whose environment no setting changes.

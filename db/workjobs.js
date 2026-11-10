@@ -103,18 +103,27 @@ function shapeDetail(p) {
 }
 
 // GitHub's list of one pull request's changed files, shaped for Third Look: name, status, size of change and patch.
-// Patches are kept in order while they fit in FILES_BYTES; a file whose patch doesn't fit is sent without one.
+// Patches are kept in order while they fit in FILES_BYTES; a file whose patch doesn't fit is sent without one. The
+// whole list stays under FILES_TOTAL, counted as the database counts it (jsonb's text adds a space after each colon and
+// comma, allowed for here), so the database never skips it (057, tl_files_record) (the independent review of PR 2, F5). Files that
+// don't fit are left out and one entry without a patch says so, which Third Look reads as "not read whole": a person
+// decides.
+const FILES_TOTAL = 95_000;
+const OMITTED = { filename: '(more changed files than could be sent)', status: 'omitted', changes: 0 };
 function shapeFiles(list) {
   if (!Array.isArray(list)) return null;
+  const size = (v) => Buffer.byteLength(JSON.stringify(v)) + 8; // + jsonb's spaces and the separator
+  const room = FILES_TOTAL - size(OMITTED);
   let bytes = 2;
   const out = [];
   for (const f of list.slice(0, 100)) {
     if (!f || typeof f.filename !== 'string') continue;
     const x = { filename: f.filename.slice(0, 300), status: String(f.status || 'changed').slice(0, 20),
       changes: Number.isSafeInteger(f.changes) && f.changes >= 0 ? f.changes : 0 };
-    const base = Buffer.byteLength(JSON.stringify(x)) + 2;
+    const base = size(x);
+    if (bytes + base > room) { out.push({ ...OMITTED }); return out; }
     const patch = typeof f.patch === 'string' ? Buffer.byteLength(JSON.stringify(f.patch)) + 12 : 0;
-    if (patch && bytes + base + patch <= FILES_BYTES) { x.patch = f.patch; bytes += patch; }
+    if (patch && bytes + base + patch <= Math.min(FILES_BYTES, room)) { x.patch = f.patch; bytes += patch; }
     bytes += base;
     out.push(x);
   }

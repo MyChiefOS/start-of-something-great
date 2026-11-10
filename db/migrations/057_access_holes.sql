@@ -121,8 +121,11 @@ grant select, insert, delete on app.tl_releases to dog_work;
 -- A claim given back is deleted (044 granted select, insert and update only).
 grant delete on app.tl_reviews to dog_work;
 
--- When each proposal's last decision was logged (rows from before 057 count from now).
+-- When each proposal's last decision was logged. Rows from before 057 are dated 25 hours back, so they count neither
+-- toward the first hour's cap of 30 (which would hold back new decisions and send a false alert) nor as a reversal
+-- made in the last day (the independent review of PR 2, F3).
 alter table app.log_proposals_seen add column logged_at timestamptz not null default now();
+update app.log_proposals_seen set logged_at = now() - interval '25 hours';
 create index log_proposals_seen_logged on app.log_proposals_seen (logged_at);
 
 -- ---- Second Look (034, 041): only the looks project ----
@@ -753,3 +756,61 @@ grant execute on function app.log_witness_check() to dog_app;
 
 set local role dog_owner;
 revoke create on schema app from dog_log;
+
+-- ---- The key broker's hourly count, per project (the independent review of PR 2, F6) ----
+-- 027 counted every hand-out as the site's. Since 057 the broker also answers the looks project, so its hand-outs are
+-- counted apart (handed_looks), and an unusual number of them is its own alert, naming the looks project: one copy of
+-- it asks about 6 times an hour. Counts only, never a value; the alerts never stop anything.
+alter table app.broker_uses add column handed_looks integer not null default 0 check (handed_looks >= 0);
+
+create or replace function app.broker_note(p_outcome text) returns void
+language plpgsql set search_path = pg_catalog
+as $$
+begin
+  if p_outcome is null or p_outcome not in ('handed', 'handed_looks', 'failed') then
+    raise exception 'broker_note: handed, handed_looks or failed' using errcode = '22023';
+  end if;
+  insert into app.broker_uses as u (hour, handed, handed_looks, failed)
+    values (date_trunc('hour', now() at time zone 'UTC') at time zone 'UTC', (p_outcome = 'handed')::int,
+            (p_outcome = 'handed_looks')::int, (p_outcome = 'failed')::int)
+    on conflict (hour) do update set handed = u.handed + excluded.handed, handed_looks = u.handed_looks + excluded.handed_looks,
+      failed = u.failed + excluded.failed;
+  delete from app.broker_uses u where u.hour < now() - interval '30 days';
+end
+$$;
+
+create or replace function app.broker_watch_job() returns jsonb
+language plpgsql
+as $$
+declare
+  r record;
+  n integer := 0;
+  limit_per_hour constant integer := 100;
+  looks_per_hour constant integer := 30;
+begin
+  perform app.require_system();
+  for r in select u.hour, u.handed, u.handed_looks, u.failed from app.broker_uses u
+           where u.hour >= date_trunc('hour', now() at time zone 'UTC') at time zone 'UTC' - interval '1 hour' order by u.hour loop
+    if r.handed >= limit_per_hour and app.notify(null, 'alert', 'The key broker handed out the site''s keys unusually often',
+         r.handed || ' hand-outs in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC; each running copy '
+         || 'of the site asks about 6 times an hour. Someone may be using a production identity token of ours (RISKS.md RK88). '
+         || 'Nothing was stopped.', '/controls', null, null, 'alert:broker:busy:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
+      n := n + 1;
+    end if;
+    if r.handed_looks >= looks_per_hour and app.notify(null, 'alert', 'The key broker handed out the looks project''s login unusually often',
+         r.handed_looks || ' hand-outs in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC; each running '
+         || 'copy of Second and Third Look''s project asks about 6 times an hour. Someone may be using that project''s production identity '
+         || 'token (RISKS.md RK135). Nothing was stopped.', '/controls', null, null,
+         'alert:broker:looks:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
+      n := n + 1;
+    end if;
+    if r.failed > 0 and app.notify(null, 'alert', 'The key broker failed',
+         r.failed || ' failed answers in the hour from ' || to_char(r.hour at time zone 'UTC', 'YYYY-MM-DD HH24:00') || ' UTC (the login '
+         || 'or a key missing from Vault, or a read error). The site keeps its last good keys meanwhile. Nothing was stopped.',
+         '/controls', null, null, 'alert:broker:failed:' || to_char(r.hour at time zone 'UTC', 'YYYYMMDDHH24')) then
+      n := n + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('broker_alerts', n);
+end
+$$;
