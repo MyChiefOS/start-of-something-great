@@ -104,7 +104,8 @@ test('RK140: dog-github answers POST only, refuses a bad token before reading th
     assert.match(r.body.error, why, text);
   }
   assert.strictEqual((await bad('x'.repeat(core.MAX_REQUEST + 1))).status, 413);
-  assert.deepStrictEqual(core.parse('{"mode":"sync","facts":{"prs":[{"number":1}]}}'), { mode: 'sync', facts: { prs: [{ number: 1 }], issues: [], details: [], refused: 0 } });
+  assert.deepStrictEqual(core.parse('{"mode":"sync","facts":{"prs":[{"number":1}]}}'), { mode: 'sync', facts: { prs: [{ number: 1 }], issues: [], details: [], refused: 0 },
+    files: [], proposals: [] });
 });
 
 test('RK140: the deployed function is dog-github\'s core behind the shared check, with Supabase\'s own JWT check off', () => {
@@ -166,6 +167,7 @@ test('RK140: the read inside GitHub gives each merge with who merged it, by GitH
     asked.push(p);
     if (p.startsWith('/pulls?') && p.endsWith('page=1')) return Array.from({ length: 100 }, (_, i) => pr(i + 1));
     if (p.startsWith('/pulls?')) return Array.from({ length: 50 }, (_, i) => pr(i + 101));
+    if (p.startsWith('/issues?labels=proposal')) return []; // 057: the proposals' labels (test/holes.test.js)
     if (p.startsWith('/issues?')) throw Object.assign(new Error('limited'), { githubStatus: 403 });
     if (p === '/pulls/5') return { ...pr(5), additions: 3, deletions: 1, merged_by: { login: 'MyChiefOS', id: AARON_ID } };
     if (p === '/pulls/6') return { ...pr(6), additions: 3, deletions: 1, merged_by: { login: 'mychiefos', id: 12345 } };
@@ -234,14 +236,15 @@ test('RK140: only dog_ghsync records GitHub\'s facts: the site\'s role can\'t ca
   await assert.rejects(as('dog_work', (t) => t`select * from app.work_github_wanted(5)`), /only the GitHub facts function reads this/);
   assert.strictEqual((await q('select count(*)::int as n from app.work_github_prs where number = 9401'))[0].n, 0, 'nothing was recorded');
   // dog-github's own path (core.mjs, as the deployed function runs it) records them.
-  assert.deepStrictEqual(await core.sync(su, { prs: [pr(9401, { merged_at: null, state: 'open' })], issues: [], details: [], refused: 0 }), { prs: 1, tasks: 0, closed: 0 });
-  assert.deepStrictEqual(await core.wanted(su), []);
+  assert.deepStrictEqual(await core.sync(su, { prs: [pr(9401, { merged_at: null, state: 'open' })], issues: [], details: [], refused: 0 }),
+    { prs: 1, tasks: 0, closed: 0, files: 0, proposals: 0 });
+  assert.deepStrictEqual(await core.wanted(su), { wanted: [], files: [] });
   // And end to end, with a token: wanted, then the same token again (refused).
   const { sign, good, deps } = await setup();
   const { tokenUsed } = await import('../supabase/functions/dog-migrate/core.mjs');
   const token = 'Bearer ' + (await sign(good));
   const ask = () => core.handle({ method: 'POST', authorization: token, text: async () => '{"mode":"wanted"}' }, deps({ db: () => su, seen: (j) => tokenUsed(su, j) }));
-  assert.deepStrictEqual(await ask(), { status: 200, body: { ok: true, wanted: [] } });
+  assert.deepStrictEqual(await ask(), { status: 200, body: { ok: true, wanted: [], files: [] } });
   assert.deepStrictEqual(await ask(), { status: 401, body: { ok: false, error: 'refused: token already used' } });
   // The database's own check of the facts answers 400, not 500.
   const bad = await core.handle({ method: 'POST', authorization: 'Bearer ' + (await sign({ ...good, jti: crypto.randomUUID() })),
@@ -251,11 +254,11 @@ test('RK140: only dog_ghsync records GitHub\'s facts: the site\'s role can\'t ca
 
 test('RK140: a merged pull request passes by rule only when GitHub\'s read says Aaron\'s account merged it; anything else goes to a person, and Third Look leaves it alone', async () => {
   const core = await import('../supabase/functions/dog-github/core.mjs');
-  const sync = (f) => core.sync(su, { prs: [], issues: [], details: [], refused: 0, ...f });
+  const sync = ({ files = [], proposals = [], ...f }) => core.sync(su, { prs: [], issues: [], details: [], refused: 0, ...f }, { files, proposals });
   await sync({ prs: [pr(9501), pr(9502), pr(9503)] });
   // Listed as merged, but GitHub's read of each isn't in yet: no task, nothing passes; dog-github is asked to read them.
   assert.strictEqual((await q('select count(*)::int as n from app.work_tasks where github_kind = \'pr\' and github_number in (9501, 9502, 9503)'))[0].n, 0);
-  assert.deepStrictEqual((await core.wanted(su)).filter((n) => n >= 9501 && n <= 9503), [9501, 9502, 9503]);
+  assert.deepStrictEqual((await core.wanted(su)).wanted.filter((n) => n >= 9501 && n <= 9503), [9501, 9502, 9503]);
   await sync({ details: [det(9501), det(9502, { merged_by: 'octo', merged_by_id: 583231 }),
     det(9503, { merged_by: 'mychiefos', merged_by_id: 99999 }) /* Aaron's login, but not his account */] });
   const subs = Object.fromEntries((await q(`select t.github_number as n, s.id, s.status, s.route, s.decided_by, s.jevs_rules, t.status as task, t.id as task_id
@@ -268,13 +271,20 @@ test('RK140: a merged pull request passes by rule only when GitHub\'s read says 
     assert.deepStrictEqual([subs[n].status, subs[n].route, subs[n].jevs_rules], ['review', 'admin', 'W14'], n + ': a person decides');
     assert.strictEqual((await q(`select count(*)::int as n from app.work_points where submission_id = '${subs[n].id}'`))[0].n, 0, n + ': no points');
   }
-  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account.
+  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account (since 057 it claims as
+  // dog_looks, and reads the changed files the GitHub facts workflow delivers: it doesn't even ask for the others').
   await q('update app.tl_settings set mode = \'on\', last_claim_at = null');
-  const claim = () => as('dog_app', (t) => t`select * from app.tl_claim(3)`).then((r) => r.map((x) => x.pr_number));
-  assert.deepStrictEqual((await claim()).filter((n) => n >= 9501 && n <= 9503), [], 'not merged by Aaron\'s account: Third Look leaves it to a person');
+  const claim = () => as('dog_looks', (t) => t`select * from app.tl_claim(3)`).then((r) => r.map((x) => x.pr_number));
+  const mine = (list) => list.filter((n) => n >= 9501 && n <= 9503);
+  assert.deepStrictEqual(mine((await core.wanted(su)).files), [], 'no changed files are asked for: not merged by Aaron\'s account');
+  await sync({ files: [9502, 9503].map((n) => ({ number: n, files: [{ filename: 'a.js', status: 'modified', changes: 1, patch: '@@ -1 +1 @@\n-a\n+b' }] })) });
+  assert.strictEqual((await q('select count(*)::int as n from app.tl_files where number in (9502, 9503)'))[0].n, 0, 'nor recorded if sent');
+  assert.deepStrictEqual(mine(await claim()), [], 'not merged by Aaron\'s account: Third Look leaves it to a person');
   await as('dog_work', (t) => t`update app.work_github_prs set merged_by_id = ${AARON_ID} where number = 9502`);
+  assert.deepStrictEqual(mine((await core.wanted(su)).files), [9502], 'once GitHub credits the merge to Aaron, its changed files are asked for');
+  await sync({ files: [{ number: 9502, files: [{ filename: 'a.js', status: 'modified', changes: 1, patch: '@@ -1 +1 @@\n-a\n+b' }] }] });
   await q('update app.tl_settings set last_claim_at = null');
-  assert.deepStrictEqual((await claim()).filter((n) => n >= 9501 && n <= 9503), [9502], 'the same work, once GitHub credits the merge to Aaron');
+  assert.deepStrictEqual(mine(await claim()), [9502], 'the same work, once GitHub credits the merge to Aaron');
 });
 
 test('RK140: a pull request recorded before 055 (by the site) can\'t become finished work until GitHub\'s read confirms it', async () => {
@@ -284,13 +294,13 @@ test('RK140: a pull request recorded before 055 (by the site) can\'t become fini
     values (9601, 'Old', 'octo', 'closed', now(), 'main', now(), 5, 0, 'mychiefos', now())`);
   await core.sync(su, { prs: [], issues: [], details: [], refused: 0 });
   assert.strictEqual((await q('select count(*)::int as n from app.work_tasks where github_kind = \'pr\' and github_number = 9601'))[0].n, 0, 'no task from the site\'s row');
-  assert.ok((await core.wanted(su)).includes(9601), 'GitHub is asked to read it again');
+  assert.ok((await core.wanted(su)).wanted.includes(9601), 'GitHub is asked to read it again');
   // A number GitHub doesn't have (a row the site's role could have forged before 055) is never confirmed; it can't
   // crowd out real work: a pull request GitHub's listing has just shown comes first.
   await as('dog_work', (t) => t`insert into app.work_github_prs (number, title, author, state, merged_at, base, created_at, seen_at)
     values (9602, 'Forged', 'x', 'closed', now(), 'main', now(), now() - interval '2 days')`);
   await core.sync(su, { prs: [pr(9603)], issues: [], details: [], refused: 0 });
-  const order = (await core.wanted(su)).filter((n) => n === 9602 || n === 9603);
+  const order = (await core.wanted(su)).wanted.filter((n) => n === 9602 || n === 9603);
   assert.deepStrictEqual(order, [9603, 9602]);
   await core.sync(su, { prs: [], issues: [], details: [det(9601, { merged_by: 'octo', merged_by_id: 583231 })], refused: 0 });
   const [row] = await q('select merged_by, merged_by_id, merge_read_at is not null as read from app.work_github_prs where number = 9601');
@@ -299,7 +309,7 @@ test('RK140: a pull request recorded before 055 (by the site) can\'t become fini
   assert.deepStrictEqual([s.status, s.jevs_rules], ['review', 'W14']);
 });
 
-test('RK140: the coverage check passes with dog_ghsync, which can\'t sign in, belongs to no role, holds no table right and runs only the two functions', async () => {
+test('RK140: the coverage check passes with dog_ghsync, which can\'t sign in, belongs to no role, holds no table right and runs only its own functions', async () => {
   const { problems } = require('../db/checks');
   const snapshot = read('db/snapshot.txt').split('\n').filter((l) => l && !l.startsWith('#'));
   assert.deepStrictEqual(await problems(su, { snapshot }), []);
@@ -308,7 +318,9 @@ test('RK140: the coverage check passes with dog_ghsync, which can\'t sign in, be
   assert.deepStrictEqual(r, { rolcanlogin: false, rolinherit: false, rolbypassrls: false, member_of: 0 });
   const fns = await q(`select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'app' and has_function_privilege('dog_ghsync', p.oid, 'execute') order by 1`);
-  assert.deepStrictEqual(fns.map((x) => x.fn), ['app.work_github_sync(jsonb)', 'app.work_github_wanted(integer)']);
+  // 055's two, and since 057 the changed files Third Look reads and the proposal decisions, from the same facts.
+  assert.deepStrictEqual(fns.map((x) => x.fn), ['app.log_proposals_record(jsonb)', 'app.tl_files_record(jsonb)', 'app.tl_files_wanted(integer)',
+    'app.work_github_sync(jsonb)', 'app.work_github_wanted(integer)']);
   const tables = await q(`select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'app' and c.relkind = 'r' and has_table_privilege('dog_ghsync', c.oid, 'select, insert, update, delete')`);
   assert.strictEqual(tables[0].n, 0);

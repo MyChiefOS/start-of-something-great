@@ -18,7 +18,7 @@ const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 test('R-3: every function has a source digest file, and each is up to date (run node scripts/function-digests.js)', () => {
   const want = digests.build();
-  assert.deepStrictEqual(Object.keys(want).sort(), ['dog-github', 'dog-keys', 'dog-migrate', 'jevs'].map((n) => 'supabase/functions/' + n + '/source-digest.mjs'));
+  assert.deepStrictEqual(Object.keys(want).sort(), ['dog-github', 'dog-keys', 'dog-looks', 'dog-migrate', 'jevs'].map((n) => 'supabase/functions/' + n + '/source-digest.mjs'));
   for (const [f, text] of Object.entries(want)) assert.strictEqual(read(f), text, f + ' is stale: run node scripts/function-digests.js');
 });
 
@@ -28,6 +28,9 @@ test('R-3: the digest covers exactly the files each function is deployed with (O
     'dog-migrate/core.mjs', 'dog-migrate/index.ts', 'dog-migrate/target.mjs']);
   assert.deepStrictEqual(digests.sources('dog-keys'), ['_shared/vercel-oidc.mjs', 'dog-keys/core.mjs', 'dog-keys/index.ts', 'dog-keys/target.mjs']);
   assert.deepStrictEqual(digests.sources('dog-github'), ['_shared/github-oidc.mjs', 'dog-github/core.mjs', 'dog-github/index.ts', 'dog-migrate/core.mjs']);
+  // 057: Second and Third Look, behind the key broker's check of Vercel's token.
+  assert.deepStrictEqual(digests.sources('dog-looks'), ['_shared/vercel-oidc.mjs', 'dog-looks/core.mjs', 'dog-looks/index.ts', 'dog-looks/mask.mjs',
+    'dog-looks/second.mjs', 'dog-looks/third.mjs']);
   // Every relative import of every source file is itself a source (nothing deployed is left out of the digest).
   for (const fn of digests.functions()) {
     const files = new Set(digests.sources(fn));

@@ -631,41 +631,37 @@ test('the witness keeps each checkpoint, re-hashes the entries, and raises the a
   assert.deepStrictEqual([out.alarm, Boolean(out.state.last_error)], [null, true]);
 });
 
-test('the site reads the witness: a matching copy is "ok"; a copy that disagrees or an alarm marks the log unverified, alerts Aaron in his inbox, stays so until a reviewed migration clears it, and nothing stops', async () => {
-  const jobs = require('../db/logjobs');
+// Since 057 (RK144) the witness reports itself: the log-witness workflow sends its own result to dog-github (proved by
+// GitHub's identity token), which records it as dog_witness. These run dog-github's own code for that last step, with
+// the request shaped by the workflow's own command (db/logjobs.js witnessRequest). The site's role can't report it.
+const witnessSays = async (st) => (await import('../supabase/functions/dog-github/core.mjs')).witness(su, require('../db/logjobs').witnessRequest(st).report);
+
+test('the witness reports itself: a matching copy is "ok"; a copy that disagrees or an alarm marks the log unverified, alerts Aaron in his inbox, stays so until a reviewed migration clears it, and nothing stops', async () => {
   const cp = (await logGet('checkpoint')).json.checkpoint;
   const state = (over) => ({ good: { size: cp.size, root: cp.root }, last_run: new Date().toISOString(), ...over });
-  const fetchState = (s) => async () => ({ ok: true, status: 200, json: async () => s });
-  jobs._reset();
-  let out = await jobs.run(run, { fetchImpl: fetchState(state()) });
-  assert.strictEqual(out.witness, 'ok');
+  assert.strictEqual(await witnessSays(state()), 'ok');
   const w = (await logGet('checkpoint')).json.witnesses[0].site_reading;
   assert.deepStrictEqual([w.status, w.witness_size], ['ok', cp.size]);
-  // No copy on the branch (not made yet): nothing to compare, so "unknown", never an alarm.
-  jobs._reset();
-  out = await jobs.run(run, { fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-  assert.strictEqual(out.witness, 'unknown');
+  // No good checkpoint yet (its first run): nothing to compare, so "unknown", never an alarm.
+  assert.strictEqual(await witnessSays({ last_run: new Date().toISOString() }), 'unknown');
   assert.strictEqual((await su`select count(*)::int as n from app.notices where dedupe_key like 'log.%'`)[0].n, 0);
   // A copy of the same size with another root.
-  jobs._reset();
-  out = await jobs.run(run, { fetchImpl: fetchState(state({ good: { size: cp.size, root: crypto.randomBytes(32).toString('base64') } })) });
-  assert.strictEqual(out.witness, 'unverified');
+  assert.strictEqual(await witnessSays(state({ good: { size: cp.size, root: crypto.randomBytes(32).toString('base64') } })), 'unverified');
   const n = await su`select title, body, link from app.notices where member_id is null and kind = 'alert' and dedupe_key like 'log.unverified.%'`;
   assert.strictEqual(n.length, 1);
   assert.match(n[0].body, /doesn't match this log's tree\. The site keeps running/);
-  // Asked again, the same reason alerts once.
-  jobs._reset();
-  await jobs.run(run, { fetchImpl: fetchState(state({ good: { size: cp.size, root: crypto.randomBytes(32).toString('base64') } })) });
-  assert.strictEqual((await su`select count(*)::int as n from app.notices where dedupe_key like 'log.unverified.%'`)[0].n, 1, 'one alert per reason, however often it is read');
+  // Reported again, the same reason alerts once.
+  await witnessSays(state({ good: { size: cp.size, root: crypto.randomBytes(32).toString('base64') } }));
+  assert.strictEqual((await su`select count(*)::int as n from app.notices where dedupe_key like 'log.unverified.%'`)[0].n, 1, 'one alert per reason, however often it is reported');
   // A bundle says so, and agents keep posting.
   const b = (await logGet('receipt/' + postId)).json;
   assert.strictEqual(b.site_status.status, 'unverified');
   await say(bot, 'still posting while the log is unverified');
-  // The review of 038, M3: a matching copy, sent by the site's own login, doesn't clear it.
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: fetchState(state()) })).witness, 'unverified', 'the alarm stays');
+  // The review of 038, M3: a matching copy doesn't clear it; and since 057 the site's own login can't report at all.
+  assert.strictEqual(await witnessSays(state()), 'unverified', 'the alarm stays');
   const [head] = await su`select size, app.log_root(size) as root from app.log_head`;
-  assert.strictEqual((await anon((t) => t`select app.log_witness_report(${Number(head.size)}, ${head.root}, now(), null) as s`))[0].s, 'unverified', 'not even with the tree\'s own root');
+  await assert.rejects(anon((t) => t`select app.log_witness_report(${Number(head.size)}, ${head.root}, now(), null) as s`), /permission denied for function log_witness_report/,
+    'not even with the tree\'s own root');
   assert.strictEqual((await logGet('checkpoint')).json.witnesses[0].site_reading.alarm_until_cleared, true);
   await assert.rejects(anon((t) => t`select app.log_clear_alarm('the site tries to clear its own alarm')`), /permission denied/);
   // A reviewed migration clears it, and the clearing is itself an entry in the log, public.
@@ -674,40 +670,41 @@ test('the site reads the witness: a matching copy is "ok"; a copy that disagrees
   const entry = JSON.parse(e.entry_jcs);
   assert.deepStrictEqual([entry.type, entry.actor, entry.subject], ['log.alarm_cleared', 'log', 'log:witness']);
   assert.match(entry.payload.reason, /doesn't match this log's tree/);
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: fetchState(state()) })).witness, 'ok');
+  assert.strictEqual(await witnessSays(state()), 'ok');
   // The witness's own alarm, the same way: it stays until a migration clears it.
-  jobs._reset();
-  out = await jobs.run(run, { fetchImpl: fetchState(state({ alarm: { reason: 'Split view: two different signed checkpoints of 5 entries.' } })) });
-  assert.strictEqual(out.witness, 'unverified');
+  assert.strictEqual(await witnessSays(state({ alarm: { reason: 'Split view: two different signed checkpoints of 5 entries.' } })), 'unverified');
   assert.match((await logGet('checkpoint')).json.witnesses[0].site_reading.reason, /raised an alarm: Split view/);
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: fetchState(state()) })).witness, 'unverified');
+  assert.strictEqual(await witnessSays(state()), 'unverified');
   await as('dog_owner', (t) => t`select app.log_clear_alarm('Checked: a test alarm, not a real split view.')`);
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: fetchState(state()) })).witness, 'ok');
+  assert.strictEqual(await witnessSays(state()), 'ok');
+  // A run can't be reported as later than now.
+  await witnessSays(state({ last_run: new Date(Date.now() + 3600e3).toISOString() }));
+  assert.ok((await su`select witnessed_at <= now() as ok from app.log_witness`)[0].ok);
 });
 
-test('039: the witness counts as stopped after 12 hours without a run, not 2, since GitHub runs its 15-minute schedule every few hours', async () => {
+test('039 and 057: the witness counts as stopped after 12 hours without a run, not 2; since the site no longer reports it, the timer\'s own check says so', async () => {
   const jobs = require('../db/logjobs');
   const cp = (await logGet('checkpoint')).json.checkpoint;
-  const read = (hoursAgo) => async () => ({ ok: true, status: 200, json: async () => ({ good: { size: cp.size, root: cp.root }, last_run: new Date(Date.now() - hoursAgo * 3600e3).toISOString() }) });
+  const ran = (hoursAgo) => ({ good: { size: cp.size, root: cp.root }, last_run: new Date(Date.now() - hoursAgo * 3600e3).toISOString() });
   const stale = async () => (await su`select count(*)::int as n from app.notices where dedupe_key like 'log.stale.%'`)[0].n;
   const before = await stale();
   for (const h of [3, 8, 11.5]) {
-    jobs._reset();
-    assert.strictEqual((await jobs.run(run, { fetchImpl: read(h) })).witness, 'ok', h + ' hours since its last run is GitHub’s pace, not a stop');
+    assert.strictEqual(await witnessSays(ran(h)), 'ok', h + ' hours since its last run is GitHub’s pace, not a stop');
+    assert.strictEqual((await jobs.run(run)).witness, 'ok', 'and the timer agrees');
   }
   assert.strictEqual(await stale(), before, 'no alert');
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: read(13) })).witness, 'stale');
+  // The witness stops reporting: nothing arrives, and after 12 hours the timer's check (no input from its caller) says so.
+  await su`update app.log_witness set witnessed_at = now() - interval '13 hours'`;
+  assert.strictEqual((await jobs.run(run)).witness, 'stale');
   assert.match((await logGet('checkpoint')).json.witnesses[0].site_reading.reason, /^The witness on GitHub last ran /);
   assert.strictEqual(await stale(), before + 1, 'one alert');
-  jobs._reset();
-  await jobs.run(run, { fetchImpl: read(14) });
+  await jobs.run(run);
   assert.strictEqual(await stale(), before + 1, 'once a day');
-  jobs._reset();
-  assert.strictEqual((await jobs.run(run, { fetchImpl: read(0.1) })).witness, 'ok', 'a new run puts it back to ok');
+  // A late report says the same.
+  assert.strictEqual(await witnessSays(ran(14)), 'stale');
+  assert.strictEqual(await stale(), before + 1, 'still once a day');
+  assert.strictEqual(await witnessSays(ran(0.1)), 'ok', 'a new run puts it back to ok');
+  assert.strictEqual((await jobs.run(run)).witness, 'ok');
 });
 
 test('JEVs’s batch waits for the hour to end, takes at most 250 a call, runs one call at a time, and logs each decision once under a random ID', async () => {
@@ -788,22 +785,18 @@ test('JEVs’s hourly batch from a fresh database: decisions before the migratio
   }
 });
 
-test('Aaron’s proposal decisions: logged once per change, public facts only, from the timer route’s reading of GitHub', async () => {
-  const jobs = require('../db/logjobs');
-  jobs._reset();
-  const list = { proposals: [{ number: 12, status: 'approved' }, { number: 13, status: 'waiting' }, { number: 14, status: 'shipped' }] };
-  let out = await jobs.run(run, { getProposals: async () => list });
-  assert.strictEqual(out.proposals, 2);
-  jobs._reset();
-  out = await jobs.run(run, { getProposals: async () => list });
-  assert.strictEqual(out.proposals, 0, 'the same decisions aren’t logged twice');
-  jobs._reset();
-  out = await jobs.run(run, { getProposals: async () => ({ proposals: [{ number: 12, status: 'shipped' }] }) });
-  assert.strictEqual(out.proposals, 1);
+test('Aaron’s proposal decisions: logged once per change, public facts only, from GitHub’s labels through the GitHub facts workflow (057)', async () => {
+  const gh = await import('../supabase/functions/dog-github/core.mjs');
+  const facts = { prs: [], issues: [], details: [], refused: 0 };
+  const send = async (proposals) => (await gh.sync(su, facts, { proposals })).proposals;
+  const list = [{ number: 12, status: 'approved' }, { number: 13, status: 'waiting' }, { number: 14, status: 'shipped' }];
+  assert.strictEqual(await send(list), 2);
+  assert.strictEqual(await send(list), 0, 'the same decisions aren’t logged twice');
+  assert.strictEqual(await send([{ number: 12, status: 'shipped' }]), 1);
   const rows = (await su`select entry_jcs from app.log_entries where subject = 'proposal:12' order by seq`).map((r) => JSON.parse(r.entry_jcs));
   assert.deepStrictEqual(rows.map((e) => [e.type, e.actor, e.payload.decision]), [['proposal.decided', 'github:mychiefos', 'approved'], ['proposal.decided', 'github:mychiefos', 'shipped']]);
   assert.deepStrictEqual(Object.keys(rows[0].payload).sort(), ['decision', 'proposal']);
-  await assert.rejects(anon((t) => t`select app.log_proposal(12, 'waiting')`), /approved, declined or shipped/);
+  await assert.rejects(anon((t) => t`select app.log_proposal(12, 'shipped')`), /permission denied for function log_proposal/, 'the site’s role can’t add one');
   assert.strictEqual((await logGet('receipt/proposal-12')).json.entry.entry.payload.decision, 'shipped');
 });
 

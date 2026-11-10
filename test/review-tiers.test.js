@@ -16,7 +16,6 @@ const postgres = require('postgres');
 const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
-const runner = require('../db/secondlook');
 const tiers = require('../db/review-tiers');
 const { migrate } = require('../scripts/migrate');
 const { trustSystem, promote, asSignin } = require('./helpers');
@@ -60,6 +59,9 @@ const CLEAN = { q1: 'no', q2: 'no', q3: 'no', q4: 'no', q5: 'no', q6: 'no', q7: 
 let server, su, web;
 const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 const run = (ctx, fn) => db.tx(web, ctx, fn);
+// Since 057 (RK100) Second Look runs in the dog-looks function: its own code, as dog_looks.
+const second = async (opts) => (await import('../supabase/functions/dog-looks/core.mjs')).runSecond(su, TOKEN, opts);
+const looks = (fn) => su.begin(async (t) => { await t.unsafe('set local role dog_looks'); return fn(t); });
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
 const answer = (a = CLEAN) => JSON.stringify({ ...a, reason: 'An ordinary post.' });
@@ -271,7 +273,7 @@ test('2.6: over the budget, items wait with their age shown and nothing is ever 
   assert.ok(used0 >= 1, 'already past today\'s budget of 1');
   // The timers, Second Look in shadow and the tick all run: nothing waiting changes.
   await fresh();
-  await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
+  await second({ fetchImpl: gateway(answer()) });
   await tick();
   await require('../api/cron.js').handle({ method: 'GET', headers: {} }, res(), run, { now: () => Date.now() + 3600e3 });
   for (const id of ids) assert.strictEqual(await status(id), 'waiting', id);
@@ -302,7 +304,7 @@ test('2.6: a canary\'s truth is committed in the log before Second Look decides 
   const id = await held(poster, 'Canary carrier notes');
   await fresh();
   const seen = [];
-  const claimed = await run({ actor: 'anon' }, (t) => t`select * from app.sl_claim(3)`);
+  const claimed = await looks((t) => t`select * from app.sl_claim(3)`);
   assert.strictEqual(claimed.length, 2, 'the held post and one canary');
   const canary = claimed.find((x) => x.post_id !== id);
   // The same shape as a held post: words, the questions that held it, an account, a sign-in, the model.
@@ -312,7 +314,7 @@ test('2.6: a canary\'s truth is committed in the log before Second Look decides 
   assert.match(planted.detail.commitment, /^[0-9a-f]{64}$/);
   assert.strictEqual(JSON.stringify(planted.detail).includes('bad'), false, 'the truth isn\'t in the commitment entry');
   // Second Look clears both (a known-bad canary slips through).
-  const decide = (post) => run({ actor: 'anon' }, (t) => t`select app.sl_decide(${post}::uuid, 'v1', 'mistral/ministral-3b', 'clear', ${t.json(CLEAN)}::jsonb, 0, 'fine', false, null, 10) as r`).then((r) => r[0].r);
+  const decide = (post) => looks((t) => t`select app.sl_decide(${post}::uuid, 'v1', 'mistral/ministral-3b', 'clear', ${t.json(CLEAN)}::jsonb, 0, 'fine', false, null, 10) as r`).then((r) => r[0].r);
   seen.push(await decide(canary.post_id), await decide(id));
   assert.deepStrictEqual(seen, ['logged', 'logged']);
   assert.strictEqual(await decide(canary.post_id), 'refused', 'once');
@@ -372,13 +374,13 @@ test('the sample: 5% of low-risk posts drawn while Second Look runs, re-read aft
   // (Its own poster too: the first poster's removed posts now count against its track record, J10, outside the gate.)
   const h = await held(quiet, 'Held before the sample');
   await fresh();
-  let claimed = await run({ actor: 'anon' }, (t) => t`select post_id, held from app.sl_claim(1)`);
+  let claimed = await looks((t) => t`select post_id, held from app.sl_claim(1)`);
   assert.deepStrictEqual(claimed.map((x) => x.post_id), [h], JSON.stringify(claimed) + JSON.stringify(await q(`select key, value from app.jevs_decisions d, jsonb_each(d.scores) where d.subject_id = '${h}' and value::text <> '0'`)) + JSON.stringify(await q(`select source, classifier, resolved_at from app.review_flags where post_id = '${h}'`)));
   await fresh();
-  claimed = await run({ actor: 'anon' }, (t) => t`select post_id, held from app.sl_claim(1)`);
+  claimed = await looks((t) => t`select post_id, held from app.sl_claim(1)`);
   assert.deepStrictEqual(claimed.map((x) => [x.post_id, x.held]), [[live2, []]]);
   // Its re-read rejects it: it stays live and comes to Aaron as a sample, flagged by Second Look.
-  const r = await run({ actor: 'anon' }, (t) => t`select app.sl_decide(${live2}::uuid, 'v1', 'mistral/ministral-3b', 'reject', ${t.json({ ...CLEAN, q8: 'yes' })}::jsonb, 90, 'breaks the terms', false, null, 10) as r`);
+  const r = await looks((t) => t`select app.sl_decide(${live2}::uuid, 'v1', 'mistral/ministral-3b', 'reject', ${t.json({ ...CLEAN, q8: 'yes' })}::jsonb, 90, 'breaks the terms', false, null, 10) as r`);
   assert.strictEqual(r[0].r, 'logged');
   assert.strictEqual(await status(live2), 'live');
   const item = await itemOf(aaron, live2);

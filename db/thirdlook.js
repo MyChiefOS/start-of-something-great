@@ -1,35 +1,18 @@
-// Third Look's runner (044), from the timer route (/api/cron, every minute), after Second Look's: asks the database for
-// the next work it may look at (at most 3, at most once every 50 seconds, within its daily cap, never when off), reads
-// each pull request's changed lines from GitHub's public API, puts each to the model (thirdlook/v1.js) and records the
-// suggestion. In shadow that is all: nothing changes for the work, and the people deciding don't see it. Each item is
-// its own transaction, after the model has answered, so no database lock waits on the network. Every failure is
-// recorded as "a person", and the item is never given again (one try each).
+// Third Look's runner (044). Since 057 (RISKS.md RK135) Third Look runs in the Supabase function dog-looks, not here: the
+// site's database role can no longer claim Third Look's work or record its answers (only dog_looks, dog-looks's role,
+// can), and the site no longer reads the pull request's changed files: the GitHub facts workflow reads them from
+// GitHub, and dog-github records them (app.tl_files). The timer route (/api/cron, every minute) only asks dog-looks to
+// run, sending the site's own Vercel identity token, which dog-looks checks (as the key broker does) and uses for
+// Vercel's AI Gateway. dog-looks claims the next work itself (at most 3, at most once every 50 seconds, within the
+// daily cap, never when off), asks the model, suggests by code and records the answer; a refused or failed model call
+// gives the work back instead of spending its try. The caller chooses nothing but that Third Look runs now.
 'use strict';
 
-const v1 = require('../thirdlook/v1');
+const { callLooks } = require('./secondlook');
 
-async function run(runTx, token, { gh = null, fetchImpl, n = 3 } = {}) {
-  let claimed;
-  try {
-    claimed = await runTx({ actor: 'anon' }, (t) => t`select * from app.tl_claim(${n})`);
-  } catch {
-    return { claimed: 0, decided: 0 };
-  }
-  let decided = 0;
-  for (const it of claimed) {
-    let files = null;
-    if (gh && Number.isSafeInteger(it.pr_number)) {
-      try { const f = await gh('/pulls/' + it.pr_number + '/files?per_page=100'); files = Array.isArray(f) ? f : null; } catch { files = null; }
-    }
-    const r = await v1.review({ item: { taskTitle: it.task_title, taskDescription: it.task_description, note: it.note, prTitle: it.pr_title },
-      files, token, model: it.model, fetchImpl });
-    try {
-      await runTx({ actor: 'anon' }, (t) => t`select app.tl_decide(${it.submission_id}::uuid, ${r.version}, ${r.model}::text, ${r.suggestion},
-        ${r.answers ? t.json(r.answers) : null}::jsonb, ${r.reason}, ${r.failClosed}, ${r.truncated}, ${r.latencyMs}::integer)`);
-      decided++;
-    } catch { /* never given again: one try each */ }
-  }
-  return { claimed: claimed.length, decided };
+// runTx is no longer used: dog-looks reaches the database itself. Kept so the timer route's call is unchanged.
+async function run(runTx, token, { fetchImpl } = {}) {
+  return callLooks('third', token, { fetchImpl, timeoutMs: 90_000 });
 }
 
 module.exports = { run };

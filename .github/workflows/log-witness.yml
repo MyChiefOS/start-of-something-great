@@ -12,6 +12,12 @@
 # on, and the record job fails if the branch has moved since. record() refuses a state that drops an alarm, lowers the
 # last good checkpoint, changes the pinned key or lowers the run count. Each is a red run: it alerts and blocks nothing.
 # No text from the event reaches a shell: the steps read only GITHUB_REPOSITORY and the check job's outputs, from env.
+# report (057, RK144): once the record job has written it, the witness reports its own result (its last good
+#           checkpoint, when it ran, its alarm) to the Supabase function dog-github with a short-lived GitHub identity
+#           token, which dog-github accepts only from this file on main of this repository; it records it as
+#           dog_witness. The site no longer reads the branch for this, and its database role can't report the witness.
+#           If this job fails or stops, the run is red, and after 12 hours with no report the site alerts that the
+#           witness has stopped (app.log_witness_check); nothing is ever blocked.
 name: Public log witness
 
 on:
@@ -124,3 +130,44 @@ jobs:
           if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
           git -c user.name='log-witness' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Witnessed"
           git push -q origin log-witness
+
+  report:
+    needs: [check, record]
+    if: github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write # only to ask GitHub for the identity token dog-github checks
+    env:
+      FN_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github
+    steps:
+      # main's own code, only the file that shapes the report; no packages.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: |
+            /db/logjobs.js
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Report what the witness recorded to dog-github
+        env:
+          WITNESS_STATE_B64: ${{ needs.check.outputs.state }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$WITNESS_STATE_B64" | base64 -d > state.json
+          node db/logjobs.js witness-request state.json request.json
+          t=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$FN_URL" | jq -r .value)
+          echo "::add-mask::$t"
+          code=$(curl -sS --max-time 60 -o answer.json -w '%{http_code}' -X POST "$FN_URL" \
+            -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data-binary @request.json) || code=none
+          unset t
+          if [ "$code" != 200 ]; then
+            echo "dog-github answered $code to the witness's report"
+            jq -c '{error}' answer.json 2>/dev/null || true
+            exit 1
+          fi
+          jq -c '{status}' answer.json

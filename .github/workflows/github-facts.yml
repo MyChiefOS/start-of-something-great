@@ -4,6 +4,8 @@
 # this repository, for the events below, each token once, and records the facts as dog_ghsync, the one database role
 # that may. The site's own role can't. There is no secret anywhere: no database password, no Supabase key, nothing to
 # paste. Each run reads everything afresh (db/workjobs.js, gather), so a missed or repeated event changes nothing.
+# Since 057 (RK135, RK112) it also reads the changed files of the merged pull requests Third Look is waiting to read
+# (dog-github says which) and Aaron's decisions on proposals, from their labels; dog-github records both as dog_ghsync.
 # A failed run records nothing and passes nothing; work on a pull request waits for its facts (055: once none has
 # arrived for 6 hours, a claim running out no longer fails it). It alerts on the
 # "JEVs alerts" issue, at most once a day, and GitHub emails the failure as for any run.
@@ -82,7 +84,7 @@ jobs:
           for f in requests/*.json; do
             post "$f" answer.json
             if [ "$code" = 200 ]; then
-              jq -c '{prs, tasks, closed}' answer.json
+              jq -c '{prs, tasks, closed, files, proposals}' answer.json
             else
               echo "dog-github answered $code to $(basename "$f")"
               jq -c '{error}' answer.json 2>/dev/null || true

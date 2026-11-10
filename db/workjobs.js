@@ -17,6 +17,11 @@
 // GitHub's read of one pull request: its changed lines, state, merge, base, merge commit and who merged it.
 // An issue becomes an open task only when it has the "task" label: the repository's other issues (uptime alarms,
 // JEVs's alerts, proposals) are the site's own business, not work for the public.
+// Since 057 (RK135, RK112) each run also reads, for the database: the changed files of up to 5 merged pull requests
+// Third Look is waiting to read (app.tl_files_wanted; each file's name, status, size of change and patch, within
+// 80,000 bytes a pull request: a file whose patch doesn't fit is sent without it, so Third Look sees the change wasn't
+// read whole and leaves it to a person), and Aaron's decisions on proposals, from the labels of the issues labelled
+// "proposal" (api/_proposals.js reads them, as /proposals does). Both are public GitHub data. At most 29 calls a run.
 // A failure in one step never stops the other or the timers: it changes nothing, and a later run tries again.
 'use strict';
 
@@ -29,6 +34,11 @@ const path = require('path');
 
 // The detail (GitHub's read of one pull request) of at most this many a run: app.work_github_wanted gives at most 20.
 const DETAILS = 20;
+// The changed files of at most this many pull requests a run (app.tl_files_wanted gives at most 5), each within this
+// many bytes of JSON (the database takes at most 100,000).
+const FILES = 5;
+const FILES_BYTES = 80_000;
+const DECIDED = new Set(['approved', 'declined', 'shipped']);
 const REPO_API = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
@@ -92,6 +102,33 @@ function shapeDetail(p) {
     merged_by: merged ? login(p.merged_by) : null, merged_by_id: merged ? userId(p.merged_by) : null };
 }
 
+// GitHub's list of one pull request's changed files, shaped for Third Look: name, status, size of change and patch.
+// Patches are kept in order while they fit in FILES_BYTES; a file whose patch doesn't fit is sent without one.
+function shapeFiles(list) {
+  if (!Array.isArray(list)) return null;
+  let bytes = 2;
+  const out = [];
+  for (const f of list.slice(0, 100)) {
+    if (!f || typeof f.filename !== 'string') continue;
+    const x = { filename: f.filename.slice(0, 300), status: String(f.status || 'changed').slice(0, 20),
+      changes: Number.isSafeInteger(f.changes) && f.changes >= 0 ? f.changes : 0 };
+    const base = Buffer.byteLength(JSON.stringify(x)) + 2;
+    const patch = typeof f.patch === 'string' ? Buffer.byteLength(JSON.stringify(f.patch)) + 12 : 0;
+    if (patch && bytes + base + patch <= FILES_BYTES) { x.patch = f.patch; bytes += patch; }
+    bytes += base;
+    out.push(x);
+  }
+  return out;
+}
+
+// Aaron's decisions on proposals, from GitHub's labels (api/_proposals.js, as /proposals reads them): number and status.
+function shapeProposals(issues) {
+  if (!Array.isArray(issues)) return [];
+  const { shapeList } = require('../api/_proposals');
+  return shapeList(issues).proposals.filter((p) => DECIDED.has(p.status) && Number.isSafeInteger(p.number) && p.number > 0)
+    .map((p) => ({ number: p.number, status: p.status })).slice(0, 100);
+}
+
 // The work timer, every minute from the timer route. Since 055 it reads nothing from GitHub.
 async function run(runDb) {
   const out = {};
@@ -101,7 +138,7 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
-async function gather({ get, wanted = [] }) {
+async function gather({ get, wanted = [], files: filesWanted = [] }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -113,16 +150,22 @@ async function gather({ get, wanted = [] }) {
     const d = shapeDetail(await read('/pulls/' + n)); // null when refused: the next run asks again
     if (d) details.push(d);
   }
-  return { prs, issues, details, refused };
+  const files = [];
+  for (const n of (Array.isArray(filesWanted) ? filesWanted : []).filter((x) => Number.isSafeInteger(x) && x > 0 && x < 1e7).slice(0, FILES)) {
+    const list = shapeFiles(await read('/pulls/' + n + '/files?per_page=100')); // null when refused: the next run asks again
+    if (list) files.push({ number: n, files: list });
+  }
+  const proposals = shapeProposals(await read('/issues?labels=proposal&state=all&per_page=100&sort=created&direction=desc'));
+  return { prs, issues, details, refused, files, proposals };
 }
 
-// The facts as dog-github's sync requests: at most 100 pull requests each (the database's limit); the issues, details
-// and refused count go with the first.
+// The facts as dog-github's sync requests: at most 100 pull requests each (the database's limit); the issues, details,
+// refused count, changed files and proposal decisions go with the first.
 function requests(facts) {
   const out = [];
   for (let i = 0; i < Math.max(facts.prs.length, 1); i += 100) {
     out.push({ mode: 'sync', facts: { prs: facts.prs.slice(i, i + 100), issues: i === 0 ? facts.issues : [], details: i === 0 ? facts.details : [],
-      refused: i === 0 ? facts.refused : 0 } });
+      refused: i === 0 ? facts.refused : 0, files: i === 0 ? facts.files || [] : [], proposals: i === 0 ? facts.proposals || [] : [] } });
   }
   return out;
 }
@@ -143,15 +186,15 @@ async function main(argv, env = process.env) {
   if (argv[0] !== 'gather' || argv.length !== 3) throw new Error('usage: node db/workjobs.js gather <wanted.json> <folder>');
   const answer = JSON.parse(fs.readFileSync(argv[1], 'utf8'));
   if (!answer || answer.ok !== true || !Array.isArray(answer.wanted)) throw new Error('dog-github\'s wanted answer is not usable');
-  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), wanted: answer.wanted });
+  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [] });
   const dir = path.resolve(argv[2]);
   fs.mkdirSync(dir, { recursive: true });
   const reqs = requests(facts);
   reqs.forEach((r, i) => fs.writeFileSync(path.join(dir, String(i + 1) + '.json'), JSON.stringify(r)));
-  console.log('read ' + facts.prs.length + ' pull requests, ' + facts.issues.length + ' task issues, ' + facts.details.length + ' details ('
-    + facts.refused + ' refused); ' + reqs.length + ' request(s)');
+  console.log('read ' + facts.prs.length + ' pull requests, ' + facts.issues.length + ' task issues, ' + facts.details.length + ' details, '
+    + facts.files.length + ' changed-file lists, ' + facts.proposals.length + ' proposal decisions (' + facts.refused + ' refused); ' + reqs.length + ' request(s)');
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 
-module.exports = { run, gather, requests, githubGet, main, shapePr, shapeIssue, shapeDetail, refsOf, DETAILS };
+module.exports = { run, gather, requests, githubGet, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES };
