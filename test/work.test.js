@@ -604,6 +604,9 @@ test('this repository’s merged pull requests are finished work, approved by th
   const p1 = await page(byRef['PR #9101'].id);
   assert.deepStrictEqual([p1.submissions[0].points.points, p1.submissions[0].points.independence, p1.submissions[0].decided_by], [10, 100, 'jevs']);
   assert.deepStrictEqual(p1.done_by, { kind: 'github', name: '@octo', github: 'octo' });
+  // Its description is the site's own sentence, shown whole: the date and the count once read as one phone number to
+  // the public pages' mask ("merged into main on [number hidden] lines changed"; 054).
+  assert.match(p1.description, /^Pull request #9101 in this site's repository, merged into main on \d{4}-\d{2}-\d{2}; 40 lines changed\.$/);
   const p2 = await page(byRef['PR #9102'].id);
   assert.deepStrictEqual([p2.size, p2.submissions[0].points.points, p2.submissions[0].points.independence], [3, 15, 50], 'merged by its author: half');
   // Only issues the site was given are tasks (db/workjobs.js passes only those labelled "task").
