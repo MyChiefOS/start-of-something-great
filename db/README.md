@@ -37,6 +37,15 @@ Nobody applies changes by hand, Claude included, and no database password or key
 
 When the runner's own code changes, Claude deploys it once from the merged commit and records it in OPERATIONS.md. The workflow waits for that deploy (up to 40 minutes) rather than failing.
 
+**The preview copy's runner (RK141; PR 2; built, not live; design: `design/preview-copy.md`, "Building and reseeding the copy").** The same runner code is also deployed to the one Supabase preview branch. Each copy decides once, at start, from its own `SUPABASE_URL` (`supabase/functions/dog-migrate/target.mjs`), which Supabase sets and no one can set by hand. Production's runner is unchanged: outside three marked blocks its `index.ts` is the old file byte for byte, and `core.mjs` is untouched. The branch's runner accepts only `.github/workflows/preview-copy.yml` on `main`, by a push or by hand, with a token addressed to its own address, and only `{"mode":"rebuild"}`. Each runner refuses the other's token by its address and by its workflow. A rebuild (`dog-migrate/copy.mjs`) is one transaction under the runner's lock:
+
+1. A guard: only a copy carrying the preview mark in Vault, or a database with no site keys and no members, agents or posts, may be reset. Production has members and site keys and no mark.
+2. The reset: the `app` schema is dropped and the seed's site keys and mark are deleted from Vault.
+3. Every migration of the merged commit, by the unchanged `core.mjs`.
+4. The seed (`supabase/functions/_shared/preview-seed.mjs`), which still refuses any database that holds data.
+
+Any failure leaves the old copy as it was. The code also refuses the reset anywhere but the branch, so it can't run on production two independent ways (both tested, `test/preview-migrate.test.js`). The workflow runs on each merge to `main` and by hand. Until the branch's reference is fixed in its `PREVIEW_REF` (equal to `db/sitekeys.js`'s, by test), it does nothing and says so. The copy therefore holds `main`'s schema: a pull request's new migration reaches it only once merged.
+
 **The one-time fresh build (PR 2, Oct 24).** `db/reset/fresh-build.sql` ran once, on Oct 24, against the Oct 23 build (014_passkeys at its Oct 23 fingerprint): it refused if any table held a row (other than the ledger, the runner's records and seeded settings), dropped the old schema, and the runner then built 001 onward. `db/manifest.json` no longer names it (R-14, the runner-alerts PR): it could never run again, because the live ledger holds 014_subagents. The runner still accepts a reset entry, and `test/runner.test.js` still rehearses this one, naming it itself.
 
 **The way back.** The Oct 23 build can be rebuilt exactly: a PR restoring those files (commit 9b1fcd7) with a reset entry in `db/manifest.json` (written by `scripts/manifest.js`, which that PR would change to add it) whose "when" is `015_change_log`. `test/runner.test.js` proves it on every build.
