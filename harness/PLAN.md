@@ -206,6 +206,7 @@ The brief is the handoff's CODING_AGENT_SPEC.md (Nov 5, version 1), now in [desi
 ### Third Look trust (RK134, RK140, RK135; Aaron, Nov 9: "RK134 and RK135 wait for the next PR"). Claude. In progress Nov 10.
 
 1. RK134, the Vercel identity token checked before Second or Third Look uses it, and #122's live proof: the third-look-trust PR.
+1a. The red-team copy (RK141), before RK140, so RK140 and RK135 are attacked before they're merged.
 2. RK140, found by the RK135 design review: GitHub's facts only from a GitHub workflow (GitHub's identity token) through a Supabase function with its own role; the sync revoked from the site's role; a pass needs Aaron's merge.
 3. RK135: Third Look's claim and decide in its own Supabase function and role, reading step 2's facts; failures release the item rather than spend its try.
 Each proven live (OPERATIONS.md) before the next starts.
@@ -213,15 +214,16 @@ Each proven live (OPERATIONS.md) before the next starts.
 ### The standards (Aaron, Nov 10: "use this standards as part of your framework"; and "Add those additional worth adding standards. Also add HIPPA and FedRAMP processes"). Claude. Recorded Nov 10.
 
 harness/STANDARDS.md maps each standard to the project. Its gaps in order:
-1. OWASP A01 and CWE-862: RK140, then RK135 (above).
-2. Audit logging part 2, waiting on the Blob cost OK.
-3. One supply-chain PR after RK135: a software bill of materials, a daily dependency watch that flags CISA's KEV list, and signed build records.
-4. ESLint, errors only.
-5. Before go-live, one pass each over ASVS, the rest of the CWE Top 25, OWASP's LLM Top 10, WCAG 2.2 AA and CISA's bad practices, findings to RISKS.md.
-6. A written incident response plan, tested yearly.
-7. PCI DSS with payments.
-8. After go-live, a yearly penetration test, brought to Aaron as a costed choice.
-Until 1 to 6 are done and an independent reviewer for JEVs agrees the code is reasonably cleaned up, every PR opens its bad news with the standards acknowledgment (harness/STANDARDS.md).
+1. RK141, first: a red-team copy in GitHub Actions (the site, a throwaway database, test accounts), Claude's attack suite on every PR, and any attack plan Aaron or his agent writes, so RK140 and RK135 are red teamed before he merges them.
+2. OWASP A01 and CWE-862: RK140, then RK135 (above).
+3. Audit logging part 2, waiting on the Blob cost OK.
+4. One supply-chain PR after RK135: a software bill of materials, a daily dependency watch that flags CISA's KEV list, and signed build records.
+5. ESLint, errors only.
+6. Before go-live, one pass each over ASVS, the rest of the CWE Top 25, OWASP's LLM Top 10, WCAG 2.2 AA and CISA's bad practices, findings to RISKS.md.
+7. A written incident response plan, tested yearly.
+8. PCI DSS with payments.
+9. After go-live, a yearly penetration test; until then, step 1's attack suite on every PR.
+Until 1 to 7 are done and an independent reviewer for JEVs agrees the code is reasonably cleaned up, every PR opens its bad news with the standards acknowledgment (harness/STANDARDS.md).
 
 ### Design alignment (Aaron, Nov 9: "Why don't the page align to design ... the design should align", "provide a detailed list of all of the items needed"). Claude. Built Nov 10 in one PR (#122; Aaron, Nov 9: "Address it ALL in the 1 PR"); Aaron merged it Nov 10, and it was proven live the same day (OPERATIONS.md).
 
