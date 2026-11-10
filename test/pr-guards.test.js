@@ -109,6 +109,8 @@ test('RK146: every changed file under .github/ is named, not just one, and only 
   assert.doesNotMatch(p, /checks\.yml/);
   assert.match(p, /codeql-config\.yml/, 'named elsewhere in the description does not count');
   assert.match(p, /old\.yml/, 'a deleted workflow counts too');
+  // The words mid-sentence are not a "Workflow change:" line.
+  assert.match(problems({ base: 'main', body: 'abcdef1\nThere is no workflow change: .github/workflows/checks.yml is untouched' }, [ok], [wf('.github/workflows/checks.yml')]).join(), /no "Workflow change: \.github\/workflows\/checks\.yml" line/);
   // A longer path that merely starts with the changed one does not name it.
   assert.match(problems({ base: 'main', body: 'abcdef1\nWorkflow change: .github/workflows/checks.yml.bak' }, [ok], [wf('.github/workflows/checks.yml')]).join(), /no "Workflow change: \.github\/workflows\/checks\.yml" line/);
 });
