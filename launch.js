@@ -33,11 +33,14 @@
 'use strict';
 
 const STAGES = ['closed', 'public'];
-// Route A's settings (CHARTER.md section 2, Oct 26): if Vercel gives a preview any of these, the preview copy stays
-// closed. Read once, when this file is first loaded, which is always before db/sitekeys.js puts the broker's answer in
-// the same environment (it asks the stage first), so the copy's own values never count as Vercel's.
-const ROUTE_A = ['DATABASE_URL', 'SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
-const routeA = (env) => ROUTE_A.filter((k) => env[k] != null && String(env[k]) !== '');
+// Route A's settings (CHARTER.md section 2, Oct 26): a database address, or one of the site's keys or the timer secret.
+// If Vercel gives a preview any of these, the preview copy stays closed. Read once, when this file is first loaded,
+// which is always before db/sitekeys.js puts the broker's answer in the same environment (it asks the stage first), so
+// the copy's own values never count as Vercel's. Whether an address is set is asked of db/index.js, the one place
+// that reads it (G1).
+const ROUTE_A_KEYS = ['SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
+const routeA = (env) => [...(require('./db').hasAddress(env) ? ['database address'] : []),
+  ...ROUTE_A_KEYS.filter((k) => env[k] != null && String(env[k]) !== '')];
 const BOOT = Object.freeze(routeA(process.env));
 const lower = (x) => (x == null ? '' : String(x).trim().toLowerCase());
 
