@@ -346,6 +346,22 @@ const CLASSIFIER_LABELS = { secondlook: 'Second Look, re-reading a 5% sample of 
 
 // The JEVs behaviour watch (026): a signed-in member who isn't the administrator asking for the review queue or the
 // owner controls alerts Aaron, once a day per member and page. Alerts only; a failure never changes the answer.
+// RK145 (the web app review, F4): an administrator's read that writes to the audit log (the queue, a reveal, the owner
+// controls; /api/work/admin and /console) is a GET, and the session cookie is SameSite=Lax, so a link on another site
+// could make Aaron's browser write false records. So these reads answer only when the browser says the request came
+// from this site (Sec-Fetch-Site: same-origin, as the admin pages' own fetches send) or from Aaron himself (none: an
+// address he typed or bookmarked, which no other site can cause), and any Origin it sends is ours. A request with no
+// Sec-Fetch-Site is refused, as a write with no Origin is (signin/http.js, sameSite), and as a link start is
+// (signin/flow.js, fromOurPages): every browser in use sends it (Chrome 76, Firefox 90, Safari 16.4 and later). The
+// refusal comes before the session is looked up, so nothing is read, written or recorded; it locks nobody out, and the
+// same read from the admin pages works at once.
+const OWN_PAGES = 'For safety this is answered only from dayonegreat.com itself: open it from the admin pages, or type its address.';
+function fromOwnPages(req) {
+  const site = req.headers['sec-fetch-site'];
+  if (site !== 'same-origin' && site !== 'none') return false;
+  return req.headers.origin === undefined || req.headers.origin === ORIGIN;
+}
+
 async function reach(run, who, what) {
   if (!who || !who.memberId || !run) return;
   try { await run(session.actorFor(who), (t) => store.watchReach(t, what)); } catch (e) { jevs.logFailure('behaviour watch', e); }
@@ -612,6 +628,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
   if (q.queue !== undefined) {
     if (!run) return reply(res, 200, { open: 0, items: [] });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see the review queue.' }); }
@@ -623,6 +640,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
   // 041's review, L3: a queued post's words with nothing masked, for Aaron only, each time recorded in the audit log.
   if (q.reveal !== undefined) {
     if (!run) return reply(res, 404, { error: 'No such post.' });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see a post\u2019s hidden details.' }); }
@@ -639,6 +657,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
   if (q.controls !== undefined) {
     if (!run) return reply(res, 200, { totals: null, everyone: null, owners: [] });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can see the owner controls.' }); }
@@ -769,6 +788,8 @@ module.exports.UNTRUSTED_FIELDS = UNTRUSTED_FIELDS;
 module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;
 module.exports.searchProblem = searchProblem;
+module.exports.fromOwnPages = fromOwnPages;
+module.exports.OWN_PAGES = OWN_PAGES;
 module.exports.shownMatch = shownMatch;
 // Every database call in this route knows its request, for the audit log (053).
 module.exports = require('../db').entry(module.exports);

@@ -48,6 +48,7 @@ const { onSite, sameSite } = require('../signin/http');
 const { ValidationError } = require('../db/validate');
 const { maskContacts } = require('./_proposals');
 const { UNTRUSTED_NOTE } = require('./_lib');
+const { fromOwnPages, OWN_PAGES } = require('./feed'); // RK145: the same check as the feed's administrator reads
 
 const ORIGIN = 'https://dayonegreat.com';
 const CACHE = 30;
@@ -195,6 +196,10 @@ async function handle(req, res, run) {
       return pub(res, out);
     }
     if (req.method === 'GET') {
+      // RK145: the administrator's reads write to the audit log, so a browser must be on our own pages (api/feed.js,
+      // fromOwnPages). An agent's key is never sent by a browser on its own; an agent is refused below, as not an
+      // administrator.
+      if ((route === 'admin' || route === 'console') && !agentkey.fromRequest(req).present && !fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
       if (route !== 'console' && !query(req, [])) return reply(res, 400, { error: 'This address takes no query. ' + STEPS });
       const who = await actor(req, res, run, { write: false });
       if (!who) return;

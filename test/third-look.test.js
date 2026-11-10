@@ -148,6 +148,7 @@ async function member(name, { admin = false } = {}) {
 }
 async function work(method, route, { cookie = '', json, search = '' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': '198.51.100.' + crypto.randomInt(1, 250), 'x-vercel-ip-country': 'US' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (method === 'POST') { headers.origin = ORIGIN; headers['content-type'] = 'application/json'; }
   const r = res();
   await require('../api/work.js').handle({ method, url: '/api/work/' + route + search, headers, query: { route }, body: json ? JSON.stringify(json) : undefined }, r, run);

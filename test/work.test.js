@@ -124,6 +124,7 @@ function res() {
 let ip = 1;
 async function call(handler, method, route, { cookie = '', json, key, search = '', host = 'dayonegreat.com', origin } = {}, runner) {
   const headers = { host, cookie, 'x-vercel-forwarded-for': '198.51.' + (ip >> 8) + '.' + (ip++ & 255), 'x-vercel-ip-country': 'US' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (method === 'POST' && cookie) headers.origin = origin || ORIGIN;
   if (key) headers.authorization = 'Bearer ' + key;
   if (json !== undefined) headers['content-type'] = 'application/json';

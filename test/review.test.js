@@ -73,6 +73,7 @@ function res() {
 }
 function req(method, url, { query = {}, cookie = '', origin, json, host = 'dayonegreat.com', ip = '203.0.113.7' } = {}) {
   const headers = { host, cookie, 'x-forwarded-for': ip };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (origin) headers.origin = origin;
   if (json !== undefined) headers['content-type'] = 'application/json';
   return { method, url, headers, query, body: json !== undefined ? JSON.stringify(json) : undefined };
@@ -398,6 +399,23 @@ test('the API: the queue is Aaron\'s only, masked and private; decisions and rep
   assert.ok(!JSON.stringify(qd.json).includes('@example.com'), 'contacts masked (P4)');
   assert.deepStrictEqual(item.actions, ['keep', 'remove']);
   assert.deepStrictEqual(qd.json.untrusted_fields, ['items[].body', 'items[].author.name', 'items[].notes[]']);
+
+  // RK145: a reveal writes "revealed this post" to the audit log, so a link from another site gets 403 and records
+  // nothing, while Aaron's own pages (and an address he types) get the words and the record.
+  const reveals = async () => (await q(`select count(*)::int as n from app.audit_log where action = 'review.reveal' and subject_id = '${p.id}'`))[0].n;
+  const before = await reveals();
+  for (const site of ['cross-site', 'same-site', undefined]) {
+    const forged = req('GET', '/api/feed', { query: { reveal: p.id }, cookie: aaronCookie });
+    if (site) forged.headers['sec-fetch-site'] = site; else delete forged.headers['sec-fetch-site'];
+    assert.strictEqual((await call(forged)).status, 403, String(site));
+  }
+  assert.strictEqual(await reveals(), before, 'a link from another site records nothing');
+  const own = await call(req('GET', '/api/feed', { query: { reveal: p.id }, cookie: aaronCookie }));
+  assert.deepStrictEqual([own.status, own.json.body], [200, 'call me at jane@example.com']);
+  const typed = req('GET', '/api/feed', { query: { reveal: p.id }, cookie: aaronCookie });
+  typed.headers['sec-fetch-site'] = 'none';
+  assert.strictEqual((await call(typed)).status, 200);
+  assert.strictEqual(await reveals(), before + 2, 'each of Aaron\'s own reveals is recorded');
 
   // Deciding: members 403, wrong origin 403, Aaron one call, with its reason and the hash of the words (041).
   const bind = { reason: 'private_info', sha256: item.sha256 };

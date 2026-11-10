@@ -216,6 +216,7 @@ async function member(name, { admin = false } = {}) {
 }
 async function feed(method, { cookie, json, query = {} }) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': '203.0.113.62', 'x-vercel-ip-country': 'US' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (method === 'POST') { headers.origin = ORIGIN; headers['content-type'] = 'application/json'; }
   const r = res();
   await require('../api/feed.js').handle({ method, url: '/api/feed', headers, query, body: json === undefined ? undefined : JSON.stringify(json) }, r, run);
