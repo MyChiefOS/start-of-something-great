@@ -50,7 +50,8 @@ jobs:
           node scripts/function-digests.js --check > /dev/null 2>&1 || echo "- main's digest files are out of date (node scripts/function-digests.js --check failed); the comparison below may be wrong" >> findings.txt
           for dir in supabase/functions/*/; do
             fn=$(basename "$dir")
-            case "$fn" in _*) continue ;; esac
+            # dog-copy is deployed only to the preview branch, never to production (RK141; Aaron, Nov 10).
+            case "$fn" in _*|dog-copy) continue ;; esac
             [ -f "$dir/index.ts" ] || continue
             want=$(sed -n 's/^export const SOURCE_DIGEST = "\([0-9a-f]\{64\}\)";$/\1/p' "$dir/source-digest.mjs" 2>/dev/null)
             code=$(curl -sS --max-time 30 -o /dev/null -D headers.txt -w '%{http_code}' -X GET "$FUNCTIONS_URL/$fn" || echo none)
