@@ -20,6 +20,26 @@ const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
 const LINE_BREAK = /[\t\n\r\u2028\u2029]/;
 const HIDDEN = /[\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/;
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+// Unicode tag characters (U+E0000 to U+E007F) are invisible, and each tag letter spells an ASCII letter, so a post can
+// carry words people never see but some AI models read ("ASCII smuggling"; RK143). They are removed, never refused:
+// the three flag emoji built from them (England, Scotland, Wales: a black flag, tag letters, a cancel tag) are kept
+// whole, so an ordinary post with a flag is never turned away. Any other tag sequence (another region's flag, which
+// almost no system shows) keeps only its black flag.
+const TAG = /[\u{E0000}-\u{E007F}]/u;
+const TAGS_OR_FLAG = /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})|[\u{E0000}-\u{E007F}]+/gu;
+function stripTags(value) {
+  const s = String(value == null ? '' : value);
+  return TAG.test(s) ? s.replace(TAGS_OR_FLAG, (m, flag) => flag || '') : s;
+}
+// For the fixed checks only (never stored or shown): each run of stray tag characters spelt out in ASCII on a line of
+// its own, so the checks read what a model that decodes them would read.
+function decodeTags(value) {
+  const s = String(value == null ? '' : value);
+  return TAG.test(s) ? s.replace(TAGS_OR_FLAG, (m, flag) => flag || '\n' + [...m].map((ch) => {
+    const c = ch.codePointAt(0) - 0xE0000;
+    return c >= 0x20 && c < 0x7F ? String.fromCharCode(c) : '';
+  }).join('') + '\n') : s;
+}
 
 // Text: normalized to NFC, trimmed, and limited in characters (Unicode code points, as Postgres counts them).
 function text(field, value, { min = 1, max, pattern, multiline = false } = {}) {
@@ -28,7 +48,7 @@ function text(field, value, { min = 1, max, pattern, multiline = false } = {}) {
   // Checked before normalizing so a huge input costs nothing to reject.
   if (value.length > max * 4) throw new ValidationError(field, 'is too long');
   if (LONE_SURROGATE.test(value)) throw new ValidationError(field, 'is not valid text');
-  const s = value.normalize('NFC').trim();
+  const s = stripTags(value.normalize('NFC')).trim();
   if (CONTROL.test(s) || (!multiline && LINE_BREAK.test(s))) throw new ValidationError(field, 'contains control characters');
   if (HIDDEN.test(s)) throw new ValidationError(field, 'contains invisible formatting characters');
   const n = [...s].length;
@@ -69,4 +89,4 @@ function object(field, value, { maxBytes }) {
   return JSON.parse(s);
 }
 
-module.exports = { ValidationError, text, uuid, int, oneOf, object };
+module.exports = { ValidationError, text, uuid, int, oneOf, object, stripTags, decodeTags };

@@ -119,3 +119,46 @@ jobs:
           echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  gl.tgz" | sha256sum -c -
           tar xzf gl.tgz gitleaks
           ./gitleaks git --redact --no-banner .
+
+  # A software bill of materials from the lockfile (STANDARDS.md gap 8; SSDF PS.3, SLSA, CISA's SBOM practice), on every
+  # pull request and on main, made by npm's own `npm sbom` (no new tool or service) in CycloneDX and SPDX, and kept with
+  # the run as the "sbom" artifact for 90 days. Its own job, so a failure shows here and never blocks the required
+  # `checks` gate (Aaron: checks alert, never lock out). It lists package-lock.json only: the Edge Functions' npm:
+  # imports and the verifier's vendored noble-ed25519 are not in it.
+  sbom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Software bill of materials (npm sbom, from package-lock.json only; nothing installed or run)
+        run: |
+          set -euo pipefail
+          echo "npm $(npm --version)"
+          # npm sbom needs a version, and package.json has none (the site isn't published), so a copy in a folder named
+          # for the package gets one made from this commit: 0.0.0-git.<first 12 of the commit>.
+          work="$RUNNER_TEMP/dayonegreat"
+          mkdir -p "$work" sbom
+          cp package.json package-lock.json "$work/"
+          (cd "$work" && npm pkg set "version=0.0.0-git.${GITHUB_SHA:0:12}" \
+            && npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type application > cyclonedx.json \
+            && npm sbom --package-lock-only --sbom-format spdx --sbom-type application > spdx.json)
+          mv "$work/cyclonedx.json" sbom/dayonegreat.cdx.json
+          mv "$work/spdx.json" sbom/dayonegreat.spdx.json
+          jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' sbom/dayonegreat.cdx.json > /dev/null
+          jq -e '(.spdxVersion | startswith("SPDX-2.")) and (.packages | length) > 1' sbom/dayonegreat.spdx.json > /dev/null
+          { echo "## Software bill of materials"; echo; echo "From package-lock.json by npm $(npm --version); the \"sbom\" artifact holds CycloneDX and SPDX."; echo;
+            jq -r '.components[] | "- " + .name + "@" + .version + " (" + .purl + ")"' sbom/dayonegreat.cdx.json; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom
+          path: sbom/
+          if-no-files-found: error
+          retention-days: 90

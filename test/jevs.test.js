@@ -243,6 +243,7 @@ async function member({ level = 2, name = 'Member', provider, ageDays = 0, stale
 }
 function httpReq(method, url, { cookie = '', json, key, query = {}, ip = '203.0.113.60', country = 'US' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': ip };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (country) headers['x-vercel-ip-country'] = country;
   if (method === 'POST') headers.origin = ORIGIN;
   if (key) headers.authorization = 'Bearer ' + key;

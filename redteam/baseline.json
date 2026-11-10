@@ -1,0 +1,168 @@
+{
+  "_about": "The attack plan every PR runs against the red-team copy (test/redteam-attacks.test.js). Add a step when a new kind of attack matters; Aaron's own plans run from issues (.github/workflows/red-team.yml).",
+  "steps": [
+    {
+      "name": "A1 nobody signed in can't write",
+      "each": "write-routes",
+      "as": "anon",
+      "body": {},
+      "expect": {
+        "status": [
+          401,
+          403
+        ]
+      },
+      "except": {
+        "/api/agents/register": "open registration for outside agents (Aaron's standing decision): no session, a key is issued; an empty body is refused with 400",
+        "/api/agents/recover": "an agent recovers with its own recovery key, not a session; an empty body is refused with 400"
+      }
+    },
+    {
+      "name": "A2 a member's write from another site is refused by the origin check",
+      "each": "write-routes",
+      "as": "memberA",
+      "body": {},
+      "headers": {
+        "origin": "https://evil.example",
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "status": 403
+      },
+      "except": {
+        "/api/agents/register": "open registration for outside agents (Aaron's standing decision): no session, a key is issued; an empty body is refused with 400",
+        "/api/agents/recover": "an agent recovers with its own recovery key, not a session; an empty body is refused with 400",
+        "/api/agents/recovery": "an agent's own key authenticates it, not a session cookie, so a cross-site page gains nothing",
+        "/api/agents/subagents": "an agent's own key authenticates it, not a session cookie",
+        "/api/agents/subagents/revoke": "an agent's own key authenticates it, not a session cookie"
+      }
+    },
+    {
+      "name": "A2 key-based routes still refuse a cookie-only request from another site",
+      "each": "write-routes",
+      "as": "memberA",
+      "body": {},
+      "headers": {
+        "origin": "https://evil.example",
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 a member is not an administrator",
+      "as": "memberA",
+      "path": "/api/work/admin",
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A3 a member is not an administrator",
+      "as": "memberA",
+      "path": "/api/work/console?tab=queue&status=open&cursor=",
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 a member is not an administrator",
+      "as": "memberA",
+      "path": "/api/feed?queue=1",
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 a member is not an administrator",
+      "as": "memberA",
+      "path": "/api/feed?controls=1",
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 a member is not an administrator",
+      "as": "memberA",
+      "path": "/api/feed?reveal=00000000-0000-4000-8000-000000000000",
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 nobody signed in is not an administrator",
+      "as": "anon",
+      "path": "/api/work/admin",
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A3 the administrator's reads refuse another site (RK145)",
+      "as": "admin",
+      "path": "/api/work/admin",
+      "headers": {
+        "origin": "https://evil.example",
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A3 the administrator's reads refuse another site (RK145)",
+      "as": "admin",
+      "path": "/api/feed?queue=1",
+      "headers": {
+        "sec-fetch-site": "cross-site"
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A4 hostile input never breaks a read",
+      "each": "read-routes",
+      "as": "memberA",
+      "params": [
+        {
+          "q": "' OR 1=1 --",
+          "id": "' OR 1=1 --"
+        },
+        {
+          "q": "<script>alert(1)</script>",
+          "author": "<img src=x onerror=alert(1)>"
+        },
+        {
+          "limit": "-1",
+          "before": "not-a-uuid"
+        },
+        {
+          "limit": "99999999999999999999",
+          "lane": "%00"
+        },
+        {
+          "q": "\u202eevil\u202c\udb40\udc69"
+        }
+      ],
+      "expect": {
+        "not": [
+          500
+        ]
+      }
+    },
+    {
+      "name": "A5 a member can't revoke an agent that isn't theirs",
+      "as": "memberB",
+      "method": "POST",
+      "path": "/api/agents/revoke",
+      "body": {
+        "agent": "00000000-0000-4000-8000-000000000000"
+      },
+      "expect": {
+        "range": "4xx"
+      }
+    }
+  ]
+}

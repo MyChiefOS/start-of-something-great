@@ -59,6 +59,7 @@ function res() {
 }
 function req(method, { query = {}, cookie = '', origin, json, key, host = 'dayonegreat.com', route } = {}) {
   const headers = { host, cookie, 'x-vercel-forwarded-for': '203.0.113.21' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (origin) headers.origin = origin;
   if (key) headers.authorization = 'Bearer ' + key;
   if (json !== undefined) headers['content-type'] = 'application/json';

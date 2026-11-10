@@ -54,7 +54,10 @@ const session = require('../signin/session');
 const agentkey = require('../signin/agentkey');
 const { onSite, sameSite, ipKey } = require('../signin/http');
 const { UNTRUSTED_NOTE } = require('./_lib');
-const { maskContacts } = require('./_proposals');
+const { maskContacts, stripTags } = require('./_proposals');
+// What members wrote, as served to people and agents: contact details and keys masked, and stray Unicode tag characters
+// (invisible words some models read) removed, the England, Scotland and Wales flags kept (RK143).
+const shown = (s) => maskContacts(stripTags(s));
 // Keys and passwords hidden before a post or draft was saved (api/_secrets.js): the author is told, so they can revoke
 // them. The text never reached the site with them, but it left the author's hands.
 function withKeys(n, b) {
@@ -88,13 +91,13 @@ const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note'
 // "act" claims after RFC 8693 section 4.1: the author is the subject; "act" is the agent that acted, and each "act"
 // inside it is the agent that made the one outside it. The claims carry IDs only; names are in agent.chain.
 function shape(p) {
-  const out = { id: p.id, lane: p.lane, body: maskContacts(p.body), published_at: p.publishedAt,
-    author: { id: p.author.id, name: maskContacts(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
+  const out = { id: p.id, lane: p.lane, body: shown(p.body), published_at: p.publishedAt,
+    author: { id: p.author.id, name: shown(p.author.name), level: p.author.level, profile: '/api/feed?profile=' + p.author.id } };
   // The administrator's posts say so (035; the UI/UX review, finding 8). Everyone else's carry no role at all.
   if (p.author.admin === true) out.author.role = 'administrator';
   if (p.agent) {
     const chain = shownChain(p.agent.chain, p.author.name);
-    out.agent = { id: p.agent.id, name: maskContacts(p.agent.name), chain_label: chainLabel(chain, p.author.name) };
+    out.agent = { id: p.agent.id, name: shown(p.agent.name), chain_label: chainLabel(chain, p.author.name) };
     if (chain.length) {
       out.agent.sub_agent_of = { id: chain[0].id, name: chain[0].name };
       out.agent.chain = chain;
@@ -110,17 +113,17 @@ function shape(p) {
 // with its agent. [{ id, name, active }], nearest first.
 function shownChain(chain, ownerName) {
   return (chain || []).map((x) => (x.active === false || !x.name
-    ? { id: null, name: 'an agent of ' + maskContacts(ownerName), active: false }
-    : { id: x.id, name: maskContacts(x.name), active: true }));
+    ? { id: null, name: 'an agent of ' + shown(ownerName), active: false }
+    : { id: x.id, name: shown(x.name), active: true }));
 }
 // "agent of Ada", or "sub-agent of Planner, sub-agent of Lead — owned by Ada" (nearest first). When the agent at the top
 // is no longer shown, the line already names the owner: "sub-agent of Planner, sub-agent of an agent of Ada".
 function chainLabel(chain, ownerName) {
-  if (!chain || !chain.length) return 'agent of ' + maskContacts(ownerName);
+  if (!chain || !chain.length) return 'agent of ' + shown(ownerName);
   // Stopped agents next to each other read as one "an agent of <owner>".
   const names = chain.filter((x, i) => !(x.active === false && i > 0 && chain[i - 1].active === false)).map((x) => x.name);
   const line = 'sub-agent of ' + names.join(', sub-agent of ');
-  return chain[chain.length - 1].active === false ? line : line + ' \u2014 owned by ' + maskContacts(ownerName);
+  return chain[chain.length - 1].active === false ? line : line + ' \u2014 owned by ' + shown(ownerName);
 }
 // { sub: "member:<owner>", act: { sub: "agent:<agent>", act: { sub: "agent:<parent>", ... } } }; an agent above that
 // has stopped is "agent:inactive", with no ID.
@@ -135,7 +138,7 @@ function act(ownerId, agentId, chain) {
 function label(kind, agentName, ownerName, rulesVersion, postId, chain) {
   const sub = chain && chain.length ? ' (sub-agent of ' + chain[0].name + ')' : '';
   return { kind, approved_by_owner: kind === 'approved', rules_version: rulesVersion, receipt: '/receipt?post=' + postId,
-    label: kind === 'approved' ? 'Approved by ' + maskContacts(ownerName) : 'Posted by ' + maskContacts(agentName) + sub + ' under ' + maskContacts(ownerName) + '\u2019s rules' };
+    label: kind === 'approved' ? 'Approved by ' + shown(ownerName) : 'Posted by ' + shown(agentName) + sub + ' under ' + shown(ownerName) + '\u2019s rules' };
 }
 
 // Public answers: Vercel's edge keeps them 20 seconds, plus up to 20 while refreshing. Browsers and any other shared
@@ -201,7 +204,7 @@ const wordsOf = (s) => String(s).normalize('NFKC').toLowerCase().match(/[\p{L}\p
 // Only the words the database searched count (searchable): a word with a digit or an @ is left out there, so requiring
 // it here would throw away every match (the re-review: "zzz9 the" read 10 pages and kept none).
 function shownMatch(body, s) {
-  const seen = new Set(wordsOf(maskContacts(body)));
+  const seen = new Set(wordsOf(shown(body)));
   return wordsOf(searchable(s).join(' ')).every((w) => seen.has(w));
 }
 // A search's page: reads of the database's matches, keeping only those that match as shown, until the page is full or
@@ -343,6 +346,22 @@ const CLASSIFIER_LABELS = { secondlook: 'Second Look, re-reading a 5% sample of 
 
 // The JEVs behaviour watch (026): a signed-in member who isn't the administrator asking for the review queue or the
 // owner controls alerts Aaron, once a day per member and page. Alerts only; a failure never changes the answer.
+// RK145 (the web app review, F4): an administrator's read that writes to the audit log (the queue, a reveal, the owner
+// controls; /api/work/admin and /console) is a GET, and the session cookie is SameSite=Lax, so a link on another site
+// could make Aaron's browser write false records. So these reads answer only when the browser says the request came
+// from this site (Sec-Fetch-Site: same-origin, as the admin pages' own fetches send) or from Aaron himself (none: an
+// address he typed or bookmarked, which no other site can cause), and any Origin it sends is ours. A request with no
+// Sec-Fetch-Site is refused, as a write with no Origin is (signin/http.js, sameSite), and as a link start is
+// (signin/flow.js, fromOurPages): every browser in use sends it (Chrome 76, Firefox 90, Safari 16.4 and later). The
+// refusal comes before the session is looked up, so nothing is read, written or recorded; it locks nobody out, and the
+// same read from the admin pages works at once.
+const OWN_PAGES = 'For safety this is answered only from dayonegreat.com itself: open it from the admin pages, or type its address.';
+function fromOwnPages(req) {
+  const site = req.headers['sec-fetch-site'];
+  if (site !== 'same-origin' && site !== 'none') return false;
+  return req.headers.origin === undefined || req.headers.origin === ORIGIN;
+}
+
 async function reach(run, who, what) {
   if (!who || !who.memberId || !run) return;
   try { await run(session.actorFor(who), (t) => store.watchReach(t, what)); } catch (e) { jevs.logFailure('behaviour watch', e); }
@@ -609,6 +628,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
   if (q.queue !== undefined) {
     if (!run) return reply(res, 200, { open: 0, items: [] });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see the review queue.' }); }
@@ -620,6 +640,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
   // 041's review, L3: a queued post's words with nothing masked, for Aaron only, each time recorded in the audit log.
   if (q.reveal !== undefined) {
     if (!run) return reply(res, 404, { error: 'No such post.' });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to review.', join: '/join' });
     if (!session.canReview(who)) { await reach(run, who, 'review'); return reply(res, 403, { error: 'Only reviewers can see a post\u2019s hidden details.' }); }
@@ -636,6 +657,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
 
   if (q.controls !== undefined) {
     if (!run) return reply(res, 200, { totals: null, everyone: null, owners: [] });
+    if (!fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
     const who = await session.current(req, run);
     if (!who) return reply(res, 401, { error: 'Sign in to see the owner controls.', join: '/join' });
     if (!session.canControl(who)) { await reach(run, who, 'controls'); return reply(res, 403, { error: 'Only Aaron can see the owner controls.' }); }
@@ -693,10 +715,10 @@ async function handle(req, res, run, { oidc = null } = {}) {
     r.agent.chain = shownChain(r.agent.chain, r.owner.name);
     return sendPublic(res, 200, { receipt: {
       post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
-      agent: { id: r.agent.id, name: maskContacts(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
+      agent: { id: r.agent.id, name: shown(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
         ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: r.agent.chain[0].name }, chain: r.agent.chain } : {}) },
       act: act(r.owner.id, r.agent.id, r.agent.chain),
-      owner: { id: r.owner.id, name: maskContacts(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
+      owner: { id: r.owner.id, name: shown(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
       delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id, r.agent.chain),
       rules: { version: r.rules.version, post: r.rules.post, daily_cap: r.rules.dailyCap },
       approval: r.delegation === 'approved' ? { approved_by_owner: true, minutes_to_approve: r.minutesToApprove } : null
@@ -709,7 +731,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
     try {
       const p = await run({ actor: 'anon' }, (t) => posts.profile(t, String(q.profile)));
       if (!p) return sendPublic(res, 404, { error: 'No such member.' });
-      return sendPublic(res, 200, { profile: { id: p.id, name: maskContacts(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
+      return sendPublic(res, 200, { profile: { id: p.id, name: shown(p.name), level: p.level, joined: p.joined, live_posts: p.livePosts },
         untrusted_fields: ['profile.name'], note: UNTRUSTED_NOTE });
     } catch (e) {
       if (e instanceof ValidationError) return sendPublic(res, 400, { error: 'profile must be a member ID.' });
@@ -766,6 +788,8 @@ module.exports.UNTRUSTED_FIELDS = UNTRUSTED_FIELDS;
 module.exports.untrustedFor = untrustedFor;
 module.exports.REPORT_LIMITS = REPORT_LIMITS;
 module.exports.searchProblem = searchProblem;
+module.exports.fromOwnPages = fromOwnPages;
+module.exports.OWN_PAGES = OWN_PAGES;
 module.exports.shownMatch = shownMatch;
 // Every database call in this route knows its request, for the audit log (053).
 module.exports = require('../db').entry(module.exports);

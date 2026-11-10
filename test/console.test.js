@@ -72,6 +72,7 @@ function res() {
 let ip = 1;
 async function work(method, route, { cookie = '', json, search = '' } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': '198.51.100.' + (ip++ % 250), 'x-vercel-ip-country': 'US' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (method === 'POST' && cookie) headers.origin = ORIGIN;
   if (json !== undefined) headers['content-type'] = 'application/json';
   const params = Object.fromEntries(new URLSearchParams(search.replace(/^\?/, '')));

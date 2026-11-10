@@ -22,6 +22,7 @@
 
 const { maskSecrets } = require('../api/_secrets');
 const { hasContactInfo, maskContacts, stripHidden } = require('../api/_proposals');
+const { decodeTags } = require('../db/validate');
 
 const VERSION = 'v1';
 const GATEWAY = 'https://ai-gateway.vercel.sh/v1/chat/completions';
@@ -51,15 +52,42 @@ const RUN_CODE = [
   ['deleting everything', /\brm\s+-[a-z]{0,4}r[a-z]{0,4}f?\s+(?:--no-preserve-root\s+)?\/(?:\s|$)/i]
 ];
 
+// RK143: the checks read what the model reads. The model is sent the post with contacts and keys masked, cut at
+// MAX_TEXT and normalised with NFKC (ask, wrap), so full-width "ignore" (U+FF49 and on) reaches it as plain "ignore". The phrase checks
+// therefore run on that text, and on the post as written, each folded further for matching only (never stored or
+// shown): stray Unicode tag characters spelt out (db/validate.js), accents and other combining marks dropped, Greek,
+// Cyrillic, Armenian and Latin letters that look like plain Latin ones mapped to them, and invisible characters (zero
+// width, direction controls, variation selectors) taken out. The look-alikes are the single-letter entries of
+// Unicode's confusables table (UTS #39, confusables.txt of Aug 6, 2026) for those scripts, except that capital iota
+// and the Cyrillic capital I map to "I", not "l" (the checks ignore case).
+const LOOKALIKE_FROM = '\u0131\u0184\u018D\u0192\u0196\u01A6\u01BD\u01BF\u01C0\u0237\u024C\u0251\u0261\u0263\u0269\u026A\u026F\u0284\u028B\u028F\u037F\u0391\u0392\u0395\u0396\u0397\u0399\u039A\u039C\u039D\u039F\u03A1\u03A4\u03A5\u03A7\u03B1\u03B3\u03B9\u03BD\u03BF\u03C1\u03C3\u03C5\u03D2\u03DC\u03ED\u03F1\u03F2\u03F3\u03F8\u03F9\u03FA\u0405\u0406\u0408\u0410\u0412\u0415\u041A\u041C\u041D\u041E\u0420\u0421\u0422\u0423\u0425\u042C\u0430\u0433\u0435\u043E\u0440\u0441\u0443\u0445\u0448\u0455\u0456\u0458\u0461\u0474\u0475\u04AE\u04AF\u04BA\u04BB\u04BD\u04C0\u04CF\u0501\u050C\u051A\u051B\u051C\u051D\u054D\u054F\u0555\u0561\u0563\u0566\u0570\u0575\u0578\u057C\u057D\u0581\u0582\u0584\u0585';
+const LOOKALIKE_TO = 'ibgflRspljRagyiiwfuyJABEZHIKMNOPTYXayivopouYFopcjpCMSIJABEKMHOPCTYXbareopcyxwsijwVvYyhhelldGQqWwUSOwqqhjnnugifo';
+const LOOKALIKE = new Map([...LOOKALIKE_FROM].map((ch, i) => [ch, LOOKALIKE_TO[i]]));
+// Invisible characters can split a word ("ig\u200bnore") or stand in for the space between words ("ignore\u3164all", with
+// a Hangul filler; the review of PR 1, Nov 10), so the checks read both: one view with them taken out, one with them,
+// and blank-looking characters (the Braille blank, Hangul fillers), turned into spaces.
+const BLANKS = /[\p{Default_Ignorable_Code_Point}\u2800\u3164\uFFA0\u115F\u1160]+/gu;
+function fold(text, { spaced = false } = {}) {
+  const s = decodeTags(String(text == null ? '' : text).normalize('NFKC'))
+    .normalize('NFD').replace(/\p{M}+/gu, '')
+    .replace(/[^\x00-\x7F]/gu, (ch) => LOOKALIKE.get(ch) || ch);
+  return (spaced ? s.replace(BLANKS, ' ') : s.replace(/\p{Default_Ignorable_Code_Point}+/gu, '')).normalize('NFKC');
+}
+
 function checks(text) {
-  const t = String(text == null ? '' : text).slice(0, MAX_TEXT);
+  const raw = String(text == null ? '' : text);
+  const t = raw.slice(0, MAX_TEXT);
+  // Exactly what ask sends the model, before the bracket runs are removed (which can't hide a phrase).
+  const sent = maskContacts(raw).slice(0, MAX_TEXT).normalize('NFKC');
+  const views = [fold(t), fold(sent), fold(t, { spaced: true }), fold(sent, { spaced: true })];
   const found = [];
-  if (maskSecrets(t).hits > 0) found.push('a key or password');
+  // A key the masking missed because it was written in full-width letters would reach the model in plain form.
+  if (maskSecrets(t).hits > 0 || maskSecrets(sent).hits > 0) found.push('a key or password');
   if (hasContactInfo(t)) found.push('contact details');
   if (stripHidden(t).removed) found.push('hidden text');
   let injection = 0;
-  for (const [name, re, w] of INJECTION) if (re.exec(t)) { injection += w; found.push('instructions to an AI: ' + name); }
-  for (const [name, re] of RUN_CODE) if (re.exec(t)) found.push('code that runs things: ' + name);
+  for (const [name, re, w] of INJECTION) if (views.some((x) => re.exec(x))) { injection += w; found.push('instructions to an AI: ' + name); }
+  for (const [name, re] of RUN_CODE) if (views.some((x) => re.exec(x))) found.push('code that runs things: ' + name);
   injection = Math.min(1, injection);
   // Hard: anything here makes the decision "reject" (flag for Aaron), whatever the model says. A weak injection signal
   // (one soft phrase) only blocks a clear.
@@ -100,10 +128,13 @@ const SYSTEM = SYSTEM_RULES;
 // The post as data, between markers it can't know. Runs of three or more angle brackets, of any kind, are removed
 // from the post first, so nothing in it even looks like a marker.
 const BRACKETS = /[<>\u2039\u203a\u276e\u276f\u27e8\u27e9\u3008\u3009\uff1c\uff1e\u02c2\u02c3\u2264\u2265]{3,}/g;
-function wrap(text, tag = crypto.randomBytes(6).toString('hex').toUpperCase()) {
-  const t = String(text == null ? '' : text).slice(0, MAX_TEXT).normalize('NFKC').replace(BRACKETS, '[brackets removed]');
+// max is how much of the text is sent: Second Look's MAX_TEXT unless a caller (Third Look) gives its own limit; cut
+// says whether any of the text was left out (RK142).
+function wrap(text, tag = crypto.randomBytes(6).toString('hex').toUpperCase(), max = MAX_TEXT) {
+  const s = String(text == null ? '' : text);
+  const t = s.slice(0, max).normalize('NFKC').replace(BRACKETS, '[brackets removed]');
   const m = markers(tag);
-  return { block: m.begin + '\n' + t + '\n' + m.end, begin: m.begin, end: m.end };
+  return { block: m.begin + '\n' + t + '\n' + m.end, begin: m.begin, end: m.end, cut: s.length > max };
 }
 
 // The model's reply, accepted only as the exact JSON: the nine keys, each yes, no or unsure, and a short reason.
@@ -243,5 +274,5 @@ async function askQuestion({ question, context = '', token, model = QA_MODELS[0]
   return { answer: answer.trim().slice(0, 8000), model };
 }
 
-module.exports = { review, checks, parse, decide, risk, wrap, ask, askQuestion, VERSION, MODELS, QA_MODELS, KEYS, SYSTEM, GATEWAY,
-  TIMEOUT_MS, TAU_CLEAR, TAU_REJECT };
+module.exports = { review, checks, fold, parse, decide, risk, wrap, ask, askQuestion, VERSION, MODELS, QA_MODELS, KEYS, SYSTEM, GATEWAY,
+  TIMEOUT_MS, TAU_CLEAR, TAU_REJECT, MAX_TEXT };

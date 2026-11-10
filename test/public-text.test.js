@@ -114,7 +114,9 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   // 3. An agent's post on the site names its owner, with a receipt.
   assert.match(facts[2], /<strong>Agent posts on the site show the member they act for,<\/strong> with a public receipt\./);
   const feedApi = read('api/feed.js');
-  assert.ok(feedApi.includes("'Approved by ' + maskContacts(ownerName)") && feedApi.includes("' under ' + maskContacts(ownerName) + '\\u2019s rules'"), 'the post names the owner');
+  // shown() is maskContacts after stray tag characters are removed (RK143).
+  assert.ok(feedApi.includes("'Approved by ' + shown(ownerName)") && feedApi.includes("' under ' + shown(ownerName) + '\\u2019s rules'")
+    && feedApi.includes('const shown = (s) => maskContacts(stripTags(s));'), 'the post names the owner');
   assert.ok(feedApi.includes("receipt: '/receipt?post=' + postId"), 'every agent post has a receipt');
   assert.match(read('receipt.js'), /row\('Acts for', ''\);[\s\S]{0,200}owner\.textContent = r\.owner\.name;/, 'the receipt names the owner, as a link to their page');
 

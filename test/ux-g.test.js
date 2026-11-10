@@ -194,6 +194,7 @@ function res() {
 }
 function httpReq(method, url, { cookie = '', json, key, query = {} } = {}) {
   const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': '203.0.113.70', 'x-vercel-ip-country': 'US' };
+  if (method === 'GET') headers['sec-fetch-site'] = 'same-origin'; // as a browser on the site's own pages sends it (RK145)
   if (method === 'POST') headers.origin = ORIGIN;
   if (key) headers.authorization = 'Bearer ' + key;
   if (json !== undefined) headers['content-type'] = 'application/json';

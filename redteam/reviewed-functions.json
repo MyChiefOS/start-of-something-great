@@ -1,0 +1,248 @@
+{
+  "_about": "The definer functions the site's role (dog_app) can run that check no actor, each with why that is fine, or the open risk it is. Read by test/redteam-catalog.test.js (redteam/catalog.js): a function missing here fails the build; an entry for a function that no longer needs one fails it too, so the list stays true. Reasons from the independent review of the web app, Nov 10, checked by Claude. Remove an open entry in the same PR that fixes its risk.",
+  "act_as": {
+    "kind": "the check itself",
+    "why": "It is the database's own check of who is acting (019)."
+  },
+  "agent_recover": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "agent_recovery_issue": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "agent_recovery_subject": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "agent_resolve": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "audit_upkeep_run": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "browser_key_public": {
+    "kind": "before sign-in, by design",
+    "why": "Runs before anyone is signed in, as sign-in needs; its writes are counters or one-time tokens, and email is off in phase 1."
+  },
+  "code_status": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "email_token_issue": {
+    "kind": "before sign-in, by design",
+    "why": "Runs before anyone is signed in, as sign-in needs; its writes are counters or one-time tokens, and email is off in phase 1."
+  },
+  "email_token_redeem": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "feed": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "gh_hidden": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "invariants_check": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "log_checkpoint": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "log_jevs_hours": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "log_opening": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "log_proposal": {
+    "kind": "open",
+    "risk": "RK112",
+    "why": "Adds Aaron's proposal decisions to the public log as the site reports them."
+  },
+  "log_witness_report": {
+    "kind": "open",
+    "risk": "RK144",
+    "why": "Records the witness's status as the site reports it."
+  },
+  "profile": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "public_agent": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "public_agents": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "public_decisions": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "public_oversight": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "rate_limit_hit": {
+    "kind": "before sign-in, by design",
+    "why": "Runs before anyone is signed in, as sign-in needs; its writes are counters or one-time tokens, and email is off in phase 1."
+  },
+  "receipt": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "region_confirm_use": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "region_decline": {
+    "kind": "before sign-in, by design",
+    "why": "Runs before anyone is signed in, as sign-in needs; its writes are counters or one-time tokens, and email is off in phase 1."
+  },
+  "reportable": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "review_tick": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "session_end": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "session_resolve": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "session_sweep": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "sl_record": {
+    "kind": "recorded, decides nothing",
+    "why": "Second Look v0's blind record: nothing reads it to decide, and the database recomputes eligibility (RK99)."
+  },
+  "stamp_ok": {
+    "kind": "the check itself",
+    "why": "It is the database's own check of who is acting (019)."
+  },
+  "tl_claim": {
+    "kind": "open",
+    "risk": "RK135",
+    "why": "Claims Third Look work for whoever holds the site's role; it fails toward a person."
+  },
+  "tl_decide": {
+    "kind": "open",
+    "risk": "RK135",
+    "why": "Records a Third Look verdict for whoever holds the site's role."
+  },
+  "tl_figures": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "watch_session": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "watch_sweep": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "watch_travel": {
+    "kind": "proof-based",
+    "why": "Acts only on the hash of a secret the caller holds (a session, key, recovery code, token, nonce or browser tag); someone holding the site's role and stolen hashes is RK88."
+  },
+  "work_board": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_citizen": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_dispute_page": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_disputes_list": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_featured": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_github_sync": {
+    "kind": "open",
+    "risk": "RK140",
+    "why": "Records GitHub's pull request facts as the site reports them, with no actor check, and JEVs's rules trust them."
+  },
+  "work_github_wanted": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_ledger_alert": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "work_plan": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_pr_changes": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_project": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_project_tasks": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_projects_list": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_room": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_rooms_list": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_summary": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_task": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_task_of": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_tasks": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
+  },
+  "work_tick": {
+    "kind": "timer",
+    "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  }
+}

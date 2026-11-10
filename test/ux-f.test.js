@@ -20,17 +20,18 @@ test('/member: a public page made of public answers only, shown as text, never i
   assert.match(js, /'\/api\/feed\?lane=' \+ name \+ '&author=' \+ id \+ '&limit=10'/);
   assert.match(js, /if \(!\/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/\.test\(id\)\)/, 'a malformed id asks nothing');
   // What it shows is what the profile answer already gives anyone (api/feed.js).
-  assert.match(read('api/feed.js'), /profile: \{ id: p\.id, name: maskContacts\(p\.name\), level: p\.level, joined: p\.joined, live_posts: p\.livePosts \}/);
+  assert.match(read('api/feed.js'), /profile: \{ id: p\.id, name: shown\(p\.name\), level: p\.level, joined: p\.joined, live_posts: p\.livePosts \}/);
   assert.match(js, /var LEVEL = \['Email only', 'GitHub member', 'Verified'\];/);
   // "Members' pages show only what is already public ... with email addresses and phone numbers hidden."
   assert.match(html, /Members' pages show only what is already public: the name they chose, their level, when they joined and their live posts, with email addresses and phone numbers hidden\./);
-  assert.match(read('api/feed.js'), /name: maskContacts\(p\.author\.name\)/);
+  assert.match(read('api/feed.js'), /name: shown\(p\.author\.name\)/);
+  assert.match(read('api/feed.js'), /const shown = \(s\) => maskContacts\(stripTags\(s\)\);/, 'shown() masks contacts, after stray tag characters are removed (RK143)');
 });
 
 test('/member: names on /feed and the person on a receipt open their page', () => {
   assert.match(read('feed.js'), /whoLink\.href = '\/member\?id=' \+ encodeURIComponent\(p\.author\.id\);/);
   assert.match(read('receipt.js'), /owner\.href = '\/member\?id=' \+ encodeURIComponent\(r\.owner\.id\);/);
-  assert.match(read('api/feed.js'), /owner: \{ id: r\.owner\.id, name: maskContacts\(r\.owner\.name\)/);
+  assert.match(read('api/feed.js'), /owner: \{ id: r\.owner\.id, name: shown\(r\.owner\.name\)/);
   // Clean addresses and the default security policy cover /member (vercel.json).
   const v = JSON.parse(read('vercel.json'));
   assert.strictEqual(v.cleanUrls, true);

@@ -92,8 +92,28 @@ const HIDDEN = [
   // whitespace after it, so the pattern stays linear on long runs of blank lines; "(^|\n)\s*" backtracked over them.
   ['role_marker', /^[^\S\r\n\u{2028}\u{2029}]*(system|assistant|developer)\s*:|<\/?(system|instructions?)>/imu]
 ];
+// Unicode tag characters (U+E0000 to U+E007F) are invisible, and each tag letter spells an ASCII letter that some models
+// read ("ASCII smuggling"; RISKS.md RK143). Only the England, Scotland and Wales flags (a black flag, tag letters, a
+// cancel tag) are built from them on purpose, and those are never counted: the same set as the site's stripTags
+// (db/validate.js).
+const TAGS_OR_FLAG = /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})|[\u{E0000}-\u{E007F}]+/gu;
+const TAG_CHAR = /[\u{E0000}-\u{E007F}]/u;
+const strayTags = (s) => TAG_CHAR.test(s) && TAG_CHAR.test(s.replace(TAGS_OR_FLAG, (m, flag) => (flag ? '' : m)));
+// The phrases as a model would read them: NFKC (full-width letters become plain ones) and each run of stray tag
+// characters spelt out on a line of its own. Cut to MAX_SCAN before and after normalising, as fold() does (R-16).
+function readable(s) {
+  return s.slice(0, MAX_SCAN).normalize('NFKC').slice(0, MAX_SCAN).replace(TAGS_OR_FLAG, (m, flag) => flag || '\n' + [...m].map((ch) => {
+    const c = ch.codePointAt(0) - 0xE0000;
+    return c >= 0x20 && c < 0x7F ? String.fromCharCode(c) : '';
+  }).join('') + '\n');
+}
+const PHRASES = new Set(['override_phrase', 'role_marker']);
 export function hiddenSignals(body) {
-  const found = HIDDEN.filter(([, re]) => re.test(String(body))).map(([name]) => name);
+  const s = String(body);
+  let read = null;
+  const asRead = () => (read === null ? (read = readable(s)) : read);
+  const found = HIDDEN.filter(([name, re]) => re.test(s) || (name === 'invisible_chars' && strayTags(s))
+    || (PHRASES.has(name) && re.test(asRead()))).map(([name]) => name);
   // Text that grows past MAX_SCAN when normalised (U+FDFA becomes 18 characters) has its end cut before the contact
   // and copy checks (R-16), so padding could hide an address there: such a post is flagged instead of passed (the
   // CSO's review of the sign-in PR, F2).
