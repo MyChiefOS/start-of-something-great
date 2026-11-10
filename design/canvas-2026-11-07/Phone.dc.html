@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Verifier crate on a phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.d1[data-theme=dark]{--ink:#0d0f14;--text:#ece7dd;--muted:#9a9ba5;--rule:#23262e;--amber:#f2a33a;--onamber:#15110a}
+.d1[data-theme=light]{--ink:#f6f7f9;--text:#15171c;--muted:#5b5e68;--rule:#dcdee4;--amber:#a65e00;--onamber:#fff}
+.d1{--display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;--body:"Source Serif 4",Georgia,serif;background:var(--ink);color:var(--text);font-family:var(--body);font-size:16px;line-height:1.55}
+.d1 *{box-sizing:border-box}
+.d1 h1,.d1 h2,.d1 h3{font-family:var(--display);font-weight:700;line-height:1.08;letter-spacing:-.025em;margin:0}
+.d1 .kick{font-family:var(--display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin:0 0 10px}
+.d1 .fine{color:var(--muted);font-size:14px;margin:0}
+.d1 .pill{display:inline-block;padding:1px 10px;border-radius:999px;border:1px solid var(--rule);font-family:var(--display);font-size:12.5px;color:var(--text);white-space:nowrap}
+.d1 .pill.a{border-color:var(--amber)}.d1 .pill.m{color:var(--muted)}
+.d1 .st{border-top:1px solid var(--rule);padding-top:8px}
+.d1 .st b{display:block;font-family:var(--display);font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.d1 .st small{color:var(--muted);font-family:var(--display);font-size:12.5px}
+.d1 .ms{border-top:1px solid var(--rule);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start}
+.d1 .ms b{font-family:var(--display);font-weight:600;font-size:16px}
+.d1 .lg{display:inline-flex;align-items:center;gap:6px;font-family:var(--display);font-size:12.5px;color:var(--muted)}
+a{color:var(--text)}a:hover{color:var(--amber)}
+</style>
+</helmet>
+<div class="d1" data-theme="{{theme}}" style="width: 390px; min-height: 1720px; padding: 0 16px 48px">
+
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--rule)">
+<a href="#home" style="font-family: var(--display); font-weight: 700; font-size: 17px; text-decoration: none">Day One Great<span style="font-size: .55em; font-weight: 500; vertical-align: super">™</span></a>
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--rule); background: transparent; color: var(--text); font-family: var(--display); font-size: 15px">Menu</button>
+</header>
+
+<p class="fine" style="margin-top: 20px; font-family: var(--display)"><a href="#projects" style="color: var(--muted)">Projects</a> / proj_7c21</p>
+<h1 style="font-size: 34px; margin-top: 8px">Verifier crate</h1>
+<p class="fine" style="margin-top: 8px">Posted by @aaron in 15-0000. A six-week plan of 14 tasks. Sample figures for review.</p>
+<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px"><span class="pill a">Behind plan</span><span class="pill m">M3 of 4</span></div>
+
+<section style="margin-top: 32px">
+<p class="kick">Schedule</p>
+<h2 style="font-size: 25px; margin-bottom: 6px">Planned against verified work</h2>
+<p class="fine" style="margin-bottom: 12px">The gap between the lines is how far behind the project is.</p>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-bottom: 10px">
+<span class="lg"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"></line></svg>Planned</span>
+<span class="lg"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--amber)" stroke-width="2.5"></line></svg>Verified</span>
+<span class="lg"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1"></line></svg>Scope</span>
+<span class="lg"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--amber)" stroke-width="2" stroke-dasharray="1 4" stroke-linecap="round"></line></svg>Forecast</span>
+</div>
+<svg viewBox="0 0 360 290" style="width: 100%; display: block; font-family: var(--display); font-size: 11px" role="img" aria-label="By now the plan has 78 points due and 62 are verified. At the current pace the project finishes in W8, against a plan of W6.">
+<g stroke="var(--rule)"><line x1="30" y1="50" x2="345" y2="50"></line><line x1="30" y1="100" x2="345" y2="100"></line><line x1="30" y1="150" x2="345" y2="150"></line></g>
+<line x1="30" y1="200" x2="345" y2="200" stroke="var(--muted)"></line>
+<g fill="var(--muted)" text-anchor="end"><text x="24" y="54">120</text><text x="24" y="104">80</text><text x="24" y="154">40</text><text x="24" y="204">0</text></g>
+<g fill="var(--muted)" text-anchor="middle"><text x="30" y="216">W0</text><text x="135" y="216">W3</text><text x="240" y="216">W6</text><text x="340" y="216">W9</text></g>
+<rect x="240" y="25" width="105" height="175" fill="var(--amber)" opacity="0.06"></rect>
+<line x1="187.5" y1="25" x2="187.5" y2="284" stroke="var(--amber)" stroke-dasharray="3 4" opacity="0.7"></line>
+<text x="187.5" y="18" fill="var(--amber)" text-anchor="middle">now</text>
+<polyline fill="none" stroke="var(--muted)" stroke-width="1" points="30,75 135,75 135,56.25 345,56.25"></polyline>
+<text x="343" y="48" fill="var(--muted)" text-anchor="end">115</text>
+<polyline fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4" points="30,200 65,190 100,172.5 135,147.5 170,117.5 205,87.5 240,56.25"></polyline>
+<circle cx="187.5" cy="102.5" r="3" fill="var(--muted)"></circle>
+<text x="180" y="99" fill="var(--muted)" text-anchor="end">78</text>
+<line x1="187.5" y1="122.5" x2="322.25" y2="56.25" stroke="var(--amber)" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round"></line>
+<circle cx="322.25" cy="56.25" r="4" fill="var(--ink)" stroke="var(--amber)" stroke-width="2"></circle>
+<text x="322" y="76" fill="var(--amber)" text-anchor="middle">W8</text>
+<polyline fill="none" stroke="var(--amber)" stroke-width="2.5" points="30,200 65,192.5 100,177.5 135,162.5 170,138.75 187.5,122.5"></polyline>
+<circle cx="187.5" cy="122.5" r="4.5" fill="var(--ink)" stroke="var(--amber)" stroke-width="2.5"></circle>
+<text x="196" y="138" fill="var(--text)">62</text>
+<g fill="var(--muted)"><text x="2" y="236">M1</text><text x="2" y="252">M2</text><text x="2" y="268">M3</text><text x="2" y="284">M4</text></g>
+<path d="M100,228 L104,232 L100,236 L96,232 Z" fill="var(--amber)"></path>
+<line x1="139" y1="248" x2="166" y2="248" stroke="var(--muted)" stroke-width="1.5"></line>
+<path d="M135,244 L139,248 L135,252 L131,248 Z" fill="var(--ink)" stroke="var(--muted)" stroke-width="1.5"></path>
+<path d="M170,244 L174,248 L170,252 L166,248 Z" fill="var(--amber)"></path>
+<line x1="209" y1="264" x2="236" y2="264" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="2 3"></line>
+<path d="M205,260 L209,264 L205,268 L201,264 Z" fill="var(--ink)" stroke="var(--muted)" stroke-width="1.5"></path>
+<path d="M240,260 L244,264 L240,268 L236,264 Z" fill="var(--ink)" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="2 2"></path>
+<line x1="244" y1="280" x2="318" y2="280" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="2 3"></line>
+<path d="M240,276 L244,280 L240,284 L236,280 Z" fill="var(--ink)" stroke="var(--muted)" stroke-width="1.5"></path>
+<path d="M322.25,276 L326.25,280 L322.25,284 L318.25,280 Z" fill="var(--ink)" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="2 2"></path>
+</svg>
+<p class="fine" style="margin-top: 8px">Outline: planned date. Filled: done. Dashed: forecast.</p>
+</section>
+
+<section style="margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div class="st"><b>78</b><small>Planned by now</small></div>
+<div class="st"><b style="color: var(--amber)">62</b><small>Verified</small></div>
+<div class="st"><b>−16</b><small>Schedule variance</small></div>
+<div class="st"><b>0.79</b><small>Schedule index</small></div>
+<div class="st" style="grid-column: 1 / -1"><b>W8</b><small>Forecast finish, against a plan of W6</small></div>
+</section>
+
+<section style="margin-top: 36px">
+<p class="kick">Milestones</p>
+<h2 style="font-size: 25px; margin-bottom: 8px">Planned and actual dates</h2>
+<div class="ms"><b>M1 Scaffold</b><span class="pill m">Done on time</span><span class="fine">Planned W2 · done W2 · 22 of 22 points</span></div>
+<div class="ms"><b>M2 Test harness</b><span class="pill m">1 week late</span><span class="fine">Planned W3 · done W4 · 20 of 20 points</span></div>
+<div class="ms"><b>M3 Audit path</b><span class="pill a">86%</span><span class="fine">Planned W5 · forecast W6 · 20 of 23 points</span></div>
+<div class="ms" style="border-bottom: 1px solid var(--rule)"><b>M4 Release gate</b><span class="pill">Not started</span><span class="fine">Planned W6 · forecast W8 · 0 of 50 points</span></div>
+</section>
+
+<section style="margin-top: 32px">
+<p class="kick">Plan changes</p>
+<h3 style="font-size: 20px; margin-bottom: 8px">Scope 100 to 115, in W3</h3>
+<p class="fine">Three audit-path tasks added by @aaron. The plan was re-drawn from W3 on. Every change is logged and public.</p>
+</section>
+
+<section style="margin-top: 28px">
+<p class="kick">How it's figured</p>
+<p class="fine">The schedule index is verified points divided by planned points. Under 1.00 is behind. The forecast assumes the pace so far holds. Points are signs of audited work, not money.</p>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":390,"height":1720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { theme: this.props.theme ?? 'dark' };
+  }
+}
+</script>
+</body>
+</html>

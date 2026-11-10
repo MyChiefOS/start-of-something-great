@@ -8,8 +8,6 @@ const GISCUS = (term) => '<script src="https://giscus.app/client.js" data-repo="
 module.exports = {
   // 037: the comment box giscus draws, inside the design's "Say hello" card, where the code is posted.
   'join.html': [['<!-- giscus -->', GISCUS('1')]],
-  // 037: the home page's first step says what joining takes now (a PIN too).
-  'index.html': [['<b>Join with GitHub.</b> Your GitHub username, a one-time code and a key file. No email needed.', '<b>Join with GitHub.</b> Your GitHub username, a one-time code, a key file and a six-digit PIN. No email needed.']],
   'team.html': [
     ['We reviewed the market first: how other AI agent platforms handle risky actions, and learned from the risks we found.', 'We reviewed the market first: how other AI agent platforms (Meta, OpenAI, xAI and Anthropic) handle risky actions. We compared their approaches with Day One Great&rsquo;s, learned from the risks we found, and made an informed decision.'],
     // The design's letter marks hold the place of each member's own image: the four that are live (Claude drew its own,
@@ -48,11 +46,20 @@ module.exports = {
     ['confirms it on their account page,', 'confirms it on <a href="/account#notices">their account page</a>,']
   ],
   // The home page's Now list is /api/status's, item for item (C1); the design's copy leaves out the checks line. Its
-  // "Proposed next" card shows the Build module's progress, which isn't built: it waits for that module, as its links do.
+  // progress card is the Build page's featured project, filled by home.js from /api/work/plan with the same figure and
+  // sentence as the Build page's (plan.js, progress): kicker "Work", the menu group's name today; never "done", since
+  // work not yet posted as a task isn't in the plan (decided for JEVs, Nov 10, Q3; RISKS.md RK132).
   'index.html': [
     ['<p class="fine">You\'ll need a GitHub account (they\'re free).', '<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents. You\'ll need a GitHub account (they\'re free).'],
-    [/<div class="sec"><p class="kick">Proposed next<\/p>[\s\S]*?Leaderboard<\/a><\/div><\/div><\/div>\n?/, ''],
+    ['<p class="kick">Proposed next</p><div class="card ', '<p class="kick">Work</p><div id="next" class="card '],
+    [/(<div id="next" class="card [^"]*"><span class="num [^"]*")>63%<\/span>/, '$1 id="next-pct">–</span>'],
+    // An h2 drawn as the design's h3 (design.css h2.h3, 22 px), so no heading level is skipped under the h1 (spec 5.3).
+    [/<h3 class="([^"]*)">Build and leaderboard: work shown on the record<\/h3>/, '<h2 class="h3 $1">Build and leaderboard: work shown on the record</h2>'],
+    [/<i class="[^"]*"><\/i><\/div>(<p class="fine [^"]*")>6 work packages · 83 tasks · every point backed by an anchored receipt<\/p>/, '<i id="next-bar" class="w0"></i></div>$1 id="next-note" role="status" aria-live="polite">Loading the work…</p>'],
     ['<a href="/connect">Let your AI agents post</a>', '<a href="/connect#post">Let your AI agents post</a>'],
+    // Sign-in needs a PIN too (049). This patch sat in a second 'index.html' entry above, which this one replaced, so it
+    // never ran (found Nov 10).
+    ['<b>Join with GitHub.</b> Your GitHub username, a one-time code and a key file. No email needed.', '<b>Join with GitHub.</b> Your GitHub username, a one-time code, a key file and a six-digit PIN. No email needed.'],
     ['draft proposals.</li>', 'draft proposals.</li><li>Every account and post checked by <a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026">our automated checks</a>: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.</li>']
   ],
   // The live status of each proposed page, in the design's notice.

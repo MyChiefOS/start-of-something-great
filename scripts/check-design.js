@@ -1,0 +1,329 @@
+#!/usr/bin/env node
+// The design as a check (Aaron, Nov 9: "Why don't the page align to design ... the design should align"; harness/PLAN.md,
+// "Design alignment", item 1). Every page built from his handoff of Nov 5 (design/handoff-2026-11-05/static, mapped by
+// tools/design/built.list), from a local copy of this folder, against the handoff page it was built from, in a real
+// browser at 1280 and 390 px. Plus the chart canvas of Nov 7 (design/canvas-2026-11-07): its parts on the project page,
+// the Build page and the home page.
+//
+//   node scripts/check-design.js [--empty] [--shots DIR] [--only page,page] [--json FILE] [--stub /api/x=file.json]
+//
+// Data: the pages read the live site's public API, GET only and signed out (nothing is sent, nothing signed in), so
+// they are measured with real data. --empty answers every list empty and every count 0, for the empty states.
+// Fields this branch adds that the live API doesn't serve until its migration runs (054: task_count, next) are filled
+// in here from what it does serve, and said so in the output.
+//
+// Measured on each pair, the handoff page against ours: the column (width, padding), the headline, kicker, intro and
+// section heading (size, weight, spacing), the first card (padding, corners, top rule), how many cards share the first
+// row of each row of cards, sideways scroll, and script errors. A difference over 1 px (0.5 px for type) fails unless
+// it is listed in ACCEPTED below with its reason. --shots DIR saves the pair side by side, full length, at each width.
+// Needs Playwright with Chromium; not part of the test suite.
+'use strict';
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const { DRAWS_NO_ITALIC: NO_ITALIC } = require('./page-weight');
+const DESIGN = path.join(ROOT, 'design/handoff-2026-11-05/static');
+const CANVAS = path.join(ROOT, 'design/canvas-2026-11-07');
+const LIVE = 'https://dayonegreat.com';
+const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
+const EMPTY = process.argv.includes('--empty');
+const SHOTS = arg('--shots');
+const ONLY = arg('--only') ? arg('--only').split(',') : null;
+const JSON_OUT = arg('--json');
+// --stub /api/x=file.json (repeatable): that address answered from a file, such as an answer made by the real handlers
+// on a local database (the directory with several agents), instead of the live site's.
+const STUBS = {};
+process.argv.forEach((v, i) => { if (v === '--stub' && process.argv[i + 1]) { const [p, f] = process.argv[i + 1].split('='); STUBS[p] = fs.readFileSync(f, 'utf8'); } });
+const WIDTHS = [1280, 390];
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json',
+  '.woff2': 'font/woff2', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain', '.xml': 'application/xml', '.webmanifest': 'application/manifest+json' };
+
+// Differences the design itself leaves open, each with its reason. Key: "<handoff page>:<width>:<measure>".
+const ACCEPTED = {
+  // The design draws Build's four task cards four to a row at every width (70 px each on a phone); the spec stacks
+  // them (CODING_AGENT_SPEC.md 5.6; decided for JEVs, Nov 10, Q2).
+  'build:390:cards.first-row': 'four cards stack on a phone (spec 5.6)',
+  // /join on a phone: a smaller intro and tighter sign-in cards keep the chosen way's button in the first screen at 390
+  // by 844 and the comment box within 200 px of Copy (UX PR A, the review of Oct 31; scripts/check-join-panel.js).
+  'join:390:intro.size': 'first screen at 390 (UX PR A)', 'join:390:intro.below': 'first screen at 390 (UX PR A)',
+  'join:390:card.p': 'comment box within 200 px of Copy at 390 (UX PR A)',
+  // The project page follows the Nov 7 canvas over the Nov 5 handoff: the status pills sit beside the title, as drawn.
+  'project:1280:column': 'the canvas puts the status pills beside the title',
+  // /join/pin is built on the design's join page; its sections are cards headed as the design's card headings (h2.h3).
+  'join>join/pin:1280:heading': 'card headings only', 'join>join/pin:390:heading': 'card headings only',
+  // and no intro: one line there puts "Sign in" with a key file below the first screen at 1280 by 800 (UX PR A).
+  'join>join/pin:1280:intro': 'first screen (UX PR A)', 'join>join/pin:390:intro': 'first screen (UX PR A)',
+  // /controls and /review moved to /admin (Nov 9): one line and the new address, so no "If something else went wrong".
+  'error>controls:1280:heading': 'a moved page', 'error>controls:390:heading': 'a moved page',
+  'error>review:1280:heading': 'a moved page', 'error>review:390:heading': 'a moved page',
+};
+
+// The signed-in pages, opened signed in as an administrator with stand-in answers shaped like the real ones (the
+// controls and the review queue are scripts/check-review-tiers.js's): signed out they show only the sign-in card.
+const SIGNED_IN = new Set(['account.html', 'account/agents.html', 'admin/controls.html', 'admin/review.html']);
+const AGO = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+const ID = (n) => '0190a000-0000-7000-8000-0000000000' + n;
+function standIn(u) {
+  const tiers = require('./check-review-tiers');
+  if (u.pathname === '/auth/me') return { signed_in: true, unread: 0, admin: true };
+  if (u.pathname === '/auth/account') return { signed_in: true, id: ID('a1'), member_id: ID('a1'), display_name: 'Ada', trust_level: 2, is_admin: true, joined: AGO(500),
+    unread: 0, notices: [], sessions: [], browsers: [], sign_ins: [], key_file: null, pin: null, deletion_review: null };
+  if (u.pathname === '/api/agents') return { can_own: true, trees: [], agents: [
+    { id: ID('b1'), name: 'claude_helper', status: 'active', parent_id: null, depth: 0, created_at: AGO(200), expires_at: null, keys: [{ id: ID('c1'), created_at: AGO(200), revoked_at: null }] },
+    { id: ID('b2'), name: 'build_scribe', status: 'active', parent_id: ID('b1'), depth: 1, created_at: AGO(20), expires_at: AGO(-100), keys: [{ id: ID('c2'), created_at: AGO(20), revoked_at: null }] }] };
+  if (u.pathname === '/api/agents/activity') return { unread_notices: 0, containment: null,
+    agents: [{ id: ID('b1'), rules: { post: 'act', reply: 'act', report: 'off', daily_cap: 20, version: 1 }, today: 3 }, { id: ID('b2'), rules: { post: 'draft', reply: 'draft', report: 'off', daily_cap: 5, version: 1 }, today: 0 }],
+    inbox: [{ id: ID('d1'), agent: { id: ID('b1'), name: 'claude_helper' }, kind: 'post', body: 'Proposal filed: a weekly summary of what shipped, with receipts.', created_at: AGO(2), expires_at: AGO(-46) }] };
+  if (u.pathname === '/api/notify') return { unread: 0, notices: [] };
+  // One paused owner with an appeal, the state the design draws (the section shows only when someone is paused).
+  if (u.pathname === '/api/notify/appeals') return { containments: [{ id: ID('e1'), member: { id: ID('a3'), name: 'Mira' }, ends_at: AGO(-20), reason: 'actions',
+    measured: 120, usual: 12, appeal: { note: 'A batch of replies went out at once; it was one thread.' }, decision: null }] };
+  if (u.pathname === '/api/decisions') return tiers.DECISIONS;
+  if (u.searchParams.has('controls')) return tiers.CONTROLS;
+  if (u.searchParams.has('queue')) return tiers.QUEUE;
+  return null;
+}
+
+// Our pages from their handoff pages (tools/design/built.list), and the address each is opened at.
+function pairs() {
+  const list = fs.readFileSync(path.join(ROOT, 'tools/design/built.list'), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  return list.map((l) => { const [from, to] = l.split(/\s+/); return { from, to }; }).filter((p) => !ONLY || ONLY.includes(p.from.replace(/\.html$/, '')));
+}
+// The search page is opened with the design's own query ("receipt"), so its result groups show.
+const ADDRESS = { 'index.html': '/', 'project.html': '/projects/:project', 'task.html': '/tasks/:task', 'agent.html': '/agents/:agent', 'room.html': '/rooms/:room',
+  'receipt.html': '/receipts/:receipt', 'member.html': '/member?id=:member', 'citizen.html': '/citizens/:citizen', 'dispute.html': '/disputes/:dispute',
+  'search.html': '/search?q=receipt' };
+
+// One real id of each kind, from the live public API (or none: the page then shows its "not found" state).
+async function ids() {
+  const get = async (p) => { try { const r = await fetch(LIVE + p); return r.ok ? r.json() : null; } catch { return null; } };
+  const out = {};
+  const pj = await get('/api/work/projects'); const p0 = pj && (pj.projects || [])[0];
+  if (p0) out.project = p0.id;
+  const pg = p0 && await get('/api/work/project?id=' + p0.id); const t0 = pg && (pg.tasks || [])[0];
+  if (t0) out.task = t0.id;
+  if (p0 && p0.room) out.room = p0.room.code;
+  const ag = await get('/api/directory'); const a0 = ag && (ag.agents || [])[0];
+  if (a0) out.agent = a0.id;
+  const fd = await get('/api/feed'); const m0 = fd && (fd.posts || []).map((x) => x.author && x.author.id).filter(Boolean)[0];
+  if (m0) out.member = m0;
+  const bd = await get('/api/work/board'); const c0 = bd && (bd.citizens || [])[0];
+  if (c0) out.citizen = c0.kind === 'github' ? 'github/' + c0.github : c0.kind + '/' + c0.id;
+  const rc = await get('/api/work/summary'); const r0 = rc && rc.latest_receipt;
+  if (r0 && Number.isSafeInteger(r0.seq)) out.receipt = String(r0.seq);
+  const ds = await get('/api/work/disputes?status=all'); const d0 = ds && (ds.disputes || [])[0];
+  if (d0) out.dispute = d0.id;
+  return out;
+}
+
+// The site, as Vercel serves it: its rewrites and clean addresses, its 404 page. The handoff under /__design/.
+function server(vercel) {
+  const rewrites = (vercel.rewrites || []).filter((r) => !r.destination.startsWith('/api')).map((r) => ({
+    re: new RegExp('^' + r.source.replace(/:[a-z]+\*/gi, '.*').replace(/:[a-z]+(?=\()/gi, '').replace(/:[a-z]+/gi, '[^/]+') + '$'), to: r.destination }));
+  return http.createServer((req, res) => {
+    let url = decodeURIComponent(req.url.split('?')[0]);
+    let base = ROOT;
+    if (url.startsWith('/__design/')) { base = DESIGN; url = url.slice('/__design'.length); }
+    else for (const r of rewrites) if (r.re.test(url)) { url = r.to; break; }
+    let file = url === '/' ? 'index.html' : url.slice(1);
+    if (!path.extname(file)) file += '.html';
+    let full = path.resolve(base, file), body = null;
+    if (full.startsWith(base + path.sep)) { try { body = fs.readFileSync(full); } catch { body = null; } }
+    if (body === null) { res.statusCode = 404; if (path.extname(url)) return res.end('not found'); full = path.join(ROOT, '404.html'); body = fs.readFileSync(full); }
+    res.setHeader('Content-Type', TYPES[path.extname(full)] || 'application/octet-stream');
+    res.end(body);
+  });
+}
+
+// --empty: every list emptied, every count 0, every percentage 0; ids, names and dates kept.
+function emptied(x, key) {
+  if (Array.isArray(x)) return [];
+  if (x && typeof x === 'object') { const o = {}; for (const [k, v] of Object.entries(x)) o[k] = emptied(v, k); return o; }
+  if (typeof x === 'number' && !/^(level|size|version|seq|number|limit|max|min|days)$/.test(key || '')) return 0;
+  return x;
+}
+// 054's fields, from what the live API serves until 054 runs (said so in the output).
+let shimmed = false;
+function shim(pathname, search, d) {
+  if (pathname === '/api/work/project' && d && Array.isArray(d.tasks) && d.task_count === undefined) {
+    shimmed = true;
+    const all = d.tasks, before = search.get('before');
+    const from = before ? all.findIndex((t) => t.id === before) + 1 : 0;
+    d.task_count = all.length; d.tasks = all.slice(from, from + 25); d.next = all.length > from + 25 ? all[from + 24].id : null;
+  }
+  return d;
+}
+
+const probe = () => {
+  const px = (v) => Math.round(parseFloat(v) * 10) / 10;
+  const box = (e) => { if (!e) return null; const s = getComputedStyle(e);
+    return { fs: px(s.fontSize), fw: s.fontWeight, mt: px(s.marginTop), mb: px(s.marginBottom) }; };
+  const shown = (e) => e && e.getClientRects().length > 0;
+  const all = (sel) => [...document.querySelectorAll(sel)].filter((e) => shown(e) && !e.closest('header, footer, .hd, .sub2, nav'));
+  const h1 = all('h1')[0] || null;
+  const after = (e) => { let p = e && e.previousElementSibling; while (p && !shown(p)) p = p.previousElementSibling; return p; };
+  // Like with like: the kicker over the headline; a section heading under a kicker, and one without.
+  const kickTop = h1 && after(h1) && after(h1).classList.contains('kick') ? after(h1) : null;
+  const h2s = all('h2').filter((e) => !e.classList.contains('h3')); // an h2.h3 is drawn as the design's h3 (spec 5.3)
+  const h2k = h2s.find((e) => after(e) && after(e).classList.contains('kick')) || null;
+  const h2 = h2s.find((e) => !(after(e) && after(e).classList.contains('kick'))) || null;
+  const kickSec = h2k ? after(h2k) : null;
+  const intro = all('.dek, .lede')[0] || null;
+  const col = h1 ? h1.parentElement : document.body;
+  const card = all('.card')[0], cs = card && getComputedStyle(card);
+  // Rows of cards: for each element holding three or more cards on screen, how many sit in its first row.
+  const cardsOf = (e) => [...e.children].filter((c) => c.classList.contains('card') && shown(c)); // shown only: hidden ones all sit at 0
+  const rows = all('*').filter((e) => cardsOf(e).length >= 3)
+    .map((e) => { const cards = cardsOf(e); const top = cards[0].getBoundingClientRect().top; return cards.filter((c) => Math.abs(c.getBoundingClientRect().top - top) < 2).length + '/' + cards.length; });
+  return {
+    column: { w: Math.round(col.getBoundingClientRect().width), x: Math.round(col.getBoundingClientRect().left) },
+    h1: box(h1), kick: box(kickTop), intro: box(intro), 'section kicker': box(kickSec), 'heading under a kicker': box(h2k), heading: box(h2),
+    card: cs ? { p: cs.padding, r: cs.borderRadius, bt: cs.borderTopWidth } : null,
+    rows: rows.join(' '),
+    sideways: document.documentElement.scrollWidth > innerWidth + 1,
+    // A page that says it couldn't load what it shows was measured half drawn.
+    failed: /could(?: not|n[’']t) be loaded/i.test((document.querySelector('main') || document.body).innerText),
+  };
+};
+
+// Each measure, ours against the design's: type within 0.5 px, everything else within 1 px, words exactly.
+function compare(name, w, d, o) {
+  const out = [];
+  const note = (k, a, b) => { const key = name + ':' + w + ':' + k; if (!ACCEPTED[key]) out.push({ key, design: a, ours: b }); };
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  for (const part of ['h1', 'kick', 'intro', 'section kicker', 'heading under a kicker', 'heading']) {
+    // A part the design's page doesn't have is compared on the next page that has it; one ours lacks is a difference.
+    if (!d[part]) continue;
+    if (!o[part]) { note(part, 'present', 'none'); continue; }
+    if (!near(d[part].fs, o[part].fs, 0.5)) note(part + '.size', d[part].fs, o[part].fs);
+    if (d[part].fw !== o[part].fw) note(part + '.weight', d[part].fw, o[part].fw);
+    if (!near(d[part].mt, o[part].mt, 1)) note(part + '.above', d[part].mt, o[part].mt);
+    if (!near(d[part].mb, o[part].mb, 1)) note(part + '.below', d[part].mb, o[part].mb);
+  }
+  if (d.card && o.card) for (const k of ['p', 'r', 'bt']) if (d.card[k] !== o.card[k]) note('card.' + k, d.card[k], o.card[k]);
+  if (!near(d.column.w, o.column.w, 1) || !near(d.column.x, o.column.x, 1)) note('column', d.column, o.column);
+  if (d.rows && o.rows && d.rows.split(' ')[0].split('/')[0] !== o.rows.split(' ')[0].split('/')[0]) note('cards.first-row', d.rows, o.rows);
+  if (o.sideways) note('sideways', false, true);
+  if (o.failed) note('loaded', 'drawn', 'says it couldn’t be loaded');
+  if (o.errors) note('script-errors', 0, o.errors);
+  return out;
+}
+
+// The Nov 7 canvas's parts, on our pages (by the names its markup uses: design/canvas-2026-11-07).
+const CANVAS_CHECKS = {
+  '/projects/:project': [
+    ['legend: planned, verified, scope, forecast', () => document.querySelectorAll('.lgd span').length >= 4],
+    ['the chart', () => !!document.querySelector('#plan-chart svg')],
+    ['milestone rows under the chart', () => document.querySelectorAll('#plan-chart .dia').length > 0],
+    ['five figures: planned, verified, variance, index, forecast', () => ['f-planned', 'f-verified', 'f-variance', 'f-index', 'f-forecast'].every((i) => (document.getElementById(i) || {}).textContent !== '–')],
+    ['status pills', () => document.querySelectorAll('#plan-status .pill').length >= 1],
+    ['"Planned and actual dates"', () => document.querySelectorAll('#ms-rows tr, #ms-list li').length > 0],
+    ['"Plan changes" and "How it’s figured"', () => !!document.getElementById('plan-changes').textContent.trim() && /How it.s figured/.test(document.body.textContent)],
+    ['tasks a page at a time', () => document.querySelectorAll('#tasks tr').length <= 25],
+  ],
+  '/build': [
+    ['the chart', () => !!document.querySelector('#plan-chart svg')],
+    ['milestone pills', () => document.querySelectorAll('#plan-pills .pill').length > 0],
+    ['four figures: planned scope, verified, share, milestones done', () => ['f-scope', 'f-verified', 'f-share', 'f-done'].every((i) => (document.getElementById(i) || {}).textContent !== '–')],
+    ['"See the plan"', () => /\/projects\/[0-9a-f-]{36}$/.test((document.getElementById('plan-link') || {}).href || '')],
+  ],
+  '/': [
+    ['the progress card: figure, bar, Open build and Leaderboard', () => { const c = document.getElementById('next'); return !!c && !c.hidden && /\d+%/.test(c.textContent) && !!c.querySelector('a[href="/build"]') && !!c.querySelector('a[href="/leaderboard"]'); }],
+  ],
+};
+
+async function sideBySide(browser, a, b, w, file) {
+  const page = await browser.newPage({ viewport: { width: w * 2 + 24, height: 400 } });
+  const src = (buf) => 'data:image/png;base64,' + buf.toString('base64');
+  await page.setContent('<body style="margin:0;background:#888;display:flex;gap:24px;align-items:flex-start"><img src="' + src(a) + '" width="' + w + '"><img src="' + src(b) + '" width="' + w + '"></body>');
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: file, fullPage: true });
+  await page.close();
+}
+
+(async () => {
+  const { chromium } = require('playwright');
+  if (!fs.existsSync(DESIGN)) { console.error('No handoff at ' + DESIGN); process.exit(2); }
+  const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+  const known = await ids();
+  const srv = server(vercel);
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + srv.address().port;
+  const browser = await chromium.launch();
+  if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+  const report = { data: EMPTY ? 'empty' : 'live public API', pages: {}, canvas: {}, failures: [] };
+
+  async function open(url, w, signedIn) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, colorScheme: 'dark' });
+    if (signedIn) {
+      await ctx.route(base + '/auth/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(standIn(new URL(r.request().url())) || { signed_in: true }) }));
+      await ctx.route(base + '/api/**', (r) => { const x = r.request().method() === 'GET' ? standIn(new URL(r.request().url())) : null;
+        return r.fulfill({ status: x ? 200 : 503, contentType: 'application/json', body: JSON.stringify(x || { error: 'not sent: a local design check' }) }); });
+    }
+    else await ctx.route(base + '/auth/me', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"signed_in":false}' }));
+    await ctx.route(/giscus\.app/, (r) => r.abort());
+    if (!signedIn) await ctx.route(base + '/api/**', async (r) => {
+      if (r.request().method() !== 'GET') return r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"not sent: a local design check"}' });
+      const u = new URL(r.request().url());
+      if (STUBS[u.pathname] && !u.search) return r.fulfill({ status: 200, contentType: 'application/json', body: EMPTY ? JSON.stringify(emptied(JSON.parse(STUBS[u.pathname]))) : STUBS[u.pathname] });
+      let status = 502, body = '{}';
+      try { const live = await fetch(LIVE + u.pathname + u.search); status = live.status; body = await live.text();
+        const d = shim(u.pathname, u.searchParams, JSON.parse(body)); body = JSON.stringify(EMPTY ? emptied(d) : d); } catch { /* left as answered */ }
+      return r.fulfill({ status, contentType: 'application/json', body });
+    });
+    const page = await ctx.newPage();
+    const errors = [], fonts = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('request', (q) => { if (/\.woff2(\?|$)/.test(q.url())) fonts.push(path.basename(new URL(q.url()).pathname)); });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
+    await page.waitForTimeout(600);
+    // Scrolled to the end, so every font the whole page draws has been asked for.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+    await page.waitForTimeout(300);
+    return { ctx, page, errors, fonts };
+  }
+
+  for (const { from, to } of pairs()) {
+    const tmpl = ADDRESS[to] || '/' + to.replace(/\.html$/, '').replace(/(^|\/)index$/, '');
+    const missing = (tmpl.match(/:([a-z]+)/g) || []).map((m) => m.slice(1)).filter((k) => !known[k]);
+    // Ids are checked here: a hex id, a room code, a receipt number, or a citizen's kind and ref (one slash).
+    const ours = tmpl.replace(/:([a-z]+)/g, (m, k) => (/^[a-z0-9-]+(\/[a-z0-9-]+)?$/i.test(known[k] || '') ? known[k] : 'none'));
+    if (missing.length) { report.pages[from + ' → ' + ours] = { note: 'no live ' + missing.join(', ') + ' to open it with: not compared' }; console.log('  not compared: ' + from + ' (no live ' + missing.join(', ') + ')'); continue; }
+    const key = from + ' → ' + ours;
+    report.pages[key] = {};
+    for (const w of WIDTHS) {
+      const d = await open(base + '/__design/' + from, w);
+      const o = await open(base + ours, w, SIGNED_IN.has(to));
+      const dm = await d.page.evaluate(probe), om = { ...(await o.page.evaluate(probe)), errors: o.errors.length };
+      // A page scripts/page-weight.js weighs without the italic face must never fetch it.
+      if (NO_ITALIC.has(to) && o.fonts.some((f) => /italic/.test(f))) report.failures.push(key + ' @' + w + ' fetched the italic face, which page-weight.js counts out for it');
+      // Keyed by the handoff page, and ours too where one handoff page made several (error.html, join.html).
+      const name = from.replace(/\.html$/, '') + (to === from ? '' : '>' + to.replace(/\.html$/, ''));
+      const diffs = compare(name, w, dm, om);
+      report.pages[key][w] = { differences: diffs, note: missing.length ? 'no live ' + missing.join(', ') + ' to open it with' : undefined };
+      for (const x of diffs) report.failures.push(key + ' @' + w + ' ' + x.key.split(':').pop() + ': design ' + JSON.stringify(x.design) + ', ours ' + JSON.stringify(x.ours));
+      if (CANVAS_CHECKS[tmpl] && !EMPTY) {
+        const res = [];
+        for (const [label, fn] of CANVAS_CHECKS[tmpl]) { let ok = false; try { ok = await o.page.evaluate(fn); } catch { ok = false; } res.push([label, ok]); if (!ok) report.failures.push('canvas ' + tmpl + ' @' + w + ': ' + label); }
+        report.canvas[tmpl + ' @' + w] = res;
+      }
+      if (SHOTS) {
+        const a = await d.page.screenshot({ fullPage: true }), b = await o.page.screenshot({ fullPage: true });
+        await sideBySide(browser, a, b, w, path.join(SHOTS, from.replace(/\.html$/, '') + '--' + to.replace(/[\/.]/g, '_') + '-' + w + (EMPTY ? '-empty' : '') + '.png'));
+      }
+      await d.ctx.close(); await o.ctx.close();
+    }
+  }
+  await browser.close(); srv.close();
+  if (shimmed) report.shim = 'The live API does not serve 054\'s task_count and next yet; they were filled in here from its task list.';
+  if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 1));
+  const n = Object.keys(report.pages).length;
+  console.log('Design check (' + report.data + '): ' + n + ' page pairs at ' + WIDTHS.join(' and ') + ' px' + (fs.existsSync(CANVAS) ? ', with the Nov 7 canvas' : ''));
+  if (report.shim) console.log(report.shim);
+  for (const f of report.failures) console.log('  differs: ' + f);
+  console.log(report.failures.length ? report.failures.length + ' differences.' : 'Every page matches its design.');
+  process.exit(report.failures.length ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(2); });

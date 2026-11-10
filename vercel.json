@@ -86,6 +86,11 @@
       "source": "/verify",
       "destination": "/receipts",
       "permanent": false
+    },
+    {
+      "source": "/design/:path*",
+      "destination": "https://github.com/MyChiefOS/start-of-something-great/tree/main/design/:path*",
+      "permanent": false
     }
   ],
   "headers": [

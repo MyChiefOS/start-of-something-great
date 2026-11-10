@@ -163,6 +163,13 @@
   "links": {},
   "scripts": null
  },
+ "claim.html": {
+  "ids": [],
+  "links": {},
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
+ },
  "connect.html": {
   "ids": [
    [
@@ -241,6 +248,13 @@
   "ids": [],
   "links": {},
   "scripts": null
+ },
+ "engine.html": {
+  "ids": [],
+  "links": {},
+  "scripts": [
+   "<script src=\"/nav.js\" defer></script>"
+  ]
  },
  "errors/rate-limited.html": {
   "ids": [],
@@ -346,7 +360,9 @@
    "MCP": "/connect#add"
   },
   "scripts": [
-   "<script src=\"/nav.js\" defer></script>"
+   "<script src=\"/nav.js\" defer></script>",
+   "<script src=\"/progress.js\" defer></script>",
+   "<script src=\"/home.js\" defer></script>"
   ]
  },
  "join.html": {
@@ -386,7 +402,10 @@
  "join/pin.html": {
   "ids": [],
   "links": {},
-  "scripts": null
+  "scripts": [
+   "<script src=\"/pin.js\" defer></script>",
+   "<script src=\"/nav.js\" defer></script>"
+  ]
  },
  "leaderboard.html": {
   "ids": [],

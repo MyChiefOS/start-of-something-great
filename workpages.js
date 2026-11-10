@@ -385,18 +385,37 @@
       document.title = txt(d.title).slice(0, 80) + ': Day One Great';
       $('crumb-id').textContent = txt(d.title).slice(0, 40);
       $('dek').textContent = 'Posted by ' + who(d.poster) + ' in ' + txt(d.room && d.room.code) + ' ' + txt(d.room && d.room.name) + '.';
-      var done = n(d.tasks) > 0 && n(d.approved) === n(d.tasks);
+      // 054: task_count is the project's count; tasks holds its newest 25 ("108 of 0" before, Nov 9).
+      var total = n(d.task_count);
+      var done = total > 0 && n(d.approved) === total;
       var at = done ? 3 : n(d.submitted) > 0 ? 2 : n(d.claimed) > 0 ? 1 : 0;
       Array.prototype.forEach.call($('steps').children, function (s, i) { s.className = i <= at ? 'done' : ''; });
       $('description').textContent = txt(d.description);
       $('pct').textContent = n(d.percent) + '%';
       width($('pct-bar'), d.percent);
-      $('pct-note').textContent = n(d.approved) + ' of ' + plural(n(d.tasks), 'task') + ' approved · ' + n(d.open) + ' open';
+      $('pct-note').textContent = n(d.approved) + ' of ' + plural(total, 'task') + ' approved · ' + n(d.open) + ' open';
+      $('tasks-count').textContent = total > 25 ? 'Newest first, 25 at a time, of ' + plural(total, 'task') + '.' : '';
       var l = d.latest;
       $('latest').hidden = !l;
       if (l) { $('latest-meta').textContent = 'Latest submission · ' + who(l.worker) + ' · ' + when(l.created_at) + ' · ' + txt(l.task && l.task.ref); $('latest-note').textContent = txt(l.note); }
       var tb = $('tasks');
       tb.textContent = '';
+      rows(d);
+      $('tasks-empty').hidden = tb.children.length > 0;
+      // Each page of tasks has an address of its own (?before=<task>; decided for JEVs, Nov 10): opened there, it starts on it.
+      var from = new URLSearchParams(location.search).get('before');
+      if (isId(from)) older(from, true);
+      $('task-form').hidden = d.source !== 'member';
+      $('add').hidden = d.source !== 'member';
+      $('ms-form').hidden = d.source !== 'member';
+      drawPlan();
+    }
+    // A page of tasks into the table, and the cursor for "Show older" (054).
+    var next = null;
+    function rows(d) {
+      var tb = $('tasks');
+      next = isId(d.next) ? d.next : null;
+      $('tasks-more').hidden = !next;
       (d.tasks || []).forEach(function (t) {
         if (!t || !isId(t.id)) return;
         var tr = clone('task-tpl');
@@ -408,21 +427,35 @@
         slot(tr, 'who').appendChild(whoEl(t.done_by || t.worker));
         tb.appendChild(tr);
       });
-      $('tasks-empty').hidden = tb.children.length > 0;
-      $('task-form').hidden = d.source !== 'member';
-      $('add').hidden = d.source !== 'member';
-      $('ms-form').hidden = d.source !== 'member';
-      drawPlan();
     }
+    function older(before, fresh) {
+      var b = $('tasks-more'); b.disabled = true;
+      get('/api/work/project?id=' + id + '&before=' + before).then(function (x) {
+        b.disabled = false;
+        if (!x.ok || !x.d) return;
+        if (fresh) {
+          $('tasks').textContent = '';
+          var c = $('tasks-count'); c.textContent = 'Older tasks, 25 at a time. ';
+          var a = document.createElement('a'); link(a, location.pathname, 'Back to the newest'); c.appendChild(a);
+        }
+        rows(x.d);
+        try { history.replaceState(null, '', location.pathname + '?before=' + before); } catch (e) {}
+      }).catch(function () { b.disabled = false; });
+    }
+    $('tasks-more').addEventListener('click', function () { if (next) older(next, false); });
     // The project's plan (050), drawn by plan.js: its chart, milestone pills and figures.
     var plan = null;
     function drawPlan() {
       get('/api/work/plan?project=' + id).then(function (x) {
         if (!x.ok || !x.d || !window.DOGPlan) return;
         plan = x.d;
-        window.DOGPlan.chart($('plan-chart'), plan);
-        window.DOGPlan.pills($('plan-pills'), plan);
-        window.DOGPlan.figures({ planned: 'f-planned', verified: 'f-verified', index: 'f-index', forecast: 'f-forecast', text: 'plan-text' }, plan);
+        var P = window.DOGPlan;
+        P.chart($('plan-chart'), plan);
+        P.status($('plan-status'), plan);
+        P.figures({ planned: 'f-planned', verified: 'f-verified', variance: 'f-variance', index: 'f-index', forecast: 'f-forecast', 'forecast-note': 'f-forecast-note', text: 'plan-text' }, plan);
+        P.table($('ms-rows'), $('ms-list'), plan);
+        P.changes($('plan-changes'), plan);
+        $('ms-empty').hidden = (plan.milestones || []).length > 0;
         if (!(plan.milestones || []).length) $('plan-text').textContent = 'No milestones yet. ' + ($('ms-form').hidden ? '' : 'The poster adds them below; the plan then fills itself as tasks arrive.');
       });
     }

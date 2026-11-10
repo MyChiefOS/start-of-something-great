@@ -67,11 +67,13 @@ const mine = {};
 for (const [c, d] of Object.entries(styles)) if (!shared[c]) mine[c] = d;
 // Rules a page's script needs that its markup doesn't carry: /decisions' Second Look track, whose fill the design writes
 // inline (width:63%), as classes in steps of 5% that decisions.js sets (no style from a script).
-const SIGNIN = '.d1 main.story{padding-top:4px}.d1 main.story h1{font-size:clamp(1.75rem,7vw,3.25rem)}.d1 main.story .dek{font-size:17px;margin-bottom:8px}'
+// The design's headline and intro at every width but a phone's, where a smaller intro keeps the sign-in button in the
+// first screen at 390 by 844 (UX PR A; scripts/check-join-panel.js). The top stays 4 px under the menu for the same reason.
+const SIGNIN = '.d1 main.story{padding-top:4px}@media(max-width:600px){.d1 main.story .dek{font-size:17px;margin-bottom:8px}.d1 #code-signin{padding-bottom:8px}.d1 #say-hello{padding-top:8px}}'
   + '.d1 .card .btn,.d1 .card .tabs button{display:inline-flex;align-items:center;justify-content:center;min-height:44px}'
   + '.d1 .card summary{display:list-item;min-height:44px;padding:8px 0;box-sizing:border-box}'
   // While a code shows, the comment box sits close under it (finding 1): no empty line, and the cards closer together.
-  + '.d1 #code-copied:empty{display:none}.d1 #code-signin,.d1 #pin-signin-card{margin:12px 0!important}.d1 #code-signin{padding-bottom:8px}.d1 #say-hello{padding-top:8px}.d1 #code-show p.fine:last-of-type{margin-top:6px!important}.d1 main.story>p:not(.dek){margin-bottom:8px}.d1 #post-here{margin-bottom:4px}\n';
+  + '.d1 #code-copied:empty{display:none}.d1 #code-signin,.d1 #pin-signin-card{margin:12px 0!important}.d1 #code-show p.fine:last-of-type{margin-top:6px!important}.d1 main.story>p:not(.dek){margin-bottom:8px}.d1 #post-here{margin-bottom:4px}\n';
 // A member's or an agent's chosen name is their page's h1, and a long one wraps rather than running off a phone's screen.
 const WIDTHS = Array.from({ length: 21 }, (_, i) => '.d1 .trk i.w' + i * 5 + '{width:' + i * 5 + '%}').join('') + '\n';
 // A project's plan (050; plan.js): the design's chart, its pills and the schedule figures.
@@ -84,11 +86,29 @@ const PLAN = '.d1 .plan-svg{display:block;font-family:var(--display);font-size:1
   + '.d1 .plan-box{min-height:260px}.d1 .figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:22px}'
   + '.d1 .figs div{border-top:1px solid var(--rule);padding-top:8px;min-width:0}.d1 .figs b{display:block;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}'
   + '.d1 .figs small{display:block;color:var(--muted);font-family:var(--display);font-size:12.5px;line-height:1.35;margin-top:2px}'
-  + '@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}\n';
+  + '@media(max-width:520px){.d1 .figs{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+  // Aaron's chart canvas of Nov 7 (design/canvas-2026-11-07): the shaded time after the planned finish, the values at
+  // now, the forecast's label, the milestone rows and their marks, the legend, five figures, and the milestone table
+  // that stacks on a phone.
+  + '.d1 .plan-svg .shade{fill:var(--amber);opacity:.06}.d1 .plan-svg .after,.d1 .plan-svg .val{fill:var(--muted)}.d1 .plan-svg .val.strong{fill:var(--text)}'
+  + '.d1 .plan-svg .pdot{fill:var(--muted)}.d1 .plan-svg .fl{fill:var(--amber)}.d1 .plan-svg .row{stroke:var(--rule)}'
+  + '.d1 .plan-svg .span{stroke:var(--muted);stroke-width:1.5}.d1 .plan-svg .span.fc{stroke:var(--amber);stroke-dasharray:2 3}'
+  + '.d1 .plan-svg .dia.plan{fill:var(--ink);stroke:var(--muted);stroke-width:1.5}.d1 .plan-svg .dia.done{fill:var(--amber)}'
+  + '.d1 .plan-svg .dia.fc{fill:var(--ink);stroke:var(--amber);stroke-width:1.5;stroke-dasharray:2 2}'
+  + '.d1 .lgd{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 12px}.d1 .lgd span{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-size:13px;color:var(--muted)}'
+  + '.d1 .lgd i{display:inline-block;width:26px;height:0;border-top:1.5px dashed var(--muted)}.d1 .lgd i.v{border-top:2.5px solid var(--amber)}.d1 .lgd i.s{border-top:1px solid var(--muted)}'
+  + '.d1 .lgd i.f{border-top:2px dotted var(--amber)}.d1 .figs.f5{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}'
+  + '.d1 .mlist{list-style:none;margin:0;padding:0;display:none}.d1 .mlist .ms{border-top:1px solid var(--rule);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start}'
+  + '.d1 .mlist .ms:last-child{border-bottom:1px solid var(--rule)}.d1 .mlist .ms b{font-family:var(--display);font-weight:600}.d1 .mlist .ms .fine{grid-column:1/-1}'
+  + '@media(max-width:600px){.d1 .mtab{display:none}.d1 .mlist{display:block}.d1 .lgd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}}\n';
 const ADD = { 'decisions.html': WIDTHS,
+  // The home page's progress card (home.js): its bar in steps of 5%, and on a phone its figure, words and buttons stacked.
+  'index.html': WIDTHS + '@media(max-width:600px){.d1 #next{grid-template-columns:minmax(0,1fr)!important;gap:12px!important}}\n',
   'member.html': '.d1 h1{overflow-wrap:anywhere}\n', 'agent.html': '.d1 h1{overflow-wrap:anywhere}\n',
   // The work pages (042): progress bars in steps of 5% that workpages.js sets, and long titles that wrap.
-  'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}\n', 'project.html': WIDTHS + PLAN + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
+  'build.html': WIDTHS + PLAN + '.d1 td.tn{white-space:nowrap}'
+    // The design's four task cards in one row; two to a row below 900 px and one on a phone (spec 5.6), never squeezed.
+    + '@media(max-width:900px){.d1 .k4{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:520px){.d1 .k4{grid-template-columns:minmax(0,1fr)!important}}\n', 'project.html': WIDTHS + PLAN + '.d1 h1{overflow-wrap:anywhere}\n', 'projects.html': WIDTHS + '.d1 td.tn{white-space:nowrap}\n', 'task.html': '.d1 h1{overflow-wrap:anywhere}.d1 dd code{overflow-wrap:anywhere}\n',
   // The sign-in pages (UX PR A, kept with the design): every control at least 44 px at every width, and a shorter top, so
   // the chosen way's button is in the first screen at 390 by 844 and 1280 by 800 (scripts/check-join-panel.js).
   'join.html': SIGNIN, 'join/pin.html': SIGNIN };

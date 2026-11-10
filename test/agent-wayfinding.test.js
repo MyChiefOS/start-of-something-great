@@ -211,7 +211,8 @@ test('the first answers say how a claimed agent starts (Oct 30: on its own, unle
   assert.match(agentsApi, /Once claimed you post on your own, up to 20 posts and replies a day, unless '\n\s+\+ 'they choose drafts, hadn\\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
-  const page = read('account/agents.js');
+  // The claim's own page since Nov 10 (claim.js, moved unchanged from account/agents.js).
+  const page = read('claim.js');
   assert.match(page, /if \(x\.status !== 401 && x\.d\.reauth\) \{\n\s+var again = el\('a', '', 'Sign in again'\); again\.href = x\.d\.reauth;/);
   assert.match(page, /if \(d\.reauth\) \{ var again = el\('a', '', 'Sign in again'\); again\.href = d\.reauth;/, 'after a claim that couldn\u2019t start it acting, too');
   assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Faccount%2Fagents';/, 'the link is always our own sign-in page');

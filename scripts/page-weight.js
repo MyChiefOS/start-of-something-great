@@ -24,6 +24,12 @@ function size(file) {
   return TEXT.test(file) ? zlib.gzipSync(buf, { level: 9 }).length : buf.length;
 }
 
+// Pages a browser was seen to draw without italics, so it never fetches the italic face, though a script they load could
+// draw italics on another page (the leaderboard loads workpages.js for its helpers; workpages.js draws "Unclaimed" in
+// italics on the task board). scripts/check-design.js fails if any of them fetches the italic face (checked Nov 10:
+// /leaderboard fetches bricolage-grotesque.woff2 and source-serif-4.woff2 only).
+const DRAWS_NO_ITALIC = new Set(['leaderboard.html']);
+
 // Everything one page makes the browser fetch on a first visit (each file once).
 function assets(page) {
   const html = fs.readFileSync(page, 'utf8');
@@ -43,8 +49,8 @@ function assets(page) {
       // script that merely mentions a note counts, so a page may be weighed with a font it doesn't load.
       const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => local(m[1])).filter((f) => f && f.endsWith('.js'))
         .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
-      const italic = /<em\b|<i\b|<cite\b|<blockquote\b|class="[^"]*\b(signoff|note)\b/.test(html) ||
-        /['"`](em|i|cite|blockquote)['"`]|['"`][^'"`]*\b(signoff|note)\b[^'"`]*['"`]/.test(scripts);
+      const italic = !DRAWS_NO_ITALIC.has(path.relative(ROOT, page)) && (/<em\b|<i\b|<cite\b|<blockquote\b|class="[^"]*\b(signoff|note)\b/.test(html) ||
+        /['"`](em|i|cite|blockquote)['"`]|['"`][^'"`]*\b(signoff|note)\b[^'"`]*['"`]/.test(scripts));
       for (const m of fs.readFileSync(p, 'utf8').matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
         const f = local(m[1]);
         if (f && (italic || !/italic/.test(f))) found.add(f);
@@ -75,4 +81,4 @@ if (require.main === module) {
   process.exit(over.length ? 1 : 0);
 }
 
-module.exports = { weigh, BUDGET };
+module.exports = { weigh, BUDGET, DRAWS_NO_ITALIC };

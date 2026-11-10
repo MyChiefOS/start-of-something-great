@@ -180,13 +180,20 @@
     });
     var done = GROUPS.every(function (g) { return last.groups[g.key]; });
     if (done && total === 0 && shown === 'all') {
+      // The design's "When nothing matches" section: a heading, then the empty card.
+      var sec = el('section', '');
+      sec.setAttribute('aria-labelledby', 'group-none');
+      var hn = el('h2', '', 'Nothing matches');
+      hn.id = 'group-none';
+      sec.appendChild(hn);
       var none = el('div', 'empty');
       none.appendChild(document.createTextNode('No results for “' + last.q + '”. Check the spelling, or browse the '));
       var map = el('a', '', 'sitemap');
       map.href = '/sitemap';
       none.appendChild(map);
       none.appendChild(document.createTextNode('.'));
-      results.appendChild(none);
+      sec.appendChild(none);
+      results.appendChild(sec);
     }
   }
 

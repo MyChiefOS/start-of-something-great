@@ -56,16 +56,15 @@
     if (!P || !plan) return;
     P.chart($('plan-chart'), plan);
     P.pills($('plan-pills'), plan);
-    var f = P.figures({ planned: 'f-planned', verified: 'f-verified', index: 'f-index', forecast: 'f-forecast', text: 'plan-text' }, plan);
+    var f = P.figures({ scope: 'f-scope', verified: 'f-verified', share: 'f-share', done: 'f-done', text: 'plan-text' }, plan);
     var pr = plan.project || {};
+    // "See the plan": the featured project's page, where its chart, schedule index and forecast are (the Nov 7 canvas).
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(pr.id || ''))) $('plan-link').href = '/projects/' + pr.id;
     $('plan-of').textContent = 'Sizes of the tasks in ' + txt(pr.title) + ', each under the first milestone due on or after the day it was posted.';
-    var pct = n(f.scope) ? Math.floor((100 * n(f.verified)) / n(f.scope)) : 0;
-    $('pct').textContent = pct + '%';
-    width($('pct-bar'), pct);
-    var gate = (plan.milestones || []).filter(function (m) { return m.gate; })[0];
-    $('pct-note').textContent = txt(pr.title) + ' · ' + plural((plan.milestones || []).length, 'milestone') + ' · ' + plural(n(f.tasks), 'task')
-      + ' · ' + (n(f.left) === 0 && n(f.scope) ? 'all posted work verified' : f.forecast ? 'expected ' + P.long(f.forecast) : 'no forecast yet')
-      + (gate ? ', the gate ' + P.long(gate.target) : '');
+    var pg = window.DOGProgress(plan);
+    $('pct').textContent = pg.pct + '%';
+    width($('pct-bar'), pg.pct);
+    $('pct-note').textContent = pg.note;
   }
   var resized;
   window.addEventListener('resize', function () { clearTimeout(resized); resized = setTimeout(function () { if (plan && window.DOGPlan) window.DOGPlan.chart($('plan-chart'), plan); }, 150); });

@@ -93,3 +93,33 @@ test('the design\'s colours are readable in both schemes: text and muted text 4.
   const site = read('styles.css');
   for (const k of ['ink', 'text', 'muted', 'rule', 'amber']) assert.ok(new RegExp('--' + k + ': ' + dark.match(new RegExp('--' + k + ':(#[0-9a-f]{6})', 'i'))[1]).test(site), '--' + k + ' is the site\'s');
 });
+
+test('every page\'s patches are one entry (a second entry for a page silently replaced the first: the home page lost its PIN step), and the design records are never served', () => {
+  const src = read('tools/design/patches.js');
+  const keys = [...src.matchAll(/^ {2}'([^']+)': \[/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(keys.filter((k, i) => keys.indexOf(k) !== i), []);
+  assert.match(read('index.html'), /a one-time code, a key file and a six-digit PIN/);
+  // The handoff and canvas copies the design check reads (scripts/check-design.js) are records, not pages of the site.
+  const vercel = JSON.parse(read('vercel.json'));
+  assert.ok(vercel.redirects.some((r) => r.source === '/design/:path*' && /^https:\/\/github\.com\/MyChiefOS\/start-of-something-great\/tree\/main\/design\//.test(r.destination) && !r.has), 'vercel.json sends /design/* to GitHub');
+  assert.match(read('.vercelignore'), /^\/design\/$/m);
+});
+
+test('the home page\'s progress card is the Build page\'s figure and sentence, from progress.js, and never says "done"', () => {
+  const home = read('index.html');
+  assert.match(home, /<p class="kick">Work<\/p><div id="next" class="card [^"]*"><span class="num [^"]*" id="next-pct">–<\/span>/);
+  assert.match(home, /<script src="\/progress\.js" defer><\/script>\n<script src="\/home\.js" defer><\/script>/);
+  assert.match(read('home.js'), /window\.DOGProgress\(plan\)/);
+  assert.match(read('buildpage.js'), /window\.DOGProgress\(plan\)/);
+  assert.match(read('build.html'), /<script defer src="\/progress\.js"><\/script>\n {2}<script defer src="\/buildpage\.js"><\/script>/);
+  // The plan's sentence: all of it verified is "all posted work verified".
+  global.window = {};
+  require('../progress.js');
+  const progress = global.window.DOGProgress;
+  delete global.window;
+  const pg = progress({ project: { title: 'The site\'s own build' }, milestones: [{ code: 'M1', first_target: '2026-11-20', target: '2026-11-20', gate: true }],
+    figures: { scope: 439, verified: 439, left: 0, tasks: 108 } });
+  assert.deepStrictEqual([pg.pct, pg.note], [100, 'The site\'s own build · 1 milestone · 108 tasks · all posted work verified, the gate Fri, Nov 20']);
+  assert.doesNotMatch(pg.note, /\bdone\b|complete/i);
+  assert.strictEqual(progress({ figures: { scope: 3, verified: 2, left: 1, tasks: 2 }, milestones: [] }).pct, 66, 'rounded down');
+});

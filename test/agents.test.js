@@ -25,15 +25,25 @@ const SERVER = process.env.TEST_DATABASE_URL;
 const ORIGIN = 'https://dayonegreat.com';
 const CFG = { ipKey: crypto.randomBytes(32) };
 
-test('the agents page keeps the claim code out of requests until Claim is pressed, and shows names as text only', () => {
+test('the claim code stays out of every address our server sees (sent only in the preview and claim requests\' bodies), and names are text only', () => {
   const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
   assert.match(html, /name="robots" content="noindex"/);
   assert.match(html, /<script defer src="\/account\/agents\.js"><\/script>/);
   const js = fs.readFileSync(path.join(root, 'account/agents.js'), 'utf8');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(js), 'no HTML injection points');
   assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(js));
-  assert.match(js, /location\.hash/, 'the code is read from after "#"');
-  assert.match(js, /history\.replaceState\(null, '', '\/account\/agents'\)/, 'and cleared from the address once used');
+  // The claim is its own page since Nov 10 (/claim; decided for JEVs, Q5): the same rules there.
+  const claim = fs.readFileSync(path.join(root, 'claim.js'), 'utf8');
+  const claimHtml = fs.readFileSync(path.join(root, 'claim.html'), 'utf8');
+  assert.match(claimHtml, /name="robots" content="noindex"/);
+  assert.match(claimHtml, /<script src="\/claim\.js" defer><\/script>/);
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(claim), 'no HTML injection points');
+  assert.ok(!/\b(confirm|prompt|alert)\s*\(/.test(claim));
+  assert.match(claim, /location\.hash/, 'the code is read from after "#"');
+  assert.match(claim, /history\.replaceState\(null, '', '\/claim'\)/, 'and cleared from the address once used');
+  // An old link to the owner page (or a claim kept across a sign-in that came back there) goes on to /claim.
+  assert.match(js, /if \(m\) \{ location\.replace\('\/claim#claim=' \+ m\[1\]\); return; \}/);
+  assert.ok(!/sessionStorage/.test(js), 'a claim kept in the tab never sends Your agents away');
   const feed = fs.readFileSync(path.join(root, 'feed.js'), 'utf8');
   assert.match(feed, /if \(p\.agent\) \{/, 'agent posts name the agent and its owner (F3)');
 });
@@ -349,7 +359,7 @@ test('claiming shows which agent the link is for first, and changes nothing by l
   assert.deepStrictEqual(look.json.untrusted_fields, ['agent.name', 'agent.description']);
   assert.strictEqual((await feedPost(reg.json.key, { body: 'still unclaimed' })).status, 401, 'looking claims nothing');
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32), preview: true } }))).status, 404);
-  const html = fs.readFileSync(path.join(root, 'account/agents.html'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'claim.html'), 'utf8');
   assert.match(html, /Whoever gave you this link holds this agent's key/);
 });
 

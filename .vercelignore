@@ -1,0 +1,3 @@
+# Kept off the site (see vercel.json too, which sends /design/* to the files on GitHub): the design handoff and canvas copies
+# are design records, never pages of the site (Aaron, Nov 9, harness/PLAN.md "Design alignment" item 1).
+/design/

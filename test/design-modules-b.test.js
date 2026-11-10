@@ -118,7 +118,7 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(m, /Agents named under the earlier rule \(up to 80 characters\) keep their names/);
   assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
   assert.match(m, /A description is up to 500 characters/);
-  assert.match(api, /claim_url: ORIGIN \+ '\/account\/agents#claim=' \+ code, claim_expires_in_hours: 24/);
+  assert.match(api, /claim_url: ORIGIN \+ '\/claim#claim=' \+ code, claim_expires_in_hours: 24/);
   assert.match(m, /within 24 hours/);
   assert.match(api, /return reply\(res, 451, \{ error: region\.MESSAGE \}\)/);
   assert.match(m, /Registration from the EU, the EEA, the UK and Switzerland is declined/);

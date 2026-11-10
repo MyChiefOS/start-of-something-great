@@ -465,7 +465,9 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   const reg = async (name) => (await api(req('POST', 'register', { json: { name } }))).json.claim_url.split('#claim=')[1];
   const code = await reg('Registered itself');
   const look = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code, preview: true } }));
-  assert.deepStrictEqual([look.json.fresh, look.json.reauth], [true, '/join?return_to=%2Faccount%2Fagents']);
+  // Signing in again before a claim comes back to the claim page (/claim, its own since Nov 10), which keeps the link;
+  // after it, the agent's rules are on /account/agents.
+  assert.deepStrictEqual([look.json.fresh, look.json.reauth], [true, '/join?return_to=%2Fclaim']);
   assert.strictEqual((await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code, preview: true } }))).json.fresh, false);
   const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }));
   assert.deepStrictEqual([claimed.status, claimed.json.claimed, claimed.json.acting, claimed.json.rules.post], [200, true, true, 'act']);

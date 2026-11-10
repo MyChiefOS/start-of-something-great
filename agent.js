@@ -94,7 +94,8 @@
       meta.appendChild(link('Receipt', '/receipt?post=' + q.id));
       $('recent').appendChild(card);
     });
-    $('recent-section').hidden = !$('recent').children.length;
+    // The section stays, as the design draws it; with nothing in it, it says so.
+    $('recent-empty').hidden = $('recent').children.length > 0;
     $('status').textContent = '';
   }
   function load() {

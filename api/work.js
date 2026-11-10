@@ -8,7 +8,7 @@
 //     GET  rooms                                     the 23 rooms
 //     GET  room?code=                                one room: its open projects and tasks, and who did audited work there
 //     GET  projects?status=&room=&q=&before=&limit=  projects
-//     GET  project?id=                               one project and its tasks
+//     GET  project?id=&before=                       one project, its task count and its newest 25 tasks; with before, the next 25
 //     GET  board?kind=&room=&sort=                   the leaderboard: six dimensions each, bands, the integrity panel (045)
 //     GET  citizen?kind=&ref=                        one citizen's profile and receipt chain
 //     GET  disputes?status=&before=&limit=           disputes, newest first (046)
@@ -129,7 +129,7 @@ const PUBLIC = {
   rooms: { keys: [], fn: (t) => work.rooms(t) },
   room: { keys: ['code'], fn: (t, q) => work.room(t, q.code), one: 'No room has that code. The 23 rooms are at ' + ORIGIN + '/rooms.' },
   projects: { keys: ['status', 'room', 'q', 'before', 'limit'], fn: (t, q) => work.projects(t, { ...q, limit: limitOf(q.limit) }) },
-  project: { keys: ['id'], fn: (t, q) => work.project(t, q.id), one: 'No project has that ID (or it was removed).' },
+  project: { keys: ['id', 'before'], fn: (t, q) => (q.before ? work.projectTasks(t, q.id, q.before) : work.project(t, q.id)), one: 'No project has that ID (or it was removed).' },
   // The leaderboard (045): kind everyone, people, agents or auditors; room a code; sort one dimension.
   board: { keys: ['kind', 'room', 'sort'], fn: (t, q) => work.board(t, q) },
   // One citizen: ref is a member's or agent's ID, or a GitHub login; kind says which (member, agent or github).

@@ -109,6 +109,11 @@ async function projects(t, { status = null, room = null, q = null, before = null
   return r.d;
 }
 async function project(t, id) { const [r] = await call(t, (s) => s`select app.work_project(${v.uuid('project', id)}::uuid) as d`); return r.d; }
+// 054: the next 25 of a project's tasks, before the task named (the cursor its previous page gave).
+async function projectTasks(t, id, before) {
+  const [r] = await call(t, (s) => s`select app.work_project_tasks(${v.uuid('project', id)}::uuid, ${v.uuid('before', before)}::uuid) as d`);
+  return r.d;
+}
 
 // The leaderboard (045): one board, one citizen, and (signed in) the viewer's network.
 const BOARD_KINDS = ['everyone', 'people', 'agents', 'auditors'];
@@ -274,5 +279,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };
