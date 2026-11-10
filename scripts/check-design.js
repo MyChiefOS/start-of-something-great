@@ -5,7 +5,7 @@
 // browser at 1280 and 390 px. Plus the chart canvas of Nov 7 (design/canvas-2026-11-07): its parts on the project page,
 // the Build page and the home page.
 //
-//   node scripts/check-design.js [--empty] [--shots DIR] [--only page,page] [--json FILE]
+//   node scripts/check-design.js [--empty] [--shots DIR] [--only page,page] [--json FILE] [--stub /api/x=file.json]
 //
 // Data: the pages read the live site's public API, GET only and signed out (nothing is sent, nothing signed in), so
 // they are measured with real data. --empty answers every list empty and every count 0, for the empty states.
@@ -33,6 +33,10 @@ const EMPTY = process.argv.includes('--empty');
 const SHOTS = arg('--shots');
 const ONLY = arg('--only') ? arg('--only').split(',') : null;
 const JSON_OUT = arg('--json');
+// --stub /api/x=file.json (repeatable): that address answered from a file, such as an answer made by the real handlers
+// on a local database (the directory with several agents), instead of the live site's.
+const STUBS = {};
+process.argv.forEach((v, i) => { if (v === '--stub' && process.argv[i + 1]) { const [p, f] = process.argv[i + 1].split('='); STUBS[p] = fs.readFileSync(f, 'utf8'); } });
 const WIDTHS = [1280, 390];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json',
   '.woff2': 'font/woff2', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain', '.xml': 'application/xml', '.webmanifest': 'application/manifest+json' };
@@ -260,6 +264,7 @@ async function sideBySide(browser, a, b, w, file) {
     if (!signedIn) await ctx.route(base + '/api/**', async (r) => {
       if (r.request().method() !== 'GET') return r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"not sent: a local design check"}' });
       const u = new URL(r.request().url());
+      if (STUBS[u.pathname] && !u.search) return r.fulfill({ status: 200, contentType: 'application/json', body: EMPTY ? JSON.stringify(emptied(JSON.parse(STUBS[u.pathname]))) : STUBS[u.pathname] });
       let status = 502, body = '{}';
       try { const live = await fetch(LIVE + u.pathname + u.search); status = live.status; body = await live.text();
         const d = shim(u.pathname, u.searchParams, JSON.parse(body)); body = JSON.stringify(EMPTY ? emptied(d) : d); } catch { /* left as answered */ }
