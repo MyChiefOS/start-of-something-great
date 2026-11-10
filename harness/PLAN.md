@@ -213,17 +213,8 @@ Each proven live (OPERATIONS.md) before the next starts.
 
 ### The standards (Aaron, Nov 10: "use this standards as part of your framework"; and "Add those additional worth adding standards. Also add HIPPA and FedRAMP processes"). Claude. Recorded Nov 10.
 
-harness/STANDARDS.md maps each standard to the project. Its gaps in order:
-1. RK141, first: a red-team copy in GitHub Actions (the site, a throwaway database, test accounts), Claude's attack suite on every PR, and any attack plan Aaron or his agent writes, so RK140 and RK135 are red teamed before he merges them.
-2. OWASP A01 and CWE-862: RK140, then RK135 (above).
-3. Audit logging part 2, waiting on the Blob cost OK.
-4. One supply-chain PR after RK135: a software bill of materials, a daily dependency watch that flags CISA's KEV list, and signed build records.
-5. ESLint, errors only.
-6. Before go-live, one pass each over ASVS, the rest of the CWE Top 25, OWASP's LLM Top 10, WCAG 2.2 AA and CISA's bad practices, findings to RISKS.md.
-7. A written incident response plan, tested yearly.
-8. PCI DSS with payments.
-9. After go-live, a yearly penetration test; until then, step 1's attack suite on every PR.
-Until 1 to 7 are done and an independent reviewer for JEVs agrees the code is reasonably cleaned up, every PR opens its bad news with the standards acknowledgment (harness/STANDARDS.md).
+harness/STANDARDS.md maps each standard to the project, with its gaps in order (updated Nov 10 from four independent reviews): 1 the red-team copy and the preview; 2 #123's review fixes; 3 RK142 and RK143; 4 RK140, RK135, RK144, RK112, RK100's Second Look decide, RK145; 5 SECURITY.md and disclosure (RK147); 6 the required gate (RK146); 7 audit logging part 2; 8 the supply-chain PR; 9 ESLint; 10 the before-go-live passes; 11 the incident plan; 12 PCI with payments; 13 the penetration test and off-site backups, as costed choices.
+Until 1 to 11 are done and an independent reviewer for JEVs agrees the code is reasonably cleaned up, every PR opens its bad news with the standards acknowledgment (harness/STANDARDS.md).
 
 ### Design alignment (Aaron, Nov 9: "Why don't the page align to design ... the design should align", "provide a detailed list of all of the items needed"). Claude. Built Nov 10 in one PR (#122; Aaron, Nov 9: "Address it ALL in the 1 PR"); Aaron merged it Nov 10, and it was proven live the same day (OPERATIONS.md).
 
