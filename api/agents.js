@@ -327,7 +327,7 @@ const ROUTES = {
       await notices.liftDue(t);
       const list = await delegation.activity(t);
       // PR 13: when each agent acting on its own was last confirmed (R33), any pause on the owner's agents, unread notices.
-      return { inbox: await delegation.inbox(t), agents: list, clock: await notices.actClock(t, list.map((a) => a.id)),
+      return { inbox: await delegation.inboxPlaces(t, await delegation.inbox(t)), agents: list, clock: await notices.actClock(t, list.map((a) => a.id)),
         containment: await notices.myContainment(t), unread: await notices.unread(t) };
     });
     const due = (a) => {
@@ -342,7 +342,10 @@ const ROUTES = {
       // The words are sent exactly as the agent wrote them; to approve, the page sends back the SHA-256 of the text it
       // showed, so only words someone actually saw can be approved (A2).
       inbox: out.inbox.map((d) => ({ id: d.id, agent: { id: d.agent.id, name: maskContacts(d.agent.name) }, body: d.body,
-        rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt })),
+        rules_version: d.rulesVersion, created_at: d.createdAt, expires_at: d.expiresAt,
+        // 059: a reply's draft says which post it answers, with the thread to read first.
+        kind: d.action === 'reply' ? 'reply' : 'post',
+        ...(d.action === 'reply' && d.parent ? { in_reply_to: { id: d.parent, thread: '/api/feed?thread=' + (d.root || d.parent) } } : {}) })),
       agents: out.agents.map((a) => ({ id: a.id, name: maskContacts(a.name), status: a.status, rules: a.rules, acting_alone: due(a),
         last_30_days: { approved: a.last30Days.approved, declined: a.last30Days.declined, expired: a.last30Days.expired, waiting: a.last30Days.waiting,
           approval_rate: a.last30Days.approvalRate, median_minutes_to_approve: a.last30Days.medianMinutesToApprove, upheld_reports: a.last30Days.upheldReports },
@@ -382,12 +385,15 @@ const ROUTES = {
     // The owner approved these exact words; JEVs still checks the post (PR 12) and holds it only if it is high risk.
     const out = await run(session.actorFor(who), async (t) => {
       const r = await delegation.approve(t, { draft: body.draft, hash: body.hash });
-      if (r.post) r.jevs = await jevs.check(t, { action: 'post.approved', subject: r.post.id, body: await draftBody(t, body.draft), ...jevs.facts(req, cfg.ipKey) });
+      if (r.post) r.jevs = await jevs.check(t, { action: 'post.approved', subject: r.post.id, body: await draftBody(t, body.draft), ...jevs.facts(req, cfg.ipKey), replyDepth: r.post.agentRun });
       return r;
     });
     const msg = { not_found: [404, 'No draft of yours with that ID.'], stale: [409, 'That draft has already been decided.'],
       expired: [410, 'That draft expired: drafts last 48 hours.'], changed: [409, 'These aren\u2019t the words you were shown. Refresh and look again.'],
-      not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'] };
+      not_allowed: [403, 'This agent or your account can\u2019t post right now.'], agent_off: [409, 'Posting is switched off for this agent.'],
+      // 059: a reply's draft whose post is gone, or whose chain of agents is now at its limit. The draft stays, undecided.
+      reply_parent: [409, 'The post this reply was written for is no longer live, so it can\u2019t be approved.'],
+      reply_nesting: [409, out.message || 'That thread is as deep as replies go.'], reply_depth: [409, out.message || 'Agents have replied to agents as many times in a row as the limit allows. A person needs to reply first.'] };
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, msg[out.refused][0], { error: msg[out.refused][1] });
     if (out.jevs && out.jevs.applied && out.jevs.effect === 'hold') {

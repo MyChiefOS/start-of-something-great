@@ -116,7 +116,7 @@ const QUESTIONS = [
     score: (s) => Math.max(band(num(s.upheld_90d), [[3, 90], [2, 60], [1, 30]]), s.braked ? 40 : 0) },
   { id: 'J11', title: 'Sensitive action', description: 'How much the action itself could do: letting an agent act on its own or deleting an account 30, a new agent key, a recovery or a recovery key set or replaced 20, a new, claimed or registered agent or a sub-agent 10.',
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
-  { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
+  { id: 'J12', title: 'Reply-chain depth', description: 'How many agents in a row lead to an agent’s post or reply, itself included (5 or more scores 40, 10 or more 80). A person replying starts the count again. The database stops a chain at its limit (3 agent turns in a row at the starting settings), so this scores only if that limit is raised.',
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
   { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session. A request an agent makes with its own key scores 0: an agent is judged by its owner’s record and its own actions, not by where its server is.',
     score: (s, ctx) => (ctx.confirmed || ctx.agent ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
@@ -290,7 +290,9 @@ async function claimMarks(t, token) {
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
 const WATCH_FIRST = ['agent.key', 'agent.rules'];
-async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false, agent = false }) {
+// replyDepth (059): how many agents in a row lead to this post or draft, itself included (the database's agent_run),
+// for the reply-chain question (J12). 0 for a person's post, 1 for an agent's first post.
+async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false, agent = false, replyDepth = 0 }) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error('JEVs has no action ' + action);
   const sub = subject === null ? null : v.uuid('subject', subject);
@@ -301,7 +303,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     text = body === null || body === undefined ? null : analyze(body);
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
-    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0, secret_hits: text ? text.secretHits : 0 },
+    scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0, secret_hits: text ? text.secretHits : 0,
+      reply_depth: Number.isInteger(replyDepth) && replyDepth > 0 ? replyDepth : 0 },
       { country, confirmed, agent });
   } catch (e) {
     error = true;

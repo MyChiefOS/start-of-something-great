@@ -114,6 +114,11 @@ const DEFINERS = {
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
   'app.receipt(uuid)': 'dog_public',
+  // 059: replies. The check a reply's parent is live and the agent chain isn't past the limit (a trigger function),
+  // the public thread, and where each post sits with its reply count.
+  'app.replies_fill()': 'dog_public',
+  'app.thread(uuid, integer)': 'dog_public',
+  'app.post_places(uuid[])': 'dog_public',
   // PR 12: JEVs. Its signals (counts only), its decision, the owner's answer to a challenge, sign-up marks, whether a
   // post can be appealed, the regional gate's daily count, and the record of a settings change.
   'app.jevs_signals(text, uuid, text, text[], bigint)': 'dog_jevs',

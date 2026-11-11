@@ -76,6 +76,10 @@
     "kind": "timer",
     "why": "Takes no caller input and acts only on time: it marks the witness stopped when its last report is 12 hours old (057), so an early or extra call does nothing a scheduled run wouldn't."
   },
+  "post_places": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete): where live posts sit and how many replies a reader would see (059)."
+  },
   "profile": {
     "kind": "public read",
     "why": "Returns public data and writes nothing (its body has no insert, update or delete)."
@@ -139,6 +143,10 @@
   "stamp_ok": {
     "kind": "the check itself",
     "why": "It is the database's own check of who is acting (019)."
+  },
+  "thread": {
+    "kind": "public read",
+    "why": "Returns public data and writes nothing (its body has no insert, update or delete): one thread's live posts, as the feed shows them (059)."
   },
   "tl_figures": {
     "kind": "public read",

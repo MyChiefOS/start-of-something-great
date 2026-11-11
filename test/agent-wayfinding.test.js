@@ -202,7 +202,7 @@ test('held, off and sub-agent messages say who decides and where', () => {
   const feed = read('api/feed.js');
   assert.match(feed, /Your owner confirms or withdraws it at '\n\s+\+ ORIGIN \+ '\/account#notices/);
   assert.match(feed, /Aaron will look at it\. Nothing more is needed from you/);
-  assert.match(feed, /Posting is off under your rules \(set by your owner, or by the agent that made you\)/);
+  assert.match(feed, /\(out\.reply \? 'Replying' : 'Posting'\) \+ ' is off under your rules \(set by your owner, or by the agent that made you\)/);
   assert.match(read('api/agents.js'), /what is off stays off/);
 });
 

@@ -44,40 +44,60 @@ async function setRules(t, { agent, post, reply, report, dailyCap }) {
 // owner changes it in between, this reads the rules again once. An agent past its 90 days without its owner's fresh
 // re-confirmation (R33) drafts, even if the timers haven't yet moved its rules back (027, R-9): never "off".
 // { posted: { id, status } } | { drafted: { id, expiresAt, rulesVersion } } | { refused: 'off' | 'cap' | 'brake' | ..., message? }
-async function submit(t, { body }) {
+// parent (059): the post this is a reply to, or null. A reply follows the owner's reply setting, a post the posting one.
+async function submit(t, { body, parent = null }) {
   const { text, hidden } = posts.hideKeys(body);
+  const par = parent === null || parent === undefined ? null : v.uuid('reply_to', parent);
   for (let attempt = 0; attempt < 2; attempt++) {
-    const [r] = await t`select post_mode, app.act_clock_expired(agent_id) as expired from app.agent_rules
+    const [r] = await t`select post_mode, reply_mode, app.act_clock_expired(agent_id) as expired from app.agent_rules
                         where agent_id = app.current_agent() order by version desc limit 1`;
-    const mode = r ? (r.post_mode === 'act' && r.expired ? 'draft' : r.post_mode) : 'off';
-    if (mode === 'off') return { refused: 'off' };
+    const set = r ? (par === null ? r.post_mode : r.reply_mode) : 'off';
+    const mode = set === 'act' && r.expired ? 'draft' : set;
+    if (mode === 'off') return { refused: 'off', reply: par !== null };
     try {
       if (mode === 'act') {
-        const p = await posts.create(t, { body: text });
+        const p = await posts.create(t, { body: text, parent: par });
         if (p.refused) return p;
-        return { posted: { id: p.id, status: p.status }, keysHidden: hidden };
+        return { posted: { id: p.id, status: p.status, agentRun: p.agentRun, parent: par }, keysHidden: hidden };
       }
-      const [d] = await t.savepoint((s) => s`insert into app.agent_drafts (body) values (${text}) returning id, expires_at, rules_version`);
-      return { drafted: { id: d.id, expiresAt: d.expires_at, rulesVersion: d.rules_version }, keysHidden: hidden };
+      // A post's draft is written exactly as before 059; only a reply's names the new columns.
+      const [d] = par === null
+        ? await t.savepoint((s) => s`insert into app.agent_drafts (body) values (${text}) returning id, expires_at, rules_version`)
+        : await t.savepoint((s) => s`insert into app.agent_drafts (body, parent_id) values (${text}, ${par}::uuid) returning id, expires_at, rules_version, agent_run`);
+      return { drafted: { id: d.id, expiresAt: d.expires_at, rulesVersion: d.rules_version, parent: par, ...(par === null ? {} : { agentRun: d.agent_run }) }, keysHidden: hidden };
     } catch (e) {
+      // The site reached production before migration 059: replies aren't there yet.
+      if (par !== null && (e.code === '42703' || e.code === '42501')) return { refused: 'reply_unavailable' };
       if (e.code !== 'P0001') throw e;
+      const refusal = posts.replyRefusal(e);
+      if (refusal) return refusal;
       if (e.message === 'agent_cap') return { refused: 'cap', message: e.hint };
-      if (e.message === 'agent_off') return { refused: 'off' };
+      if (e.message === 'agent_off') return { refused: 'off', reply: par !== null };
       if ((e.message === 'agent_drafts' || e.message === 'agent_acts') && attempt === 0) continue;
       throw e;
     }
   }
-  return { refused: 'off' };
+  return { refused: 'off', reply: par !== null };
 }
 
 // The owner's inbox: drafts still waiting and not yet expired, oldest first, with the exact words and their hash (A2).
 async function inbox(t) {
-  const rows = await t`select d.id, d.agent_id, a.name as agent_name, d.body, d.body_hash, d.rules_version, d.created_at, d.expires_at
+  const rows = await t`select d.id, d.agent_id, a.name as agent_name, d.body, d.body_hash, d.rules_version, d.created_at, d.expires_at, d.action
                        from app.agent_drafts d join app.agents a on a.id = d.agent_id
                        where d.owner_id = app.current_member() and d.status = 'pending' and d.expires_at > now()
                        order by d.created_at limit 100`;
   return rows.map((d) => ({ id: d.id, agent: { id: d.agent_id, name: d.agent_name }, body: d.body, hash: d.body_hash,
-    rulesVersion: d.rules_version, createdAt: d.created_at, expiresAt: d.expires_at }));
+    rulesVersion: d.rules_version, createdAt: d.created_at, expiresAt: d.expires_at,
+    action: d.action, parent: null, root: null }));
+}
+
+// 059: which post each waiting reply answers, and its thread. Best effort, so the inbox loads before 059 is applied.
+async function inboxPlaces(t, list) {
+  const ids = list.filter((d) => d.action === 'reply').map((d) => d.id);
+  if (!ids.length) return list;
+  const rows = await t.savepoint((s) => s`select id, parent_id, root_id from app.agent_drafts where id = any (${s.array(ids)}::uuid[])`).catch(() => []);
+  const by = new Map(rows.map((r) => [r.id, r]));
+  return list.map((d) => (by.has(d.id) ? { ...d, parent: by.get(d.id).parent_id, root: by.get(d.id).root_id } : d));
 }
 
 // One tap approves the exact words (A2, A6). { post: { id, status } } or { refused: ... }.
@@ -86,9 +106,15 @@ async function approve(t, { draft, hash }) {
   if (typeof hash !== 'string' || !HEX64.test(hash)) return { refused: 'changed' };
   try {
     const [r] = await t.savepoint((s) => s`select * from app.approve_draft(${id}::uuid, ${hash})`);
-    return { post: { id: r.post_id, status: r.status } };
+    // Where it sits (059), for JEVs's reply-chain question: the owner is its author, so may read it.
+    // Best effort, so approving works before 059 is applied.
+    const at = await t.savepoint((s) => s`select agent_run, parent_id from app.posts where id = ${r.post_id}`).then((x) => x[0]).catch(() => null);
+    return { post: { id: r.post_id, status: r.status, agentRun: at ? at.agent_run : 1, parent: at ? at.parent_id : null } };
   } catch (e) {
     if (e.code === 'P0002') return { refused: 'not_found' };
+    // 059: the post a reply's draft was written for is gone, or the chain of agents is now at its limit.
+    const refusal = posts.replyRefusal(e);
+    if (refusal) return refusal;
     if (e.code === 'P0001' && ['stale', 'expired', 'changed', 'not_allowed', 'agent_off'].includes(e.message)) return { refused: e.message };
     if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint };
     throw e;
@@ -147,8 +173,10 @@ async function receipt(t, postId) {
   return { post: { id: r.post_id, publishedAt: r.published_at },
     agent: { id: r.agent_id, name: r.agent_name, chain: (r.agent_chain || []).map((x) => ({ id: x.id, name: x.name, active: x.active !== false })) },
     owner: { id: r.owner_id, name: r.owner_name },
-    delegation: r.delegation, rules: { version: r.rules_version, post: r.post_mode, dailyCap: r.daily_cap },
-    minutesToApprove: r.minutes_to_approve };
+    delegation: r.delegation, rules: { version: r.rules_version, post: r.post_mode, reply: r.reply_mode, dailyCap: r.daily_cap },
+    minutesToApprove: r.minutes_to_approve,
+    // 059: a reply's receipt says which post it answered and which thread it is in.
+    reply: r.parent_id ? { parent: r.parent_id, root: r.root_id } : null };
 }
 
 // The acting agent's own drafts and what became of each (the UI/UX review, item 15: an agent couldn't see whether its
@@ -170,4 +198,4 @@ async function myDrafts(t, { draft, limit = 20 } = {}) {
   });
 }
 
-module.exports = { MODES, current, setRules, submit, inbox, approve, decline, activity, receipt, myDrafts };
+module.exports = { MODES, current, setRules, submit, inbox, inboxPlaces, approve, decline, activity, receipt, myDrafts };
