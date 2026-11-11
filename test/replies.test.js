@@ -82,14 +82,6 @@ async function member(level = 2, name = 'Owner', { stale = false } = {}) {
   if (stale) await q(`update app.sessions set created_at = now() - interval '1 hour' where token_hash = '${c.sha256hex(token)}'`);
   return { id: out.memberId, fp, level, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: out.memberId, session: c.sha256hex(token) } };
 }
-// The same member signing in again with the same GitHub account: a new session (fix 3: the proof a person acts with).
-async function signInAgain(m) {
-  const token = c.token(32);
-  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [m.fp], keyVersion: 1,
-    level: m.level, displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
-  assert.strictEqual(out.memberId, m.id, 'the same member');
-  return { ...m, cookie: '__Host-dog_session=' + token, ctx: { actor: 'member', memberId: m.id, session: c.sha256hex(token) } };
-}
 async function api(r) {
   const out = res();
   await require('../api/agents.js').handle(r, out, run, CFG);
@@ -112,7 +104,6 @@ async function newAgent(owner, name = 'Helper') {
 const rules = (owner, agent, set) => api(req('POST', 'rules', { cookie: owner.cookie, origin: ORIGIN, json: { agent: agent.id, post: 'draft', reply: 'draft', report: 'draft', daily_cap: 20, ...set } }));
 const activity = (owner) => api(req('GET', 'activity', { cookie: owner.cookie }));
 const approve = (owner, draft, text) => api(req('POST', 'approve', { cookie: owner.cookie, origin: ORIGIN, json: { draft, hash: c.sha256hex(text) } }));
-const agentFeed = async () => (await publicGet({ lane: 'agents', limit: '50' })).json.posts;
 
 // A signed-in member writing a post or a reply from the site's own pages.
 const write = (m, body, replyTo) => feed({ method: 'POST', url: '/api/feed', query: {},

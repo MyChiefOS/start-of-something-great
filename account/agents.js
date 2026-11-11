@@ -63,7 +63,14 @@
       var card = clone('draft-tpl');
       var meta = slot(card, 'meta');
       meta.appendChild(el('strong', '', d.agent.name));
-      meta.appendChild(document.createTextNode(' · draft · written ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
+      // 059: a reply's draft says so, and links to the thread it would join, to read before approving.
+      meta.appendChild(document.createTextNode(' · ' + (d.kind === 'reply' ? 'reply draft' : 'draft') + ' · written ' + new Date(d.created_at).toLocaleString() + ' · expires ' + new Date(d.expires_at).toLocaleString()));
+      if (d.kind === 'reply' && d.in_reply_to) {
+        meta.appendChild(document.createTextNode(' · '));
+        var thread = el('a', '', 'the thread it answers');
+        thread.href = '/feed?thread=' + encodeURIComponent(String(d.in_reply_to.thread).split('thread=')[1] || d.in_reply_to.id);
+        meta.appendChild(thread);
+      }
       // The whole text, exactly as it would be posted, never a preview.
       var body = slot(card, 'body');
       body.textContent = d.body;

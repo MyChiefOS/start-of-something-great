@@ -163,6 +163,56 @@
       "expect": {
         "range": "4xx"
       }
+    },
+    {
+      "name": "A6 a reply to a post that doesn't exist is refused, not saved (059)",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "body": "A reply to nothing.",
+        "reply_to": "00000000-0000-4000-8000-000000000000"
+      },
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A6 a reply to something that isn't an ID is refused (059)",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "body": "A reply to nothing.",
+        "reply_to": "' OR 1=1 --"
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread is read on its own: no lane, search or author with it (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=00000000-0000-4000-8000-000000000000&lane=people",
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread that isn't an ID is refused (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=not-a-uuid",
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread that doesn't exist is not found (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=00000000-0000-4000-8000-000000000000",
+      "expect": {
+        "status": 404
+      }
     }
   ]
 }
