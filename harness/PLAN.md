@@ -235,6 +235,28 @@ Found Nov 9 by measuring all 48 handoff pages against the live site in a browser
 8. Bugs found: the project page says "108 of 0 tasks approved"; a task page shows "[number hidden] lines changed"; the project page lists every task with no paging (10,700 px).
 9. Matching on every measure, to confirm by screenshot in step 1: 404, Join as an agent, API, The checks, Citizen, Connect, Console, JEVs decisions, Dispute, Slow down, Handshake, Moderation, The name, The paper, Privacy, Not open here, Research, Review, Roadmap, Room, Security, Sitemap, Status, Team, Terms.
 
+### The one large PR (Aaron, Nov 10: "Provide 1 large PR that address all of my concerns"; his checks on the plan, Nov 10). Claude. In progress Nov 11.
+
+Branch `production-ready`, built on main at 97acbf1 (the merge of #126). The plan and Aaron's checks: https://claude.ai/artifact/5dVz6hvjxaouYBt3EaZ3rv (FACTS.md has what he checked). One PR; nothing is pushed until it is whole, checked and independently reviewed. Order and state:
+
+1. **The uptime check** (launch.js; test/no-install-scripts.test.js): built, committed.
+2. **Second and Third Look in the key broker**: NOT built. Waits for Aaron: the design forwards the site's token from the broker to the AI Gateway, which control 8 forbids (FACTS.md, "Open for Aaron"; harness/REVIEW-2026-11-11-designs.md). If he allows it: a probe that records no verdict sets a flag (not the one-way switch); one fixed broker route with no parameters; no Vault read on that path; the database gate is `current_setting('role') = 'dog_looks'`; a time budget; nothing logged; the Look code ported once to a shared ESM file the site also loads; RK100 and RK135 then say "forged verdict closed", never "the site's role can't publish" (RK17 stays).
+3. **The reset code off production, the clickable copy kept** (fix 2, dog-copy): built, committed; the runner verified byte for byte against production's.
+4. **Engine levels count** (058): built, committed.
+5. **Agents judged by their owner**: built, committed.
+6. **Replies with the depth limit, and topic threads**: next. Start from the earlier build (branch `replies-pr14`, `db/migrations/012_replies.sql` and `test/replies.test.js` in /home/claude/dog-replies: a reply is a post with a parent; `app.reply_settings`; agent turns in a row; J12 scores the real depth), ported to today's schema as a new migration; restore criteria RP1 to RP9 and R40 in ACCEPTANCE.md.
+7. **MCP sign-in, full capabilities**: after 6. From the review: each acting tool calls one function the API route also calls, with a parity test per tool; the actor is always `agentkey.actorFor` from a key resolved in that request; a bad key gets 401; keyed results never enter the public caches; acting tools refused in old-style batches; tools no longer all labeled read-only; no agent key through a tool result (no register tool). An OAuth flow only if the Claude apps can't send a key header (unknown; check first), and the review advises it be its own reviewed PR: raise with Aaron before building it.
+8. **Legal hold, request runbook, linked bans, daily summary**.
+9. **The five loops' missing links** (the plan lists them loop by loop).
+10. **Added by Aaron's checks**: topic threads (with 6), precedent search by meaning, Engine E4 and E5, witnesses 2 and 3. For each: check what code can deliver inside the existing projects, raise any spend or outside party first, and say plainly what can't be done (witness 3 needs an outside party).
+11. **Every page true, and the records**: Status, Roadmap and the go-live checklist re-checked row by row; the receipt page, sitemap, menu, agent join page, Engine, team and home pages; llms.txt and AUDIT-LOGGING.md; a test that no page calls a live module "proposed" or "not built".
+12. **Before the PR opens**: the full suite, the linter, Semgrep, gitleaks, the red-team baseline with new attack plans; a fresh-agent review of the whole PR; a CLJO read of its text; the description starts with the standards acknowledgment, lists every commit and every workflow change (preview-copy.yml and watch.yml so far).
+
+Done outside the PR, Nov 11: dog-github deployed from 97acbf1 at Aaron's word ("deploy it") and proven for GitHub's facts (OPERATIONS.md). Still to prove live: the witness's report, a proposal decision arriving, Third Look's files. After the merge: the JEVs gate redeployed from the merge commit (and the key broker, only if part 2 is in), each proven live, and #126's description corrected.
+
+Traps: a migration production has applied can't be edited (058, not 056); `node scripts/function-digests.js` without `--check` rewrites files; test servers stop between commands (start Postgres in the same command as the tests); don't edit the branch while the full suite runs on it.
+
+
 ## 4. Open decisions for Aaron
 
 1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.
