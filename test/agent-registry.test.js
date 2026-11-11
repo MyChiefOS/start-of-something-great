@@ -408,7 +408,7 @@ test('conflict 1: JEVs checks a recovery and a recovery key set, in the same tra
   assert.strictEqual(set.status, 201, JSON.stringify(set.json));
   const rows = await q(`select action, subject_kind, agent_id, member_id from app.jevs_decisions where agent_id = '${reg.json.agent_id}' and action like 'agent.recover%' order by created_at`); // the claim's own rules check (agent.rules) is another row
   assert.deepStrictEqual(rows.map((x) => [x.action, x.subject_kind, x.member_id]), [['agent.recover', 'agent', ka.id], ['agent.recovery_issue', 'agent', ka.id]]);
-  for (const a of ['agent.recover', 'agent.recovery_issue']) assert.deepStrictEqual(jevsDb.ASKS[a], ['J05', 'J06', 'J11', 'J13'], a);
+  for (const a of ['agent.recover', 'agent.recovery_issue']) assert.deepStrictEqual(jevsDb.ASKS[a], ['J05', 'J06', 'J11'], a);
   assert.match(fs.readFileSync(path.join(root, 'checks.html'), 'utf8'), /New agents, claims, keys, recoveries, rules, sub-agents/);
   // In enforce mode with every score high, both are held and nothing changes.
   await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'; update app.jevs_settings set value = '1' where key = 'high_any'`);

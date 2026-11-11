@@ -1055,10 +1055,6 @@ test('regional gate, new sign-ups: declined politely after the provider confirms
   await env.flow.emailStart(formReq('/auth/email/start', { email: 'someone@example.ch', ft: stampFor(env, 5000) }, { country: 'CH' }), asked);
   assert.strictEqual(asked.getHeader('Location'), '/join?sent=region');
   assert.strictEqual(mail.length, 0);
-  // An agent registering itself from the EU is declined the same way.
-  const ag = await agentsApi('POST', 'register', { json: { name: 'Euro agent' }, country: 'IT' });
-  assert.strictEqual(ag.status, 451);
-  assert.match(ag.json.error, /don’t store anything about you/);
   // Nothing was written anywhere except the daily counts: no member, identity, session, email link, mark, rate limit
   // counter, audit row or JEVs decision. (The email link opened in Norway was already stored, from the US.)
   const after = await tableCounts();
@@ -1067,6 +1063,20 @@ test('regional gate, new sign-ups: declined politely after the provider confirms
   assert.strictEqual(await declinesFor('FR'), counts.FR, 'going to the provider is not a decline');
   assert.deepStrictEqual(Object.keys((await q(`select * from app.region_declines limit 1`))[0]).sort(), ['country', 'day', 'declines', 'id'], 'nothing but the count');
   assert.strictEqual((await run({ ...aaron.ctx, actor: 'member' }, (t) => t`select * from app.region_declines`)).length, 0, 'only Aaron reads the counts');
+  // An agent registering itself from the EU is not declined (Aaron, Nov 4: "Agent should be judged by owners actions for
+  // now and their actions", not by where its server is): it registers, nothing is added to the regional count, and the
+  // region question (J13) is not asked of it. Its key still does nothing until a signed-in member claims it.
+  const italyBefore = await declinesFor('IT');
+  const ag = await agentsApi('POST', 'register', { json: { name: 'Euro_agent' }, country: 'IT' });
+  assert.strictEqual(ag.status, 201);
+  assert.strictEqual(ag.json.status, 'unclaimed');
+  assert.strictEqual(await declinesFor('IT'), italyBefore, 'an agent registering is not a regional decline');
+  const [agDecision] = await q(`select scores from app.jevs_decisions where action = 'agent.register' order by created_at desc limit 1`);
+  assert.ok(agDecision && !Object.hasOwn(agDecision.scores, 'J13'), 'the region question is not asked of an agent registering itself');
+  assert.deepStrictEqual(jevs.ASKS['agent.register'], ['J05', 'J06', 'J11']);
+  // An agent's own request never scores the region question, wherever its server is; a person's still does.
+  assert.strictEqual(jevs.score('post.create', {}, { country: 'IT', confirmed: false, agent: true }).J13, 0);
+  assert.strictEqual(jevs.score('post.create', {}, { country: 'IT', confirmed: false }).J13, 40);
   // The database itself refuses to make an account for a confirmed traveller.
   const refused = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('never seen')], keyVersion: 1, level: 1,
     displayName: 'x', sessionHash: c.sha256hex(c.token(32)), sessionDays: 30, region: 'FR' }));

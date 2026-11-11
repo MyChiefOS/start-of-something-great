@@ -38,7 +38,8 @@
 // JEVs (PR 12) checks every sensitive step before it happens: registering, creating or claiming an agent, a new key,
 // letting an agent act on its own. Medium risk asks the owner to sign in again; high risk holds it for Aaron. Making a
 // sub-agent (PR 16) has no human step: medium risk makes it with everything drafting for its owner's approval.
-// Self-registration from the EU, EEA, UK and Switzerland is declined before anything is kept (signin/region.js).
+// An agent is judged by its owner's record and its own actions, not by where its server is (Aaron, Nov 4), so
+// self-registration is no longer declined by region: the person who claims it passed the regional gate at sign-in.
 'use strict';
 
 const db = require('../db');
@@ -46,7 +47,6 @@ const agents = require('../db/agents');
 const registry = require('../db/registry');
 const delegation = require('../db/delegation');
 const jevs = require('../db/jevs');
-const region = require('../signin/region');
 const notices = require('../db/notify');
 const store = require('../db/signin');
 const config = require('../signin/config');
@@ -175,12 +175,6 @@ const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
     // Open registration for outside agents (Aaron's standing decision). An unclaimed key can't post, and only a
     // member can claim an agent.
-    // The regional gate: declined before anything about the request is kept, except one more in today's count.
-    const country = region.declined(req);
-    if (country) {
-      await run({ actor: 'anon' }, (t) => jevs.regionDecline(t, country));
-      return reply(res, 451, { error: region.MESSAGE });
-    }
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const rk = agentkey.newRecoveryKey();
@@ -198,7 +192,7 @@ const ROUTES = {
       return { ok: true };
     });
     if (out.refused) return reply(res, 429, { error: 'Too many agents registered from here. Please try again in an hour.' });
-    const f = jevs.facts(req, cfg.ipKey);
+    const f = jevs.agentFacts(req, cfg.ipKey);
     // JEVs's check and the registration commit together.
     const reg = await run({ actor: 'anon' }, async (t) => {
       const d = await jevs.check(t, { action: 'agent.register', ...f });
@@ -437,7 +431,7 @@ const ROUTES = {
     const out = await run(agentkey.actorFor(a), async (t) => {
       const pre = await agents.subPrecheck(t);
       if (pre) return pre;
-      const d = await jevs.check(t, { action: 'agent.subagent', subject: a.agentId, ...jevs.facts(req, cfg.ipKey) });
+      const d = await jevs.check(t, { action: 'agent.subagent', subject: a.agentId, ...jevs.agentFacts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
       const draftOnly = Boolean(d.applied && d.effect === 'draft');
       const r = await agents.createSub(t, { ...input, keyHash: k.hash, callerKeyHash: agentkey.fromRequest(req).hash, draftOnly });
@@ -515,7 +509,7 @@ const ROUTES = {
     const out = await run({ actor: 'anon' }, async (t) => {
       const subject = await registry.recoverySubject(t, hash);
       if (!subject) return null;
-      const d = await jevs.check(t, { action: 'agent.recover', subject, ...jevs.facts(req, cfg.ipKey) });
+      const d = await jevs.check(t, { action: 'agent.recover', subject, ...jevs.agentFacts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
       return registry.recover(t, { recoveryHash: hash, keyHash: k.hash, newRecoveryHash: rk.hash });
     });
@@ -547,7 +541,7 @@ const ROUTES = {
     const rk = agentkey.newRecoveryKey();
     // JEVs's check (agent.recovery_issue) and the change commit together.
     const out = await run(agentkey.actorFor(a), async (t) => {
-      const d = await jevs.check(t, { action: 'agent.recovery_issue', subject: a.agentId, ...jevs.facts(req, cfg.ipKey) });
+      const d = await jevs.check(t, { action: 'agent.recovery_issue', subject: a.agentId, ...jevs.agentFacts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
       return registry.recoveryIssue(t, { keyHash: presented.hash, recoveryHash: rk.hash, currentHash: current });
     });

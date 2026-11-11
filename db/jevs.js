@@ -118,8 +118,8 @@ const QUESTIONS = [
     score: (s, ctx) => SENSITIVE[ctx.action] || 0 },
   { id: 'J12', title: 'Reply-chain depth', description: 'How deep an agent reply sits in a chain of agents answering agents (5 or more scores 40, 10 or more 80). Replies don’t exist yet, so this scores 0 until they do.',
     score: (s) => band(num(s.reply_depth), [[10, 80], [5, 40]]) },
-  { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session.',
-    score: (s, ctx) => (ctx.confirmed ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
+  { id: 'J13', title: 'Region', description: 'Where the request comes from: unknown scores 10, a region where we don’t sign people up (EU, EEA, UK, Switzerland) 40, anywhere else 0. A member who confirmed at sign-in that they live outside those regions scores 0 for that session. A request an agent makes with its own key scores 0: an agent is judged by its owner’s record and its own actions, not by where its server is.',
+    score: (s, ctx) => (ctx.confirmed || ctx.agent ? 0 : ctx.country === null ? 10 : region.DECLINED.includes(ctx.country) ? 40 : 0) },
   { id: 'J14', title: 'Credible reports', description: 'Members at level 2, whose accounts are more than a week old, with an open report on this post: 35 each, at most 100. Reporters who signed up from the same network or share an uncommon email domain count as one.',
     score: (s) => Math.min(100, 35 * num(s.credible_reports)) },
   // PR 16. The depth limit and the hourly rates in the database already stop a runaway tree; this says how unusual it is.
@@ -151,21 +151,23 @@ const ASKS = {
   'draft.create': POST,
   // A report re-scores the post's own questions only, never its author's whole account (the JEVs review, F1).
   'post.reported': ['J07', 'J08', 'J09', 'J14'],
-  // No account yet: only the network, the action and the region.
-  'agent.register': ['J05', 'J06', 'J11', 'J13']
+  // No account yet: only the network and the action. Not the region (Aaron, Nov 4: "Agent should be judged by owners
+  // actions for now and their actions", not by where its server is): the person who claims it passed the regional gate
+  // when they signed in.
+  'agent.register': ['J05', 'J06', 'J11']
 };
 for (const a of ['agent.create', 'agent.claim', 'agent.key', 'agent.rules', 'account.delete']) ASKS[a] = [...ACCOUNT, 'J11'];
 // PR 16: the owner's account questions (judged through the acting agent), the action, and where the sub-agent would sit.
 ASKS['agent.subagent'] = [...ACCOUNT, 'J11', 'J15'];
-// 040: as registering: the network, the action and the region. A recovery comes with no session or working key, so no
+// 040: as registering: the network and the action. A recovery comes with no session or working key, so no
 // account is acting; an agent's own key works only for a verified, active owner, whose account every post checks.
-ASKS['agent.recover'] = ['J05', 'J06', 'J11', 'J13'];
-ASKS['agent.recovery_issue'] = ['J05', 'J06', 'J11', 'J13'];
+ASKS['agent.recover'] = ['J05', 'J06', 'J11'];
+ASKS['agent.recovery_issue'] = ['J05', 'J06', 'J11'];
 
 // The scores for one action: { J01: 25, ... }, every question it asks, in order.
 function score(action, signals, ctx = {}) {
   if (!ASKS[action]) throw new Error('JEVs has no questions for ' + action);
-  const c = { action, country: ctx.country === undefined ? null : ctx.country, confirmed: ctx.confirmed === true };
+  const c = { action, country: ctx.country === undefined ? null : ctx.country, confirmed: ctx.confirmed === true, agent: ctx.agent === true };
   const out = {};
   for (const id of ASKS[action]) {
     const s = Math.round(BY_ID[id].score(signals || {}, c));
@@ -245,6 +247,12 @@ function facts(req, ipKey) {
   return { netHash: req && ipKey ? netKey(req, ipKey) : null, country: req ? region.country(req) : null,
     confirmed: Boolean(req && req.headers && ipKey && resident(req, ipKey)) };
 }
+// The same for a request an agent makes with its own key, or to register or recover itself: its network, and that it
+// is an agent's, so the region question doesn't score where its server is (Aaron, Nov 4). The person it acts for is
+// judged by their own account, which every agent action checks, and passed the regional gate when they signed in.
+function agentFacts(req, ipKey) {
+  return { netHash: req && ipKey ? netKey(req, ipKey) : null, country: null, confirmed: false, agent: true };
+}
 
 // ---- Sign-up marks (J03, J05) ----
 function emailDomain(email) {
@@ -282,7 +290,7 @@ async function claimMarks(t, token) {
 // out only promote and queue). For a post, JEVs has already held or hidden it; for other actions the caller refuses
 // when blocks() says so.
 const WATCH_FIRST = ['agent.key', 'agent.rules'];
-async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false }) {
+async function check(t, { action, subject = null, body = null, netHash = null, country = null, confirmed = false, agent = false }) {
   const spec = ACTIONS[action];
   if (!spec) throw new Error('JEVs has no action ' + action);
   const sub = subject === null ? null : v.uuid('subject', subject);
@@ -294,7 +302,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
     scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0, secret_hits: text ? text.secretHits : 0 },
-      { country, confirmed });
+      { country, confirmed, agent });
   } catch (e) {
     error = true;
     scores = {};
@@ -427,5 +435,5 @@ async function summary(t) {
 // The public list: what each question looks at, without any threshold.
 const publicQuestions = () => QUESTIONS.map((q) => ({ id: q.id, title: q.title, description: q.description }));
 
-module.exports = { ASK_ONLY, RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, emailDomain, emailMarks,
+module.exports = { ASK_ONLY, RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, agentFacts, emailDomain, emailMarks,
   onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, postReasons, regionDecline, summary, publicQuestions };

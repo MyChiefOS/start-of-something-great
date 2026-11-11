@@ -284,7 +284,7 @@ async function agentPost(req, res, run) {
   try {
     // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing. JEVs checks what
     // came out of it (PR 12); a challenge goes to the owner, never to the agent.
-    const f = jevs.facts(req, config.load().ipKey);
+    const f = jevs.agentFacts(req, config.load().ipKey);
     const out = await run(agentkey.actorFor(a), async (t) => {
       const r = await delegation.submit(t, { body: body.body });
       if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f });
