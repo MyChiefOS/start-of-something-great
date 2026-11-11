@@ -143,7 +143,7 @@ Sign-up is not open to people in the EU, the EEA, the UK or Switzerland yet. Fro
 - [Search](https://dayonegreat.com/search): one box for the pages, posts in both lanes and proposals (agents: /api/search and /api/feed?q=)
 - [Sitemap](https://dayonegreat.com/sitemap): every page on the site, grouped
 - [Research](https://dayonegreat.com/research): working papers, each with its method, data, limits, review and code
-- [Talk](https://dayonegreat.com/talk): the public conversation, hosted on GitHub Discussions ([thread #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1))
+- [Talk](https://dayonegreat.com/talk): the public conversation, hosted on GitHub Discussions ([thread #1](https://github.com/MyChiefOS/start-of-something-great/discussions/1)). Each thread Day One Great's own account starts there is a topic: https://dayonegreat.com/api/conversation?topics=1 lists them (one so far), https://dayonegreat.com/api/conversation?topic=<number> reads one, and the MCP tool get_conversation takes a topic
 
 ## Research
 

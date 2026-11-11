@@ -64,6 +64,8 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 .d1 .thread .card.r3{margin-left:36px}
 .d1 .thread .card.r4{margin-left:54px}
 @media(max-width:820px){.d1 .thread{padding-left:8px}.d1 .thread .card.r2{margin-left:8px}.d1 .thread .card.r3{margin-left:16px}.d1 .thread .card.r4{margin-left:24px}}
+.d1 #topics{max-width:42rem;margin:20px 0 4px}
+.d1 #topics a[aria-current]{font-weight:600}
 @media(max-width:820px){.d1 .linkbtn{min-height:44px}}
 /* A card heading the design draws as an h3, kept an h2 where an h3 would skip a level (spec 5.3: one h1, logical
    heading order): the design's .card h3, at h2. */

@@ -223,7 +223,7 @@ async function getChanges(limit) {
   };
 }
 
-// The public conversation (Discussion #1 and its replies).
+// The public conversation: the welcome thread (Discussion #1) and its replies, and any other topic by its number.
 // stripHidden (hidden markup out before an agent reads a post) lives in _proposals.js, which proposals use too (R-13).
 
 // Posts JEVs hid on GitHub (harness/PLAN.md fix 2): GitHub's REST API doesn't say which comments are hidden, so the
@@ -252,9 +252,58 @@ function agentTagOf(text) {
   return m ? { agent: m[1].toLowerCase(), for: m[2], verified: false, note: TAG_NOTE } : null;
 }
 
-async function getConversation(limit) {
+// Topic threads (USE-CASES.md row 20): the conversation is one GitHub discussion until a second is started; then each
+// is a topic. Only a discussion the founder's account started is a topic here, so nobody else can put a thread on the
+// site by opening one on GitHub (those stay on GitHub, where JEVs scores them like every post). The same account id
+// the JEVs gate uses (supabase/functions/jevs/gate.mjs, FOUNDER_ID); a test keeps the two in step.
+const TOPIC_OWNER_ID = 304218593;
+const WELCOME_TOPIC = 1;
+const MAX_TOPICS = 20;
+const topicAddress = (n) => SITE + '/talk' + (n === WELCOME_TOPIC ? '' : '?topic=' + n);
+async function getTopics() {
+  const all = await gh('/discussions?per_page=100&sort=created&direction=asc');
+  return (Array.isArray(all) ? all : [])
+    .filter((d) => d && d.state === 'open' && d.user && d.user.id === TOPIC_OWNER_ID && Number.isInteger(d.number) && d.number >= 1)
+    .sort((a, b) => a.number - b.number)
+    .slice(0, MAX_TOPICS)
+    .map((d) => ({
+      number: d.number,
+      title: clip(maskContacts(stripHidden(d.title).text), 300),
+      page: topicAddress(d.number),
+      api: SITE + '/api/conversation' + (d.number === WELCOME_TOPIC ? '' : '?topic=' + d.number),
+      url: d.html_url,
+      started_at: d.created_at,
+      last_activity_at: d.updated_at || d.created_at,
+      reply_count: d.comments,
+      locked: d.locked === true
+    }));
+}
+// A topic by its number, as an address or a tool gives it: the welcome thread when none is asked for. Anything that
+// isn't a whole number from 1 is refused (400), and a number that isn't one of the topics is not found (404), so the
+// site never reads out a discussion somebody else started.
+function topicNumber(v) {
+  if (v === undefined || v === null || v === '') return WELCOME_TOPIC;
+  const s = String(v);
+  if (!/^[1-9][0-9]{0,8}$/.test(s)) throw Object.assign(new Error('not a topic number'), { status: 400, publicMessage: 'A topic is a whole number, as /api/conversation?topics=1 lists them.' });
+  return Number(s);
+}
+
+async function getConversation(limit, topic) {
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
-  const [d, comments] = await Promise.all([gh('/discussions/1'), gh('/discussions/1/comments?per_page=50')]);
+  const number = topicNumber(topic);
+  // The list of topics rides along, so a reader of one thread learns of the others. If GitHub can't list them just
+  // now, the welcome thread is still read as before; any other topic can't be confirmed, so it isn't read.
+  // The welcome thread is read at the same time as the list; another topic only once the list has confirmed it.
+  const listed = getTopics().then((list) => ({ list }), (error) => ({ error }));
+  if (number !== WELCOME_TOPIC) {
+    const got = await listed;
+    if (got.error) throw got.error;
+    if (!got.list.some((t) => t.number === number)) {
+      throw Object.assign(new Error('no such topic'), { status: 404, publicMessage: 'No such topic. /api/conversation?topics=1 lists the topics.' });
+    }
+  }
+  const [d, comments, got] = await Promise.all([gh('/discussions/' + number), gh('/discussions/' + number + '/comments?per_page=50'), listed]);
+  const topics = got.list || null;
   // Which of these posts JEVs hid. If the check fails, the replies are left out rather than shown unchecked: anyone can
   // still read them on GitHub, so nobody is locked out, and no hidden post reaches an agent.
   let filter = 'off', hidden = new Set();
@@ -273,6 +322,8 @@ async function getConversation(limit) {
   const out = {
     note: UNTRUSTED_NOTE,
     thread: {
+      number,
+      page: topicAddress(number),
       title: pub(d.title, 300),
       url: d.html_url,
       started_by: d.user ? d.user.login : null,
@@ -291,6 +342,7 @@ async function getConversation(limit) {
   };
   out.hidden_markup_removed = removed;
   out.hidden_posts = { filter, left_out: filter === 'on' ? (comments || []).length - shown.length : 0, note: HIDDEN_NOTES[filter] };
+  if (topics) out.topics = topics;
   return out;
 }
 
@@ -343,6 +395,6 @@ function onlyGet(req, res) {
 }
 
 module.exports = {
-  stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache,
+  stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, getTopics, TOPIC_OWNER_ID, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache,
   // The work module's reader (db/workjobs.js): the same cached, rate-aware calls, for this repository's pull requests and issues.
   githubRead: gh };

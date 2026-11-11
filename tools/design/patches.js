@@ -72,6 +72,9 @@ module.exports = {
   ],
   'talk.html': [
     [/<h3 class="(x[0-9a-f]{8})">(Welcome to Day One Great: say hello)<\/h3>/, '<h2 class="h3 $1">$2</h2>'],
+    // Topic threads (USE-CASES.md row 20): where talk.js lists the topics once there is more than one. Empty and
+    // hidden until then, so the page looks as designed.
+    [/(<div class="card x[0-9a-f]{8}"><p class="fine x[0-9a-f]{8}">Started by Aaron Chandler)/, '<nav id="topics" aria-label="Topics" hidden></nav>$1'],
     // The design's replies card says "Replies load here through giscus."; giscus loads into that card.
     [/(<div class="card x[0-9a-f]{8}">)(<p class="fine x[0-9a-f]{8}">Replies load here through giscus\.<\/p>)/, '$1' + GISCUS('1') + '<noscript><p>Replies need JavaScript. You can <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1">read and reply on GitHub</a> instead.</p></noscript>$2']
   ]

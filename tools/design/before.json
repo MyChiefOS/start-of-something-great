@@ -816,7 +816,8 @@
    "MCP": "/connect#add"
   },
   "scripts": [
-   "<script src=\"/nav.js\" defer></script>"
+   "<script src=\"/nav.js\" defer></script>",
+   "<script src=\"/talk.js\" defer></script>"
   ]
  },
  "task.html": {
