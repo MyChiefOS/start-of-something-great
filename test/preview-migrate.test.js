@@ -30,6 +30,7 @@ const PROD_REF = 'nksagchwpyljvjiwolmp';
 const BRANCH_REF = 'qwertyuiopasdfghjklz'; // made up: 20 lowercase letters, as a Supabase reference is
 const OTHER_REF = 'zyxwvutsrqponmlkjihg'; // another made-up branch
 const runnerAt = (ref) => 'https://' + ref + '.supabase.co/functions/v1/dog-migrate';
+const copyAt = (ref) => 'https://' + ref + '.supabase.co/functions/v1/dog-copy'; // dog-copy, on the branch only
 // The runner's index.ts and core.mjs before the preview copy (supabase/functions/dog-migrate/source-digest.mjs at 781ebbb).
 const OLD_INDEX = '2b3d714b06173b8e5aed0cd3934cfc2f5649d30c9827a35dce8e1b74a46cfc7b';
 const OLD_CORE = '3603bc10413fe8bc6d9f334256fa8af27b6d2ddb6ae770efe68b2914cadae8ae';
@@ -49,7 +50,7 @@ async function signer() {
   const wf = (file) => 'MyChiefOS/start-of-something-great/.github/workflows/' + file + '@refs/heads/main';
   // production: database.yml at production's address; branch: preview-copy.yml at the branch's address.
   const production = (extra = {}) => ({ ...base, aud: runnerAt(PROD_REF), workflow_ref: wf('database.yml'), jti: crypto.randomUUID(), ...extra });
-  const branch = (extra = {}) => ({ ...base, aud: runnerAt(BRANCH_REF), workflow_ref: wf('preview-copy.yml'), jti: crypto.randomUUID(), ...extra });
+  const branch = (extra = {}) => ({ ...base, aud: copyAt(BRANCH_REF), workflow_ref: wf('preview-copy.yml'), jti: crypto.randomUUID(), ...extra });
   async function sign(claims) {
     const body = enc({ alg: 'RS256', kid: 'k1', typ: 'JWT' }) + '.' + enc(claims);
     const sig = await subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, Buffer.from(body));
@@ -63,7 +64,7 @@ async function signer() {
 // ---- Which runner it is: from its own SUPABASE_URL only ----
 
 test('preview runner, target: production\'s address or anything odd is production; any other project address is the branch', async () => {
-  const { target, PRODUCTION } = await import('../supabase/functions/dog-migrate/target.mjs');
+  const { target, PRODUCTION } = await import('../supabase/functions/dog-copy/target.mjs');
   const keys = await import('../supabase/functions/dog-keys/target.mjs');
   assert.deepStrictEqual({ ...PRODUCTION, events: [...PRODUCTION.events], modes: [...PRODUCTION.modes] }, {
     environment: 'production', ref: PROD_REF, audience: runnerAt(PROD_REF),
@@ -75,7 +76,7 @@ test('preview runner, target: production\'s address or anything odd is productio
   for (const u of inputs) assert.strictEqual(target(u), PRODUCTION, String(u));
   const b = target('https://' + BRANCH_REF + '.supabase.co');
   assert.deepStrictEqual({ ...b, events: [...b.events], modes: [...b.modes] }, {
-    environment: 'preview', ref: BRANCH_REF, audience: runnerAt(BRANCH_REF),
+    environment: 'preview', ref: BRANCH_REF, audience: copyAt(BRANCH_REF),
     workflow: '.github/workflows/preview-copy.yml', events: ['push', 'workflow_dispatch'], modes: ['rebuild']
   });
   assert.ok(Object.isFrozen(b) && Object.isFrozen(b.events) && Object.isFrozen(PRODUCTION) && Object.isFrozen(PRODUCTION.events), 'decided once, not changed after');
@@ -87,32 +88,22 @@ test('preview runner, target: production\'s address or anything odd is productio
   }
 });
 
-test('preview runner, production unchanged: index.ts outside the copy\'s marked blocks is byte for byte the old file, core.mjs untouched', async () => {
+test('preview runner, production unchanged: production\'s runner is main\'s own code, byte for byte, and carries none of the copy\'s (Aaron, Nov 10)', async () => {
   const src = read('supabase/functions/dog-migrate/index.ts');
-  const blocks = [...src.matchAll(/^[ \t]*\/\/ ---- The preview copy \(RK141\): begin\.[^\n]*\n([\s\S]*?)^[ \t]*\/\/ ---- The preview copy: end\.\n/gm)];
-  assert.strictEqual(blocks.length, 3, 'three marked blocks: the imports, the choice and its handler, the one line that routes to it');
-  const stripped = src.replace(/^[ \t]*\/\/ ---- The preview copy \(RK141\): begin\.[^\n]*\n[\s\S]*?^[ \t]*\/\/ ---- The preview copy: end\.\n/gm, '');
-  assert.strictEqual(sha(stripped), OLD_INDEX, 'production\'s code is the old index.ts, byte for byte');
+  assert.strictEqual(sha(src), OLD_INDEX, 'production\'s index.ts is the old file, byte for byte');
   assert.strictEqual(sha(read('supabase/functions/dog-migrate/core.mjs')), OLD_CORE, 'the runner\'s core (also the JEVs gate\'s) is untouched');
-  // The only thing in production's request path is one line, taken only when the start-up choice said "preview".
-  const route = blocks[2][1].split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
-  assert.deepStrictEqual(route.map((l) => l.trim()), ['if (where.environment === "preview") return copyRequest(req);']);
-  // Decided once, at start, from SUPABASE_URL; never from a request.
-  assert.strictEqual((src.match(/target\(/g) || []).length, 1);
-  assert.match(blocks[1][1], /^const where = target\(Deno\.env\.get\("SUPABASE_URL"\)\);$/m);
-  assert.doesNotMatch(blocks[1][1], /target\(req|SUPABASE_URL"\)\s*\|\||headers\.get\("(host|x-forwarded|origin)/i);
-  // Production's own checks are exactly PRODUCTION's (target.mjs), so the cross-refusal tests below test production's.
-  const { PRODUCTION } = await import('../supabase/functions/dog-migrate/target.mjs');
-  assert.ok(src.includes('const AUDIENCE = "' + PRODUCTION.audience + '";'));
-  assert.ok(src.includes('workflow: "' + PRODUCTION.workflow + '",'));
-  assert.ok(src.includes('events: ' + JSON.stringify([...PRODUCTION.events]).replace(/,/g, ', ') + ','));
-  assert.ok(src.includes('if (body && (body.mode === "apply" || body.mode === "status")) mode = body.mode;'));
+  assert.doesNotMatch(src, /copy|preview|target\.mjs|SUPABASE_URL/i, 'no trace of the copy');
+  assert.deepStrictEqual(fs.readdirSync(path.join(root, 'supabase/functions/dog-migrate')).sort(), ['core.mjs', 'index.ts', 'source-digest.mjs']);
+  // dog-copy refuses everything on production's address before reading anything.
+  const copy = read('supabase/functions/dog-copy/index.ts');
+  assert.match(copy, /if \(where\.environment !== "preview"\) return reply\(404, \{ ok: false, error: "not the preview copy" \}\);/);
+  assert.ok(copy.indexOf('where.environment !== "preview"') < copy.indexOf('req.json()'), 'refused before the body is read');
 });
 
 // ---- Who each runner accepts ----
 
 test('preview runner, audiences: the branch accepts only preview-copy.yml at its own address; production only database.yml at its own', async () => {
-  const { target, PRODUCTION } = await import('../supabase/functions/dog-migrate/target.mjs');
+  const { target, PRODUCTION } = await import('../supabase/functions/dog-copy/target.mjs');
   const s = await signer();
   const branch = target('https://' + BRANCH_REF + '.supabase.co');
   const opts = (w) => ({ audience: w.audience, workflow: w.workflow, events: [...w.events] });
@@ -125,11 +116,11 @@ test('preview runner, audiences: the branch accepts only preview-copy.yml at its
   await no(await s.sign(s.production()), branch, /audience/, 'production\'s token at the branch');
   await no(await s.sign(s.branch()), PRODUCTION, /audience/, 'the branch\'s token at production');
   // Even misaddressed, the workflow still separates them: neither accepts the other's workflow at its own address.
-  await no(await s.sign(s.production({ aud: runnerAt(BRANCH_REF) })), branch, /workflow/, 'database.yml addressed to the branch');
+  await no(await s.sign(s.production({ aud: copyAt(BRANCH_REF) })), branch, /workflow/, 'database.yml addressed to the branch');
   await no(await s.sign(s.branch({ aud: runnerAt(PROD_REF) })), PRODUCTION, /workflow/, 'preview-copy.yml addressed to production');
   // Only its own address: another branch's, or a look-alike, is refused.
-  await no(await s.sign(s.branch({ aud: runnerAt(OTHER_REF) })), branch, /audience/, 'another branch');
-  await no(await s.sign(s.branch({ aud: runnerAt(BRANCH_REF) + '/' })), branch, /audience/, 'a look-alike address');
+  await no(await s.sign(s.branch({ aud: copyAt(OTHER_REF) })), branch, /audience/, 'another branch');
+  await no(await s.sign(s.branch({ aud: copyAt(BRANCH_REF) + '/' })), branch, /audience/, 'a look-alike address');
   // On main only, by a push or by hand: never a schedule, a pull request or another branch.
   await no(await s.sign(s.branch({ event_name: 'schedule' })), branch, /event/, 'a scheduled run');
   await no(await s.sign(s.branch({ ref: 'refs/pull/9/merge', event_name: 'pull_request' })), branch, /main branch/, 'a pull request');
@@ -138,8 +129,8 @@ test('preview runner, audiences: the branch accepts only preview-copy.yml at its
 });
 
 test('preview runner, requests: production\'s choice never reaches the copy\'s handler; the branch takes only "rebuild" and its own token', async () => {
-  const { target, PRODUCTION } = await import('../supabase/functions/dog-migrate/target.mjs');
-  const { handleCopy } = await import('../supabase/functions/dog-migrate/copy.mjs');
+  const { target, PRODUCTION } = await import('../supabase/functions/dog-copy/target.mjs');
+  const { handleCopy } = await import('../supabase/functions/dog-copy/copy.mjs');
   const s = await signer();
   const calls = [];
   const deps = (where) => ({ where, sql: null, Refused: s.Refused,
@@ -221,8 +212,8 @@ if (!SERVER) {
 
   test('preview runner, rebuild: a new branch is migrated and seeded; a second rebuild starts again from empty, through the real token check', async () => {
     const core = await import('../supabase/functions/dog-migrate/core.mjs');
-    const { target } = await import('../supabase/functions/dog-migrate/target.mjs');
-    const { handleCopy } = await import('../supabase/functions/dog-migrate/copy.mjs');
+    const { target } = await import('../supabase/functions/dog-copy/target.mjs');
+    const { handleCopy } = await import('../supabase/functions/dog-copy/copy.mjs');
     const s = await signer();
     const branch = target('https://' + BRANCH_REF + '.supabase.co');
     await withBranch(async (su) => {
@@ -258,8 +249,8 @@ if (!SERVER) {
 
   test('preview runner, reset on production: refused by the code unless it is the branch, with nothing changed', async () => {
     const core = await import('../supabase/functions/dog-migrate/core.mjs');
-    const { target, PRODUCTION } = await import('../supabase/functions/dog-migrate/target.mjs');
-    const { rebuild } = await import('../supabase/functions/dog-migrate/copy.mjs');
+    const { target, PRODUCTION } = await import('../supabase/functions/dog-copy/target.mjs');
+    const { rebuild } = await import('../supabase/functions/dog-copy/copy.mjs');
     await withBranch(async (su) => {
       // Even a marked, seeded copy is not touched by a runner that isn't the branch's.
       await rebuild(su, await core.load(local), claims(), target('https://' + BRANCH_REF + '.supabase.co'));
@@ -274,8 +265,8 @@ if (!SERVER) {
 
   test('preview runner, reset on a database that isn\'t the copy: refused by the database, with nothing changed', async () => {
     const core = await import('../supabase/functions/dog-migrate/core.mjs');
-    const { target } = await import('../supabase/functions/dog-migrate/target.mjs');
-    const { rebuild, resetRefusal } = await import('../supabase/functions/dog-migrate/copy.mjs');
+    const { target } = await import('../supabase/functions/dog-copy/target.mjs');
+    const { rebuild, resetRefusal } = await import('../supabase/functions/dog-copy/copy.mjs');
     const { asSignin } = require('./helpers');
     const store = require('../db/signin');
     const branch = target('https://' + BRANCH_REF + '.supabase.co');
@@ -320,8 +311,8 @@ if (!SERVER) {
 
   test('preview runner, one transaction: a failed migration or seed leaves the copy exactly as it was', async () => {
     const core = await import('../supabase/functions/dog-migrate/core.mjs');
-    const { target } = await import('../supabase/functions/dog-migrate/target.mjs');
-    const { rebuild } = await import('../supabase/functions/dog-migrate/copy.mjs');
+    const { target } = await import('../supabase/functions/dog-copy/target.mjs');
+    const { rebuild } = await import('../supabase/functions/dog-copy/copy.mjs');
     const branch = target('https://' + BRANCH_REF + '.supabase.co');
     await withBranch(async (su) => {
       await rebuild(su, await core.load(local), claims(), branch);
@@ -392,7 +383,7 @@ test('preview runner, workflow: on merge to main and by hand only; least rights;
   assert.strictEqual(m[1] || null, require('../db/sitekeys').PREVIEW_REF, 'the workflow and the site name the same branch');
   assert.strictEqual(y.split('PREVIEW_REF:').length, 2, 'set in one place only');
   // Production's address appears only in the refusal: the runner's address is built from PREVIEW_REF.
-  assert.match(stepScript(y), /RUNNER_URL="https:\/\/\$PREVIEW_REF\.supabase\.co\/functions\/v1\/dog-migrate"/);
+  assert.match(stepScript(y), /RUNNER_URL="https:\/\/\$PREVIEW_REF\.supabase\.co\/functions\/v1\/dog-copy"/);
   assert.deepStrictEqual(y.match(/nksagchwpyljvjiwolmp[^\s"']*/g), ['nksagchwpyljvjiwolmp'], 'named only to refuse it');
   // Production's workflow is untouched by this one.
   assert.doesNotMatch(read('.github/workflows/database.yml'), /preview|rebuild/i);
@@ -415,8 +406,8 @@ test('preview runner, workflow: with a branch fixed, the token is addressed to t
   const r = runStep(BRANCH_REF);
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(r.calls.length, 2, r.calls.join('\n'));
-  assert.ok(r.calls[0].includes('audience=' + runnerAt(BRANCH_REF)), 'the token\'s audience is the branch\'s runner: ' + r.calls[0]);
-  assert.ok(r.calls[1].includes('-X POST ' + runnerAt(BRANCH_REF)), r.calls[1]);
+  assert.ok(r.calls[0].includes('audience=' + copyAt(BRANCH_REF)), 'the token\'s audience is the branch\'s runner: ' + r.calls[0]);
+  assert.ok(r.calls[1].includes('-X POST ' + copyAt(BRANCH_REF)), r.calls[1]);
   assert.ok(r.calls[1].includes('{"mode":"rebuild"}'));
   assert.ok(!r.calls.join('\n').includes(PROD_REF), 'production is never addressed');
   assert.match(r.summary, /Result: passed/);
@@ -428,16 +419,17 @@ test('preview runner, workflow: with a branch fixed, the token is addressed to t
 
 test('preview runner, deploy: the runner\'s digest covers the copy\'s files, and they deploy byte for byte', () => {
   const digests = require('../scripts/function-digests');
-  assert.deepStrictEqual(digests.sources('dog-migrate'), ['_shared/github-oidc.mjs', '_shared/preview-seed.mjs', 'dog-migrate/copy.mjs',
-    'dog-migrate/core.mjs', 'dog-migrate/index.ts', 'dog-migrate/target.mjs']);
+  assert.deepStrictEqual(digests.sources('dog-copy'), ['_shared/github-oidc.mjs', '_shared/preview-seed.mjs', 'dog-copy/copy.mjs',
+    'dog-copy/index.ts', 'dog-copy/target.mjs', 'dog-migrate/core.mjs']);
+  assert.deepStrictEqual(digests.sources('dog-migrate'), ['_shared/github-oidc.mjs', 'dog-migrate/core.mjs', 'dog-migrate/index.ts'], 'production\'s runner deploys none of it');
   assert.ok(!digests.sources('jevs').some((f) => /copy|target|preview/.test(f)), 'the JEVs gate deploys none of it');
-  for (const f of digests.sources('dog-migrate')) {
+  for (const f of digests.sources('dog-copy')) {
     const s = read('supabase/functions/' + f);
     assert.ok(!/\\u[0-9A-Fa-f]{4}/.test(s), f + ' uses a \\uXXXX escape, which the deploy tool turns into the character');
     assert.deepStrictEqual([...new Set(s.match(/[^\x00-\x7F]/gu) || [])].filter((c) => !'—–’'.includes(c)), [], f);
   }
   // The copy's files run no raw SQL and read no setting: the address and the database come from index.ts.
-  for (const f of ['supabase/functions/dog-migrate/copy.mjs', 'supabase/functions/dog-migrate/target.mjs']) {
+  for (const f of ['supabase/functions/dog-copy/copy.mjs', 'supabase/functions/dog-copy/target.mjs']) {
     assert.doesNotMatch(read(f), /\.unsafe\(|Deno\.env|process\.env|fetch\(|console\./, f);
   }
 });

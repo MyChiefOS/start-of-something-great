@@ -13,8 +13,8 @@
 //
 // Plain JavaScript taking a postgres.js connection, like the key broker's core.mjs, so the same file runs in the tests
 // (Node) and in a Supabase function on the preview branch (Deno). It lives here, under supabase/functions, because a
-// function can be deployed only with files from there (scripts/function-digests.js); no function imports it yet (the
-// branch's runner is the next step, design/preview-copy.md). The connection must be the database's own owner login
+// function can be deployed only with files from there (scripts/function-digests.js). Only dog-copy imports it, and
+// dog-copy is deployed only to the preview branch (design/preview-copy.md). The connection must be the database's own owner login
 // (Supabase's SUPABASE_DB_URL), which can take the dog_* roles as the migrations do.
 
 export const MARKER = 'dog_preview_copy';

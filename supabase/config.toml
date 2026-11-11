@@ -17,3 +17,8 @@ verify_jwt = false
 # GitHub's facts for the work module (055, RK140) check their caller the same way: only github-facts.yml on main.
 [functions.dog-github]
 verify_jwt = false
+
+# The preview copy's rebuild (RK141), deployed only to the preview branch, checks its caller the same way: only
+# preview-copy.yml on main, at the branch's own address.
+[functions.dog-copy]
+verify_jwt = false

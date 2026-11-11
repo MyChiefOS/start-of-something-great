@@ -1,20 +1,20 @@
-// Which database this copy of the runner serves (the preview copy, RK141; design/preview-copy.md). The same runner code
-// is deployed twice: to production (project nksagchwpyljvjiwolmp) and to the one Supabase preview branch. Each decides
-// once, when it starts, from its own SUPABASE_URL, which Supabase sets for every function and which no one can set by
-// hand ("A secret name can't start with SUPABASE_", Supabase's documents, read Nov 10). Nothing a request sends is
-// ever read for this. The rule is the key broker's (../dog-keys/target.mjs), kept here as the runner's own file so the
-// two functions deploy independently; test/preview-migrate.test.js checks that they always agree.
+// Which database this function serves (the preview copy, RK141; design/preview-copy.md). dog-copy is deployed only to
+// the one Supabase preview branch (Aaron, Nov 10: production carries none of the copy's code). It still decides, once,
+// when it starts, from its own SUPABASE_URL, which Supabase sets for every function and which no one can set by hand
+// ("A secret name can't start with SUPABASE_", Supabase's documents, read Nov 10); nothing a request sends is read for
+// this. The rule is the key broker's (../dog-keys/target.mjs); test/preview-migrate.test.js checks that they agree.
 //
-//   production's own address, or anything that isn't a Supabase project address: production, exactly as before
-//     (database.yml on main, at production's own address; "apply" and "status"). A missing or odd setting can't turn
-//     production into the copy.
+//   production's own address, or anything that isn't a Supabase project address: PRODUCTION, which describes
+//     production's own runner (dog-migrate: database.yml on main, at production's address) for the tests, and which
+//     dog-copy refuses outright (./copy.mjs: isBranch is false), so a dog-copy deployed by mistake to production does
+//     nothing.
 //   any other project's address (the preview branch): only preview-copy.yml on main, by a push or by hand, at the
-//     branch's own address, and only "rebuild" (./copy.mjs): reset the copy, migrate it from main, reseed it.
-// PRODUCTION's values are the ones index.ts writes out in full (tested), so production's code is the old code.
+//     branch's own dog-copy address, and only "rebuild" (./copy.mjs): reset the copy, migrate it from main, reseed it.
 
 export const PROJECT_REF = 'nksagchwpyljvjiwolmp';
 const REF = /^[a-z]{20}$/; // a Supabase project reference: 20 lowercase letters (branches have their own)
 const runnerAt = (ref) => 'https://' + ref + '.supabase.co/functions/v1/dog-migrate';
+const copyAt = (ref) => 'https://' + ref + '.supabase.co/functions/v1/dog-copy';
 const COPY_WORKFLOW = '.github/workflows/preview-copy.yml';
 
 export const PRODUCTION = Object.freeze({
@@ -23,7 +23,7 @@ export const PRODUCTION = Object.freeze({
 });
 
 const branch = (ref) => Object.freeze({
-  environment: 'preview', ref, audience: runnerAt(ref), workflow: COPY_WORKFLOW,
+  environment: 'preview', ref, audience: copyAt(ref), workflow: COPY_WORKFLOW,
   events: Object.freeze(['push', 'workflow_dispatch']), modes: Object.freeze(['rebuild'])
 });
 

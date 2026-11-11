@@ -4,10 +4,7 @@
 // function returns it as x-source-digest (R-3); the daily watch compares it with main's.
 export const SOURCE_FILES = {
   "_shared/github-oidc.mjs": "00cf45c9350dda3b31b92c6f976c21de2db1c79003e924456535344c9b6a0606",
-  "_shared/preview-seed.mjs": "11d610ac46059f7700a8539fce1eb2dca1464fe7724859fd9ee3dedc75f532e9",
-  "dog-migrate/copy.mjs": "5bd5a55a6f6940e4b1d5cec7f0d9cbcba0d7108f153dc95ca7fb745bdab7bb10",
   "dog-migrate/core.mjs": "3603bc10413fe8bc6d9f334256fa8af27b6d2ddb6ae770efe68b2914cadae8ae",
-  "dog-migrate/index.ts": "9532f7f9145d76da2561f67634799df9a708a1e6450b9869a2b7f5cb7a92e77f",
-  "dog-migrate/target.mjs": "2231f1c9f783b6b9907f948e63bc181d796ada1202b54655789f65faeea9db6e",
+  "dog-migrate/index.ts": "2b3d714b06173b8e5aed0cd3934cfc2f5649d30c9827a35dce8e1b74a46cfc7b",
 };
-export const SOURCE_DIGEST = "a3ab1430f1ade011e95231a77f9c6099150f2edff769e5b2b2612a29608068bf";
+export const SOURCE_DIGEST = "3033cc2cc6ae06007e31b9b9e83a0c86d64ff8227ec2c219c5cd85af06eec605";
