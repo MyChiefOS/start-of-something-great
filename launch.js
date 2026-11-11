@@ -27,7 +27,18 @@ const STAGES = ['closed', 'public'];
 // the copy's own values never count as Vercel's. Whether an address is set is asked of db/index.js, the one place
 // that reads it (G1).
 const ROUTE_A_KEYS = ['SESSION_SECRET', 'IP_HASH_KEY', 'FINGERPRINT_KEY_1', 'CRON_SECRET'];
-const routeA = (env) => [...(require('./db').hasAddress(env) ? ['database address'] : []),
+// A script that runs without installed packages (scripts/uptime.js asks only repoStage) loads this file too, and there
+// db/index.js can't load, because the database library isn't installed. That counts as an address being set, which
+// keeps the copy closed (it fails closed); any other failure to load is still an error.
+function hasAddress(env) {
+  try {
+    return require('./db').hasAddress(env);
+  } catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND') return true;
+    throw e;
+  }
+}
+const routeA = (env) => [...(hasAddress(env) ? ['database address'] : []),
   ...ROUTE_A_KEYS.filter((k) => env[k] != null && String(env[k]) !== '')];
 const BOOT = Object.freeze(routeA(process.env));
 const lower = (x) => (x == null ? '' : String(x).trim().toLowerCase());
