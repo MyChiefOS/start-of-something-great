@@ -1,7 +1,9 @@
 // Runs an attack plan against the red-team copy (redteam/copy.js) and reports every step. A plan is JSON data:
 //   { "steps": [ { "name": "...", "as": "anon" | "memberA" | "memberB" | "admin", "method": "GET" | "POST",
 //                  "path": "/api/...", "body": {...}, "headers": {"name": "value" | null},
-//                  "expect": { "status": 403 | [401, 403], "not": [200, 201] } } ] }
+//                  "expect": { "status": 403 | [401, 403], "not": [200, 201], "tool_error": true } } ] }
+// "tool_error": true is for a call to an MCP tool (/api/mcp): the tool must have refused (result.isError), since a
+// refused tool call still answers 200.
 // A step may instead say "each": "write-routes" or "each": "read-routes" to be repeated for every such address the API
 // has (read from the handlers themselves, so a new route is attacked the day it is added), with "params" for reads.
 // "except" names addresses an "each" step leaves out, each with its reason, so every exception is written down.
@@ -85,6 +87,7 @@ function judge(step, got) {
   const not = list(e.not);
   if (not && not.includes(got.status)) why.push('answered ' + got.status + ', which it must not');
   if (e.range === '4xx' && !(got.status >= 400 && got.status < 500)) why.push('answered ' + got.status + ', expected a refusal (4xx)');
+  if (e.tool_error === true && !(got.json && got.json.result && got.json.result.isError === true)) why.push('the tool did not refuse (expected result.isError)');
   return why;
 }
 

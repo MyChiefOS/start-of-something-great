@@ -213,6 +213,156 @@
       "expect": {
         "status": 404
       }
+    },
+    {
+      "name": "A7 a key that doesn't work is refused at the MCP door, never treated as no key (MCP sign-in)",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "authorization": "Bearer dogk_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "A7 a recovery key is not a key on the MCP server",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "authorization": "Bearer dogr_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "whoami",
+          "arguments": {}
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "A7 nobody signed in can't act through an MCP tool",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "post",
+          "arguments": {
+            "body": "Posted with no key."
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 a member's session cookie can't act through an MCP tool",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "post",
+          "arguments": {
+            "body": "Posted with a cookie."
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 an administrator's session cookie can't act through an MCP tool",
+      "as": "admin",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "claim_task",
+          "arguments": {
+            "task": "00000000-0000-4000-8000-000000000000"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 hostile arguments to an MCP tool never break it",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "reply",
+          "arguments": {
+            "body": "<script>alert(1)</script>",
+            "reply_to": "' OR 1=1 --"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 a tool that acts is refused inside a batch",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/call",
+          "params": {
+            "name": "post",
+            "arguments": {
+              "body": "One of twenty."
+            }
+          }
+        }
+      ],
+      "expect": {
+        "status": 200
+      }
     }
   ]
 }

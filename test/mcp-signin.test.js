@@ -235,6 +235,17 @@ test('the browser may send the key header; the server says it reads without sign
   assert.ok(!/\.\.\.\s*(h|headers|req\.headers|mcpReq\.headers)\b/.test(read('api/_mcp-act.js')), 'headers are picked by name, never spread');
 });
 
+test('the red-team baseline attacks the MCP server, and its "the tool refused" check fails when a tool acts', () => {
+  const { judge } = require('../redteam/plan');
+  const step = { expect: { status: 200, tool_error: true } };
+  assert.deepStrictEqual(judge(step, { status: 200, json: { result: { isError: true } } }), []);
+  assert.match(judge(step, { status: 200, json: { result: { isError: false } } }).join(' '), /the tool did not refuse/);
+  assert.match(judge(step, { status: 200, json: null }).join(' '), /the tool did not refuse/);
+  const steps = require('../redteam/baseline.json').steps.filter((x) => x.path === '/api/mcp');
+  assert.ok(steps.length >= 7, 'MCP attack plans are in the baseline');
+  assert.ok(steps.some((x) => x.expect.status === 401) && steps.some((x) => x.as === 'memberA' && x.expect.tool_error) && steps.some((x) => Array.isArray(x.body)));
+});
+
 // ---- against a real database: a tool's answer is the route's own ----
 const SERVER = process.env.TEST_DATABASE_URL;
 if (!SERVER) {
