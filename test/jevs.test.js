@@ -765,7 +765,7 @@ test('deletion review: after 24 hours without Aaron\'s decision the account is d
     // Sign-in is refused with a plain message; the timer never disables twice; the account is never deleted on its own.
     const { r2: later } = await oauthFlow(env, 'github', '7501');
     assert.strictEqual(later.getHeader('Location'), '/join?error=disabled');
-    assert.match(fs.readFileSync(path.join(root, 'join.js'), 'utf8'), /This account is disabled while a request to delete it is reviewed\. Nothing has been deleted\./);
+    assert.match(fs.readFileSync(path.join(root, 'join.js'), 'utf8'), /This account is disabled while a request to delete it is reviewed or kept on hold\. Nothing has been deleted\./);
     for (let i = 0; i < 3; i++) assert.strictEqual(await run({ actor: 'system' }, (t) => require('../db/controls').expireDeletionReviews(t)), 0);
     await backdateReview(m.id, '400 days');
     assert.strictEqual(await run({ actor: 'system' }, (t) => require('../db/controls').expireDeletionReviews(t)), 0);

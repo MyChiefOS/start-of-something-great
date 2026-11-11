@@ -235,6 +235,10 @@
     {
       "version": "059_replies",
       "sha256": "5b03ed75b8f8c0f3ab4c452d675697857b4032263ad2789b5916b8a88bf9f805"
+    },
+    {
+      "version": "060_holds_bans_summary",
+      "sha256": "eefe6de51584b6986535d20aeb58f45e71bc66a5059fbd6418bffe1e93d3e0ca"
     }
   ]
 }

@@ -195,9 +195,12 @@ async function rename(t, name) {
 // F8: deletes the signed-in member's account and everything about them (007_account_deletion.sql). Returns the counts,
 // or { refused: 'not_member' | 'not_active' | 'fresh' | 'under_review' } ('fresh': the session didn't start recently
 // enough, RK3; 'under_review': JEVs flagged an earlier request and Aaron hasn't decided yet, PR 12).
+// { held: true } (060): the account is under a legal hold, so it was closed and hidden and nothing was deleted; the
+// database answers a row of nulls.
 async function deleteAccount(t) {
   try {
     const [r] = await t.savepoint((s) => s`select * from app.delete_account()`);
+    if (r && r.posts === null && r.identities === null) return { held: true };
     return { posts: r.posts, reports: r.reports, agents: r.agents, keys: r.keys, sessions: r.sessions, identities: r.identities };
   } catch (e) {
     if (e.code === '42501' && (e.message === 'not_member' || e.message === 'not_active')) return { refused: e.message };

@@ -745,7 +745,8 @@ function make(deps) {
       if (out.refused === 'under_review') return h.redirect(res, '/account?error=review');
       if (out.refused) return h.redirect(res, '/account?error=' + (out.refused === 'not_member' ? 'admin' : 'gone'));
       h.addCookie(res, h.clear(SESSION));
-      return h.redirect(res, '/join?deleted=1');
+      // 060: under a legal hold the account is closed and hidden, not deleted, and the member is told so.
+      return h.redirect(res, out.held ? '/join?deleted=held' : '/join?deleted=1');
     },
 
     // PR 15: unlink one of your sign-in methods. A form on /account, from our own pages, signed in within the last 10

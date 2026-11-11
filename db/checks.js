@@ -119,6 +119,17 @@ const DEFINERS = {
   'app.replies_fill()': 'dog_public',
   'app.thread(uuid, integer)': 'dog_public',
   'app.post_places(uuid[])': 'dog_public',
+  // 060: the legal hold. An administrator places and lifts one and lists the open ones; each checks for the
+  // administrator itself, and the deletion role owns them because lifting a hold may delete the account.
+  'app.legal_hold_place(uuid, text)': 'dog_erase',
+  'app.legal_hold_lift(uuid, text)': 'dog_erase',
+  'app.legal_holds_list()': 'dog_erase',
+  // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
+  // site, and the GitHub ban list carried to the site. The site's role can't call either.
+  'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },
+  'app.gh_bans_apply(text[])': { owner: 'dog_jevs', callers: '' },
+  // 060: the daily summary to the administrators; the site's timer route calls it, and it sends at most one a day.
+  'app.daily_summary()': 'dog_jevs',
   // PR 12: JEVs. Its signals (counts only), its decision, the owner's answer to a challenge, sign-up marks, whether a
   // post can be appealed, the regional gate's daily count, and the record of a settings change.
   'app.jevs_signals(text, uuid, text, text[], bigint)': 'dog_jevs',

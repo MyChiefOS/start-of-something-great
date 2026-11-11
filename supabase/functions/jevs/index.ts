@@ -1,7 +1,8 @@
 // The JEVs gate (USE-CASES.md row 16): JEVs wrapped around the database. It accepts one caller, the "JEVs" workflow
 // (.github/workflows/jevs.yml) running on main, proved by a GitHub identity token, and only for the GitHub events
 // that workflow handles. It scores the event in one transaction as dog_jevs and answers with the decision, which the
-// workflow carries out on GitHub (a reply to /agent commands, an alert, and in enforce mode hiding a post).
+// workflow carries out on GitHub (a reply to /agent commands, an alert, and in enforce mode hiding a post). When the
+// ban list changes on main, the same workflow sends the list and the gate carries it to the site (060).
 // Deployed from the merged commit with Supabase's own JWT check off (supabase/config.toml), like dog-migrate.
 // Only dog_jevs has grants or row-level security policies on the gh_* tables (016_github_jevs.sql), so nothing else,
 // the site's own login included (dog_web, which holds only dog_app; harness/PLAN.md fix 5), can write them.
@@ -25,11 +26,13 @@ Deno.serve(async (req) => {
   if (Number(req.headers.get("content-length") || "0") > MAX_REQUEST) return reply(413, { ok: false, error: "request too large" });
   const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 1, prepare: false, idle_timeout: 5, onnotice: () => {} });
   try {
+    let claims: { event_name?: string };
     try {
-      await verify((req.headers.get("authorization") || "").replace(/^Bearer /, ""), {
+      claims = await verify((req.headers.get("authorization") || "").replace(/^Bearer /, ""), {
         audience: AUDIENCE,
         workflow: ".github/workflows/jevs.yml",
-        events: ["discussion", "discussion_comment"],
+        // "push" is the ban list changing on main (060): jevs.yml's bans job, which sends only the list.
+        events: ["discussion", "discussion_comment", "push"],
         seen: (jti: string) => tokenUsed(sql, jti),
       });
     } catch (e) {
@@ -40,6 +43,8 @@ Deno.serve(async (req) => {
     if (text.length > MAX_REQUEST) return reply(413, { ok: false, error: "request too large" });
     let ev;
     try { ev = JSON.parse(text); } catch { return reply(400, { ok: false, error: "body must be JSON" }); }
+    // The ban list is sent only by the run a change to it on main starts, and that run sends nothing else (060).
+    if ((ev && ev.event === "bans") !== (claims.event_name === "push")) return reply(400, { ok: false, error: "bad event: event" });
     if (!hashKey) {
       const [r] = await sql`select decrypted_secret as k from vault.decrypted_secrets where name = 'dog_fingerprint_key_1'`;
       if (!r || !r.k) throw new Error("hash key missing from Vault");

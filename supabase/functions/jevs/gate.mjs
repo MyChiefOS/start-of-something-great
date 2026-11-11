@@ -215,7 +215,7 @@ async function erase(t, ev, key) {
 
 // What a hidden post's reply says, in plain words (enforce mode only).
 const HIDDEN_BECAUSE = {
-  banned: 'Hidden by JEVs: this account is on the ban list. Reply `/appeal` under this post to ask a person to look.',
+  banned: 'Hidden by JEVs: this account is banned, on the ban list or on dayonegreat.com. Reply `/appeal` under this post to ask a person to look.',
   agent_off: 'Hidden by JEVs: this agent is switched off by its owner (`/agent limit <name> act` turns it on).',
   agent_draft: 'Hidden by JEVs until the agent\'s owner approves it: the owner replies `/approve` under this post.',
   agent_cap: 'Hidden by JEVs: this agent is over its owner\'s daily limit. Its owner can raise it with `/agent limit <name> act daily <n>`.',
@@ -298,10 +298,48 @@ async function moderate(t, out, { ev, acct, principal, mode, body, tagged, banne
   }
 }
 
+// Linked bans (060; Aaron's check of Nov 10, 2026). The ban list (moderation/bans.json on main) carried to the site:
+// the workflow sends the list when a merged pull request changes it, and the database bans the members those GitHub
+// accounts belong to and unbans the ones it banned that are no longer listed (app.gh_bans_apply). The gate only makes
+// the fingerprints: the same keyed hash sign-in stores, so no GitHub ID is kept. The founder's account is never sent.
+// The answer is the two counts and nothing about anyone.
+export function checkBans(ev) {
+  const bad = (m) => { throw new BadEvent(m); };
+  if (!ev || typeof ev !== 'object') bad('no event');
+  if (!(Array.isArray(ev.bans) && ev.bans.length <= 10000 && ev.bans.every((x) => Number.isSafeInteger(x) && x > 0))) bad('bans');
+  if (Object.keys(ev).some((k) => !['event', 'bans'].includes(k))) bad('event');
+  return ev;
+}
+async function applyBans(sql, raw, key) {
+  const ev = checkBans(raw);
+  const fps = await Promise.all([...new Set(ev.bans)].filter((id) => id !== FOUNDER_ID).map((id) => J.keyed(key, 'github:' + id)));
+  return sql.begin(async (t) => {
+    await t`set local role dog_jevs`;
+    // One at a time, so two changes to the list never cross.
+    await t`select pg_advisory_xact_lock(hashtext('jevs bans'))`;
+    const [r] = await t`select app.gh_bans_apply(${fps}::text[]) as d`;
+    return { ok: true, bans: { listed: fps.length, banned: Number(r.d.banned), unbanned: Number(r.d.unbanned) } };
+  });
+}
+
+// Is the person behind this GitHub account banned on the site (060)? The poster's fingerprint and, for a machine
+// account, the account it is linked to. Before migration 060 is applied the function isn't there: not banned.
+async function siteBanned(t, key, ids) {
+  const fps = await Promise.all([...new Set(ids)].filter((id) => Number.isSafeInteger(id) && id > 0).map((id) => J.keyed(key, 'github:' + id)));
+  try {
+    const [r] = await t.savepoint((s) => s`select app.gh_site_banned(${fps}::text[]) as yes`);
+    return r.yes === true;
+  } catch (e) {
+    if (e && e.code === '42883') return false;
+    throw e;
+  }
+}
+
 // key: the secret for keyed hashes (from Supabase Vault in production).
 export async function handle(sql, raw, { key }) {
-  const ev = checkEvent(raw);
   if (!key || key.length < 16) throw new Error('no hash key');
+  if (raw && typeof raw === 'object' && raw.event === 'bans') return applyBans(sql, raw, key);
+  const ev = checkEvent(raw);
   if (/\[bot\]$/.test(ev.author.login) || ev.author.type === 'Bot') {
     return { ok: true, mode: ev.mode, skipped: 'bot', decisions: [], alert: false, hide: false, reply: null };
   }
@@ -337,10 +375,11 @@ export async function handle(sql, raw, { key }) {
     const principalAcct = principal === acct.id ? acct : (await t`select login, github_id, level from app.gh_accounts where id = ${principal}`)[0];
     const principalLogin = principalAcct.login;
     const founder = ev.author.id === FOUNDER_ID;
-    // The ban list (moderation/bans.json) covers an account and every machine account linked to it.
+    // The ban list (moderation/bans.json) covers an account and every machine account linked to it. A ban on the
+    // site covers the same person's posts here too (060): the site's member with this GitHub account, by fingerprint.
     const bans = new Set(ev.bans || []);
     const principalGithub = Number(principalAcct.github_id);
-    const banned = !founder && (bans.has(ev.author.id) || bans.has(principalGithub));
+    const banned = !founder && (bans.has(ev.author.id) || bans.has(principalGithub) || await siteBanned(t, key, [ev.author.id, principalGithub]));
 
     // Commands run once, when the post is made (not again on edits).
     if (ev.action === 'created') {

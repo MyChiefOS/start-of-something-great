@@ -79,6 +79,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   try {
     await run({ actor: 'anon' }, (t) => t`select app.work_ledger_alert()`);
   } catch { /* logs nothing (027) */ }
+  // The daily summary (060): one in-app notice a day to the administrators, counts only. The database sends at most one
+  // a UTC day; every other call returns at once. Its own transaction; a failure changes nothing else.
+  try {
+    await run({ actor: 'anon' }, (t) => t`select app.daily_summary()`);
+  } catch { /* logs nothing (027); before 060 is applied the function isn't there */ }
   // Review oversight (041): the 5% sample of low-risk posts for Second Look to re-read, and the alerts to Aaron (in-app,
   // once a day each while they hold). The database runs it at most once every 10 minutes, in its own transaction; a
   // failure here changes nothing else and this reply stays the same.

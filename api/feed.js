@@ -25,6 +25,8 @@
 //   POST {"lift": "<brake id>"}                       switch a brake off (Aaron only)
 //   POST {"ban": "<member id>", "note": "..."}        ban a member: their sessions and agents stop at once (Aaron only; F10)
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
+//   POST {"hold": "<member id>", "reason": "..."}     place a legal hold: the account can't be deleted while it is open (Aaron only; 060)
+//   POST {"lift_hold": "<hold id>", "reason": "..."}  lift it; if the member asked to be deleted meanwhile, the account is deleted now
 //   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
 //                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
 //   POST {"second_look": "mode", "mode": "off" | "shadow" | "on"}   switch Second Look (Aaron only; 034)
@@ -84,7 +86,8 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
-const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
+const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name',
+  'legal_holds[].member.name'];
 
 // An agent's post shows the agent and, as its author, the person who owns it (F3). A sub-agent's post also shows the
 // agents above it (PR 16): "sub-agent of <parent> — owned by <owner>" for people, and for machines the chain as nested
@@ -502,7 +505,8 @@ async function appealPost(req, res, run, who, body) {
 }
 
 // Owner controls (PR 6): the emergency brake and banning, Aaron only. The database records each step (O3).
-const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'] };
+const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'],
+  hold: ['hold', 'reason'], lift_hold: ['lift_hold', 'reason'] };
 const DELETION_DONE = {
   deleted: 'Deleted. The account and everything about it are gone; the audit log keeps only that it happened.',
   disabled: 'Kept disabled. The account and its data stay; you can still delete or restore it here.',
@@ -513,7 +517,8 @@ async function control(req, res, run, who, body) {
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
     + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
-    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}.';
+    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}, '
+    + '{"hold": "<member id>", "reason": "10 to 500 characters"} or {"lift_hold": "<hold id>", "reason": "10 to 500 characters"}.';
   if (Object.keys(body).some((k) => !CONTROL_KEYS[kind].includes(k))) return reply(res, 400, { error: usage });
   try {
     if (kind === 'brake') {
@@ -531,7 +536,25 @@ async function control(req, res, run, who, body) {
       const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
       if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
       if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
+      if (out.refused === 'legal_hold') return reply(res, 409, { error: 'That account is under a legal hold, so it can\u2019t be deleted. Lift the hold first, under Legal holds.' });
       return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
+    }
+    // The legal hold (060).
+    if (kind === 'hold') {
+      const out = await run(session.actorFor(who), (t) => controls.placeHold(t, { member: body.hold, reason: body.reason }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
+      if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator\u2019s account can\u2019t be put under a hold.' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That account is already under a legal hold.' });
+      return reply(res, 201, { hold: out.hold, member: body.hold, message: 'The hold is on. Nothing can delete this account while it is open. '
+        + 'If its owner asks to delete it, the account is closed and hidden instead, and you are told.' });
+    }
+    if (kind === 'lift_hold') {
+      const out = await run(session.actorFor(who), (t) => controls.liftHold(t, { hold: body.lift_hold, reason: body.reason }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such legal hold.' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That hold is already lifted.' });
+      return reply(res, 200, { lifted_hold: body.lift_hold, result: out.result, message: out.result === 'lifted_deleted'
+        ? 'The hold is lifted. Its owner had asked to delete the account, so it and everything about it are deleted now.'
+        : 'The hold is lifted. The account can be deleted again.' });
     }
     if (kind === 'lift') {
       const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
@@ -542,12 +565,15 @@ async function control(req, res, run, who, body) {
     const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
+    // 060: a ban carried from GitHub ends on GitHub.
+    if (out.refused === 'github') return reply(res, 409, { error: 'This member is banned because their GitHub account is on the ban list (moderation/bans.json). Take it off the list by a pull request and they are unbanned here.' });
     if (out.refused === 'unchanged') {
       return reply(res, 409, { error: out.status === 'disabled' ? 'That account is disabled by a deletion review; decide it under Deletion reviews.'
         : out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
     }
     return reply(res, 200, { member: body[kind], status: out.status,
-      message: out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden.'
+      message: out.was === 'github' ? 'Banned on the site too. They were banned because their GitHub account is on the ban list; now the ban also stays until you end it here.'
+        : out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden. Their posts on GitHub are hidden from now on too.'
         : 'Unbanned. They can sign in again and give their agents new keys.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: usage });
@@ -602,7 +628,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
     if (Object.hasOwn(body, 'report')) return reportPost(req, res, run, who, body);
     if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
-    if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    if (['brake', 'lift', 'ban', 'unban', 'deletion_review', 'hold', 'lift_hold'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     if (Object.hasOwn(body, 'second_look')) return secondLook(req, res, run, who, body, oidc);
     if (Object.hasOwn(body, 'review_settings')) return reviewSettings(req, res, run, who, body);
     // 059: a reply names the post it answers.
@@ -694,6 +720,8 @@ async function handle(req, res, run, { oidc = null } = {}) {
     const d = await run(session.actorFor(who), async (t) => ({ ...(await t`select app.audit_admin_read('owner_controls')`.then(() => ({}))),
       ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
       deletion_reviews: await controls.deletionReviews(t),
+      // The open legal holds (060); none before the migration.
+      legal_holds: await controls.holds(t),
       // Second Look's report (034): counts only. Best effort, so the controls still load before 034 is applied.
       second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null),
       // The review budget, the sample and the canaries (041), with each revealed canary checked against the audit log.
@@ -701,6 +729,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
       review: await tiers.adminView(t).catch(() => null) }));
     return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs, second_look: d.second_look, review: d.review,
       deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
+      legal_holds: d.legal_holds.map((h) => ({ ...h, member: { ...h.member, name: maskContacts(h.member.name) }, reason: maskContacts(h.reason) })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
       // Repeats are matched ignoring case, spaces and punctuation; this measures and never blocks (F4).
