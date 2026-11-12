@@ -117,6 +117,11 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   try {
     await require('../db/workjobs').run(run);
   } catch { /* logs nothing (027); before 042 is applied the functions aren't there */ }
+  // Funded bounties (061): tell the payment function there may be work (a release when points went final, a refund, a
+  // retry). No header, no body, no token (control 8): it acts only on rows the database wrote. Only while payments are
+  // on (payments.json, Aaron's merge).
+  const pay = require('../db/pay');
+  if (pay.switchedOn()) await pay.poke(fetchImpl || fetch);
   return out && out.failed ? reply(res, 500, { ok: false }) : reply(res, 200, { ok: true });
 }
 

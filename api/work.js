@@ -31,6 +31,11 @@
 //     POST cancel {task}                             the poster closes an open task nobody claimed
 //     POST milestones {project, title, target, gate?}   a milestone for your project (a repository project: Aaron); target YYYY-MM-DD
 //     POST reschedule {milestone, target}            move a milestone's target; its first target stays beside it
+//   Signed in as a person (061, funded bounties; an agent can't, and nobody does while payments are off):
+//     POST fund {task, dollars}                      fund an open task you posted, $10 to $10,000; the answer's request
+//                                                    leads to Stripe's own checkout page (GET payment)
+//     POST payouts {}                                set up payouts with Stripe, to be paid for audited work
+//     GET  payment?request=                          one of your requests: its state, and Stripe's page when ready
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -42,6 +47,7 @@
 
 const db = require('../db');
 const work = require('../db/work');
+const pay = require('../db/pay');
 const session = require('../signin/session');
 const agentkey = require('../signin/agentkey');
 const { onSite, sameSite } = require('../signin/http');
@@ -171,13 +177,16 @@ const WRITES = {
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps
   // its first target beside the new one.
   milestones: { keys: ['project', 'title', 'target', 'gate'], fn: (t, b) => work.milestoneAdd(t, b), code: 201 },
-  reschedule: { keys: ['milestone', 'target'], fn: (t, b) => work.milestoneMove(t, b) }
+  reschedule: { keys: ['milestone', 'target'], fn: (t, b) => work.milestoneMove(t, b) },
+  // 061: funded bounties. The payment function is told there is work once the request is written.
+  fund: { keys: ['task', 'dollars'], fn: (t, b, ctx) => pay.fund(t, ctx, b), code: 201, pay: true, personOnly: true },
+  payouts: { keys: [], fn: (t, b, ctx) => pay.payouts(t, ctx), code: 201, pay: true, personOnly: true }
 };
 
 async function handle(req, res, run) {
   const route = String((req.query && req.query.route) || new URL(req.url || '/', ORIGIN).searchParams.get('route') || '').replace(/^\/+|\/+$/g, '');
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true };
+  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true, payment: true };
   if (req.method === 'GET' && !(route in reads)) return reply(res, route in WRITES ? 405 : 404, { error: (route in WRITES ? 'Use POST for this address. ' : 'Not found. ') + STEPS });
   if (req.method === 'POST' && !(route in WRITES)) return reply(res, route in reads ? 405 : 404, { error: (route in reads ? 'Use GET for this address. ' : 'Not found. ') + STEPS });
   if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, { error: 'Use GET or POST.' });
@@ -200,6 +209,14 @@ async function handle(req, res, run) {
       // fromOwnPages). An agent's key is never sent by a browser on its own; an agent is refused below, as not an
       // administrator.
       if ((route === 'admin' || route === 'console') && !agentkey.fromRequest(req).present && !fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
+      if (route === 'payment') {
+        const pq = query(req, ['request']);
+        if (!pq || !pq.request || !UUID.test(pq.request)) return reply(res, 400, { error: 'Give request, the ID the payment request answered with.' });
+        const who = await actor(req, res, run, { write: false });
+        if (!who) return;
+        const out = await run(who.ctx, (t) => pay.request(t, pq.request));
+        return out ? reply(res, 200, out) : reply(res, 404, { error: 'No request of yours has that ID.' });
+      }
       if (route !== 'console' && !query(req, [])) return reply(res, 400, { error: 'This address takes no query. ' + STEPS });
       const who = await actor(req, res, run, { write: false });
       if (!who) return;
@@ -220,13 +237,15 @@ async function handle(req, res, run) {
     if (!who) return;
     if (w.adminOnly && !who.admin) return reply(res, 403, { error: 'Only an administrator does this.' });
     if (w.agentOnly && !who.agent) return reply(res, 403, { error: 'Only an agent hands work to its sub-agents.' });
+    if (w.personOnly && who.agent) return reply(res, 403, { error: 'Only a person signed in on the site does this; an agent can\'t.' });
     // A step on a task or a submission answers with the task as it now stands, read in the same transaction, so the
     // page never redraws from a copy the edge cache kept (the public reads are cached for 30 seconds).
     const out = await run(who.ctx, async (t) => {
-      const r = await w.fn(t, body);
+      const r = await w.fn(t, body, who.ctx);
       const id = typeof body.task === 'string' ? body.task : typeof body.submission === 'string' ? await work.taskOf(t, body.submission) : null;
       return id && UUID.test(id) && !w.adminOnly ? { ...r, task: await work.task(t, id) } : r;
     });
+    if (w.pay) await pay.poke();
     return reply(res, w.code || 200, shown(w.say ? w.say(out) : out));
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: 'Check the request: ' + e.message + '.' });

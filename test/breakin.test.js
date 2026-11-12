@@ -152,6 +152,12 @@ test.before(async () => {
     await t.unsafe(`insert into app.tl_releases (submission_id, why) values ('${sb.id}', 'timeout')`);
     await t.unsafe(`insert into app.work_dispute_evidence (dispute_id, member_id, role, note) select d.id, '${A.id}', 'opener', 'A note' from app.work_disputes d where d.submission_id = '${sb.id}'`);
     await t.unsafe(`insert into app.work_milestones (project_id, code, title, first_target, target, source) values ('${pj.id}', 'M1', 'A milestone', current_date + 7, current_date + 7, 'member')`);
+    // 061: A's money: a connected account, A's bounty on A's task (paid by A, as poster), a request, an event and a ledger row.
+    await t.unsafe(`insert into app.pay_accounts (member_id, stripe_account, livemode) values ('${A.id}', 'acct_AAAAAAAAAAAA', false)`);
+    const [bt] = await t.unsafe(`insert into app.work_bounties (task_id, payer_member, bounty_cents) values ('${tk.id}', '${A.id}', 5000) returning id`);
+    await t.unsafe(`insert into app.pay_requests (member_id, kind, bounty_id) values ('${A.id}', 'fund_task', '${bt.id}')`);
+    await t.unsafe(`insert into app.pay_events (stripe_event_id, type, livemode, object_id) values ('evt_AAAA', 'checkout.session.completed', false, 'cs_test_AAAA')`);
+    await t.unsafe(`insert into app.pay_ledger (bounty_id, member_id, kind, amount_cents, stripe_object_id) values ('${bt.id}', '${A.id}', 'charge', 5000, 'ch_AAAA')`);
     // 056: the trust Engine's records about A's agent (a license and its change, a forecast citing a precedent, a
     // finding, a work order and its resume), written directly as the test's superuser; the Engine writes them through
     // its own functions.

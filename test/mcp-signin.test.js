@@ -125,7 +125,8 @@ test('there is a tool for everything a key can do over the API, and none for wha
   const writes = [...work.slice(work.indexOf('const WRITES = {'), work.indexOf('async function handle')).matchAll(/^ {2}([a-z]+): \{[^\n]*/gm)];
   assert.ok(writes.length >= 17);
   for (const [line, route] of writes) {
-    assert.strictEqual(at.has('work POST ' + route), !/adminOnly: true/.test(line), 'work ' + route + (/adminOnly/.test(line) ? ' is an administrator’s: no tool' : ' has a tool'));
+    // Money (061) is a person's only: funding a task or setting up payouts is never an agent's, so no tool.
+    assert.strictEqual(at.has('work POST ' + route), !/adminOnly: true|personOnly: true/.test(line), 'work ' + route + (/adminOnly|personOnly/.test(line) ? ' is an administrator’s or a person’s: no tool' : ' has a tool'));
   }
   // The Engine: an agent's forecast only; orders are the owner's and the rest an administrator's.
   assert.deepStrictEqual([...at].filter((x) => x.startsWith('engine POST')), ['engine POST forecast']);

@@ -1,0 +1,4 @@
+{
+  "payments": "off",
+  "note": "Funded bounties (061). off: nobody can fund a task or set up payouts; the site says payments aren't switched on yet. on: Aaron's go-live decision for money, made by merging a pull request that sets it, after his Stripe keys are in Vault and the live end-to-end check passes (Aaron, Nov 11, 2026). Any other value counts as off."
+}
