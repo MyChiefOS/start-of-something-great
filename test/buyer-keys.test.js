@@ -41,11 +41,11 @@ const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
 function cose(pub) {
   return Buffer.concat([Buffer.from('a50102032620012158 20'.replace(/ /g, ''), 'hex'), pub.subarray(1, 33), Buffer.from('225820', 'hex'), pub.subarray(33)]);
 }
-function authData(d, { flags = 0x05, rp = RP, attested = false, credId = d.cred, key = d.pub, count = d.count } = {}) {
+function authData(d, { flags = 0x05, rp = RP, attested = false, credId = d.cred, key = d.pub, count = d.count, coseKey = null } = {}) {
   const parts = [sha(Buffer.from(rp)), Buffer.from([flags | (attested ? 0x40 : 0)]), u32(count)];
   if (attested) {
     const len = Buffer.alloc(2); len.writeUInt16BE(credId.length);
-    parts.push(Buffer.alloc(16), len, credId, cose(key));
+    parts.push(Buffer.alloc(16), len, credId, coseKey || cose(key));
   }
   return Buffer.concat(parts);
 }
@@ -60,7 +60,7 @@ async function register(d, over = {}) {
     displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
   return { ...out, session: c.sha256hex(token), challenge: ch };
 }
-async function signIn(d, over = {}) {
+async function signIn(d, over = {}, region = null) {
   const ch = over.challenge || await challenge();
   d.count += over.countStep === undefined ? 1 : over.countStep;
   const cd = over.clientData || clientData('webauthn.get', ch, over.origin);
@@ -68,7 +68,7 @@ async function signIn(d, over = {}) {
   const der = crypto.sign('sha256', Buffer.concat([ad, sha(cd)]), over.signWith || d.privateKey);
   const token = c.token(32);
   const out = await run(ANON, (t) => store.buyerSignIn(t, { credentialId: d.cred, clientData: cd, authData: ad, signature: over.signature || c.derToRaw(der),
-    displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30 }));
+    displayName: 'New member', sessionHash: c.sha256hex(token), sessionDays: 30, region }));
   return { ...out, session: c.sha256hex(token) };
 }
 async function buyer() {
@@ -142,6 +142,9 @@ test('BK2: every part of a new key is checked: type, challenge (once), address, 
   await bad({ ad: { credId: crypto.randomBytes(32) } }, 'another credential in the data');
   await bad({ ad: { key: device().pub } }, 'another public key in the data');
   await bad({ authData: authData(d, { attested: false }) }, 'no credential in the data');
+  // The fresh review of PR #3, L2: an RS256 key (kty 3, alg -257) with this key's bytes put after it is not this key.
+  const rsa = Buffer.concat([Buffer.from('a401030339010020590100', 'hex'), crypto.randomBytes(256), Buffer.from('2143010001', 'hex')]);
+  await bad({ ad: { coseKey: Buffer.concat([rsa, cose(d.pub)]) } }, 'another key type, with this key appended');
   // A challenge works once, even for a right answer.
   const first = await register(d);
   assert.strictEqual(first.status, 'ok');
@@ -314,4 +317,39 @@ test('BK10: the site’s buyer door: shut while payments are off, closed to decl
   assert.strictEqual(back.signed_in, true, JSON.stringify(back));
   const unknown = await door(flow, 'buyerSignIn', { cred: b64(crypto.randomBytes(32)), cd: b64(cd), ad: b64(ad), sig: b64(der) });
   assert.strictEqual(unknown.no_key, true);
+  // From a declined region (Aaron, Oct 16): asked first, then signed in once the buyer confirms they live elsewhere.
+  const sign = async (opts) => {
+    d.count += 1;
+    const c2 = (await door(flow, 'challenge', {})).challenge;
+    const cd2 = clientData('webauthn.get', c2), ad2 = authData(d);
+    return { cred: b64(d.cred), cd: b64(cd2), ad: b64(ad2), sig: b64(crypto.sign('sha256', Buffer.concat([ad2, sha(cd2)]), d.privateKey)), ...opts };
+  };
+  assert.ok((await door(flow, 'buyerSignIn', await sign(), { country: 'FR' })).region, 'asked where they live');
+  const travelled = await door(flow, 'buyerSignIn', await sign({ confirm: '1' }), { country: 'FR' });
+  assert.strictEqual(travelled.signed_in, true, JSON.stringify(travelled));
+});
+
+test('BK11 (the fresh review of PR #3, M2 and L1): a buyer withdraws a task never funded; a buyer\u2019s level is 1 wherever it is read', async () => {
+  const b = await buyer();
+  const p = await run(ctxOf(b), (t) => work.projectCreate(t, { title: 'Changed my mind', description: '', room: '15-0000' }));
+  const tk = await run(ctxOf(b), (t) => work.taskCreate(t, { project: p.id, title: 'Not wanted after all', description: '', class: 'either', size: 1 }));
+  assert.deepStrictEqual(await run(ctxOf(b), (t) => work.cancel(t, tk.id)), { result: 'closed' });
+  assert.strictEqual((await q(`select status from app.work_tasks where id = '${tk.id}'`))[0].status, 'closed');
+  // JEVs's level 2 mark doesn't lift a buyer: the sign-in reports 1, and writes no level change.
+  await q(`set role dog_jevs; update app.members set jevs_level2_at = now() where id = '${b.id}'; reset role`);
+  const before = (await q(`select count(*)::int as n from app.audit_log where action = 'member.level_changed' and subject_id = '${b.id}'`))[0].n;
+  const s1 = await signIn(b.d);
+  assert.strictEqual(s1.trustLevel, 1);
+  await signIn(b.d);
+  const after = (await q(`select count(*)::int as n from app.audit_log where action = 'member.level_changed' and subject_id = '${b.id}'`))[0].n;
+  assert.strictEqual(after, before);
+  assert.strictEqual((await q(`select app.verified_level('${b.id}') as l`))[0].l, 1);
+});
+
+test('BK12 (the fresh review of PR #3, M1; Aaron, Oct 16): a buyer travelling in a declined region confirms they live elsewhere and signs in, recorded (the site declines a new buyer there: BK10)', async () => {
+  const b = await buyer();
+  const s1 = await signIn(b.d, {}, 'DE');
+  assert.strictEqual(s1.status, 'ok', JSON.stringify(s1));
+  const [r] = await q(`select count(*)::int as n from app.audit_log where action = 'member.region_confirmed' and subject_id = '${b.id}'`);
+  assert.strictEqual(r.n, 1);
 });

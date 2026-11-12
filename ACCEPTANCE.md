@@ -292,7 +292,7 @@ Built to Aaron's decisions of Nov 11, 2026 (sprint PR #2): Stripe only; separate
 
 ### The buyer door (Aaron, Nov 11 and 12; migration 063)
 
-Built to Aaron's decisions of Nov 11, 2026 ("a buyer may sign in with a passkey and no GitHub account", for posting, funding, reviewing and disputing tasks only) and Nov 12 (the table is `app.buyer_keys`; dog-migrate's "no passkey" check stays; the scope is enforced in the database). `test/buyer-keys.test.js` simulates an authenticator byte for byte.
+Built to Aaron's decisions of Nov 11, 2026 ("a buyer may sign in with a passkey and no GitHub account", for posting, funding, reviewing and disputing tasks only) and Nov 12 (the table is `app.buyer_keys`; dog-migrate's "no passkey" check stays; the scope is enforced in the database). `test/buyer-keys.test.js` simulates an authenticator byte for byte. BK11 and BK12 come from the fresh review of the PR.
 
 | ID | Criterion | How it is checked |
 |---|---|---|
@@ -305,7 +305,9 @@ Built to Aaron's decisions of Nov 11, 2026 ("a buyer may sign in with a passkey 
 | BK7 | A signature counter that goes backwards alerts Aaron and still signs in (checks alert, never lock out) | Automated test |
 | BK8 | A locked account tests nothing; a banned buyer can't sign in | Automated test |
 | BK9 | dog-migrate's daily catalog checks still pass: nothing is named like the passkeys removed on Oct 23 | Automated test |
-| BK10 | The site's door is shut while payments are off, only from our own pages, closed to the declined regions, ES256 only, and signs a buyer up and in with a __Host- session cookie | Automated test; not yet seen live |
+| BK10 | The site's door is shut while payments are off, only from our own pages, closed to new buyers from the declined regions, ES256 only, and signs a buyer up and in with a __Host- session cookie; a buyer travelling there confirms they live elsewhere first | Automated test; not yet seen live |
+| BK11 | A buyer withdraws a task never funded; a buyer's level is 1 wherever it is read, and signing in writes no level change | Automated test |
+| BK12 | A buyer travelling in a declined region signs in after confirming they live elsewhere, recorded as on the other ways in (Aaron, Oct 16) | Automated test |
 
 ### MCP sign-in (Aaron, Nov 4)
 
@@ -367,7 +369,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
-- v1.20 (2026-11-12, draft): adds BK1 to BK10 (migration 063), the buyer door, to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
+- v1.20 (2026-11-12, draft): adds BK1 to BK12 (migration 063), the buyer door, to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
 - v1.19 (2026-11-12, draft): adds LH6 (migration 062), to Aaron's decision of Nov 12 on the fresh review of PR #127. No existing criterion's wording changes.
 - v1.18 (2026-11-12, draft): adds PM1 to PM23 (migration 061, the payment function dog-pay): funded bounties, to Aaron's decisions of Nov 11. No existing criterion's wording changes.
 - v1.17 (2026-11-11, draft): adds LH1 to LH5, LB1 to LB5, DS1, DS2 and PR1 (migration 060): the legal hold, linked bans, the daily summary and the privacy request runbook, to Aaron's checks of Nov 10. No existing criterion's wording changes.

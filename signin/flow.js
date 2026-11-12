@@ -325,10 +325,13 @@ function make(deps) {
   async function buyerDoor(req, res, fresh) {
     if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the buyer page.' });
     if (!require('../db/pay').switchedOn()) return json(res, 503, { error: 'Buyer accounts open when funded tasks do. Nothing is charged until then.' });
+    // From a declined region: no new buyer account; a buyer who lives elsewhere confirms it and signs in (Aaron, Oct 16;
+    // the fresh review of PR #3, M1), as on the other ways in.
     const country = region.declined(req);
-    if (country) { await countDecline(country); return json(res, 200, { declined: true }); }
-    if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+    if (country && fresh) { await countDecline(country); return json(res, 200, { declined: true }); }
     const form = (await h.form(req, 8192)) || {};
+    if (country && form.confirm !== '1') return json(res, 200, { region: region.countryName(country) || country });
+    if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
     const cred = bytesOf(form.cred, 16, 1023), cd = bytesOf(form.cd, 50, 2048), ad = bytesOf(form.ad, 37, 4096);
     if (!cred || !cd || !ad || !clientDataOk(cd, fresh ? 'webauthn.create' : 'webauthn.get')) return json(res, 200, { error: BUYER_HELP, retry: true });
     const token = c.token(32);
@@ -343,16 +346,18 @@ function make(deps) {
       const pub = sig && await run(ANON, (t) => store.buyerKeyPublic(t, cred));
       if (!pub) return json(res, 200, { no_key: true, error: 'We don’t know that passkey. Make a buyer account with it first, or use another passkey.' });
       if (!c.p256Verify(pub, Buffer.concat([ad, nodeCrypto.createHash('sha256').update(cd).digest()]), sig)) return json(res, 200, { error: BUYER_HELP, retry: true });
-      out = await run(ANON, (t) => store.buyerSignIn(t, { ...common, signature: sig }));
+      out = await run(ANON, (t) => store.buyerSignIn(t, { ...common, signature: sig, region: country || null }));
     }
     if (out.status === 'no_key') return json(res, 200, { no_key: true, error: 'We don’t know that passkey. Make a buyer account with it first, or use another passkey.' });
     if (out.status === 'bad_key' || out.status === 'bad_proof') return json(res, 200, { error: BUYER_HELP, retry: true });
     if (out.refused === 'taken') return json(res, 200, { error: 'This passkey already has a buyer account. Sign in with it instead.' });
     if (out.refused === 'locked') return json(res, 200, { error: 'Signing in to this account is locked for 15 minutes after 3 failed tries. Please try again then.' });
+    if (out.refused === 'region') { await countDecline(country); return json(res, 200, { declined: true }); }
     if (out.refused) return json(res, 200, { refused: out.refused });
     if (out.status !== 'ok') return json(res, 200, { error: BUYER_HELP, retry: true });
     h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
-    await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) });
+    if (country && config.ipKey) h.addCookie(res, h.cookie(RESIDENT, jevs.residentTag(config.ipKey, c.sha256hex(token)), { maxAge: SESSION_DAYS * 86400 }));
+    await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) }, null, Boolean(country));
     const old = sessionHash(req);
     if (old) await run(ANON, (x) => store.sessionEnd(x, old));
     return json(res, 200, { signed_in: true, go: '/projects' });
@@ -599,7 +604,8 @@ function make(deps) {
     // 063, the buyer door (Aaron, Nov 11, 2026): a person who only posts and pays for work signs in with a buyer key, a
     // WebAuthn passkey their own device makes for this site, with no GitHub account. Shut while payments are off. The
     // site checks the browser's report and the signature itself, then the database checks them again and decides. From a
-    // declined region nobody gets a buyer account and no buyer signs in. /join/buyer (buyer.js) sends these.
+    // declined region nobody gets a buyer account; a buyer who lives elsewhere confirms it to sign in. /join/buyer
+    // (buyer.js) sends these.
     async buyerRegister(req, res) {
       return buyerDoor(req, res, true);
     },

@@ -334,11 +334,11 @@ async function buyerRegister(t, { credentialId, publicKey, clientData, authData,
   const [r] = await t.savepoint((x) => x`select * from app.buyer_register(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer)`);
   return out(r);
 }
-async function buyerSignIn(t, { credentialId, clientData, authData, signature, displayName, sessionHash, sessionDays }) {
+async function buyerSignIn(t, { credentialId, clientData, authData, signature, displayName, sessionHash, sessionDays, region: rg = null }) {
   const args = [between('credentialId', credentialId, 16, 1023), between('clientData', clientData, 50, 2048), between('authData', authData, 37, 4096),
     bytes('signature', signature, 64), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
-    v.int('sessionDays', sessionDays, { min: 1, max: 30 })];
-  const [r] = await t.savepoint((x) => x`select * from app.buyer_sign_in(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer)`);
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 }), region(rg)];
+  const [r] = await t.savepoint((x) => x`select * from app.buyer_sign_in(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer, ${args[7]})`);
   return out(r);
 }
 

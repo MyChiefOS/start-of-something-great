@@ -32,9 +32,16 @@
   };
   var random = function (n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return a; };
   var busy = function (yes) { make.disabled = yes; signin.disabled = yes; };
+  var region = $('buyer-region'), regionText = $('buyer-region-text'), regionYes = $('buyer-region-yes');
+  var confirmed = false;
   var done = function (r) {
     if (r && r.signed_in) { say('Signed in. Taking you to your projects…'); location.href = r.go || '/projects'; return; }
     busy(false);
+    // From a declined region a buyer who lives elsewhere confirms it, then uses their passkey again (Aaron, Oct 16).
+    if (r && r.region && region && regionText) {
+      regionText.textContent = 'You seem to be in ' + r.region + ', where Day One Great isn’t open yet. If you live elsewhere, confirm it and use your passkey again.';
+      region.hidden = false; say(''); return;
+    }
     if (r && r.declined) { say('Day One Great isn’t open to people in the European Union, the European Economic Area, the United Kingdom or Switzerland yet.'); return; }
     if (r && r.refused === 'banned') { say('This account can’t sign in.'); return; }
     if (r && r.refused) { say('This account can’t sign in just now.'); return; }
@@ -77,10 +84,12 @@
     }).then(function (cred) {
       var res = cred.response;
       say('Checking your passkey…');
-      return post('/auth/buyer/sign-in', { cred: b64(cred.rawId), cd: b64(res.clientDataJSON), ad: b64(res.authenticatorData),
-        sig: b64(res.signature) }).then(done);
+      var body = { cred: b64(cred.rawId), cd: b64(res.clientDataJSON), ad: b64(res.authenticatorData), sig: b64(res.signature) };
+      if (confirmed) body.confirm = '1';
+      return post('/auth/buyer/sign-in', body).then(done);
     }).catch(failed);
   });
+  if (regionYes) regionYes.addEventListener('click', function () { confirmed = true; region.hidden = true; signin.click(); });
 
   busy(false);
 })();

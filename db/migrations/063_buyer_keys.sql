@@ -188,8 +188,7 @@ begin
 end $$;
 
 -- A new buyer: the key the person's device just made. The authenticator's data must carry this credential (the attested
--- credential flag, bit 6, and the credential ID) and this public key as an ES256 P-256 key (COSE kty 2, alg -7, crv 1,
--- and the key's X and Y). No attestation is asked for, so no maker's certificate and nothing that tells devices apart
+-- credential flag, bit 6, and the credential ID) and, right after it, this public key as an ES256 P-256 COSE key. No attestation is asked for, so no maker's certificate and nothing that tells devices apart
 -- is ever stored. A key that is already here signs nobody in from this door ('taken'). Makes the member and their
 -- session in one go, as the other ways in do.
 create function app.buyer_register(p_credential_id bytea, p_public_key bytea, p_client_data bytea, p_auth_data bytea,
@@ -209,11 +208,11 @@ begin
   -- Attested credential data from byte 37: the maker's ID (16 bytes, unused), the credential ID's length (2 bytes) and
   -- the ID, then the public key as COSE.
   len := (get_byte(p_auth_data, 53) << 8) + get_byte(p_auth_data, 54);
-  rest := substring(p_auth_data from 56 + len);
+  rest := substring(p_auth_data from 56 + len for 77);
+  -- The key, exactly: a map of five (kty 2 EC2, alg -7 ES256, crv 1 P-256, X and Y of 32 bytes each), in CTAP2's
+  -- canonical order, holding this public key (the fresh review of PR #3, L2: a looser match let another key type by).
   if len <> octet_length(p_credential_id) or substring(p_auth_data from 56 for len) <> p_credential_id
-     or position('\x0102'::bytea in rest) = 0 or position('\x0326'::bytea in rest) = 0 or position('\x2001'::bytea in rest) = 0
-     or position('\x215820'::bytea || substring(p_public_key from 2 for 32) in rest) = 0
-     or position('\x225820'::bytea || substring(p_public_key from 34 for 32) in rest) = 0 then
+     or rest <> '\xa5010203262001215820'::bytea || substring(p_public_key from 2 for 32) || '\x225820'::bytea || substring(p_public_key from 34 for 32) then
     return query select 'bad_proof'::text, null::uuid, null::boolean, null::smallint, null::boolean; return;
   end if;
   if exists (select 1 from app.buyer_keys k where k.credential_id = p_credential_id or k.public_key = p_public_key)
@@ -244,8 +243,10 @@ $$;
 -- A buyer signing in: the device's signature over the authenticator's data and the SHA-256 of the browser's report,
 -- checked here with the stored public key. While the account is locked (053) nothing is tested and every try gets the
 -- same answer.
+-- p_region: the country of a buyer who confirmed they live elsewhere while signing in from a declined region (Aaron,
+-- Oct 16), recorded as the other ways in record it; null otherwise.
 create function app.buyer_sign_in(p_credential_id bytea, p_client_data bytea, p_auth_data bytea, p_signature bytea,
-  p_display_name text, p_session_hash text, p_session_days integer)
+  p_display_name text, p_session_hash text, p_session_days integer, p_region text)
 returns table (status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean)
 language plpgsql security definer set search_path = pg_catalog as $$
 declare k app.buyer_keys%rowtype; n bigint; fp text; s record; why text;
@@ -279,7 +280,7 @@ begin
   end if;
   begin
     select * into s from app.sign_in_core('buyer', array[fp], 1::smallint, 1::smallint, p_display_name,
-                                     p_session_hash, p_session_days, null::timestamptz, null::uuid, null::text);
+                                     p_session_hash, p_session_days, null::timestamptz, null::uuid, p_region);
   exception when sqlstate 'P0001' or sqlstate '22023' or sqlstate '23505' then
     why := app.signin_refusal(sqlstate, sqlerrm);
     if why is null then raise; end if;
@@ -340,22 +341,24 @@ begin
   end if;
   return new;
 end $$;
-reset role;
-revoke create on schema app from dog_signin;
-
+-- Rights on a function are its owner's to give (production's migrations don't run as a superuser), so these run as
+-- the sign-in role, before it hands back the schema.
 revoke execute on function app.is_buyer(uuid), app.buyer_webauthn(text, bytea, bytea),
   app.buyer_register(bytea, bytea, bytea, bytea, text, text, integer), app.buyer_key_public(bytea),
-  app.buyer_sign_in(bytea, bytea, bytea, bytea, text, text, integer),
+  app.buyer_sign_in(bytea, bytea, bytea, bytea, text, text, integer, text),
   app.buyer_scope(), app.buyer_identity_guard(), app.buyer_member_guard(), app.buyer_task_guard() from public;
 grant execute on function app.buyer_register(bytea, bytea, bytea, bytea, text, text, integer), app.buyer_key_public(bytea),
-  app.buyer_sign_in(bytea, bytea, bytea, bytea, text, text, integer) to dog_app;
+  app.buyer_sign_in(bytea, bytea, bytea, bytea, text, text, integer, text) to dog_app;
 -- The work role's policies below ask it.
 grant execute on function app.is_buyer(uuid) to dog_work;
+-- Only while the triggers below are made, as 056 does; taken back right after.
+grant execute on function app.buyer_scope(), app.buyer_identity_guard(), app.buyer_member_guard(), app.buyer_task_guard() to dog_owner;
+reset role;
+revoke create on schema app from dog_signin;
 
 -- ---- The triggers (made as the tables' owner, with execute only while making them, as 056 does) ----
 -- Named a_buyer_scope so each fires before a table's other triggers (Postgres runs them in name order) and a buyer is
 -- told why in plain words, whatever else the row would have failed.
-grant execute on function app.buyer_scope(), app.buyer_identity_guard(), app.buyer_member_guard(), app.buyer_task_guard() to dog_owner;
 set local role dog_owner;
 create trigger a_buyer_scope before insert or update of author_id on app.posts for each row execute function app.buyer_scope('author_id');
 create trigger a_buyer_scope before insert or update of reporter_id on app.review_flags for each row execute function app.buyer_scope('reporter_id');
@@ -385,7 +388,55 @@ create policy work_projects_buyer on app.work_projects as restrictive for all to
          or not app.is_buyer(poster_member)
          or exists (select 1 from app.work_tasks t where t.project_id = work_projects.id and t.status <> 'funding'));
 reset role;
+set local role dog_signin;
 revoke execute on function app.buyer_scope(), app.buyer_identity_guard(), app.buyer_member_guard(), app.buyer_task_guard() from dog_owner;
+reset role;
+
+-- ---- The fresh review of PR #3: L1, a buyer is level 1 everywhere; M2, a buyer withdraws a task never funded ----
+-- 010's verified level, unchanged but that a buyer's is never above 1, so a sign-in never reports a level the stored
+-- one (app.buyer_member_guard) doesn't have, and writes no level change each time.
+set local role dog_owner;
+create or replace function app.verified_level(p_member uuid)
+ returns smallint
+ language sql
+ stable
+as $function$
+  select (case when exists (select 1 from app.identities i where i.member_id = p_member and i.provider = 'buyer') then least(x.v, 1) else x.v end)::smallint
+  from (select coalesce((select m.level_set_by_admin from app.members m where m.id = p_member),
+    greatest(
+      (select coalesce(max(case when i.recheck_after is not null and i.recheck_after <= now() then least(i.level, 1) else i.level end), 0)
+       from app.identities i where i.member_id = p_member),
+      (select case when m.jevs_level2_at is not null then 2 else 0 end from app.members m where m.id = p_member))) as v) x
+$function$;
+reset role;
+
+-- 042's close, unchanged but that its poster may also close a task still waiting for its bounty.
+grant create on schema app to dog_work;
+set local role dog_work;
+create or replace function app.work_cancel(p_task uuid)
+ returns text
+ language plpgsql
+ security definer
+ set search_path to 'pg_catalog'
+as $function$
+declare
+  w record;
+  t record;
+begin
+  select * into w from app.work_who();
+  select * into t from app.work_tasks x where x.id = p_task for update;
+  if t.id is null or coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent)) is distinct from w.member_id then
+    raise exception 'only the task''s poster closes it' using errcode = '42501';
+  end if;
+  if t.status <> all (array['open', 'funding']) then
+    raise exception 'work_state' using errcode = 'P0001', hint = 'Only an open task can be closed; this one is ' || t.status || '.';
+  end if;
+  update app.work_tasks x set status = 'closed', updated_at = now() where x.id = p_task;
+  return 'closed';
+end
+$function$;
+reset role;
+revoke create on schema app from dog_work;
 
 -- ---- The payment role: a funded bounty opens its funding task; a funding task can be funded ----
 grant create on schema app to dog_pay;
@@ -436,16 +487,16 @@ begin
   end if;
   return new;
 end $$;
+revoke execute on function app.buyer_task_funded(), app.buyer_task_open_guard() from public;
+grant execute on function app.buyer_task_funded(), app.buyer_task_open_guard() to dog_owner;
 reset role;
 revoke create on schema app from dog_pay;
-revoke execute on function app.buyer_task_funded(), app.buyer_task_open_guard() from public;
 set local role dog_owner;
 create policy work_tasks_pay_update on app.work_tasks for update to dog_pay using (status = 'funding') with check (status = 'open');
 grant update (status, updated_at) on app.work_tasks to dog_pay;
-reset role;
-grant execute on function app.buyer_task_funded(), app.buyer_task_open_guard() to dog_owner;
-set local role dog_owner;
 create trigger buyer_task_funded after update of status on app.work_bounties for each row execute function app.buyer_task_funded();
 create trigger buyer_task_open_guard before update of status on app.work_tasks for each row execute function app.buyer_task_open_guard();
 reset role;
+set local role dog_pay;
 revoke execute on function app.buyer_task_funded(), app.buyer_task_open_guard() from dog_owner;
+reset role;
