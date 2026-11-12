@@ -247,6 +247,10 @@
     {
       "version": "062_hold_lift_review",
       "sha256": "38879bfa998ad63d8a64ef230ebc5dc8c7120e1687c56ba46cafcd088dd79ee3"
+    },
+    {
+      "version": "063_buyer_keys",
+      "sha256": "8154d0ce4d83f1852b53177664c9eb418522e11373ee6761fda94408b65be0b3"
     }
   ]
 }

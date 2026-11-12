@@ -97,6 +97,14 @@ constraint app.browser_keys browser_keys_member_id_fkey FOREIGN KEY (member_id) 
 constraint app.browser_keys browser_keys_pkey PRIMARY KEY (id)
 constraint app.browser_keys browser_keys_public_key_check CHECK ((octet_length(public_key) = 65))
 constraint app.browser_keys browser_keys_public_key_key UNIQUE (public_key)
+constraint app.buyer_keys buyer_keys_credential_id_check CHECK (((octet_length(credential_id) >= 16) AND (octet_length(credential_id) <= 1023)))
+constraint app.buyer_keys buyer_keys_credential_id_key UNIQUE (credential_id)
+constraint app.buyer_keys buyer_keys_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.buyer_keys buyer_keys_member_id_key UNIQUE (member_id)
+constraint app.buyer_keys buyer_keys_pkey PRIMARY KEY (id)
+constraint app.buyer_keys buyer_keys_public_key_check CHECK ((octet_length(public_key) = 65))
+constraint app.buyer_keys buyer_keys_public_key_key UNIQUE (public_key)
+constraint app.buyer_keys buyer_keys_sign_count_check CHECK (((sign_count >= 0) AND (sign_count <= '4294967295'::bigint)))
 constraint app.change_log change_log_actor_check CHECK ((char_length(actor) <= 100))
 constraint app.change_log change_log_applied_check CHECK (((jsonb_typeof(applied) = 'array'::text) AND (octet_length((applied)::text) <= 65536)))
 constraint app.change_log change_log_commit_sha_check CHECK (((char_length(commit_sha) = 40) AND (commit_sha ~ '^[0-9a-f]+$'::text)))
@@ -266,7 +274,7 @@ constraint app.identities identities_key_version_check CHECK (((key_version >= 1
 constraint app.identities identities_level_check CHECK (((level >= 0) AND (level <= 2)))
 constraint app.identities identities_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id)
 constraint app.identities identities_pkey PRIMARY KEY (id)
-constraint app.identities identities_provider_check CHECK ((provider = ANY (ARRAY['github'::text, 'x'::text, 'email'::text, 'linkedin'::text])))
+constraint app.identities identities_provider_check CHECK ((provider = ANY (ARRAY['github'::text, 'x'::text, 'email'::text, 'linkedin'::text, 'buyer'::text])))
 constraint app.identities identities_provider_fingerprint_key UNIQUE (provider, fingerprint)
 constraint app.invariant_slot invariant_slot_failures_check CHECK ((failures >= 0))
 constraint app.invariant_slot invariant_slot_last_failure_state_check CHECK ((char_length(last_failure_state) <= 5))
@@ -897,7 +905,7 @@ constraint app.work_tasks work_tasks_project_id_fkey FOREIGN KEY (project_id) RE
 constraint app.work_tasks work_tasks_room_id_fkey FOREIGN KEY (room_id) REFERENCES app.work_rooms(id)
 constraint app.work_tasks work_tasks_size_check CHECK ((size = ANY (ARRAY[1, 2, 3, 5, 8])))
 constraint app.work_tasks work_tasks_source_check CHECK ((source = ANY (ARRAY['member'::text, 'github'::text])))
-constraint app.work_tasks work_tasks_status_check CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'submitted'::text, 'audited'::text, 'approved'::text, 'closed'::text, 'removed'::text])))
+constraint app.work_tasks work_tasks_status_check CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'submitted'::text, 'audited'::text, 'approved'::text, 'closed'::text, 'removed'::text, 'funding'::text])))
 constraint app.work_tasks work_tasks_title_check CHECK (((char_length(title) >= 1) AND (char_length(title) <= 140)))
 default app.actor_keys.id = app.uuid_v7()
 default app.actor_keys.singleton = true
@@ -942,6 +950,9 @@ default app.broker_uses.id = app.uuid_v7()
 default app.browser_keys.created_at = now()
 default app.browser_keys.failed = 0
 default app.browser_keys.id = app.uuid_v7()
+default app.buyer_keys.created_at = now()
+default app.buyer_keys.id = app.uuid_v7()
+default app.buyer_keys.sign_count = 0
 default app.change_log.applied = '[]'::jsonb
 default app.change_log.at = now()
 default app.change_log.id = app.uuid_v7()
@@ -1342,7 +1353,7 @@ function app.audit_net_add() owner=dog_owner execute=dog_owner language=plpgsql 
 function app.audit_net_keep() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=f7a6fd8d70b5098a7e00097f183ba392
 function app.audit_net_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fc5a72e8973ce0cab35d4ab7a491bb1d
 function app.audit_upkeep_run() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=410ef431719a4501b4170fc8deffba3c
-function app.bounty_fund_request(p_task uuid, p_cents integer) owner=dog_pay execute=dog_pay,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=8f7d08ef319022b3f5210b18539c4e2b
+function app.bounty_fund_request(p_task uuid, p_cents integer) owner=dog_pay execute=dog_pay,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=18af2394747095a2317a230e782260e4
 function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b9bba9af26b586a124ac1a0ea3ca91ba
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
@@ -1353,6 +1364,16 @@ function app.browser_key_add(p_member uuid, p_public bytea, p_label text) owner=
 function app.browser_key_public(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=5ddb4ef0bc738763a8871ba29c536f44
 function app.browser_key_remove(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d3263de289d756c3e1a4731b1d953ffe
 function app.browser_sign_in(p_key_id uuid, p_display_name text, p_session_hash text, p_session_days integer, p_region text, p_pin text, p_challenge text, p_origin text, p_signature bytea) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean, tries_left smallint) body_md5=b43db5492fba08d15572606e39bea498
+function app.buyer_identity_guard() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=e68cfe85743a99e6b2ce9ec69caf07b1
+function app.buyer_key_public(p_credential_id bytea) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=67474ad363cc4bb023dc055e231a8afe
+function app.buyer_member_guard() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=f2c53552da45f1472d7f9b49e127a636
+function app.buyer_register(p_credential_id bytea, p_public_key bytea, p_client_data bytea, p_auth_data bytea, p_display_name text, p_session_hash text, p_session_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=5ee4504135192970cdda327c95ee4938
+function app.buyer_scope() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=c68a00e74e5af507942b388541c7f891
+function app.buyer_sign_in(p_credential_id bytea, p_client_data bytea, p_auth_data bytea, p_signature bytea, p_display_name text, p_session_hash text, p_session_days integer, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=980ca667c541a3eb01a0c00228cae5df
+function app.buyer_task_funded() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=7b3d9a5c3826ae9e72977b27bfdf67ad
+function app.buyer_task_guard() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=6555f122973a6fe690af7a02d5513ded
+function app.buyer_task_open_guard() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=213ae31c00b143535a7d03866bc2eaee
+function app.buyer_webauthn(p_type text, p_client_data bytea, p_auth_data bytea) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=58fdee2b45b10ab03998eb47443f3dd4
 function app.change_log_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=beae6be75fab0d889053d9044f4b1aa5
 function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text) owner=dog_signin execute=dog_signin,dog_jevs language=sql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d5ee0efda9dcb6fd269c2c88e293a6e7
 function app.code_claim(p_code_hash text, p_fingerprint text, p_login_hash text, p_founder boolean) owner=dog_signin execute=dog_signin,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=86ad50561d65ba3d4a056ee5500e51b6
@@ -1422,6 +1443,7 @@ function app.identities_level_cap() owner=dog_owner execute=dog_owner language=p
 function app.identity_link(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_recheck_after timestamp with time zone, p_session_hash text, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, linked boolean, sessions_ended integer) body_md5=d5b865dd9f30f1b613f2382483a7e1d1
 function app.identity_unlink(p_identity uuid, p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(provider text, trust_level smallint, sessions_ended integer, also_unlinked integer, keys_revoked integer, agents_lowered integer) body_md5=c72d1ffe16f76fab1667af322f90b2c7
 function app.invariants_check() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=dbd018383a4ae8827cc956e08442b232
+function app.is_buyer(p_member uuid) owner=dog_signin execute=dog_signin,dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=df8133bc0a72651806bdc68a623f3b3e
 function app.is_reviewer() owner=dog_owner execute=dog_owner,dog_app,dog_jevs language=sql volatile=s definer=false config= returns=boolean body_md5=7d420a3147ea7f058784ef85d6f5aaab
 function app.jevs_account_scores(s jsonb) owner=dog_owner execute=dog_owner,dog_jevs language=plpgsql volatile=i definer=false config= returns=jsonb body_md5=51202474b69e19e226f909bfa3ee4d4e
 function app.jevs_answer(p_challenge uuid, p_answer text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d1fc310d6d99d1a10a226d05181f87cc
@@ -1547,7 +1569,7 @@ function app.session_sweep() owner=dog_owner execute=dog_owner,dog_app language=
 function app.sessions_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=22306b5f66dc2348fb859ae2a88726c7
 function app.set_administrator(p_member uuid) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=text body_md5=41656ef76e19977020e9bc32975e27d3
 function app.sign_in(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=3909648eaeaca764383b8ac7cf549020
-function app.sign_in_core(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=6362fa910745e08a4643a10115455220
+function app.sign_in_core(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_display_name text, p_session_hash text, p_session_days integer, p_recheck_after timestamp with time zone, p_link_member uuid, p_region text) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=dae87f9d442c0383652b0c78dba5ea8a
 function app.sign_in_known(p_provider text, p_fingerprints text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=682aa6ef67fe945f0e1b08fa2a1567d1
 function app.signin_challenge(p_origin text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=a410f2bfcdcc3fb8d86f0c182ca65c27
 function app.signin_failed(p_member uuid, p_lane text, p_reason text) owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=603c77d038dd5fe40e88948a1ab0f7be
@@ -1585,7 +1607,7 @@ function app.tl_release(p_sub uuid, p_why text) owner=dog_work execute=dog_work,
 function app.tl_set_mode(p_mode text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d700f0b5dec030927d2f0caf137feb93
 function app.tl_wants(p_number integer) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=85c8ba5cac89bcb5c4326875bd535992
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs,dog_log,dog_work,dog_pay language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
-function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d1fa92c4eb9a7d91d435615d75b942f5
+function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d18c4ac53114c1822c22c6a7f3dd8744
 function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
@@ -1603,7 +1625,7 @@ function app.work_audit() owner=dog_owner execute=dog_owner language=plpgsql vol
 function app.work_board(p_kind text, p_room text, p_sort text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=7a03fc0ceb1360b2451b27df1630096e
 function app.work_bounties_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=36dc2fd1b5c528bee38b257781d41b78
 function app.work_brake_check(p_member uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=void body_md5=271beffcad096ef4110d8703be3cd893
-function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=b481b141924d4de435423d31c7b8faaf
+function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=41e1f0deaca11407531e0b52b554d34b
 function app.work_cap(p_agent uuid, p_root uuid, p_kind text, p_new_claim boolean) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=023b626206cf906f98900fde64a05f3b
 function app.work_card(p_task uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d7b60f17e3dd2a7e9805740af9fe72c1
 function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d8dd76b2315bbb22daea2d5331631f45
@@ -1903,6 +1925,13 @@ grant app.browser_keys.label dog_signin INSERT
 grant app.browser_keys.member_id dog_signin INSERT
 grant app.browser_keys.public_key dog_signin INSERT
 grant app.browser_keys.used_at dog_signin UPDATE
+grant app.buyer_keys dog_signin SELECT
+grant app.buyer_keys.credential_id dog_signin INSERT
+grant app.buyer_keys.member_id dog_signin INSERT
+grant app.buyer_keys.public_key dog_signin INSERT
+grant app.buyer_keys.sign_count dog_signin INSERT
+grant app.buyer_keys.sign_count dog_signin UPDATE
+grant app.buyer_keys.used_at dog_signin UPDATE
 grant app.code_signins dog_signin DELETE
 grant app.code_signins dog_signin SELECT
 grant app.code_signins.browser_hash dog_signin INSERT
@@ -2685,7 +2714,9 @@ grant app.work_tasks dog_work UPDATE
 grant app.work_tasks.id dog_pay SELECT
 grant app.work_tasks.poster_member dog_pay SELECT
 grant app.work_tasks.status dog_pay SELECT
+grant app.work_tasks.status dog_pay UPDATE
 grant app.work_tasks.title dog_pay SELECT
+grant app.work_tasks.updated_at dog_pay UPDATE
 policy app.actor_keys actor_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.actor_keys actor_keys_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.actor_keys actor_keys_owner_update cmd=w permissive=true to=dog_owner using=true check=true
@@ -2776,6 +2807,9 @@ policy app.browser_keys browser_keys_signin_delete cmd=d permissive=true to=dog_
 policy app.browser_keys browser_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.browser_keys browser_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.browser_keys browser_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
+policy app.buyer_keys buyer_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
+policy app.buyer_keys buyer_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.buyer_keys buyer_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.change_log change_log_owner_only cmd=* permissive=true to=dog_owner using=true check=true
 policy app.code_signins code_signins_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.code_signins code_signins_signin_insert cmd=a permissive=true to=dog_signin using= check=true
@@ -3059,11 +3093,14 @@ policy app.work_person_votes work_person_votes_work cmd=* permissive=true to=dog
 policy app.work_point_entries work_point_entries_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_points work_points_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.work_points work_points_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_projects work_projects_buyer cmd=* permissive=false to=dog_work using=((poster_member IS NULL) OR (poster_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (NOT app.is_buyer(poster_member)) OR (EXISTS ( SELECT 1 FROM app.work_tasks t WHERE ((t.project_id = work_projects.id) AND (t.status <> 'funding'::text))))) check=
 policy app.work_projects work_projects_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_rooms work_rooms_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_settings work_settings_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_submissions work_submissions_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_tasks work_tasks_funding cmd=* permissive=false to=dog_work using=((status <> 'funding'::text) OR (poster_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.work_tasks work_tasks_pay_select cmd=r permissive=true to=dog_pay using=true check=
+policy app.work_tasks work_tasks_pay_update cmd=w permissive=true to=dog_pay using=(status = 'funding'::text) check=(status = 'open'::text)
 policy app.work_tasks work_tasks_work cmd=* permissive=true to=dog_work using=true check=true
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_audit AFTER INSERT OR UPDATE ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_audit()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_fill BEFORE INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_fill()
@@ -3071,6 +3108,7 @@ trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_guard BEFORE UPDA
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_notify AFTER INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_drafts_notify()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_reply BEFORE INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.replies_fill()
 trigger app.agent_drafts enabled=A CREATE TRIGGER agent_drafts_tree_cap BEFORE INSERT ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.agent_tree_cap()
+trigger app.agent_drafts enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF owner_id ON app.agent_drafts FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('owner_id')
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_audit AFTER INSERT OR UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_audit()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_by BEFORE INSERT OR UPDATE ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_by()
 trigger app.agent_keys enabled=A CREATE TRIGGER agent_keys_fresh BEFORE INSERT ON app.agent_keys FOR EACH ROW EXECUTE FUNCTION app.agent_keys_fresh()
@@ -3091,6 +3129,7 @@ trigger app.agents enabled=A CREATE TRIGGER agents_guard BEFORE UPDATE ON app.ag
 trigger app.agents enabled=A CREATE TRIGGER agents_limit BEFORE INSERT OR UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_limit()
 trigger app.agents enabled=A CREATE TRIGGER agents_owner_active BEFORE INSERT OR UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_owner_active()
 trigger app.agents enabled=A CREATE TRIGGER agents_tree_cascade AFTER UPDATE ON app.agents FOR EACH ROW EXECUTE FUNCTION app.agents_cascade()
+trigger app.agents enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF owner_id ON app.agents FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('owner_id')
 trigger app.audit_log enabled=A CREATE TRIGGER audit_log_fill BEFORE INSERT ON app.audit_log FOR EACH ROW EXECUTE FUNCTION app.audit_fill()
 trigger app.audit_log enabled=A CREATE TRIGGER audit_log_net AFTER INSERT ON app.audit_log FOR EACH ROW EXECUTE FUNCTION app.audit_net_add()
 trigger app.audit_log enabled=A CREATE TRIGGER audit_log_no_change BEFORE DELETE OR UPDATE ON app.audit_log FOR EACH STATEMENT EXECUTE FUNCTION app.audit_log_append_only()
@@ -3104,6 +3143,7 @@ trigger app.brakes enabled=A CREATE TRIGGER brakes_fill BEFORE INSERT ON app.bra
 trigger app.brakes enabled=A CREATE TRIGGER brakes_guard BEFORE UPDATE ON app.brakes FOR EACH ROW EXECUTE FUNCTION app.brakes_guard()
 trigger app.brakes enabled=A CREATE TRIGGER brakes_notify AFTER INSERT ON app.brakes FOR EACH ROW EXECUTE FUNCTION app.brakes_notify()
 trigger app.browser_keys enabled=A CREATE TRIGGER browser_keys_audit AFTER INSERT OR DELETE OR UPDATE ON app.browser_keys FOR EACH ROW EXECUTE FUNCTION app.signin_keys_audit()
+trigger app.browser_keys enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.browser_keys FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.change_log enabled=O CREATE TRIGGER change_log_no_change BEFORE DELETE OR UPDATE ON app.change_log FOR EACH ROW EXECUTE FUNCTION app.change_log_no_change()
 trigger app.change_log enabled=O CREATE TRIGGER change_log_no_truncate BEFORE TRUNCATE ON app.change_log FOR EACH STATEMENT EXECUTE FUNCTION app.change_log_no_change()
 trigger app.containments enabled=A CREATE TRIGGER containments_after AFTER UPDATE ON app.containments FOR EACH ROW EXECUTE FUNCTION app.containments_after()
@@ -3118,11 +3158,14 @@ trigger app.engine_forecasts enabled=A CREATE TRIGGER engine_forecasts_guard BEF
 trigger app.engine_license_history enabled=A CREATE TRIGGER engine_license_history_guard BEFORE DELETE OR UPDATE ON app.engine_license_history FOR EACH ROW EXECUTE FUNCTION app.engine_history_guard()
 trigger app.engine_order_resumes enabled=A CREATE TRIGGER engine_order_resumes_guard BEFORE DELETE OR UPDATE ON app.engine_order_resumes FOR EACH ROW EXECUTE FUNCTION app.engine_resumes_guard()
 trigger app.engine_orders enabled=A CREATE TRIGGER engine_orders_guard BEFORE DELETE OR UPDATE ON app.engine_orders FOR EACH ROW EXECUTE FUNCTION app.engine_orders_guard()
+trigger app.engine_orders enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF created_by ON app.engine_orders FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('created_by')
 trigger app.engine_precedents enabled=A CREATE TRIGGER engine_precedents_guard BEFORE DELETE OR UPDATE ON app.engine_precedents FOR EACH ROW EXECUTE FUNCTION app.engine_precedents_guard()
 trigger app.file_keys enabled=A CREATE TRIGGER file_keys_audit AFTER INSERT OR DELETE OR UPDATE ON app.file_keys FOR EACH ROW EXECUTE FUNCTION app.signin_keys_audit()
+trigger app.file_keys enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.file_keys FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_guard BEFORE UPDATE ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.gh_decisions_guard()
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_log AFTER INSERT ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.log_queue_decision()
 trigger app.identities enabled=A CREATE TRIGGER identities_level_cap BEFORE INSERT OR UPDATE OF level ON app.identities FOR EACH ROW EXECUTE FUNCTION app.identities_level_cap()
+trigger app.identities enabled=O CREATE TRIGGER buyer_identity_guard BEFORE INSERT OR UPDATE OF provider, member_id ON app.identities FOR EACH ROW EXECUTE FUNCTION app.buyer_identity_guard()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_guard BEFORE DELETE OR UPDATE ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_guard()
 trigger app.jevs_challenges enabled=A CREATE TRIGGER jevs_challenges_notify BEFORE INSERT ON app.jevs_challenges FOR EACH ROW EXECUTE FUNCTION app.jevs_challenges_notify()
 trigger app.jevs_decisions enabled=A CREATE TRIGGER jevs_decisions_alert AFTER INSERT ON app.jevs_decisions FOR EACH ROW EXECUTE FUNCTION app.jevs_decisions_alert()
@@ -3146,8 +3189,10 @@ trigger app.members enabled=A CREATE TRIGGER members_guard BEFORE UPDATE ON app.
 trigger app.members enabled=A CREATE TRIGGER members_level_cap BEFORE INSERT ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_level_cap()
 trigger app.members enabled=A CREATE TRIGGER members_rename_audit AFTER UPDATE OF display_name ON app.members FOR EACH ROW EXECUTE FUNCTION app.members_rename_audit()
 trigger app.members enabled=A CREATE TRIGGER post_search_member AFTER UPDATE OF status ON app.members FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION app.post_search_member()
+trigger app.members enabled=O CREATE TRIGGER buyer_member_guard BEFORE UPDATE OF is_admin, trust_level ON app.members FOR EACH ROW EXECUTE FUNCTION app.buyer_member_guard()
 trigger app.notices enabled=A CREATE TRIGGER notices_fill BEFORE INSERT ON app.notices FOR EACH ROW EXECUTE FUNCTION app.notices_fill()
 trigger app.notices enabled=A CREATE TRIGGER notices_guard BEFORE UPDATE ON app.notices FOR EACH ROW EXECUTE FUNCTION app.notices_guard()
+trigger app.pay_accounts enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.pay_accounts FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_change BEFORE DELETE OR UPDATE ON app.pay_ledger FOR EACH ROW EXECUTE FUNCTION app.pay_ledger_append_only()
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_truncate BEFORE TRUNCATE ON app.pay_ledger FOR EACH STATEMENT EXECUTE FUNCTION app.pay_ledger_append_only()
 trigger app.posts enabled=A CREATE CONSTRAINT TRIGGER posts_scored AFTER INSERT ON app.posts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION app.posts_scored()
@@ -3164,6 +3209,7 @@ trigger app.posts enabled=A CREATE TRIGGER posts_reply BEFORE INSERT ON app.post
 trigger app.posts enabled=A CREATE TRIGGER posts_review_guard BEFORE UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_review_guard()
 trigger app.posts enabled=A CREATE TRIGGER posts_tree_cap BEFORE INSERT ON app.posts FOR EACH ROW EXECUTE FUNCTION app.agent_tree_cap()
 trigger app.posts enabled=A CREATE TRIGGER sl_after_post_change AFTER UPDATE OF status ON app.posts FOR EACH ROW WHEN (((old.status = ANY (ARRAY['live'::text, 'waiting'::text])) AND (new.status = 'removed'::text))) EXECUTE FUNCTION app.sl_after_post_change()
+trigger app.posts enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF author_id ON app.posts FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('author_id')
 trigger app.review_decisions enabled=A CREATE TRIGGER review_decisions_forget BEFORE UPDATE OF post_id ON app.review_decisions FOR EACH ROW WHEN ((new.post_id IS NULL)) EXECUTE FUNCTION app.review_decisions_forget()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_agent_upheld AFTER UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_agent_upheld()
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_audit_close AFTER UPDATE ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_audit_close()
@@ -3172,27 +3218,37 @@ trigger app.review_flags enabled=A CREATE TRIGGER review_flags_guard BEFORE UPDA
 trigger app.review_flags enabled=A CREATE TRIGGER review_flags_recheck AFTER INSERT ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.review_flags_recheck()
 trigger app.review_flags enabled=A CREATE TRIGGER sl_after_flag_close AFTER UPDATE OF decision ON app.review_flags FOR EACH ROW WHEN (((new.resolved_by IS NOT NULL) AND (old.resolved_at IS NULL))) EXECUTE FUNCTION app.sl_after_flag_close()
 trigger app.review_flags enabled=A CREATE TRIGGER sl_after_report AFTER INSERT ON app.review_flags FOR EACH ROW WHEN ((new.source = 'report'::text)) EXECUTE FUNCTION app.sl_after_report()
+trigger app.review_flags enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF reporter_id ON app.review_flags FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('reporter_id')
 trigger app.sessions enabled=A CREATE TRIGGER sessions_audit_delete AFTER DELETE ON app.sessions FOR EACH ROW EXECUTE FUNCTION app.sessions_audit()
 trigger app.sessions enabled=A CREATE TRIGGER sessions_audit_insert BEFORE INSERT ON app.sessions FOR EACH ROW EXECUTE FUNCTION app.sessions_audit()
 trigger app.signin_pins enabled=A CREATE TRIGGER signin_pins_audit AFTER INSERT OR UPDATE ON app.signin_pins FOR EACH ROW EXECUTE FUNCTION app.signin_keys_audit()
+trigger app.signin_pins enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.signin_pins FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.subagent_settings enabled=A CREATE TRIGGER subagent_settings_audit AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.tl_settings enabled=A CREATE TRIGGER tl_settings_audit AFTER UPDATE ON app.tl_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=A CREATE TRIGGER watch_settings_audit AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.work_bounties enabled=A CREATE TRIGGER work_bounties_guard BEFORE INSERT OR UPDATE ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.work_bounties_guard()
+trigger app.work_bounties enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF payee_member ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('payee_member')
+trigger app.work_bounties enabled=O CREATE TRIGGER buyer_task_funded AFTER UPDATE OF status ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.buyer_task_funded()
 trigger app.work_checks enabled=A CREATE TRIGGER work_checks_audit AFTER UPDATE ON app.work_checks FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_claims enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.work_claims FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.work_claims enabled=O CREATE TRIGGER engine_after_claim AFTER INSERT OR UPDATE OF status ON app.work_claims FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION app.engine_on_claim()
 trigger app.work_claims enabled=O CREATE TRIGGER engine_before_claim BEFORE INSERT ON app.work_claims FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION app.engine_claim_cap()
 trigger app.work_disputes enabled=A CREATE TRIGGER work_disputes_audit AFTER UPDATE ON app.work_disputes FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_person_votes enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.work_person_votes FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_change BEFORE DELETE OR UPDATE ON app.work_point_entries FOR EACH ROW EXECUTE FUNCTION app.work_point_entries_append_only()
 trigger app.work_point_entries enabled=A CREATE TRIGGER work_point_entries_no_truncate BEFORE TRUNCATE ON app.work_point_entries FOR EACH STATEMENT EXECUTE FUNCTION app.work_point_entries_append_only()
 trigger app.work_points enabled=A CREATE TRIGGER work_points_ledger AFTER INSERT OR UPDATE ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_ledger()
+trigger app.work_points enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF citizen_member ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('citizen_member')
 trigger app.work_points enabled=O CREATE TRIGGER engine_after_points AFTER UPDATE OF status ON app.work_points FOR EACH ROW WHEN (((new.citizen_agent IS NOT NULL) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION app.engine_on_points()
 trigger app.work_points enabled=O CREATE TRIGGER work_points_pay AFTER UPDATE OF status ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_pay()
 trigger app.work_settings enabled=A CREATE TRIGGER work_settings_audit AFTER UPDATE ON app.work_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_submissions enabled=A CREATE TRIGGER work_submissions_audit AFTER UPDATE OF status ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_submissions enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF worker_member ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('worker_member')
 trigger app.work_submissions enabled=O CREATE TRIGGER engine_after_submission AFTER INSERT OR UPDATE OF status ON app.work_submissions FOR EACH ROW WHEN ((new.worker_agent IS NOT NULL)) EXECUTE FUNCTION app.engine_on_submission()
 trigger app.work_tasks enabled=A CREATE TRIGGER work_tasks_audit AFTER UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_tasks enabled=O CREATE TRIGGER buyer_task_guard BEFORE INSERT OR UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.buyer_task_guard()
+trigger app.work_tasks enabled=O CREATE TRIGGER buyer_task_open_guard BEFORE UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.buyer_task_open_guard()
 trigger app.work_tasks enabled=O CREATE TRIGGER work_tasks_pay AFTER UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.work_tasks_pay()
 trigger app.work_tasks enabled=O CREATE TRIGGER work_tasks_pay_delete BEFORE DELETE ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.work_tasks_pay_delete()

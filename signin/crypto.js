@@ -70,4 +70,31 @@ function p256Verify(pub, msg, sig) {
   }
 }
 
-module.exports = { token, sha256hex, hmacHex, same, pkce, subkey, seal, open, fingerprints, signinMessage, p256Verify };
+// 063, buyer keys (WebAuthn): the browser hands over the public key as SubjectPublicKeyInfo DER. Only an uncompressed
+// P-256 key is accepted: the fixed 26-byte header for id-ecPublicKey with prime256v1, then the 65-byte point.
+const P256_SPKI = Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex');
+function p256FromSpki(der) {
+  if (!Buffer.isBuffer(der) || der.length !== 91 || !der.subarray(0, 26).equals(P256_SPKI) || der[26] !== 4) return null;
+  return Buffer.from(der.subarray(26));
+}
+// A WebAuthn signature is DER (SEQUENCE of two INTEGERs); the database checks r || s, 32 bytes each.
+function derToRaw(der) {
+  if (!Buffer.isBuffer(der) || der.length < 8 || der.length > 72 || der[0] !== 0x30 || der[1] !== der.length - 2) return null;
+  let i = 2;
+  const part = () => {
+    if (der[i] !== 0x02) return null;
+    const len = der[i + 1];
+    if (len < 1 || len > 33 || i + 2 + len > der.length) return null;
+    let x = der.subarray(i + 2, i + 2 + len);
+    i += 2 + len;
+    if (x.length === 33) { if (x[0] !== 0) return null; x = x.subarray(1); }
+    const out = Buffer.alloc(32);
+    x.copy(out, 32 - x.length);
+    return out;
+  };
+  const r = part();
+  const s2 = r && part();
+  return r && s2 && i === der.length ? Buffer.concat([r, s2]) : null;
+}
+
+module.exports = { token, sha256hex, hmacHex, same, pkce, subkey, seal, open, fingerprints, signinMessage, p256Verify, p256FromSpki, derToRaw };

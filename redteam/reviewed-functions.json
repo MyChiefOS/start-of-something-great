@@ -239,5 +239,9 @@
   "work_tick": {
     "kind": "timer",
     "why": "Takes no caller input, holds its own slot or lock, and acts only on time-based state, so an early call does nothing a scheduled run wouldn't."
+  },
+  "buyer_key_public": {
+    "kind": "before sign-in, by design",
+    "why": "063: runs before anyone is signed in, as the buyer door needs; it returns a buyer key's public half (nothing secret) so the site checks the signature before the database checks it again, as browser_key_public does."
   }
 }

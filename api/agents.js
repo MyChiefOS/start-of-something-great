@@ -613,7 +613,9 @@ module.exports = async (req, res) => {
   try {
     await require('../db/sitekeys').ensure(req); // route B: the login and keys from the broker, only while open
     await handle(req, res, db.configured() ? db.run : null);
-  } catch {
+  } catch (e) {
+    const buyer = require('./_lib').buyerScope(e);
+    if (buyer && !res.headersSent) return reply(res, 403, { error: buyer, code: 'buyer_scope' });
     if (!res.headersSent) reply(res, 500, { error: 'Something went wrong. Please try again.' });
   }
 };

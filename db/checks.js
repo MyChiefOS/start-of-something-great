@@ -133,6 +133,20 @@ const DEFINERS = {
   'app.work_points_pay()': { owner: 'dog_pay', callers: '' },
   'app.work_tasks_pay()': { owner: 'dog_pay', callers: '' },
   'app.work_tasks_pay_delete()': { owner: 'dog_pay', callers: '' },
+  // 063, the buyer door: the site's three calls (made as the sign-in role, which checks every WebAuthn step and the
+  // signature itself), the helpers only they use, the scope's triggers, and the funding gate's two payment-role
+  // triggers. is_buyer is asked by the work role's restrictive policy on a buyer's projects.
+  'app.buyer_register(bytea, bytea, bytea, bytea, text, text, integer)': 'dog_signin',
+  'app.buyer_sign_in(bytea, bytea, bytea, bytea, text, text, integer, text)': 'dog_signin',
+  'app.buyer_key_public(bytea)': 'dog_signin',
+  'app.buyer_webauthn(text, bytea, bytea)': { owner: 'dog_signin', callers: '' },
+  'app.is_buyer(uuid)': { owner: 'dog_signin', callers: 'dog_work' },
+  'app.buyer_scope()': { owner: 'dog_signin', callers: '' },
+  'app.buyer_identity_guard()': { owner: 'dog_signin', callers: '' },
+  'app.buyer_member_guard()': { owner: 'dog_signin', callers: '' },
+  'app.buyer_task_guard()': { owner: 'dog_signin', callers: '' },
+  'app.buyer_task_open_guard()': { owner: 'dog_pay', callers: '' },
+  'app.buyer_task_funded()': { owner: 'dog_pay', callers: '' },
   // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
   // site, and the GitHub ban list carried to the site. The site's role can't call either.
   'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },

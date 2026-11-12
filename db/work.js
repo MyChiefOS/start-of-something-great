@@ -13,7 +13,8 @@ const { maskSecrets } = require('../api/_secrets');
 const ROOM = /^[0-9]{2}-0000$/;
 const CLASSES = ['agent', 'person', 'either'];
 const SIZES = [1, 2, 3, 5, 8];
-const TASK_STATES = ['open', 'claimed', 'submitted', 'audited', 'approved', 'closed', 'all'];
+// 'funding' (063): a buyer's task waiting for its bounty, listed only to its poster and the administrator.
+const TASK_STATES = ['open', 'claimed', 'submitted', 'audited', 'approved', 'closed', 'funding', 'all'];
 const PROJECT_STATES = ['open', 'claimed', 'submitted', 'completed', 'all'];
 const REPO_PR = /^https:\/\/github\.com\/MyChiefOS\/start-of-something-great\/pull\/[1-9][0-9]{0,6}$/;
 const LIMIT = 50;

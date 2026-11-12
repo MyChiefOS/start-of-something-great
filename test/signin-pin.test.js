@@ -517,7 +517,7 @@ if (!SERVER) {
     }
   });
 
-  test('the review of 037, H1: the only functions the site\'s role can run that make a session are the three ways in', async () => {
+  test('the review of 037, H1: the only functions the site\'s role can run that make a session are the three ways in, and the buyer door (063)', async () => {
     // Which functions make a session: those whose body inserts into app.sessions, and every function that calls one of
     // them, found from the bodies themselves, so a function added later is covered without editing this list.
     const fns = await owner(`select p.oid::regprocedure::text as sig, p.proname as name, p.prosrc as src,
@@ -532,7 +532,8 @@ if (!SERVER) {
     }
     assert.ok(makes.has('sign_in_core') && makes.has('sign_in'), 'the search finds the known ones: ' + [...makes].join(', '));
     const reachable = fns.filter((f) => f.app && makes.has(f.name)).map((f) => f.name).sort();
-    assert.deepStrictEqual(reachable, ['browser_sign_in', 'code_sign_in_pin', 'file_sign_in_pin'],
+    // 063 (Aaron, Nov 11): the buyer door's two, each checking a WebAuthn signature in the database (test/buyer-keys.test.js).
+    assert.deepStrictEqual(reachable, ['browser_sign_in', 'buyer_register', 'buyer_sign_in', 'code_sign_in_pin', 'file_sign_in_pin'],
       'app.sign_in (the switched-off GitHub, X and email sign-ins), app.code_sign_in and app.file_sign_in are the sign-in role\'s only');
     // And the site's role really is refused: the review's R1, a session for a member by naming their fingerprint.
     await assert.rejects(web.begin(async (t) => { await t`set local role dog_app`;
