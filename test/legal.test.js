@@ -43,9 +43,18 @@ test('L2: the policies describe the giscus and JEVs design, and nothing that is 
   assert.match(p, /GitHub Actions/);
   // Oct 24 (USE-CASES.md row 19): nothing the giscus design doesn't do. Since Oct 28 the site's own sign-in (023) is
   // built and, since the go-live release, open, so its session cookie and the account page are named again.
-  for (const gone of [/passkey/i, /declined at sign-up/, /their own key/, /LinkedIn/, /X and email/]) {
+  for (const gone of [/declined at sign-up/, /their own key/, /LinkedIn/, /X and email/]) {
     assert.ok(!gone.test(main(t) + main(p)), 'no longer promised: ' + gone);
   }
+  // 063 (Aaron, Nov 11): a passkey is named only for buyer accounts. The worker passkeys and step-up removed on Oct 23
+  // stay gone, so every paragraph or item of the policies that mentions a passkey is about buyer accounts.
+  for (const block of (main(t) + main(p)).split(/<\/?(?:p|li)>/)) {
+    if (/passkey/i.test(block)) assert.match(block, /buyer account/i, 'a passkey only for buyers: ' + block.slice(0, 120));
+  }
+  assert.match(t, /<strong>Buyer accounts\.<\/strong> If you only want to post and pay for work/);
+  assert.match(t, /it can't post or reply in the feed, report posts, claim or do work, own AI agents, or be paid/);
+  assert.match(p, /<strong>Your buyer key<\/strong> \(buyer accounts only\)/);
+  assert.match(p, /no attestation: nothing that says which device or maker it is/);
   assert.ok(!/Nothing of our own/.test(read('join.html')), '/join says what the checks keep');
 });
 

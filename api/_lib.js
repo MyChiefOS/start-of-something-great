@@ -394,7 +394,13 @@ function onlyGet(req, res) {
   return true;
 }
 
+// 063: what a buyer account (signed in with a buyer key) can't do is refused by the database before anything is written;
+// this turns that refusal into a plain 403 with the database's own words, wherever it comes from.
+function buyerScope(e) {
+  return e && e.code === 'P0001' && e.message === 'buyer_scope' ? String(e.hint || 'A buyer account can\u2019t do this.') : null;
+}
+
 module.exports = {
-  stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, getTopics, TOPIC_OWNER_ID, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache,
+  buyerScope, stripHidden, agentTagOf, SITE, REPO, handshake, pages, status, getChanges, getConversation, getTopics, TOPIC_OWNER_ID, setHiddenCheck, getProposals, searchSite, send, onlyGet, githubLimit, UNTRUSTED_NOTE, _resetCache,
   // The work module's reader (db/workjobs.js): the same cached, rate-aware calls, for this repository's pull requests and issues.
   githubRead: gh };

@@ -207,6 +207,8 @@ test.before(async () => {
     await t.unsafe('set local role dog_signin');
     await t.unsafe(`insert into app.signin_pins (member_id, salt, pin_hash) values ('${A.id}', '\\x${'1'.repeat(32)}', '\\x${'2'.repeat(64)}')`);
     await t.unsafe(`insert into app.browser_keys (member_id, public_key, label) values ('${A.id}', '\\x04${'3'.repeat(128)}', 'Firefox on Linux')`);
+    // 063: a buyer key (the fixture's member A has one too, so the break-in checks cover the table).
+    await t.unsafe(`insert into app.buyer_keys (member_id, credential_id, public_key) values ('${A.id}', '\\x${'5'.repeat(64)}', '\\x04${'6'.repeat(128)}')`);
   });
   await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
   // 026: a country the behaviour watch saw A sign in from (a keyed hash).

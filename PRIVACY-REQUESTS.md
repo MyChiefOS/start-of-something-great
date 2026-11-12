@@ -58,7 +58,7 @@ Every table that points at a member, by the column that does. A test (`test/hold
 
 | What | Tables (column) |
 |---|---|
-| The account and ways in | `identities` (member_id), `sessions` (member_id), `file_keys` (member_id), `signin_pins` (member_id), `browser_keys` (member_id), `signin_failures` (member_id), `signin_locks` (member_id) |
+| The account and ways in | `identities` (member_id), `sessions` (member_id), `file_keys` (member_id), `signin_pins` (member_id), `browser_keys` (member_id), `signin_failures` (member_id), `signin_locks` (member_id), `buyer_keys` (member_id: a buyer key's ID and public half, 063; deleted with the account) |
 | Posts, reports and reviews | `posts` (author_id), `review_flags` (reporter_id), `review_decisions` (decided_by, administrators only) |
 | Agents | `agents` (owner_id), `agent_drafts` (owner_id), `jevs_challenges` (owner_id) |
 | Work | `work_projects` (poster_member), `work_tasks` (poster_member), `work_claims` (member_id), `work_submissions` (worker_member), `work_checks` (member_id), `work_points` (citizen_member), `work_disputes` (member_id; decided_by, administrators only), `work_dispute_evidence` (member_id), `work_person_votes` (member_id), `work_actions` (member_id), `engine_orders` (created_by) |

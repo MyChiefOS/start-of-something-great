@@ -311,6 +311,53 @@ function make(deps) {
     return h.redirect(res, ret || '/');
   }
 
+  // 063: the buyer door's one path, for a new buyer key (fresh) or a buyer signing in.
+  const BUYER_HELP = 'Your device couldn’t prove your passkey. Please try again.';
+  const bytesOf = (x, min, max) => {
+    if (typeof x !== 'string' || x.length === 0 || x.length > Math.ceil(max * 4 / 3) || !onlyOf(x, B64URL)) return null;
+    const b = Buffer.from(x, 'base64url');
+    return b.length >= min && b.length <= max && b.toString('base64url') === x ? b : null;
+  };
+  // The browser's report, read here only to turn away the wrong kind early; the database checks it in full.
+  const clientDataOk = (cd, type) => {
+    try { const j = JSON.parse(cd.toString('utf8')); return j && j.type === type && j.origin === ORIGIN && j.crossOrigin !== true; } catch { return false; }
+  };
+  async function buyerDoor(req, res, fresh) {
+    if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the buyer page.' });
+    if (!require('../db/pay').switchedOn()) return json(res, 503, { error: 'Buyer accounts open when funded tasks do. Nothing is charged until then.' });
+    const country = region.declined(req);
+    if (country) { await countDecline(country); return json(res, 200, { declined: true }); }
+    if (await limited('signin_ip', h.ipKey(req, config.ipKey))) return json(res, 429, { error: 'Too many tries in a short time. Please wait a few minutes.' });
+    const form = (await h.form(req, 8192)) || {};
+    const cred = bytesOf(form.cred, 16, 1023), cd = bytesOf(form.cd, 50, 2048), ad = bytesOf(form.ad, 37, 4096);
+    if (!cred || !cd || !ad || !clientDataOk(cd, fresh ? 'webauthn.create' : 'webauthn.get')) return json(res, 200, { error: BUYER_HELP, retry: true });
+    const token = c.token(32);
+    const common = { credentialId: cred, clientData: cd, authData: ad, displayName: NEW_NAME, sessionHash: c.sha256hex(token), sessionDays: SESSION_DAYS };
+    let out;
+    if (fresh) {
+      const pub = c.p256FromSpki(bytesOf(form.spki, 91, 91));
+      if (!pub || form.alg !== '-7') return json(res, 200, { error: 'This device made a kind of passkey we don’t take. Please try another device or browser.' });
+      out = await run(ANON, (t) => store.buyerRegister(t, { ...common, publicKey: pub }));
+    } else {
+      const sig = c.derToRaw(bytesOf(form.sig, 8, 72));
+      const pub = sig && await run(ANON, (t) => store.buyerKeyPublic(t, cred));
+      if (!pub) return json(res, 200, { no_key: true, error: 'We don’t know that passkey. Make a buyer account with it first, or use another passkey.' });
+      if (!c.p256Verify(pub, Buffer.concat([ad, nodeCrypto.createHash('sha256').update(cd).digest()]), sig)) return json(res, 200, { error: BUYER_HELP, retry: true });
+      out = await run(ANON, (t) => store.buyerSignIn(t, { ...common, signature: sig }));
+    }
+    if (out.status === 'no_key') return json(res, 200, { no_key: true, error: 'We don’t know that passkey. Make a buyer account with it first, or use another passkey.' });
+    if (out.status === 'bad_key' || out.status === 'bad_proof') return json(res, 200, { error: BUYER_HELP, retry: true });
+    if (out.refused === 'taken') return json(res, 200, { error: 'This passkey already has a buyer account. Sign in with it instead.' });
+    if (out.refused === 'locked') return json(res, 200, { error: 'Signing in to this account is locked for 15 minutes after 3 failed tries. Please try again then.' });
+    if (out.refused) return json(res, 200, { refused: out.refused });
+    if (out.status !== 'ok') return json(res, 200, { error: BUYER_HELP, retry: true });
+    h.addCookie(res, h.cookie(SESSION, token, { maxAge: SESSION_DAYS * 86400 }));
+    await afterSignIn(req, { ...out, sessionHash: c.sha256hex(token) });
+    const old = sessionHash(req);
+    if (old) await run(ANON, (x) => store.sessionEnd(x, old));
+    return json(res, 200, { signed_in: true, go: '/projects' });
+  }
+
   return {
     async start(req, res, provider) {
       const p = providers[provider];
@@ -547,6 +594,17 @@ function make(deps) {
       const old = sessionHash(req);
       if (old) await run(ANON, (x) => store.sessionEnd(x, old));
       return json(res, 200, { signed_in: true, go: goAfter(form) });
+    },
+
+    // 063, the buyer door (Aaron, Nov 11, 2026): a person who only posts and pays for work signs in with a buyer key, a
+    // WebAuthn passkey their own device makes for this site, with no GitHub account. Shut while payments are off. The
+    // site checks the browser's report and the signature itself, then the database checks them again and decides. From a
+    // declined region nobody gets a buyer account and no buyer signs in. /join/buyer (buyer.js) sends these.
+    async buyerRegister(req, res) {
+      return buyerDoor(req, res, true);
+    },
+    async buyerSignIn(req, res) {
+      return buyerDoor(req, res, false);
     },
 
     async emailStart(req, res) {

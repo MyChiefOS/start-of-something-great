@@ -315,6 +315,33 @@ async function browserSignIn(t, { keyId, displayName, sessionHash, sessionDays, 
   }
 }
 
+// 063, the buyer door (Aaron, Nov 11): a WebAuthn buyer key, checked again by the database itself. Byte lengths are
+// checked here first; the database decides.
+const between = (field, b, min, max) => {
+  if (!Buffer.isBuffer(b) || b.length < min || b.length > max) throw new v.ValidationError(field, 'must be ' + min + ' to ' + max + ' bytes');
+  return b;
+};
+async function buyerKeyPublic(t, credentialId) {
+  if (!Buffer.isBuffer(credentialId) || credentialId.length < 16 || credentialId.length > 1023) return null;
+  const [r] = await t`select app.buyer_key_public(${credentialId}) as k`;
+  return r.k ? Buffer.from(r.k) : null;
+}
+// { status: 'ok', memberId, isNew, ... } or { status: 'bad_key' | 'bad_proof' | 'no_key' }, or { refused }.
+async function buyerRegister(t, { credentialId, publicKey, clientData, authData, displayName, sessionHash, sessionDays }) {
+  const args = [between('credentialId', credentialId, 16, 1023), bytes('publicKey', publicKey, 65), between('clientData', clientData, 50, 2048),
+    between('authData', authData, 37, 4096), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 })];
+  const [r] = await t.savepoint((x) => x`select * from app.buyer_register(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer)`);
+  return out(r);
+}
+async function buyerSignIn(t, { credentialId, clientData, authData, signature, displayName, sessionHash, sessionDays }) {
+  const args = [between('credentialId', credentialId, 16, 1023), between('clientData', clientData, 50, 2048), between('authData', authData, 37, 4096),
+    bytes('signature', signature, 64), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
+    v.int('sessionDays', sessionDays, { min: 1, max: 30 })];
+  const [r] = await t.savepoint((x) => x`select * from app.buyer_sign_in(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer)`);
+  return out(r);
+}
+
 // The account page, as the signed-in member: { pin: { set_at } | null, key_file: { created_at, used_at } | null,
 // browsers: [{ id, label, created_at, used_at }] }.
 async function signinMethods(t) {
@@ -364,4 +391,4 @@ async function watchTravel(t, { sessionHash, place = null, km = null, prev = nul
 }
 
 module.exports = { watchSignin, watchReach, watchSession, watchTravel, codeIssue, challengeIssue, codeStatus, codeSignInPin, fileSignInPin,
-  browserSignIn, browserKeyPublic, signinMethods, browserKeyRemove, pinChange, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+  browserSignIn, browserKeyPublic, buyerKeyPublic, buyerRegister, buyerSignIn, signinMethods, browserKeyRemove, pinChange, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

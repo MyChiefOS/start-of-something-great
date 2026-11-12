@@ -182,11 +182,12 @@ test('the router sends each address to the right step, with the right provider a
   for (const k of Object.keys(ROUTES)) await ROUTES[k](fake, {}, {});
   assert.deepStrictEqual(calls, [['start', 'github'], ['callback', 'github'], ['start', 'x'], ['callback', 'x'], ['emailStart'],
     ['emailContinue'], ['emailFinish'], ['logout', false], ['logout', true], ['me'], ['account'], ['rename'], ['deleteAccount'], ['unlink'], ['formToken'],
-    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn'], ['challenge'], ['browserSignIn'], ['pinChange'], ['browserRemove']]);
+    ['regionContinue'], ['regionCancel'], ['codeStart'], ['codeFinish'], ['keyFileSignIn'], ['challenge'], ['browserSignIn'], ['pinChange'], ['browserRemove'],
+    ['buyerRegister'], ['buyerSignIn']]);
   assert.deepStrictEqual(Object.keys(ROUTES).filter((k) => k.startsWith('POST')),
     ['POST email/start', 'POST email/finish', 'POST logout', 'POST logout-all', 'POST account/name', 'POST account/delete', 'POST account/unlink',
       'POST region/continue', 'POST region/cancel', 'POST code/start', 'POST code/finish', 'POST key', 'POST challenge', 'POST browser',
-      'POST account/pin', 'POST account/browser/remove'],
+      'POST account/pin', 'POST account/browser/remove', 'POST buyer/register', 'POST buyer/sign-in'],
     'only these change anything, and all are POSTs');
 });
 

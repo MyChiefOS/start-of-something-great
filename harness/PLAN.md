@@ -257,6 +257,15 @@ Done outside the PR, Nov 11: dog-github deployed from 97acbf1 at Aaron's word ("
 Traps: a migration production has applied can't be edited (058, not 056); `node scripts/function-digests.js` without `--check` rewrites files; test servers stop between commands (start Postgres in the same command as the tests); don't edit the branch while the full suite runs on it; a new script the site serves must be added to the Semgrep line in checks.yml (test/gates.test.js); `node tools/design/build.js design/handoff-2026-11-05/static . <page> <page>` then `node scripts/shell.js` rebuilds one design page.
 
 
+### The Nov 11 sprint, PRs #1 to #5 (Aaron, Nov 11 and 12). Claude. In progress Nov 12.
+
+1. **PR #1, the one large PR**: merged as #127 (Nov 12). Live proofs still owed: a reply, a topic thread, MCP agent sign-in, a hold placed and lifted, the daily summary, the bans job.
+2. **PR #2, the money rails** (061, dog-pay): merged as #128. Payments off; dog-pay not deployed yet (inert without Aaron's keys; recorded in OPERATIONS.md first when it is).
+3. **Cleanup** (062, the home page's Now list, the terms source) and the `jevs` gate redeploy (v9, fingerprint matches main): merged as #129.
+4. **PR #3, the buyer door** (063): built Nov 12 on branch `buyer-passkey` from main at 0c732cd. Buyer keys (WebAuthn, checked in the database), the scope by triggers, the funding gate by restrictive policies, `/join/buyer`; dog-migrate's "no passkey" check unchanged (Aaron, Nov 12). Proven by test/buyer-keys.test.js against a simulated authenticator; not yet with a real device. Next: the fresh-agent review, then the PR.
+5. **PR #4**: the home page's two calls to action, room counts, pools and tiers signed out, exact net bounties signed in, track records above the fold. Watch the single-task tier and pool leak (FACTS.md).
+6. **PR #5**: paid peer reviewers (2%, top-decile operators), and the full test and red-team pass before Aaron's Stripe keys.
+
 ## 4. Open decisions for Aaron
 
 1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.

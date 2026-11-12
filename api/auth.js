@@ -56,7 +56,11 @@ const ROUTES = {
   'POST challenge': (f, q, s) => f.challenge(q, s),
   'POST browser': (f, q, s) => f.browserSignIn(q, s),
   'POST account/pin': (f, q, s) => f.pinChange(q, s),
-  'POST account/browser/remove': (f, q, s) => f.browserRemove(q, s)
+  'POST account/browser/remove': (f, q, s) => f.browserRemove(q, s),
+  // 063 (Aaron, Nov 11, 2026): the buyer door, a buyer key (a WebAuthn passkey) and no GitHub account, for posting,
+  // funding, reviewing and disputing tasks only. Shut while payments are off.
+  'POST buyer/register': (f, q, s) => f.buyerRegister(q, s),
+  'POST buyer/sign-in': (f, q, s) => f.buyerSignIn(q, s)
 };
 
 function plain(res, status, text) {
