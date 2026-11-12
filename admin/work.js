@@ -15,7 +15,7 @@
   }
   function txt(x) { return x === null || x === undefined ? '' : String(x); }
   function slot(n, s) { return n.querySelector('[data-slot="' + s + '"]'); }
-  var WHY = { random: 'picked at random', size: 'the largest size', pair: 'a poster who keeps passing the same worker, or people who pass each other\u2019s work', third_look: 'one in five of Third Look\u2019s passes', note: 'the note had contact details, now hidden' };
+  var WHY = { peer_fail_sample: 'one in seven of a paid peer reviewer\u2019s fails (15%), picked at random', peer_fail_appeal: 'the worker or the poster appealed a paid peer reviewer\u2019s fail', random: 'picked at random', size: 'the largest size', pair: 'a poster who keeps passing the same worker, or people who pass each other\u2019s work', third_look: 'one in five of Third Look\u2019s passes', note: 'the note had contact details, now hidden' };
   function artifact(a) {
     var p = document.createElement('span');
     if (!a) return p;
@@ -40,7 +40,8 @@
     var a = slot(c, 'title');
     a.textContent = txt(item.ref) + ' · ' + txt(item.title);
     if (isId(item.id)) a.href = '/tasks/' + item.id;
-    slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by)) + (item.reason ? ': ' + txt(item.reason) : '.')
+    slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. ' + (/^peer_fail_/.test(txt(item.why)) ? 'Failed by a paid peer reviewer' : 'Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by))) + (item.reason ? ': ' + txt(item.reason) : '.')
+        + (item.appealed ? ' Appealed: ' + txt(item.appeal_reason) + '. Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : /^peer_fail_/.test(txt(item.why)) ? ' Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : '')
       : item.held_reason ? 'Sent to you: ' + txt(item.held_reason)
       : item.dispute_reason ? 'Passed by ' + (item.decided_by === 'poster' ? 'the task\u2019s poster' : item.decided_by === 'jevs' ? 'the JEVs auditor\u2019s rules'
           : item.decided_by === 'third_look' ? 'Third Look' : 'an administrator') + '. ' + lookSaid(item.third_look) + 'The dispute:' : 'The rules that sent it here: ' + txt(item.jevs_rules || 'none');

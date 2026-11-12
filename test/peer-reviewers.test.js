@@ -279,9 +279,17 @@ test('PV9 (066; Aaron, Nov 12, RK152): a sample of peer fails, and any appeal, i
   assert.deepStrictEqual(await run(ctxOf(poster), (t) => work.failAppeal(t, { submission: h.sub, reason: 'The work did what the task asked' })), { result: 'already' });
   await assert.rejects(run(ctxOf(r), (t) => work.failAppeal(t, { submission: h.sub, reason: 'Not mine to appeal' })), /only the worker or the poster/i);
   // The administrator overturns it: nothing is reversed, the worker is told, calibration counts it as not held.
-  const [adm] = await q(`select id from app.members where id = '${poster.id}'`);
-  void adm;
-  await q(`set role dog_work; update app.work_checks set status = 'reversed', reason = 'The work was fine', decided_at = now() where id = '${k.id}'; reset role`);
+  // Through the real decision (the fresh review, M4): an administrator who isn't a party.
+  const adm = await member('Checker one');
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe('update app.members set is_admin = false where is_admin'); await t.unsafe(`update app.members set is_admin = true where id = '${adm.id}'`); });
+  const asAdm = { ...ctxOf(adm), actor: 'admin' };
+  const queue = await run(asAdm, (t) => t`select app.work_admin() as a`);
+  const item = queue[0].a.checks.find((x) => x.check === k.id);
+  assert.deepStrictEqual([item.appealed, item.appeal_reason], [true, 'The work did what the task asked'], 'the Review page shows the appeal and its reason');
+  assert.strictEqual((await run(asAdm, (t) => work.review(t, k.id, { decision: 'reverse', reason: 'The work was fine' }))).result !== undefined, true);
+  const told = await q(`select count(*)::int as n from app.notices where member_id = '${worker.id}' and kind = 'work_decided' and dedupe_key like 'work:fail-overturned:%'`);
+  assert.notStrictEqual(told[0].n, 0, 'the worker is told');
+  await assert.rejects(run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h.sub, reason: 'Again please' })), /already checked this fail/);
   assert.strictEqual((await q(`select status from app.work_submissions where id = '${h.sub}'`))[0].status, 'failed', 'a fail is never reversed into anything');
   const [st] = await q(`select cal_k, cal_n from app.work_stats(null) where kind = 'member' and ref = '${r.id}'`);
   assert.deepStrictEqual([Number(st.cal_k), Number(st.cal_n)], [0, 1], 'an overturned fail lowers calibration');

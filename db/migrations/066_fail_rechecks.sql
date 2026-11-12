@@ -95,9 +95,13 @@ begin
   -- reverses work that didn't pass. The worker and the administrators are told; what the work is owed then (it may have
   -- been claimed again, or the bounty refunded) is the administrator's to put right, by hand for now.
   if p_decision = 'reverse' and k.why = any (array['peer_fail_sample', 'peer_fail_appeal']) then
+    -- The fresh review (M5): a GitHub-only worker has no member to tell; app.notify(null, ...) would send this to the
+    -- administrators instead, so it is skipped then.
+    if (select coalesce(s.worker_member, (select g.owner_id from app.agents g where g.id = s.worker_agent)) from app.work_submissions s where s.id = k.submission_id) is not null then
     perform app.notify((select coalesce(s.worker_member, (select g.owner_id from app.agents g where g.id = s.worker_agent)) from app.work_submissions s where s.id = k.submission_id),
-      'appeal_decided', 'A failed verdict on your work was overturned', 'An administrator checked a peer reviewer''s fail on your work and disagreed. Aaron will put right what the work is owed.',
+      'work_decided', 'A failed verdict on your work was overturned', 'An administrator checked a peer reviewer''s fail on your work and disagreed. Aaron will put right what the work is owed.',
       '/tasks/' || (select s.task_id from app.work_submissions s where s.id = k.submission_id), 'submission', k.submission_id, 'work:fail-overturned:' || k.id);
+    end if;
     perform app.notify(null, 'alert', 'A peer fail was overturned: put right what the work is owed', 'You overturned a peer reviewer''s fail. The work may have been claimed again or its bounty refunded; decide what it is owed.',
       '/admin/review#work', 'submission', k.submission_id, 'work:fail-overturned-admin:' || k.id);
   elsif p_decision = 'reverse' then
@@ -208,7 +212,11 @@ begin
     raise exception 'work_appeal_late' using errcode = 'P0001', hint = 'The time to appeal (' || hrs || ' hours after the decision) has passed.';
   end if;
   if exists (select 1 from app.work_checks k where k.submission_id = p_sub and k.why = any (array['peer_fail_sample', 'peer_fail_appeal'])) then
-    -- Already being checked (a sample), or appealed: the appeal joins it.
+    -- Already being checked (a sample), or appealed: the appeal joins it. Already decided (the fresh review, M3): say so,
+    -- rather than answer as if the appeal were recorded.
+    if not exists (select 1 from app.work_checks k where k.submission_id = p_sub and k.why = any (array['peer_fail_sample', 'peer_fail_appeal']) and k.status = 'open') then
+      raise exception 'work_appeal_checked' using errcode = 'P0001', hint = 'An administrator has already checked this fail.';
+    end if;
     update app.work_checks k set appealed_by = coalesce(k.appealed_by, me), appeal_reason = coalesce(k.appeal_reason, btrim(p_reason))
      where k.submission_id = p_sub and k.why = any (array['peer_fail_sample', 'peer_fail_appeal']) and k.status = 'open';
     return 'already';
@@ -220,5 +228,35 @@ begin
 end $$;
 revoke execute on function app.work_fail_appeal(uuid, text) from public;
 grant execute on function app.work_fail_appeal(uuid, text) to dog_app;
+-- The fresh review (H2): the Review page shows a check's appeal and its reason (only the administrator reads this).
+create or replace function app.work_admin()
+returns jsonb
+language plpgsql stable security definer set search_path = pg_catalog
+as $$
+declare
+  me uuid := app.current_member();
+begin
+  if app.actor_kind() <> 'admin' then raise exception 'only an administrator' using errcode = '42501'; end if;
+  -- Each item says whether the administrator reading it may decide it ('party': he did the work or opened the dispute;
+  -- since 052 a dispute of his own task is his). A dispute carries Third Look's review of the work, as Aaron asked
+  -- ("Third look can weigh in"); work still to be decided doesn't, so the person deciding it isn't swayed by it (047).
+  return jsonb_build_object('generated_at', now(),
+    'waiting', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('submission', s.id, 'jevs_rules', s.jevs_rules, 'note', s.note, 'held_reason', s.held_reason,
+                           'artifact', jsonb_build_object('kind', s.artifact_kind, 'url', s.artifact_url, 'sha256', s.artifact_sha256), 'party', app.work_party(s.id, me))
+                         order by s.created_at)
+                        from app.work_submissions s where s.status = 'review' and s.route = 'admin'), '[]'::jsonb),
+    'checks', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('check', k.id, 'submission', s.id, 'why', k.why, 'note', s.note,
+                           'artifact', jsonb_build_object('kind', s.artifact_kind, 'url', s.artifact_url, 'sha256', s.artifact_sha256),
+                           'decided_by', s.decided_by, 'reason', s.reason, 'party', app.work_party(s.id, me),
+                           'appealed', k.appealed_by is not null, 'appeal_reason', k.appeal_reason) order by k.created_at)
+                       from app.work_checks k join app.work_submissions s on s.id = k.submission_id where k.status = 'open'), '[]'::jsonb),
+    'disputes', coalesce((select jsonb_agg(app.work_card(s.task_id) || jsonb_build_object('dispute', d.id, 'submission', s.id, 'dispute_reason', d.reason,
+                           'artifact', jsonb_build_object('kind', s.artifact_kind, 'url', s.artifact_url, 'sha256', s.artifact_sha256),
+                           'decided_by', s.decided_by, 'reason', s.reason, 'party', app.work_may_settle(d.id, me) <> 'any', 'may', app.work_may_settle(d.id, me), 'third_look', (select jsonb_build_object('suggestion', r.suggestion, 'answers', r.answers, 'reason', r.reason, 'at', r.decided_at) from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)) order by d.created_at)
+                         from app.work_disputes d join app.work_submissions s on s.id = d.submission_id where d.status = 'open'), '[]'::jsonb),
+    'held', (select count(*) from app.work_submissions s where s.status = 'review' and s.route = 'held'));
+end
+$$;
+
 reset role;
 revoke create on schema app from dog_work;
