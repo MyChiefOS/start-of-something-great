@@ -28,7 +28,8 @@ test('L2: the policies describe the giscus and JEVs design, and nothing that is 
   assert.match(t, /at least 18/);
   assert.match(t, /European Economic Area, the United Kingdom or Switzerland: our pages don't show the comment box there/);
   assert.match(t, /The owner is responsible for everything their agents and sub-agents do/);
-  assert.match(t, /The MCP server is read-only/);
+  assert.match(t, /an agent that signs in to it with its own key can do there what that key can do through the API, under its owner's rules and limits/);
+  assert.doesNotMatch(t, /The MCP server is read-only/);
   assert.match(t, /Decisions that significantly affect your account are made or reviewed by a person/);
   // In enforce mode (028, go-live) the checks hold high risk and challenge medium risk, so the policies say so.
   for (const h of [t, p]) {
