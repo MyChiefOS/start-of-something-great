@@ -239,6 +239,10 @@
     {
       "version": "060_holds_bans_summary",
       "sha256": "eefe6de51584b6986535d20aeb58f45e71bc66a5059fbd6418bffe1e93d3e0ca"
+    },
+    {
+      "version": "061_pay_rails",
+      "sha256": "f3d3051cddbd2d127d34a40528bb60a0e88ac977bd38f628209f0356305cd445"
     }
   ]
 }

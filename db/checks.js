@@ -16,7 +16,7 @@ const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
 const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync',
-  'dog_witness'];
+  'dog_witness', 'dog_pay'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
 // function, app.timers_run, the slot-gated wrapper.
@@ -37,8 +37,10 @@ const TIMERS = 'dog_timers';
 // (app.log_proposals_record), from the same GitHub facts.
 // dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for dog-github when the log-witness
 // workflow calls. It holds no table rights, and the site's role can't act as it.
+// dog_pay (061) is the payment function's role: the money tables, and the work rows a release must read. The site's
+// role can't act as it; the money moves only through dog-pay and the two request functions below.
 const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
-  'dog_witness'];
+  'dog_witness', 'dog_pay'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
 // Matched by name and argument types, so an extra version of one of them with other arguments isn't covered.
@@ -109,7 +111,7 @@ const DEFINERS = {
   // owner; any role that runs checks of who is acting may test one; only the site's role may ask to act as someone.
   // 027: and dog_timers, whose one function (app.timers_run) stamps the site itself around the timers.
   'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner,dog_timers' },
-  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_public,dog_work' },
+  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_pay,dog_public,dog_work' },
   'app.act_as(text, uuid, uuid, boolean, text, text, text)': 'dog_signin',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
@@ -124,6 +126,13 @@ const DEFINERS = {
   'app.legal_hold_place(uuid, text)': 'dog_erase',
   'app.legal_hold_lift(uuid, text)': 'dog_erase',
   'app.legal_holds_list()': 'dog_erase',
+  // 061, funded bounties: a member's two requests to the payment function, and the triggers that move the money when
+  // points go final or a task is removed.
+  'app.bounty_fund_request(uuid, integer)': 'dog_pay',
+  'app.connect_onboard_request()': 'dog_pay',
+  'app.work_points_pay()': { owner: 'dog_pay', callers: '' },
+  'app.work_tasks_pay()': { owner: 'dog_pay', callers: '' },
+  'app.work_tasks_pay_delete()': { owner: 'dog_pay', callers: '' },
   // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
   // site, and the GitHub ban list carried to the site. The site's role can't call either.
   'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },
@@ -497,7 +506,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_pay')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -530,7 +539,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
       and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
-                                         'dog_witness') and a.privilege_type = 'USAGE')`;
+                                         'dog_witness', 'dog_pay') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

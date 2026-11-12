@@ -22,3 +22,8 @@ verify_jwt = false
 # preview-copy.yml on main, at the branch's own address.
 [functions.dog-copy]
 verify_jwt = false
+
+# The payment function (061) is reached with no token at all (control 8): its tick acts only on rows the database
+# wrote, and its webhook only on events whose Stripe signature checks.
+[functions.dog-pay]
+verify_jwt = false
