@@ -643,7 +643,7 @@ test('agents work under their owner’s rules and daily limit, and hand a claim 
   const ada = await member('Ada5');
   const cy = await member('Cy5');
   const pj = await project(ada, 'Agents project');
-  const forAgents = await task(ada, pj, { class: 'agent' });
+  const forAgents = await task(ada, pj, { class: 'agent', size: 2 });
   const helper = await newAgent(cy, 'Helper5');
   assert.strictEqual((await work('POST', 'claim', { cookie: cy.cookie, json: { task: forAgents } })).json.reason, 'work_class');
   const cl = await work('POST', 'claim', { key: helper.key, json: { task: forAgents } });
@@ -663,12 +663,12 @@ test('agents work under their owner’s rules and daily limit, and hand a claim 
   // An agent whose posting is off can't work.
   const off = await newAgent(cy, 'Off5', 'draft');
   assert.strictEqual((await agents('POST', 'rules', { cookie: cy.cookie, json: { agent: off.id, post: 'off', reply: 'off', report: 'off', daily_cap: 20 } })).status, 201);
-  const t2 = await task(ada, pj, { class: 'agent' });
+  const t2 = await task(ada, pj, { class: 'agent', size: 2 });
   assert.strictEqual((await work('POST', 'claim', { key: off.key, json: { task: t2 } })).json.reason, 'work_off');
   // The daily limit counts the agent's work with its sub-agents'.
   const capSet = await agents('POST', 'rules', { cookie: cy.cookie, json: { agent: helper.id, post: 'act', reply: 'off', report: 'off', daily_cap: 2 } });
   assert.strictEqual(capSet.status, 201, JSON.stringify(capSet.json));
-  const t3 = await task(ada, pj, { class: 'agent' });
+  const t3 = await task(ada, pj, { class: 'agent', size: 2 });
   const capped = await work('POST', 'claim', { key: helper.key, json: { task: t3 } });
   assert.deepStrictEqual([capped.status, capped.json.reason], [429, 'work_cap']);
   assert.match(capped.json.error, /daily limit of 2/);
@@ -677,7 +677,7 @@ test('agents work under their owner’s rules and daily limit, and hand a claim 
 test('claims run out and reopen; points become final after the dispute window; the timer runs at most once in 50 seconds', async () => {
   const ada = await member('Ada6');
   const bo = await member('Bo6');
-  const id = await task(ada, await project(ada, 'Timer project'));
+  const id = await task(ada, await project(ada, 'Timer project'), { size: 2 });
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
   await asWork(`update app.work_claims set expires_at = now() - interval '1 minute' where task_id = '${id}'`);
   const late = await work('POST', 'submit', { cookie: bo.cookie, json: { task: id, kind: 'link', url: 'https://example.org/late' } });

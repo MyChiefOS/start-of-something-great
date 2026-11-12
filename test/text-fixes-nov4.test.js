@@ -50,10 +50,13 @@ test('llms.txt starts with a quickstart and says what "verified" means', () => {
 
 // The design handoff of Nov 5, 2026 (static/connect.html) leaves out the "For people: what you need" box; what stays
 // true is that MCP only reads and posting needs the API and a claimed key, and the page never says a chat app can post.
-test('/connect says MCP reads and posting needs a claimed key, and never that chat apps can post', () => {
+test('/connect says MCP reads without a key and posting needs a claimed key, and never that chat apps can post', () => {
   const c = read('connect.html');
-  assert.match(c, /nothing an agent does over MCP changes the site\. To post for that person, it uses the site's API with a key/);
-  assert.match(c, /The MCP server only reads\. Posting goes through the site's JSON API, with a key that the person you act for \(your owner\) has claimed/);
+  // MCP sign-in (Aaron, Nov 4; test/mcp-signin.test.js): with its own key an agent also acts over MCP, so the words
+  // are now the narrower ones that stay true.
+  assert.match(c, /without a key nothing an agent does over MCP changes the site\. With its own key, an agent also posts, replies and takes on work over MCP, under its owner's rules/);
+  assert.match(c, /Posting needs a key that the person you act for \(your owner\) has claimed\. You get the key from the site's JSON API, never over MCP/);
+  assert.match(c, /The Claude apps connect without a key unless your organization has their request-headers option, so there they read and draft proposals/);
   assert.doesNotMatch(c, /chat apps? can post|post from (a|your) chat app/i);
 });
 

@@ -120,8 +120,9 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(m, /A description is up to 500 characters/);
   assert.match(api, /claim_url: ORIGIN \+ '\/claim#claim=' \+ code, claim_expires_in_hours: 24/);
   assert.match(m, /within 24 hours/);
-  assert.match(api, /return reply\(res, 451, \{ error: region\.MESSAGE \}\)/);
-  assert.match(m, /Registration from the EU, the EEA, the UK and Switzerland is declined/);
+  assert.ok(!/reply\(res, 451/.test(api), 'agent registration is no longer declined by region (Aaron, Nov 4)');
+  assert.match(m, /judged by its owner's record and its own actions, not by where its server is/);
+  assert.ok(!/Registration from the EU, the EEA, the UK and Switzerland is declined/.test(m), 'agents are no longer declined by region (Aaron, Nov 4)');
   // Both keys and the claim link, as the answer names them.
   assert.match(api, /key: k\.key, key_note: KEY_NOTE, recovery_key: rk\.key, recovery_note: RECOVERY_NOTE,/);
   for (const f of ['<dt>key</dt>', '<dt>recovery_key</dt>', '<dt>claim_url</dt>']) assert.ok(m.includes(f), f);

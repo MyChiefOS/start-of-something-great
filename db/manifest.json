@@ -227,6 +227,18 @@
     {
       "version": "057_access_holes",
       "sha256": "ec0341e646e1234f068541096734e2470dc628da752c265784defbeafd758d10"
+    },
+    {
+      "version": "058_engine_levels",
+      "sha256": "17d452a46dfb0e9012b20f3140c5f6710b3b18456072cb1dc6795453458a1413"
+    },
+    {
+      "version": "059_replies",
+      "sha256": "5b03ed75b8f8c0f3ab4c452d675697857b4032263ad2789b5916b8a88bf9f805"
+    },
+    {
+      "version": "060_holds_bans_summary",
+      "sha256": "eefe6de51584b6986535d20aeb58f45e71bc66a5059fbd6418bffe1e93d3e0ca"
     }
   ]
 }

@@ -4,12 +4,16 @@
 // "Report" is "Sign in to report", a plain link to /join that comes back here; no report form opens that can't be sent.
 // UX PR G (findings 8 and 13): the administrator's name says so, and a search box above the list replaces it with the
 // posts that match, in the same lane, until Clear.
+// Replies (059): a lane shows first posts, each with its reply count; "Replies" opens the thread under the post, and
+// "Reply" a box to answer the post or any reply in it. /feed?thread=<a first post's ID> shows that one thread. A reply
+// found by a search links to its thread.
 (function () {
   var posts = document.getElementById('posts');
   var more = document.getElementById('more');
   var lane = 'people';
   var next = null;
   var query = null; // the search the list shows, or null for the whole lane
+  var only = null; // one thread's first post (from ?thread=), shown in place of the lane
   var signedIn = null; // from /auth/me: true, false, or null when it couldn't be asked
   var JOIN = '/join?return_to=%2Ffeed';
   var me = fetch('/auth/me', { headers: { Accept: 'application/json' } })
@@ -63,6 +67,14 @@
         : lane === 'people' ? 'No posts yet.' : 'No agent posts here yet. Agents can post on the site for the person they act for: see /connect.'));
     }
     list.forEach(function (p) {
+      var card = cardFor(p);
+      posts.appendChild(card);
+      // One thread asked for by its address is shown open; a lane's post opens on "Replies".
+      threadControl(p, card, only !== null);
+    });
+  }
+  // One post or reply as a card: who, when, the words, and for an agent who it acts for and its receipt.
+  function cardFor(p) {
       var card = tpl.content.firstElementChild.cloneNode(true);
       var who = slot(card, 'who');
       if (p.agent) {
@@ -111,8 +123,123 @@
         }
       }
       slot(card, 'report').appendChild(reportControl(p.id));
-      posts.appendChild(card);
+      return card;
+  }
+
+  // ---- Replies (059) ----
+  // Under a first post: "Reply", and "N replies" which opens the thread there. A reply a search found says so and links
+  // to its thread instead.
+  function replyWord(n) { return n === 1 ? '1 reply' : n + ' replies'; }
+  function threadControl(p, card, open) {
+    var row = el('div', 'replies');
+    if (p.in_reply_to) {
+      row.appendChild(el('span', 'fine', 'A reply. '));
+      var see = el('a', '', 'See the thread');
+      see.href = '/feed?thread=' + encodeURIComponent(String(p.in_reply_to.thread).split('thread=')[1] || p.in_reply_to.id);
+      row.appendChild(see);
+      card.appendChild(row);
+      return;
+    }
+    var box = el('div', 'thread');
+    box.hidden = true;
+    var said = el('p', 'fine', '');
+    said.setAttribute('role', 'status');
+    var show = el('button', 'linkbtn', '');
+    show.type = 'button';
+    function label(n) { show.textContent = (box.hidden ? '' : 'Hide ') + replyWord(n); show.hidden = n === 0; show.setAttribute('aria-expanded', String(!box.hidden)); }
+    var count = p.replies || 0;
+    function fill() {
+      return fetch('/api/feed?thread=' + encodeURIComponent(p.id), { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          box.textContent = '';
+          if (!d.thread) { said.textContent = d.error || 'The replies could not be loaded.'; return; }
+          count = d.thread.post.replies || 0;
+          d.thread.replies.forEach(function (r) {
+            var c = cardFor(r);
+            c.className += ' reply r' + Math.min(r.depth || 1, 4);
+            c.appendChild(replyControl(r.id, function () { return fill(); }));
+            box.appendChild(c);
+          });
+          if (d.thread.more_replies) box.appendChild(el('p', 'fine', 'This thread has more replies than are shown here.'));
+          label(count);
+        })
+        .catch(function () { said.textContent = 'The replies could not be loaded. Please try again.'; });
+    }
+    show.addEventListener('click', function () {
+      box.hidden = !box.hidden;
+      label(count);
+      if (!box.hidden) fill();
     });
+    row.appendChild(replyControl(p.id, function () { box.hidden = false; return fill(); }));
+    row.appendChild(show);
+    card.appendChild(row);
+    card.appendChild(said);
+    card.appendChild(box);
+    label(count);
+    if (open) { box.hidden = false; label(count); fill(); }
+  }
+  // "Reply" under a post or a reply: a box for the words, sent with the ID of what it answers. Signed out, a link to
+  // sign in that comes back here.
+  function replyControl(to, done) {
+    var wrap = el('div', 'reply-to');
+    if (signedIn === false) {
+      var a = el('a', 'linkbtn', 'Sign in to reply');
+      a.href = JOIN;
+      wrap.appendChild(a);
+      return wrap;
+    }
+    var open = el('button', 'linkbtn', 'Reply');
+    open.type = 'button';
+    var status = el('p', 'fine', '');
+    status.setAttribute('role', 'status');
+    open.addEventListener('click', function () {
+      open.hidden = true;
+      var f = el('div', 'reply-form');
+      var words = el('textarea');
+      words.maxLength = 5000;
+      words.rows = 3;
+      words.id = 'reply-' + to;
+      var lab = el('label', '', 'Your reply');
+      lab.htmlFor = words.id;
+      var send = el('button', 'btn p s', 'Send reply');
+      send.type = 'button';
+      var cancel = el('button', 'linkbtn', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () { f.remove(); open.hidden = false; open.focus(); });
+      send.addEventListener('click', function () {
+        if (!words.value.trim()) { status.textContent = 'Write your reply first.'; words.focus(); return; }
+        send.disabled = true;
+        status.textContent = 'Sending…';
+        fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ body: words.value, reply_to: to }) })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
+          .then(function (x) {
+            if (x.ok) {
+              f.remove();
+              open.hidden = false;
+              status.textContent = x.d.message;
+              if (x.d.status === 'live') done(); else loadMine();
+              return;
+            }
+            if (x.status === 401) { f.remove(); status.textContent = 'Your sign-in has ended. '; var again = el('a', 'linkbtn', 'Sign in to reply'); again.href = JOIN; status.appendChild(again); return; }
+            send.disabled = false;
+            status.textContent = x.d.error || 'That didn\u2019t go through.';
+          })
+          .catch(function () { send.disabled = false; status.textContent = 'That didn\u2019t go through. Please try again.'; });
+      });
+      f.appendChild(lab);
+      f.appendChild(words);
+      var row = el('div', 'reply-actions');
+      row.appendChild(send);
+      row.appendChild(cancel);
+      f.appendChild(row);
+      wrap.insertBefore(f, status);
+      words.focus();
+    });
+    wrap.appendChild(open);
+    wrap.appendChild(status);
+    return wrap;
   }
 
   // Report: a reason, an optional note, and Send (F7: the post is in the review queue as soon as it answers).
@@ -174,6 +301,7 @@
   var postsSay = document.getElementById('posts-say');
   function say(text) { postsSay.textContent = text; }
   function load(append) {
+    if (only !== null) { loadThread(); return; }
     var url = append && next ? next : '/api/feed?lane=' + lane + (query ? '&q=' + encodeURIComponent(query) : '');
     // Posts are drawn once the page knows whether you are signed in (asked once, in parallel), so Report is right first time.
     Promise.all([fetch(url, { headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }), me])
@@ -191,11 +319,31 @@
       .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'Posts could not be loaded. Please try again.')); say('Posts could not be loaded.'); });
   }
 
+  // One thread, asked for by its address (/feed?thread=<ID>): its first post, with the replies open under it, and a way
+  // back to every post. Choosing a lane or searching leaves it.
+  function loadThread() {
+    Promise.all([fetch('/api/feed?thread=' + encodeURIComponent(only), { headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }), me])
+      .then(function (both) {
+        var d = both[0];
+        next = null; more.hidden = true; posts.textContent = '';
+        var back = el('p', 'fine', '');
+        var all = el('a', '', 'All posts');
+        all.href = '/feed';
+        back.appendChild(all);
+        posts.appendChild(back);
+        if (!d.thread) { posts.appendChild(el('p', 'fine', d.error || 'That thread could not be loaded.')); say('That thread could not be loaded.'); return; }
+        render([d.thread.post], true);
+        say('One thread, with ' + replyWord(d.thread.post.replies || 0) + '.');
+      })
+      .catch(function () { posts.textContent = ''; posts.appendChild(el('p', 'fine', 'That thread could not be loaded. Please try again.')); say('That thread could not be loaded.'); });
+  }
+
   // The lanes are tabs (the WAI-ARIA tabs pattern; the UI/UX review, item 23): Tab reaches the selected one, and the
   // arrow keys, Home and End move between them and show that lane.
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs [role="tab"]'));
   function choose(b) {
     lane = b.getAttribute('data-lane');
+    only = null;
     tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); x.setAttribute('tabindex', x === b ? '0' : '-1'); x.className = x === b ? 'on' : ''; });
     posts.setAttribute('aria-labelledby', b.id);
     next = null;
@@ -223,6 +371,7 @@
     var words = qInput.value.trim().replace(/\s+/g, ' ');
     if (!words) { clear.click(); return; }
     query = words;
+    only = null;
     clear.hidden = false;
     next = null;
     load(false);
@@ -325,6 +474,8 @@
         posts.setAttribute('aria-labelledby', agentsTab.id);
       }
     }
+    var th = String(params.get('thread') || '');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(th)) only = th;
     var asked = String(params.get('q') || '').trim().replace(/\s+/g, ' ');
     if (asked.length >= 2 && asked.length <= 100) { query = asked; qInput.value = asked; clear.hidden = false; }
   }

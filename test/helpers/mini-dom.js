@@ -1,7 +1,8 @@
 // A small stand-in DOM for running a page's real <main> and script without a browser, copied from
 // test/ux-signed-out.test.js (UX PR D) with three additions (and, for the design's markup of Nov 5, <template> with
 // .content and cloneNode, as the pages' scripts clone their cards): removeAttribute, a ?query for location.search, and a
-// record of every address fetched, every history.replaceState and every location.replace (a hash can be given too). Not a test file itself (test/*.test.js only).
+// record of every address fetched, every history.replaceState and every location.replace (a hash can be given too), and
+// window.addEventListener with fire(type) to run what was added (topic threads, /talk). Not a test file itself (test/*.test.js only).
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -122,7 +123,10 @@ function page(file, script, answers, search, hash) {
   const asked = [];
   const replaced = [];
   const history = [];
+  const listeners = {};
   Object.assign(doc, {
+    // Still loading when the script runs, as for a deferred script; fire('load') is the page finishing (talk.js).
+    readyState: 'loading', title: '',
     getElementById: (id) => main.all().find((e) => e.id === id) || (main.id === id ? main : null),
     createElement: (t) => new El(t, doc),
     createTextNode: (t) => { const n = new El('#text', doc); n._text = String(t); return n; },
@@ -132,7 +136,8 @@ function page(file, script, answers, search, hash) {
   const sandbox = {
     document: doc, location: { hash: hash || '', search: search || '', pathname: '/' + file.replace(/\.html$/, ''), replace: (u) => { replaced.push(u); } },
     history: { replaceState: (s, t, url) => { history.push(url); } }, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    navigator: {}, URLSearchParams, Promise, JSON, Date, Math, Array, Object, String, Number, Boolean, encodeURIComponent,
+    navigator: {}, URLSearchParams, Promise, JSON, Date, Math, Array, Object, String, Number, Boolean, encodeURIComponent, isNaN,
+    addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); },
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: (n) => { if (timers[n - 1]) timers[n - 1].f = null; },
     fetch: (url, init) => {
       asked.push(url);
@@ -146,7 +151,8 @@ function page(file, script, answers, search, hash) {
   // with /approval.js).
   vm.createContext(sandbox);
   for (const s of [].concat(script)) vm.runInContext(read(s), sandbox);
-  return { main, doc, sent, timers, asked, history, replaced, $: doc.getElementById };
+  const fire = (t) => { if (t === 'load') doc.readyState = 'complete'; (listeners[t] || []).forEach((f) => f()); };
+  return { main, doc, sent, timers, asked, history, replaced, fire, $: doc.getElementById };
 }
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 

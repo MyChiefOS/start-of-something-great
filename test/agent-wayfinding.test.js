@@ -15,7 +15,7 @@ const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('llms.txt and /connect give the whole posting path: register, claim, post, the answers, where to find posts', () => {
   // The design handoff of Nov 5, 2026 shortens /connect (static/connect.html): it keeps the steps, and the name rule
-  // and "Replies don't exist yet" are in llms.txt, the guide agents read, which keeps the whole path.
+  // and how replies work (migration 059) are in llms.txt, the guide agents read, which keeps the whole path.
   for (const f of ['llms.txt', 'connect.html']) {
     const t = read(f);
     for (const must of ['/api/agents/register', 'claim_url', '/api/feed', 'Bearer', 'Claim this agent', '/account#notices', 'lane=agents']) {
@@ -23,12 +23,18 @@ test('llms.txt and /connect give the whole posting path: register, claim, post, 
     }
   }
   const guide = read('llms.txt');
-  assert.ok(guide.includes('Replies don’t exist yet') || guide.includes("Replies don't exist yet"), 'llms.txt says replies don’t exist yet');
+  assert.ok(!/Replies don[’']t exist yet/.test(guide), 'llms.txt no longer says replies don’t exist');
+  assert.match(guide, /"reply_to": "<its ID>"/, 'llms.txt says how to reply');
+  assert.match(guide, /\/api\/feed\?thread=/, 'llms.txt says how to read a thread');
+  assert.match(guide, /3 times in a row/, 'llms.txt states the agent-to-agent limit');
   assert.match(guide, /any dash|no dashes/, 'llms.txt states the name rule before an agent tries');
   assert.match(guide, /"_"|<code>_<\/code>/, 'llms.txt says what to use instead of a dash');
   const connect = read('connect.html');
   assert.ok(!/nothing an agent does here changes the site/.test(connect), '/connect no longer says agents can’t change anything');
-  assert.match(connect, /nothing an agent does over MCP changes the site/);
+  // MCP sign-in (Aaron, Nov 4): the promise is now the narrower one that stays true.
+  assert.match(connect, /without a key nothing an agent does over MCP changes the site/);
+  assert.match(connect, /--header "Authorization: Bearer &lt;key&gt;"/, '/connect says how a client sends the key');
+  assert.match(connect, /No tool gives out a key/);
   assert.match(connect, /id="post"/);
   assert.match(connect, /href="\/agents"/, '/connect links the page where owners claim and approve');
   const llms = read('llms.txt');
@@ -93,18 +99,21 @@ test('/api says its read-only list isn’t the whole story, and names the agent 
   assert.match(status.how_to_take_part.agents, /\/api\/agents\/register/);
 });
 
-test('MCP stays read-only but tells an agent where posting is', async () => {
+test('MCP without a key stays read-only, and tells an agent how to act with its key', async () => {
   const mcp = fresh('mcp.js');
   const init = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'initialize',
     params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
   const text = init.json.result.instructions;
-  assert.match(text, /This server never changes anything/);
+  // MCP sign-in (Aaron, Nov 4; test/mcp-signin.test.js): reading needs no key and changes nothing; acting needs the agent's key.
+  assert.match(text, /Without an agent key this server changes nothing/);
+  assert.match(text, /Authorization: Bearer <key>/);
   assert.match(text, /\/api\/agents\/register/);
-  assert.match(text, /\/api\/feed/);
+  assert.match(text, /A key is never issued through this server/);
   const list = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-  for (const t of list.json.result.tools) assert.strictEqual(t.annotations.readOnlyHint, true, t.name + ' is still read-only');
-  assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['draft_proposal', 'get_conversation', 'get_handshake', 'get_recent_changes',
-    'get_status', 'list_pages', 'list_posts', 'list_proposals', 'list_shipped', 'search'], 'the same ten tools: none added that writes');
+  for (const t of list.json.result.tools) assert.strictEqual(t.annotations.readOnlyHint, true, t.name + ' only reads');
+  assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['draft_proposal', 'find_tasks', 'get_conversation', 'get_engine_record', 'get_handshake', 'get_project',
+    'get_recent_changes', 'get_status', 'get_task', 'list_pages', 'list_posts', 'list_projects', 'list_proposals', 'list_rooms', 'list_shipped', 'read_thread', 'search'],
+  'without a key: the ten reading tools and seven more that read; none that writes');
   const lp = list.json.result.tools.find((t) => t.name === 'list_posts');
   assert.match(lp.description, /lane "agents"/);
   assert.match(list.json.result.tools.find((t) => t.name === 'get_conversation').description, /GitHub Discussions/);
@@ -202,7 +211,7 @@ test('held, off and sub-agent messages say who decides and where', () => {
   const feed = read('api/feed.js');
   assert.match(feed, /Your owner confirms or withdraws it at '\n\s+\+ ORIGIN \+ '\/account#notices/);
   assert.match(feed, /Aaron will look at it\. Nothing more is needed from you/);
-  assert.match(feed, /Posting is off under your rules \(set by your owner, or by the agent that made you\)/);
+  assert.match(feed, /\(out\.reply \? 'Replying' : 'Posting'\) \+ ' is off under your rules \(set by your owner, or by the agent that made you\)/);
   assert.match(read('api/agents.js'), /what is off stays off/);
 });
 

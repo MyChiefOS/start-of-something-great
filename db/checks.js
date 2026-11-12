@@ -114,6 +114,22 @@ const DEFINERS = {
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
   'app.receipt(uuid)': 'dog_public',
+  // 059: replies. The check a reply's parent is live and the agent chain isn't past the limit (a trigger function),
+  // the public thread, and where each post sits with its reply count.
+  'app.replies_fill()': 'dog_public',
+  'app.thread(uuid, integer)': 'dog_public',
+  'app.post_places(uuid[])': 'dog_public',
+  // 060: the legal hold. An administrator places and lifts one and lists the open ones; each checks for the
+  // administrator itself, and the deletion role owns them because lifting a hold may delete the account.
+  'app.legal_hold_place(uuid, text)': 'dog_erase',
+  'app.legal_hold_lift(uuid, text)': 'dog_erase',
+  'app.legal_holds_list()': 'dog_erase',
+  // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
+  // site, and the GitHub ban list carried to the site. The site's role can't call either.
+  'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },
+  'app.gh_bans_apply(text[])': { owner: 'dog_jevs', callers: '' },
+  // 060: the daily summary to the administrators; the site's timer route calls it, and it sends at most one a day.
+  'app.daily_summary()': 'dog_jevs',
   // PR 12: JEVs. Its signals (counts only), its decision, the owner's answer to a challenge, sign-up marks, whether a
   // post can be appealed, the regional gate's daily count, and the record of a settings change.
   'app.jevs_signals(text, uuid, text, text[], bigint)': 'dog_jevs',
@@ -381,7 +397,8 @@ const DEFINERS = {
   'app.engine_trouble(text)': { owner: 'dog_work', callers: '' },
   'app.engine_on_submission()': { owner: 'dog_work', callers: '' },
   'app.engine_on_points()': { owner: 'dog_work', callers: '' },
-  'app.engine_on_claim()': { owner: 'dog_work', callers: '' }
+  'app.engine_on_claim()': { owner: 'dog_work', callers: '' },
+  'app.engine_claim_cap()': { owner: 'dog_work', callers: '' }
 };
 const NO_UUID_PK = ['app.schema_migrations', 'app.runner_tokens']; // bookkeeping keyed by file name or token ID, not a record
 

@@ -1,7 +1,7 @@
 # The preview copy (RK141; design/preview-copy.md, "Building and reseeding the copy"). On each merge to main, and by
 # hand, this rebuilds the one Supabase preview branch's database from main: it empties the copy, applies every
 # migration of the merged commit, and reseeds it with made-up data. It asks GitHub for a short-lived identity token
-# addressed to the branch's own runner (supabase/functions/dog-migrate, deployed to the branch), which accepts only
+# addressed to the branch's own dog-copy function (supabase/functions/dog-copy, deployed only to the branch), which accepts only
 # this workflow on main, at the branch's own address. Production's runner refuses that token twice over (its address
 # and its workflow are database.yml's), and the branch's runner refuses production's. No secret anywhere.
 #
@@ -46,7 +46,7 @@ jobs:
             echo "Refused: PREVIEW_REF is not a preview branch's reference (it is malformed, or it is production's)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          RUNNER_URL="https://$PREVIEW_REF.supabase.co/functions/v1/dog-migrate"
+          RUNNER_URL="https://$PREVIEW_REF.supabase.co/functions/v1/dog-copy"
           # After a merge that changes the runner, Claude deploys it to the branch from the merged commit (OPERATIONS.md);
           # until it answers, wait for it (up to 10 minutes) rather than fail. Each try gets a fresh token, because the
           # runner accepts each token once.

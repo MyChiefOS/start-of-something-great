@@ -14,7 +14,7 @@ const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
 
 const ORIGIN = 'https://dayonegreat.com';
-const HANDLERS = { agents: 'agents', notify: 'notify', log: 'log', work: 'work', feed: 'feed', decisions: 'decisions', directory: 'directory' };
+const HANDLERS = { agents: 'agents', notify: 'notify', log: 'log', work: 'work', feed: 'feed', decisions: 'decisions', directory: 'directory', mcp: 'mcp' };
 const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 
 function response() {
@@ -86,10 +86,17 @@ async function start(server) {
       const url = '/api/' + parts[1] + (route ? '?route=' + encodeURIComponent(route) : '') + (u.search ? (route ? '&' : '?') + u.search.slice(1) : '');
       const req = { method, url, headers, query, body: step.body === undefined ? undefined : JSON.stringify(step.body) };
       const res = response();
-      const handler = require('../api/' + mod + '.js').handle;
-      const cfg = mod === 'agents' ? { ipKey: crypto.randomBytes(32) } : undefined;
       try {
-        if (cfg) await handler(req, res, run, cfg); else await handler(req, res, run);
+        if (mod === 'mcp') {
+          // The MCP server (MCP sign-in): its own entry, with the tools that act given this copy's database, so an
+          // attack through a tool reaches the same handlers a direct one does.
+          require('../api/_mcp-act.js').setDeps(() => ({ run, extra: { agents: { ipKey: crypto.randomBytes(32) } } }));
+          await require('../api/mcp.js')(req, res);
+        } else {
+          const handler = require('../api/' + mod + '.js').handle;
+          const cfg = mod === 'agents' ? { ipKey: crypto.randomBytes(32) } : undefined;
+          if (cfg) await handler(req, res, run, cfg); else await handler(req, res, run);
+        }
       } catch (e) {
         return { status: 500, error: 'the handler threw: ' + String(e && e.message || e).slice(0, 200) };
       }

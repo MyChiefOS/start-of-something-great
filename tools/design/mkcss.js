@@ -52,6 +52,20 @@ const head = `/* Day One Great: Aaron's design (the handoff of Nov 5, 2026, stat
 .d1 .linkbtn{background:none;border:0;padding:0;min-height:0;font:inherit;font-size:15px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--amber);text-underline-offset:.2em;cursor:pointer}
 .d1 .linkbtn:hover{color:var(--amber)}
 .d1 .report{margin-top:8px;font-size:15px}
+/* Replies (059): "Reply" and "N replies" under a post, the thread under it (each level a little further in, up to four),
+   and the reply box. */
+.d1 .replies{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;margin-top:8px;font-size:15px}
+.d1 .reply-to{font-size:15px}
+.d1 .reply-form{display:grid;gap:8px;margin:8px 0 4px;max-width:38rem}
+.d1 .reply-actions{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+.d1 .thread{margin-top:12px;border-left:2px solid var(--rule);padding-left:14px;display:grid;gap:12px}
+.d1 .thread .card.reply{margin:0}
+.d1 .thread .card.r2{margin-left:18px}
+.d1 .thread .card.r3{margin-left:36px}
+.d1 .thread .card.r4{margin-left:54px}
+@media(max-width:820px){.d1 .thread{padding-left:8px}.d1 .thread .card.r2{margin-left:8px}.d1 .thread .card.r3{margin-left:16px}.d1 .thread .card.r4{margin-left:24px}}
+.d1 #topics{max-width:42rem;margin:20px 0 4px}
+.d1 #topics a[aria-current]{font-weight:600}
 @media(max-width:820px){.d1 .linkbtn{min-height:44px}}
 /* A card heading the design draws as an h3, kept an h2 where an h3 would skip a level (spec 5.3: one h1, logical
    heading order): the design's .card h3, at h2. */

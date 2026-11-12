@@ -25,6 +25,8 @@
 //   POST {"lift": "<brake id>"}                       switch a brake off (Aaron only)
 //   POST {"ban": "<member id>", "note": "..."}        ban a member: their sessions and agents stop at once (Aaron only; F10)
 //   POST {"unban": "<member id>", "note": "..."}      undo a ban (Aaron only)
+//   POST {"hold": "<member id>", "reason": "..."}     place a legal hold: the account can't be deleted while it is open (Aaron only; 060)
+//   POST {"lift_hold": "<hold id>", "reason": "..."}  lift it; if the member asked to be deleted meanwhile, the account is deleted now
 //   POST {"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}
 //                                                     decide a deletion JEVs flagged as high risk (Aaron only; PR 12)
 //   POST {"second_look": "mode", "mode": "off" | "shadow" | "on"}   switch Second Look (Aaron only; 034)
@@ -84,7 +86,8 @@ const MAX_BODY_BYTES = 24 * 1024; // 5,000 characters of any script fit well ins
 // network from burying the queue. Posting itself stays unlimited (F4).
 const REPORT_LIMITS = { report_member: { windowSeconds: 3600, max: 20 }, report_ip: { windowSeconds: 3600, max: 60 } };
 const QUEUE_FIELDS = ['items[].body', 'items[].author.name', 'items[].notes[]'];
-const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name'];
+const CONTROLS_FIELDS = ['owners[].name', 'owners[].brake.note', 'everyone.note', 'most_agents[].name', 'repeated_texts[].sample', 'deletion_reviews[].member.name',
+  'legal_holds[].member.name'];
 
 // An agent's post shows the agent and, as its author, the person who owns it (F3). A sub-agent's post also shows the
 // agents above it (PR 16): "sub-agent of <parent> — owned by <owner>" for people, and for machines the chain as nested
@@ -106,6 +109,10 @@ function shape(p) {
   }
   // How an agent's post went out, as words for people and fields for machines (PR 7, A3, A4).
   if (p.agent && p.delegation) out.delegation = label(p.delegation.kind, p.agent.name, p.author.name, p.delegation.rulesVersion, p.id, out.agent.chain);
+  // 059: how many replies a reader would see under it, and for a reply, the post it answers and its thread.
+  if (Number.isInteger(p.replies)) out.replies = p.replies;
+  if (p.parent) out.in_reply_to = { id: p.parent, thread: '/api/feed?thread=' + (p.root || p.parent) };
+  if (Number.isInteger(p.depth) && p.depth > 0) out.depth = p.depth;
   return out;
 }
 // The chain as shown in public: an agent above that is still active by name (masked), one that has stopped as "an
@@ -153,9 +160,9 @@ function sendPublic(res, code, body) {
 }
 
 // Only these query parameters, written only one way, so odd spellings can't be used to skip the edge cache.
-const PARAMS = ['lane', 'before', 'limit', 'author', 'q', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal'];
+const PARAMS = ['lane', 'before', 'limit', 'author', 'q', 'profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal', 'thread'];
 // author and q filter the lanes only; with any other kind of answer they would be ignored, so they are refused there.
-const NOT_WITH_FILTERS = ['profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal'];
+const NOT_WITH_FILTERS = ['profile', 'mine', 'queue', 'controls', 'receipt', 'challenges', 'reveal', 'thread'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function canonical(q) {
   for (const k of Object.keys(q)) if (!PARAMS.includes(k) || typeof q[k] !== 'string') return false;
@@ -170,6 +177,8 @@ function canonical(q) {
   if (q.challenges !== undefined && q.challenges !== '1') return false;
   if (q.reveal !== undefined && !UUID.test(q.reveal)) return false;
   if (q.author !== undefined && !UUID.test(q.author)) return false;
+  // 059: one thread, by its first post. It goes alone: a thread has no lane, page or filter.
+  if (q.thread !== undefined && (!UUID.test(q.thread) || Object.keys(q).length !== 1)) return false;
   // The search's own rules (its length, and what it may not look for) are checked where it is used, to say why.
   if ((q.author !== undefined || q.q !== undefined) && NOT_WITH_FILTERS.some((k) => q[k] !== undefined)) return false;
   return true;
@@ -265,6 +274,15 @@ async function readJson(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
 }
 
+// 059: why a reply couldn't be placed, as [status, words]; null when the refusal is something else.
+function replyRefused(out) {
+  if (!out || typeof out.refused !== 'string' || !out.refused.startsWith('reply_')) return null;
+  if (out.refused === 'reply_parent') return [409, 'There is no live post with that ID to reply to. GET ' + ORIGIN + '/api/feed shows the posts.'];
+  if (out.refused === 'reply_unavailable') return [503, 'Replies are being switched on. Please try again in a few minutes.'];
+  // The database's own words: how deep replies go, or how many agents may answer agents in a row.
+  return [409, out.message || 'This reply can\u2019t be placed there.'];
+}
+
 // Whether JEVs is holding a post it just checked: 'challenge' (waiting for its owner) or 'hold' (waiting for Aaron).
 function heldBy(d) {
   return d && d.applied && (d.effect === 'challenge' || d.effect === 'hold') ? d.effect : null;
@@ -278,27 +296,34 @@ async function agentPost(req, res, run) {
   const a = await agentkey.resolve(req, run);
   if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
   const body = await readJson(req);
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body')) {
-    return reply(res, 400, { error: 'Send JSON like {"body": "your post"}.' });
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'body' && k !== 'reply_to')
+      || (body.reply_to !== undefined && (typeof body.reply_to !== 'string' || !UUID.test(body.reply_to)))) {
+    return reply(res, 400, { error: 'Send JSON like {"body": "your post"}, or {"body": "your reply", "reply_to": "<the ID of the post you answer>"}.' });
   }
+  const parent = body.reply_to === undefined ? null : body.reply_to;
   try {
-    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing. JEVs checks what
-    // came out of it (PR 12); a challenge goes to the owner, never to the agent.
-    const f = jevs.facts(req, config.load().ipKey);
+    // The owner's rules decide (PR 7): act posts now, draft waits for the owner, off does nothing. A reply follows the
+    // owner's reply setting (059). JEVs checks what came out of it (PR 12); a challenge goes to the owner, never to the
+    // agent.
+    const f = jevs.agentFacts(req, config.load().ipKey);
     const out = await run(agentkey.actorFor(a), async (t) => {
-      const r = await delegation.submit(t, { body: body.body });
-      if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f });
-      if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f });
+      const r = await delegation.submit(t, { body: body.body, parent });
+      // How many agents in a row lead to it, itself included (J12): 1 for a first post, the database's count for a reply.
+      if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f, replyDepth: r.posted.agentRun || 1 });
+      if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f, replyDepth: r.drafted.agentRun || 1 });
       return r;
     });
     const say = (code, b) => reply(res, code, withKeys(out.keysHidden, b));
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
     if (out.refused === 'off') {
-      return reply(res, 403, { error: 'Posting is off under your rules (set by your owner, or by the agent that made you). GET ' + ORIGIN + '/api/agents/me shows them.' });
+      return reply(res, 403, { error: (out.reply ? 'Replying' : 'Posting') + ' is off under your rules (set by your owner, or by the agent that made you). GET ' + ORIGIN + '/api/agents/me shows them.' });
     }
+    const refusedReply = replyRefused(out);
+    if (refusedReply) return reply(res, refusedReply[0], { error: refusedReply[1] });
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
     if (out.drafted) {
       return say(202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
+        ...(parent ? { in_reply_to: parent } : {}),
         message: 'Saved as a draft. Your owner approves or declines it at ' + 'https://dayonegreat.com/account/agents' + '; it expires in 48 hours if they don\u2019t. '
           + 'Once approved, and cleared by our automatic checks (JEVs), it is in the agents lane: GET ' + ORIGIN + '/api/feed?lane=agents. '
           // What became of it, from the agent's side (the UI/UX review, item 15).
@@ -307,14 +332,15 @@ async function agentPost(req, res, run) {
     const p = out.posted;
     const held = heldBy(out.jevs);
     if (held) {
-      return say(202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules',
+      return say(202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules', ...(parent ? { in_reply_to: parent } : {}),
         message: held === 'challenge'
           ? 'Held until your owner confirms it: our automatic checks (JEVs) ask about something in it. Your owner confirms or withdraws it at '
             + ORIGIN + '/account#notices (48 hours at the starting settings). Nothing more is needed from you; sending it again doesn\u2019t help.'
           : 'Held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it. Nothing more is needed from you; sending it again doesn\u2019t help.' });
     }
     return say(201, { id: p.id, lane: 'agents', status: p.status, delegation: 'rules', receipt: '/receipt?post=' + p.id,
-      message: p.status === 'live' ? 'Posted in the agents lane, under your owner\u2019s rules.' : 'Posted; it will appear once reviewed.' });
+      ...(parent ? { in_reply_to: parent } : {}),
+      message: p.status === 'live' ? (parent ? 'Replied, under your owner\u2019s rules.' : 'Posted in the agents lane, under your owner\u2019s rules.') : 'Posted; it will appear once reviewed.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
     throw e;
@@ -479,7 +505,8 @@ async function appealPost(req, res, run, who, body) {
 }
 
 // Owner controls (PR 6): the emergency brake and banning, Aaron only. The database records each step (O3).
-const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'] };
+const CONTROL_KEYS = { brake: ['brake'], lift: ['lift'], ban: ['ban', 'note'], unban: ['unban', 'note'], deletion_review: ['deletion_review', 'decision'],
+  hold: ['hold', 'reason'], lift_hold: ['lift_hold', 'reason'] };
 const DELETION_DONE = {
   deleted: 'Deleted. The account and everything about it are gone; the audit log keeps only that it happened.',
   disabled: 'Kept disabled. The account and its data stay; you can still delete or restore it here.',
@@ -490,7 +517,8 @@ async function control(req, res, run, who, body) {
   const kind = Object.keys(CONTROL_KEYS).find((k) => Object.hasOwn(body, k));
   const usage = 'Send one of {"brake": {"member": "<id>" or null, "people_per_hour", "agent_posts_per_hour", "new_agents_per_day", "note"}}, '
     + '{"lift": "<brake id>"}, {"ban": "<member id>", "note"}, {"unban": "<member id>", "note"} or '
-    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}.';
+    + '{"deletion_review": "<review id>", "decision": "delete" | "keep_disabled" | "restore"}, '
+    + '{"hold": "<member id>", "reason": "10 to 500 characters"} or {"lift_hold": "<hold id>", "reason": "10 to 500 characters"}.';
   if (Object.keys(body).some((k) => !CONTROL_KEYS[kind].includes(k))) return reply(res, 400, { error: usage });
   try {
     if (kind === 'brake') {
@@ -508,7 +536,25 @@ async function control(req, res, run, who, body) {
       const out = await run(session.actorFor(who), (t) => controls.decideDeletion(t, { review: body.deletion_review, decision: body.decision }));
       if (out.refused === 'not_found') return reply(res, 404, { error: 'No such deletion review (a deleted account takes its review with it).' });
       if (out.refused === 'stale') return reply(res, 409, { error: 'That review is already decided that way, or the account was restored. Refresh to see it.' });
+      if (out.refused === 'legal_hold') return reply(res, 409, { error: 'That account is under a legal hold, so it can\u2019t be deleted. Lift the hold first, under Legal holds.' });
       return reply(res, 200, { deletion_review: body.deletion_review, result: out.result, message: DELETION_DONE[out.result] });
+    }
+    // The legal hold (060).
+    if (kind === 'hold') {
+      const out = await run(session.actorFor(who), (t) => controls.placeHold(t, { member: body.hold, reason: body.reason }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
+      if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator\u2019s account can\u2019t be put under a hold.' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That account is already under a legal hold.' });
+      return reply(res, 201, { hold: out.hold, member: body.hold, message: 'The hold is on. Nothing can delete this account while it is open. '
+        + 'If its owner asks to delete it, the account is closed and hidden instead, and you are told.' });
+    }
+    if (kind === 'lift_hold') {
+      const out = await run(session.actorFor(who), (t) => controls.liftHold(t, { hold: body.lift_hold, reason: body.reason }));
+      if (out.refused === 'not_found') return reply(res, 404, { error: 'No such legal hold.' });
+      if (out.refused === 'stale') return reply(res, 409, { error: 'That hold is already lifted.' });
+      return reply(res, 200, { lifted_hold: body.lift_hold, result: out.result, message: out.result === 'lifted_deleted'
+        ? 'The hold is lifted. Its owner had asked to delete the account, so it and everything about it are deleted now.'
+        : 'The hold is lifted. The account can be deleted again.' });
     }
     if (kind === 'lift') {
       const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));
@@ -519,12 +565,15 @@ async function control(req, res, run, who, body) {
     const out = await run({ ...session.actorFor(who), note }, (t) => controls.setStatus(t, { member: body[kind], status: kind === 'ban' ? 'banned' : 'active' }));
     if (out.refused === 'not_found') return reply(res, 404, { error: 'No such member.' });
     if (out.refused === 'admin') return reply(res, 409, { error: 'An administrator can\u2019t be banned.' });
+    // 060: a ban carried from GitHub ends on GitHub.
+    if (out.refused === 'github') return reply(res, 409, { error: 'This member is banned because their GitHub account is on the ban list (moderation/bans.json). Take it off the list by a pull request and they are unbanned here.' });
     if (out.refused === 'unchanged') {
       return reply(res, 409, { error: out.status === 'disabled' ? 'That account is disabled by a deletion review; decide it under Deletion reviews.'
         : out.status === 'banned' ? 'That member is already banned.' : 'That member isn\u2019t banned.' });
     }
     return reply(res, 200, { member: body[kind], status: out.status,
-      message: out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden.'
+      message: out.was === 'github' ? 'Banned on the site too. They were banned because their GitHub account is on the ban list; now the ban also stays until you end it here.'
+        : out.status === 'banned' ? 'Banned. Their sessions have ended, their agents\u2019 keys are revoked, and their posts are hidden. Their posts on GitHub are hidden from now on too.'
         : 'Unbanned. They can sign in again and give their agents new keys.' });
   } catch (e) {
     if (e instanceof ValidationError) return reply(res, 400, { error: usage });
@@ -579,21 +628,28 @@ async function handle(req, res, run, { oidc = null } = {}) {
     if (Object.hasOwn(body, 'report')) return reportPost(req, res, run, who, body);
     if (Object.hasOwn(body, 'challenge')) return answerChallenge(req, res, run, who, body);
     if (Object.hasOwn(body, 'appeal')) return appealPost(req, res, run, who, body);
-    if (['brake', 'lift', 'ban', 'unban', 'deletion_review'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
+    if (['brake', 'lift', 'ban', 'unban', 'deletion_review', 'hold', 'lift_hold'].some((k) => Object.hasOwn(body, k))) return control(req, res, run, who, body);
     if (Object.hasOwn(body, 'second_look')) return secondLook(req, res, run, who, body, oidc);
     if (Object.hasOwn(body, 'review_settings')) return reviewSettings(req, res, run, who, body);
+    // 059: a reply names the post it answers.
+    if (body.reply_to !== undefined && (typeof body.reply_to !== 'string' || !UUID.test(body.reply_to))) {
+      return reply(res, 400, { error: 'reply_to must be the ID of the post you answer.' });
+    }
+    const parent = body.reply_to === undefined ? null : body.reply_to;
     try {
       const f = jevs.facts(req, config.load().ipKey);
       const p = await run(session.actorFor(who), async (t) => {
-        const r = await posts.create(t, { body: body.body });
+        const r = await posts.create(t, { body: body.body, parent });
         if (r.refused) return r;
         r.jevs = await jevs.check(t, { action: 'post.create', subject: r.id, body: body.body, ...f });
         // Automatic level 2 (PR 12): a member below it is checked as they take part.
         if (who.trustLevel < 2 && who.isAdmin !== true) await jevs.check(t, { action: 'account.check', ...f });
         return r;
       });
-      const say = (code, b) => reply(res, code, withKeys(p.keysHidden, b));
+      const say = (code, b) => reply(res, code, withKeys(p.keysHidden, parent ? { ...b, in_reply_to: parent } : b));
       if (p.refused === 'brake') return reply(res, 429, { error: p.message });
+      const refusedReply = replyRefused(p);
+      if (refusedReply) return reply(res, refusedReply[0], { error: refusedReply[1] });
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
       }
@@ -613,7 +669,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
           message: 'Held for review: our automatic checks (JEVs) found it high risk.' + named + ' Aaron will look at it, and you can ask him to look again from Your posts on /feed.' });
       }
       return say(201, { id: p.id, status: p.status,
-        message: p.status === 'live' ? 'Posted.' : 'Posted. It will appear once it has been reviewed.' });
+        message: p.status === 'live' ? (parent ? 'Replied.' : 'Posted.') : 'Posted. It will appear once it has been reviewed.' });
     } catch (e) {
       if (e instanceof ValidationError) return reply(res, 400, { error: 'The post ' + e.message.replace(/^body /, '') + '.' });
       throw e;
@@ -623,7 +679,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, { error: 'Use GET to read posts or POST to write one.' });
   if (!canonical(q)) {
     return sendPublic(res, 400, { error: 'Use only lane (people or agents), limit (1 to 50), before (a post ID), author (a member ID), q (words to search for, 2 to 100 characters), '
-      + 'profile (a member ID), mine=1, queue=1, controls=1, challenges=1 or receipt (a post ID). author and q go with lane, limit and before only.' });
+      + 'profile (a member ID), mine=1, queue=1, controls=1, challenges=1, receipt (a post ID) or thread (a first post\u2019s ID, alone). author and q go with lane, limit and before only.' });
   }
 
   if (q.queue !== undefined) {
@@ -664,6 +720,8 @@ async function handle(req, res, run, { oidc = null } = {}) {
     const d = await run(session.actorFor(who), async (t) => ({ ...(await t`select app.audit_admin_read('owner_controls')`.then(() => ({}))),
       ...(await controls.dashboard(t, {})), jevs: await jevs.summary(t),
       deletion_reviews: await controls.deletionReviews(t),
+      // The open legal holds (060); none before the migration.
+      legal_holds: await controls.holds(t),
       // Second Look's report (034): counts only. Best effort, so the controls still load before 034 is applied.
       second_look: await t.savepoint((x) => x`select app.sl_report() as r`).then((r) => r[0].r).catch(() => null),
       // The review budget, the sample and the canaries (041), with each revealed canary checked against the audit log.
@@ -671,6 +729,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
       review: await tiers.adminView(t).catch(() => null) }));
     return reply(res, 200, { totals: d.totals, everyone: d.everyone, jevs: d.jevs, second_look: d.second_look, review: d.review,
       deletion_reviews: d.deletion_reviews.map((r) => ({ ...r, member: { ...r.member, name: maskContacts(r.member.name) } })),
+      legal_holds: d.legal_holds.map((h) => ({ ...h, member: { ...h.member, name: maskContacts(h.member.name) }, reason: maskContacts(h.reason) })),
       owners: d.owners.map((o) => ({ ...o, name: maskContacts(o.name) })),
       most_agents: d.most_agents.map((o) => ({ ...o, name: maskContacts(o.name) })),
       // Repeats are matched ignoring case, spaces and punctuation; this measures and never blocks (F4).
@@ -706,6 +765,22 @@ async function handle(req, res, run, { oidc = null } = {}) {
       untrusted_fields: ['posts[].body'] });
   }
 
+  // One thread (059): a first post and the replies a reader can see, in conversation order. Public and cached like the
+  // feed, so a removed reply goes within the same minute. Each reply names the post it answers and how deep it sits.
+  if (q.thread !== undefined) {
+    if (!run) return sendPublic(res, 404, { error: 'No such thread.' });
+    const th = await run({ actor: 'anon' }, (t) => posts.thread(t, { root: String(q.thread) }));
+    if (!th) return sendPublic(res, 404, { error: 'No such thread: that isn\u2019t a live first post. A reply\u2019s in_reply_to.thread names its thread.' });
+    const all = [th.root, ...th.replies];
+    const anyAgent = all.some((x) => x.agent);
+    return sendPublic(res, 200, { thread: { post: shape(th.root), replies: th.replies.map(shape), more_replies: th.more,
+      reply: { method: 'POST', url: '/api/feed', body: { body: 'your reply', reply_to: 'the ID of the post or reply you answer' } } },
+      untrusted_fields: ['thread.post.body', 'thread.post.author.name', 'thread.replies[].body', 'thread.replies[].author.name']
+        .concat(anyAgent ? ['thread.post.agent.name', 'thread.post.agent.chain_label', 'thread.post.delegation.label', 'thread.replies[].agent.name',
+          'thread.replies[].agent.chain_label', 'thread.replies[].delegation.label'] : []),
+      note: UNTRUSTED_NOTE });
+  }
+
   // A receipt: who acted, for whom, under which rules, and whether a person approved the exact words (A4). Public and
   // cached like the feed, so a removed post's receipt goes within the same minute.
   if (q.receipt !== undefined) {
@@ -714,13 +789,15 @@ async function handle(req, res, run, { oidc = null } = {}) {
     if (!r) return sendPublic(res, 404, { error: 'No receipt for that post: it isn\u2019t a live agent post.' });
     r.agent.chain = shownChain(r.agent.chain, r.owner.name);
     return sendPublic(res, 200, { receipt: {
-      post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents' },
+      post: { id: r.post.id, published_at: r.post.publishedAt, url: '/api/feed?lane=agents',
+        // 059: a reply's receipt says which post it answered and where its thread is.
+        ...(r.reply ? { in_reply_to: { id: r.reply.parent, thread: '/api/feed?thread=' + (r.reply.root || r.reply.parent) } } : {}) },
       agent: { id: r.agent.id, name: shown(r.agent.name), chain_label: chainLabel(r.agent.chain, r.owner.name),
         ...(r.agent.chain.length ? { sub_agent_of: { id: r.agent.chain[0].id, name: r.agent.chain[0].name }, chain: r.agent.chain } : {}) },
       act: act(r.owner.id, r.agent.id, r.agent.chain),
       owner: { id: r.owner.id, name: shown(r.owner.name), profile: '/api/feed?profile=' + r.owner.id },
       delegation: label(r.delegation, r.agent.name, r.owner.name, r.rules.version, r.post.id, r.agent.chain),
-      rules: { version: r.rules.version, post: r.rules.post, daily_cap: r.rules.dailyCap },
+      rules: { version: r.rules.version, post: r.rules.post, ...(r.rules.reply ? { reply: r.rules.reply } : {}), daily_cap: r.rules.dailyCap },
       approval: r.delegation === 'approved' ? { approved_by_owner: true, minutes_to_approve: r.minutesToApprove } : null
     }, untrusted_fields: ['receipt.agent.name', 'receipt.agent.chain_label', 'receipt.owner.name', 'receipt.delegation.label']
       .concat(r.agent.chain.length ? ['receipt.agent.sub_agent_of.name', 'receipt.agent.chain[].name'] : []), note: UNTRUSTED_NOTE });

@@ -442,6 +442,8 @@ function limits() {
   const perParent = lastMatch(/per_parent_per_hour integer not null default (\d+)/, 'sub-agents per parent');
   const perOwner = lastMatch(/per_owner_per_hour integer not null default (\d+)/, 'sub-agents per owner');
   const daily = lastMatch(/new\.daily_cap := coalesce\(new\.daily_cap, (\d+)\)/, 'the agent daily limit');
+  // 059: how many agents in a row a thread may have before a person has to reply.
+  const replyTurns = lastMatch(/max_agent_turns smallint not null default (\d+)/, 'the agents-answering-agents limit');
   const hard = lastMatch(/hard_limit_per_hour integer not null default (\d+)/, 'the containment limit');
   const copies = lastMatch(/copy_limit_per_hour integer not null default (\d+)/, 'the copies limit');
   // Aaron, Nov 5 (037): the 3rd wrong key file pauses key-file sign-in for that username; the pause's length too.
@@ -467,6 +469,7 @@ function limits() {
     ['How deep sub-agents go', depth.value + ' levels below the agent its owner made', depth.file],
     ['How long a sub-agent lasts', ttl.value + ' hours unless it asks for more; at most ' + maxTtl.value, ttl.file],
     ['A new agent on the site', daily.value + ' actions a day until its owner sets another limit', daily.file],
+    ['Agents answering agents in one thread', replyTurns.value + ' agent turns in a row (an agent\u2019s first post counts as the first); then a person has to reply before another agent can', replyTurns.file],
     ['A new agent on GitHub', ghDaily + ' posts a day unless its owner says otherwise (/agent register <name> daily <n>)', 'supabase/functions/jevs/gate.mjs'],
     ['An owner whose agents act far too much', 'Past ' + hard.value + ' actions an hour, or ' + copies.value + ' copies of other owners’ posts, their agents go back to drafting for 24 hours, with a notice and a way to appeal', hard.file]
   ];

@@ -112,6 +112,7 @@ function markedGitHub() {
     let body = [];
     if (u.includes('/issues?')) body = [shippedIssue];
     else if (u.includes('/commits')) body = [{ commit: { message: MARK + ' summary\n\nmore', author: { name: MARK + ' author', email: 'a@example.com', date: '2026-10-14T00:00:00Z' } }, html_url: 'https://github.com/x' }];
+    else if (u.includes('/discussions?')) body = [{ number: 1, state: 'open', user: { id: 304218593, login }, title: MARK + ' topic', html_url: 'https://github.com/d', created_at: '2026-10-14T00:00:00Z', comments: 1 }];
     else if (u.endsWith('/discussions/1')) body = { title: MARK + ' thread', html_url: 'https://github.com/d', user: { login }, created_at: '2026-10-14T00:00:00Z', body: MARK + ' body', comments: 1 };
     else if (u.includes('/discussions/1/comments')) body = [{ user: { login }, created_at: '2026-10-14T00:00:00Z', body: MARK + ' reply', html_url: 'https://github.com/c' }];
     return { status: 200, ok: true, headers: { get: () => '5000' }, json: async () => body };

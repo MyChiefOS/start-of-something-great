@@ -127,10 +127,13 @@ test('row 18: the workflow never puts event text into a command, and logs nothin
   assert.ok(['shadow', 'enforce'].includes(read('jevs/mode').trim()), 'jevs/mode is shadow or enforce; enforce came with PR 6, Aaron\'s go-live merge');
 });
 
-test('row 16: the gate accepts only jevs.yml on main, for discussion events, with Supabase\'s own check off', () => {
+test('row 16: the gate accepts only jevs.yml on main, for discussion events and a change to the ban list, with Supabase\'s own check off', () => {
   const s = read('supabase/functions/jevs/index.ts');
   assert.ok(s.includes('workflow: ".github/workflows/jevs.yml"'));
-  assert.ok(s.includes('events: ["discussion", "discussion_comment"]'));
+  // 060: "push" is the ban list changing on main (jevs.yml runs for a push only on moderation/bans.json), and that run
+  // may send the list and nothing else (test/holds-bans-summary.test.js).
+  assert.ok(s.includes('events: ["discussion", "discussion_comment", "push"]'));
+  assert.ok(s.includes('if ((ev && ev.event === "bans") !== (claims.event_name === "push")) return reply(400'));
   assert.ok(s.includes('AUDIENCE = "https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/jevs"'));
   assert.ok(/\[functions\.jevs\]\nverify_jwt = false/.test(read('supabase/config.toml')));
   assert.ok(!/console\.(log|error)/.test(s), 'no logging of events');

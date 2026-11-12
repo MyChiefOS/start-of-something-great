@@ -124,6 +124,13 @@
       });
       row.appendChild(b);
     }
+    // A legal hold (060) is placed in the form above, with a reason; this fills in who.
+    if (!o.admin && document.getElementById('hold-member')) {
+      var hold = el('button', 'btn s', 'Legal hold');
+      hold.type = 'button';
+      hold.addEventListener('click', function () { document.getElementById('hold-member').value = o.id; document.getElementById('hold-reason').focus(); });
+      row.appendChild(hold);
+    }
     who.appendChild(row);
     who.appendChild(status);
     card.appendChild(who);
@@ -177,7 +184,46 @@
     return card;
   }
 
+  // A legal hold (060): whose, why, since when, and whether the owner has asked to delete. Lifting needs a reason,
+  // and takes two taps; when the owner has asked to delete, the second tap deletes the account.
+  function holdCard(h) {
+    var card = el('article', 'card deletion');
+    var line = el('p', 'asked');
+    line.appendChild(el('strong', '', h.member.name || 'A member'));
+    line.appendChild(document.createTextNode(' is under a legal hold.' + (h.deletion_requested_at
+      ? ' They asked to delete the account on ' + new Date(h.deletion_requested_at).toLocaleString() + ', so it is closed and hidden; lifting the hold deletes it.' : '')));
+    card.appendChild(line);
+    card.appendChild(el('p', 'fine', 'Placed ' + new Date(h.placed_at).toLocaleString() + ' · member ' + h.member.id));
+    card.appendChild(el('p', 'fine', 'Reason: ' + h.reason));
+    var why = el('input');
+    why.setAttribute('aria-label', 'Reason for lifting this hold');
+    why.placeholder = 'Reason for lifting (10 to 500 characters)';
+    why.maxLength = 500;
+    var b = el('button', 'btn s' + (h.deletion_requested_at ? ' danger' : ''), 'Lift hold');
+    b.type = 'button';
+    var status = el('p', 'fine', '');
+    status.setAttribute('role', 'status');
+    twoTap(b, h.deletion_requested_at ? 'Tap again to lift the hold and delete the account' : 'Tap again to lift the hold', function () {
+      if (why.value.trim().length < 10) { status.textContent = 'Say why, in at least 10 characters.'; return; }
+      b.disabled = true;
+      post({ lift_hold: h.id, reason: why.value.trim() }).then(function (x) {
+        status.textContent = x.d.message || x.d.error || '';
+        if (x.ok) setTimeout(load, 1200); else b.disabled = false;
+      }).catch(function () { status.textContent = 'That didn’t go through. Please try again.'; b.disabled = false; });
+    });
+    var row = el('div', 'acts');
+    row.appendChild(why);
+    row.appendChild(b);
+    card.appendChild(row);
+    card.appendChild(status);
+    return card;
+  }
+
   function render(d) {
+    var holds = clear('legal-holds');
+    if (!d.legal_holds || !d.legal_holds.length) holds.appendChild(el('p', 'fine', 'No legal holds.'));
+    (d.legal_holds || []).forEach(function (h) { holds.appendChild(holdCard(h)); });
+
     var reviews = clear('deletion-reviews');
     if (!d.deletion_reviews || !d.deletion_reviews.length) reviews.appendChild(el('p', 'fine', 'No deletion reviews.'));
     (d.deletion_reviews || []).forEach(function (r) { reviews.appendChild(reviewCard(r)); });
@@ -384,6 +430,24 @@
     var v = document.getElementById(id).value.trim();
     return v === '' ? null : Number(v);
   }
+  // Place a legal hold (060): a member's ID (each owner row and deletion review shows it) and a reason.
+  var holdForm = document.getElementById('hold-form');
+  if (holdForm) {
+    holdForm.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById('hold-result'), goHold = document.getElementById('hold-go');
+      var member = document.getElementById('hold-member').value.trim(), reason = document.getElementById('hold-reason').value.trim();
+      if (reason.length < 10) { out.textContent = 'Say why, in at least 10 characters.'; return; }
+      goHold.disabled = true;
+      out.textContent = 'Saving…';
+      post({ hold: member, reason: reason }).then(function (x) {
+        goHold.disabled = false;
+        out.textContent = x.d.message || x.d.error || '';
+        if (x.ok) { holdForm.reset(); load(); }
+      }).catch(function () { goHold.disabled = false; out.textContent = 'That didn’t go through. Please try again.'; });
+    });
+  }
+
   function sendBrake() {
     var body = { brake: { member: scope.value === '' ? null : scope.value, people_per_hour: num('b-people'),
       agent_posts_per_hour: num('b-agents'), new_agents_per_day: num('b-new'), note: document.getElementById('b-note').value } };

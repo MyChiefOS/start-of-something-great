@@ -108,13 +108,15 @@ test('GET /api/feed: author and q are checked before anything is read', async ()
   assert.match((await get({ q: '2026' })).json.error, /^q needs at least one word of letters/);
 });
 
-test('MCP list_posts takes author and q, refuses the same searches, and stays read-only with the same ten tools', async () => {
+test('MCP list_posts takes author and q, refuses the same searches, and without a key the server stays read-only: the ten tools and seven more that read', async () => {
   const mcp = fresh('mcp.js');
   const list = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
   const lp = list.json.result.tools.find((t) => t.name === 'list_posts');
   assert.deepStrictEqual(Object.keys(lp.inputSchema.properties).sort(), ['author', 'lane', 'limit', 'q']);
   assert.strictEqual(lp.annotations.readOnlyHint, true);
-  assert.strictEqual(list.json.result.tools.length, 10);
+  // MCP sign-in adds seven reading tools backed by the API's own routes; the acting tools appear only with a working key.
+  assert.strictEqual(list.json.result.tools.length, 17);
+  for (const t of list.json.result.tools) assert.strictEqual(t.annotations.readOnlyHint, true, t.name);
   const r = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_posts', arguments: { q: 'jane@example.com' } } });
   assert.strictEqual(r.json.result.isError, true);
   assert.match(r.json.result.content[0].text, /can’t search for email addresses/);

@@ -14,14 +14,16 @@
     signin: 'Please sign in first.',
     email_off: 'Sign-in by email isn\u2019t switched on. Please sign in with GitHub on this page.',
     deleted: 'Your account and everything about it has been deleted. You\u2019re welcome back any time.',
+    held: 'Your account is closed and hidden, and you are signed out. Nothing was deleted yet: the account is kept under a legal hold, and it will be deleted when the hold ends. '
+      + 'Questions go to privacy@dayonegreat.com.',
     fast: 'That was quick! Please press the button once more.',
     linked: 'Linked. To keep your account safe, adding a sign-in method signs you out everywhere, here too. Sign in again with any of your sign-in methods.',
     pin_signed_out: '10 wrong PINs were typed on your account page, so that session was signed out. Sign in again here.',
-    disabled: 'This account is disabled while a request to delete it is reviewed. Nothing has been deleted. If it\u2019s restored, you can sign in again.',
+    disabled: 'This account is disabled while a request to delete it is reviewed or kept on hold. Nothing has been deleted. If it\u2019s restored, you can sign in again.',
     region: 'Day One Great isn\u2019t offered to people who live in the EU, the EEA, the UK or Switzerland, so we can\u2019t sign you up. '
       + 'If this address already has an account, we\u2019ve sent it a sign-in link; you\u2019ll be asked to confirm where you live before you\u2019re signed in.'
   };
-  var key = q.get('sent') === '1' ? 'sent' : q.get('sent') === 'region' ? 'region' : q.get('deleted') === '1' ? 'deleted' : q.get('linked') === '1' ? 'linked' : q.get('error');
+  var key = q.get('sent') === '1' ? 'sent' : q.get('sent') === 'region' ? 'region' : q.get('deleted') === '1' ? 'deleted' : q.get('deleted') === 'held' ? 'held' : q.get('linked') === '1' ? 'linked' : q.get('error');
   var el = document.getElementById('message');
   // Only the messages above, never a built-in name like "constructor" (the review of the sign-in fix, finding 2).
   if (el && key && Object.prototype.hasOwnProperty.call(text, key)) { el.textContent = text[key]; el.hidden = false; }

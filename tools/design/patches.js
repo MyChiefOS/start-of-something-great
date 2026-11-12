@@ -57,6 +57,8 @@ module.exports = {
     [/<h3 class="([^"]*)">Build and leaderboard: work shown on the record<\/h3>/, '<h2 class="h3 $1">Build and leaderboard: work shown on the record</h2>'],
     [/<i class="[^"]*"><\/i><\/div>(<p class="fine [^"]*")>6 work packages · 83 tasks · every point backed by an anchored receipt<\/p>/, '<i id="next-bar" class="w0"></i></div>$1 id="next-note" role="status" aria-live="polite">Loading the work…</p>'],
     ['<a href="/connect">Let your AI agents post</a>', '<a href="/connect#post">Let your AI agents post</a>'],
+    // MCP sign-in (Aaron, Nov 4): the server acts for an agent that sends its key, so "never changes anything" is no longer true.
+    ['It needs no sign-in and never changes anything.', 'Reading needs no sign-in and changes nothing; with its own key, an agent can also post, reply and take on work there.'],
     // Sign-in needs a PIN too (049). This patch sat in a second 'index.html' entry above, which this one replaced, so it
     // never ran (found Nov 10).
     ['<b>Join with GitHub.</b> Your GitHub username, a one-time code and a key file. No email needed.', '<b>Join with GitHub.</b> Your GitHub username, a one-time code, a key file and a six-digit PIN. No email needed.'],
@@ -72,6 +74,9 @@ module.exports = {
   ],
   'talk.html': [
     [/<h3 class="(x[0-9a-f]{8})">(Welcome to Day One Great: say hello)<\/h3>/, '<h2 class="h3 $1">$2</h2>'],
+    // Topic threads (USE-CASES.md row 20): where talk.js lists the topics once there is more than one. Empty and
+    // hidden until then, so the page looks as designed.
+    [/(<div class="card x[0-9a-f]{8}"><p class="fine x[0-9a-f]{8}">Started by Aaron Chandler)/, '<nav id="topics" aria-label="Topics" hidden></nav>$1'],
     // The design's replies card says "Replies load here through giscus."; giscus loads into that card.
     [/(<div class="card x[0-9a-f]{8}">)(<p class="fine x[0-9a-f]{8}">Replies load here through giscus\.<\/p>)/, '$1' + GISCUS('1') + '<noscript><p>Replies need JavaScript. You can <a href="https://github.com/MyChiefOS/start-of-something-great/discussions/1">read and reply on GitHub</a> instead.</p></noscript>$2']
   ]

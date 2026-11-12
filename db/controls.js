@@ -57,8 +57,17 @@ async function setStatus(t, { member, status }) {
     const from = to === 'banned' ? 'active' : 'banned';
     const r = await t.savepoint((s) => s`update app.members set status = ${to} where id = ${id} and status = ${from} returning status`);
     if (r.length === 1) return { status: r[0].status };
+    // 060: banning a member who is banned only because their GitHub account is on the ban list makes it a site ban
+    // too, which then ends only here. (Before 060 the column isn't there: nothing to do.)
+    if (to === 'banned') {
+      const made = await t.savepoint((s) => s`update app.members set banned_via = null where id = ${id} and status = 'banned' and banned_via = 'github' returning status`)
+        .catch((e) => { if (e.code === '42703') return []; throw e; });
+      if (made.length === 1) return { status: 'banned', was: 'github' };
+    }
   } catch (e) {
     if (e.code === '42501' && /administrator can't be banned/.test(e.message)) return { refused: 'admin' };
+    // 060: a ban carried from GitHub ends on GitHub.
+    if (e.code === '42501' && /banned on GitHub/.test(e.message)) return { refused: 'github' };
     throw e;
   }
   const [m] = await t`select status from app.members where id = ${id}`;
@@ -169,6 +178,46 @@ async function decideDeletion(t, { review, decision }) {
   } catch (e) {
     if (e.code === 'P0002') return { refused: 'not_found' };
     if (e.code === 'P0001' && e.message === 'stale') return { refused: 'stale' };
+    // 060: nothing deletes an account while a legal hold is open.
+    if (e.code === 'P0001' && e.message === 'legal_hold') return { refused: 'legal_hold' };
+    throw e;
+  }
+}
+
+// ---- The legal hold (060; Aaron, Oct 16: "can keep and hide an account instead of deleting it") ----
+// The open holds: whose, why, since when, and whether the member has asked to be deleted. Before 060: none.
+async function holds(t) {
+  const rows = await t.savepoint((s) => s`select * from app.legal_holds_list()`).catch((e) => { if (e.code === '42883') return []; throw e; });
+  if (!rows.length) return [];
+  // The names, read as the administrator (the deletion role, which owns the list, can't read names).
+  const who = new Map((await t`select id, display_name, status from app.members where id = any (${rows.map((h) => h.member_id)})`).map((m) => [m.id, m]));
+  return rows.map((h) => ({ id: h.id, member: { id: h.member_id, name: (who.get(h.member_id) || {}).display_name || '', status: (who.get(h.member_id) || {}).status || null },
+    reason: h.reason, placed_at: h.placed_at, deletion_requested_at: h.deletion_requested_at }));
+}
+const holdReason = (reason) => v.text('reason', reason, { min: 10, max: 500 });
+// { hold } or { refused: 'not_found' | 'admin' | 'stale' }.
+async function placeHold(t, { member, reason }) {
+  const id = v.uuid('member', member);
+  const why = holdReason(reason);
+  try {
+    const [r] = await t.savepoint((s) => s`select app.legal_hold_place(${id}::uuid, ${why}) as id`);
+    return { hold: r.id };
+  } catch (e) {
+    if (e.code === 'P0002') return { refused: 'not_found' };
+    if (e.code === 'P0001' && (e.message === 'admin' || e.message === 'stale')) return { refused: e.message };
+    throw e;
+  }
+}
+// { result: 'lifted' | 'lifted_deleted' } or { refused: 'not_found' | 'stale' }.
+async function liftHold(t, { hold, reason }) {
+  const id = v.uuid('hold', hold);
+  const why = holdReason(reason);
+  try {
+    const [r] = await t.savepoint((s) => s`select app.legal_hold_lift(${id}::uuid, ${why}) as result`);
+    return { result: r.result };
+  } catch (e) {
+    if (e.code === 'P0002') return { refused: 'not_found' };
+    if (e.code === 'P0001' && e.message === 'stale') return { refused: 'stale' };
     throw e;
   }
 }
@@ -179,4 +228,4 @@ async function expireDeletionReviews(t) {
   return r.n;
 }
 
-module.exports = { setBrake, lift, setStatus, dashboard, deletionReviews, decideDeletion, expireDeletionReviews, LIMITS };
+module.exports = { setBrake, lift, setStatus, dashboard, deletionReviews, decideDeletion, expireDeletionReviews, holds, placeHold, liftHold, LIMITS };

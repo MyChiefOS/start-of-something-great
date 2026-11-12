@@ -163,6 +163,261 @@
       "expect": {
         "range": "4xx"
       }
+    },
+    {
+      "name": "A6 a reply to a post that doesn't exist is refused, not saved (059)",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "body": "A reply to nothing.",
+        "reply_to": "00000000-0000-4000-8000-000000000000"
+      },
+      "expect": {
+        "range": "4xx"
+      }
+    },
+    {
+      "name": "A6 a reply to something that isn't an ID is refused (059)",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "body": "A reply to nothing.",
+        "reply_to": "' OR 1=1 --"
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread is read on its own: no lane, search or author with it (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=00000000-0000-4000-8000-000000000000&lane=people",
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread that isn't an ID is refused (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=not-a-uuid",
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "A6 a thread that doesn't exist is not found (059)",
+      "as": "anon",
+      "path": "/api/feed?thread=00000000-0000-4000-8000-000000000000",
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "A7 a key that doesn't work is refused at the MCP door, never treated as no key (MCP sign-in)",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "authorization": "Bearer dogk_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "A7 a recovery key is not a key on the MCP server",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "authorization": "Bearer dogr_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "whoami",
+          "arguments": {}
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "A7 nobody signed in can't act through an MCP tool",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/mcp",
+      "headers": {
+        "origin": null
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "post",
+          "arguments": {
+            "body": "Posted with no key."
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 a member's session cookie can't act through an MCP tool",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "post",
+          "arguments": {
+            "body": "Posted with a cookie."
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 an administrator's session cookie can't act through an MCP tool",
+      "as": "admin",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "claim_task",
+          "arguments": {
+            "task": "00000000-0000-4000-8000-000000000000"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 hostile arguments to an MCP tool never break it",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "reply",
+          "arguments": {
+            "body": "<script>alert(1)</script>",
+            "reply_to": "' OR 1=1 --"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "tool_error": true
+      }
+    },
+    {
+      "name": "A7 a tool that acts is refused inside a batch",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/mcp",
+      "body": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/call",
+          "params": {
+            "name": "post",
+            "arguments": {
+              "body": "One of twenty."
+            }
+          }
+        }
+      ],
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "A8 a member can't place a legal hold (060)",
+      "as": "memberA",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "hold": "00000000-0000-4000-8000-000000000000",
+        "reason": "A member holding someone else."
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A8 a member can't lift a legal hold (060)",
+      "as": "memberB",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "lift_hold": "00000000-0000-4000-8000-000000000000",
+        "reason": "A member lifting a hold."
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "A8 nobody signed in can't place a legal hold (060)",
+      "as": "anon",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "hold": "00000000-0000-4000-8000-000000000000",
+        "reason": "Nobody at all holding someone."
+      },
+      "expect": {
+        "status": [
+          401,
+          403
+        ]
+      }
+    },
+    {
+      "name": "A8 a hold on a member who doesn't exist is not found, for the administrator (060)",
+      "as": "admin",
+      "method": "POST",
+      "path": "/api/feed",
+      "body": {
+        "hold": "00000000-0000-4000-8000-000000000000",
+        "reason": "Nobody has this ID at all."
+      },
+      "expect": {
+        "status": 404
+      }
     }
   ]
 }

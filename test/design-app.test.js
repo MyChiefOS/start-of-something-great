@@ -391,7 +391,7 @@ test('/admin/controls: owners as rows, JEVs as pills by level, Second Look\'s re
   assert.strictEqual(row.className, 'li owner');
   assert.match(row.textContent, /^Cy · 3 agents/);
   assert.strictEqual(row.children[row.children.length - 1].textContent, '11 posts');
-  assert.deepStrictEqual(row.querySelectorAll('button').map((b) => b.textContent), ['Brake this owner', 'Ban']);
+  assert.deepStrictEqual(row.querySelectorAll('button').map((b) => b.textContent), ['Brake this owner', 'Ban', 'Legal hold']);
   assert.deepStrictEqual(p.$('jevs').querySelectorAll('.pill').map((x) => x.textContent), ['Low risk 13', 'Medium 2', 'High 1']);
   assert.match(p.$('jevs').textContent, /What it did: medium, challenge \(would have\) 2 · high, hold \(would have\) 1\./);
   assert.strictEqual(p.$('second-look').querySelectorAll('.card').length, 8);
@@ -401,6 +401,49 @@ test('/admin/controls: owners as rows, JEVs as pills by level, Second Look\'s re
   assert.deepStrictEqual(table.querySelectorAll('th').map((x) => x.textContent), ['Same text', 'Posts', 'Accounts']);
   assert.deepStrictEqual(table.querySelector('tbody').querySelectorAll('td').map((x) => x.textContent), ['“Same words”', '4', '2']);
   assert.strictEqual(p.$('repeated').querySelector('.table-wrap').tabIndex, 0, 'the scroll box takes focus (5.6)');
+});
+
+// The legal hold (060; Aaron, Oct 16: "can keep and hide an account instead of deleting it").
+test('/admin/controls: no legal holds says so; an owner row\'s "Legal hold" fills in who, and placing one needs a reason', async () => {
+  const p = controls([200, { open: 0, items: [] }]);
+  await settle();
+  assert.strictEqual(p.$('legal-holds').textContent, 'No legal holds.');
+  p.$('owners').querySelector('.li').querySelectorAll('button')[2].click();
+  assert.strictEqual(p.$('hold-member').value, ID(72));
+  p.$('hold-reason').value = 'short';
+  p.$('hold-form').dispatch('submit');
+  assert.strictEqual(p.$('hold-result').textContent, 'Say why, in at least 10 characters.');
+  assert.deepStrictEqual(p.sent, []);
+  p.$('hold-reason').value = 'A preservation letter arrived today.';
+  p.$('hold-form').dispatch('submit');
+  assert.deepStrictEqual(p.sent.map((x) => [x.url, x.body]), [['/api/feed', { hold: ID(72), reason: 'A preservation letter arrived today.' }]]);
+});
+
+test('/admin/controls: a hold shows whose, why and whether deletion was asked for; lifting needs a reason and two taps', async () => {
+  const held = { ...CONTROLS, legal_holds: [
+    { id: ID(80), member: { id: ID(81), name: 'Dee <b>', status: 'disabled' }, reason: 'Suspected fraud <script>', placed_at: '2026-11-10T08:00:00Z', deletion_requested_at: '2026-11-11T09:00:00Z' },
+    { id: ID(82), member: { id: ID(83), name: 'Eli', status: 'active' }, reason: 'A court order to preserve.', placed_at: '2026-11-10T08:00:00Z', deletion_requested_at: null }] };
+  const p = page('admin/controls.html', 'admin/controls.js', (url) => (url === '/api/feed?queue=1' ? [200, { open: 0, items: [] }] : [200, held]));
+  await settle();
+  const [asked, quiet] = p.$('legal-holds').querySelectorAll('article');
+  assert.match(asked.textContent, /^Dee <b> is under a legal hold\. They asked to delete the account on .*, so it is closed and hidden; lifting the hold deletes it\./);
+  assert.match(asked.textContent, /Reason: Suspected fraud <script>/, 'text, never markup');
+  assert.strictEqual(asked.querySelectorAll('b').length + asked.querySelectorAll('script').length, 0);
+  assert.match(quiet.textContent, /^Eli is under a legal hold\.Placed /);
+  // No reason: nothing is sent, even on the second tap.
+  const lift = asked.querySelector('button');
+  lift.click();
+  assert.strictEqual(lift.textContent, 'Tap again to lift the hold and delete the account');
+  lift.click();
+  assert.deepStrictEqual(p.sent, []);
+  assert.match(asked.textContent, /Say why, in at least 10 characters\./);
+  // With a reason, the second tap sends it.
+  asked.querySelector('input').value = 'The matter is closed.';
+  lift.click();
+  assert.deepStrictEqual(p.sent, [], 'the first tap only warns');
+  lift.click();
+  assert.deepStrictEqual(p.sent.map((x) => [x.url, x.body]), [['/api/feed', { lift_hold: ID(80), reason: 'The matter is closed.' }]]);
+  assert.strictEqual(quiet.querySelector('button').className, 'btn s', 'lifting a hold nobody asked to delete under is not a danger button');
 });
 
 test('/admin/controls signed out sends nothing, and never asks the queue', async () => {

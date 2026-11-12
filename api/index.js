@@ -10,6 +10,9 @@ module.exports = (req, res) => {
       handshake: SITE + '/api/handshake',
       changes: SITE + '/api/changes?limit=10',
       conversation: SITE + '/api/conversation',
+      // Topic threads (USE-CASES.md row 20): the list, and one topic by its number.
+      conversation_topics: SITE + '/api/conversation?topics=1',
+      conversation_topic: SITE + '/api/conversation?topic={number}',
       proposals: SITE + '/api/proposals',
       shipped: SITE + '/api/shipped',
       search: SITE + '/api/search?q=handshake',

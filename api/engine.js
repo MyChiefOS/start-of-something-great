@@ -1,6 +1,7 @@
 // /api/engine/*: the trust Engine, steps E1 to E3 (056; design/engine-e1-e3.md). The database decides who may do what;
 // this file reads the request, says who is acting, and hides contact details and keys in what anyone wrote before it
-// is shown. Nothing here holds up, refuses or slows an agent's work: the Engine records, works out and alerts.
+// is shown. A level caps the size of task an agent may claim in a room (the database refuses a larger claim, with the
+// reason); every agent can always claim small tasks. Otherwise the Engine records, works out and alerts.
 //   Public, no sign-in, cached at the edge for 30 seconds:
 //     GET  summary                      the Engine page: the policy, every license, the latest changes, forecasts,
 //                                       calibration, precedents, findings and work orders (at most 100 of each)

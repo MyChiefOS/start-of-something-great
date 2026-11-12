@@ -172,6 +172,12 @@ test.before(async () => {
     await t.unsafe('set local role dog_jevs');
     await t.unsafe(`insert into app.deletion_reviews (member_id, decision_id) values ('${A.id}', '${p.jevs.decision}')`);
   });
+  // 060: a legal hold on A (already lifted, so it holds nothing here), as the deletion role keeps one.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_erase');
+    await t.unsafe(`insert into app.legal_holds (member_id, reason, placed_by, lifted_at, lifted_by, lift_reason)
+      values ('${A.id}', 'A hold for the fixture.', '${A.id}', now(), '${A.id}', 'Lifted for the fixture.')`);
+  });
   const other = await signIn(2, 'Other');
   const op = await run(other.ctx, (t) => posts.create(t, { body: 'other post' }));
   await run(A.ctx, (t) => review.report(t, { post: op.id, reason: 'spam', note: 'A reports' }));

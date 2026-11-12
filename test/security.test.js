@@ -39,7 +39,8 @@ test('R1: 100 concurrent MCP calls and cache-busting REST calls cost one GitHub 
     ...Array.from({ length: 25 }, (_, i) => call(changes, 'GET', '/api/changes?limit=' + ((i % 9) + 1) + '&_=' + i)),
     call(mcp, 'POST', '/api/mcp', batch)
   ]);
-  assert.strictEqual(calls.length, 4, 'expected 4 GitHub calls (commits, issues, discussion, comments), got ' + calls.length + ':\n' + calls.join('\n'));
+  // The list of topics (USE-CASES.md row 20) is one more source, asked once like the others.
+  assert.strictEqual(calls.length, 5, 'expected 5 GitHub calls (commits, issues, the list of discussions, the discussion, its comments), got ' + calls.length + ':\n' + calls.join('\n'));
   const r = await tool('get_recent_changes', { limit: 3 });
   assert.strictEqual(r.json.result.structuredContent.changes.length, 3, 'limit still honoured after normalising');
 });

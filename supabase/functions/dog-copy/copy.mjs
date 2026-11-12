@@ -1,6 +1,7 @@
-// The preview copy's rebuild (RK141; design/preview-copy.md, "Building and reseeding the copy"). Only the runner
-// deployed to the preview branch ever comes here: index.ts sends a request here only when ./target.mjs, reading the
-// function's own SUPABASE_URL at start, said "preview", and each function below refuses again unless it is the branch.
+// The preview copy's rebuild (RK141; design/preview-copy.md, "Building and reseeding the copy"), in its own function,
+// dog-copy, deployed only to the preview branch (Aaron, Nov 10: production carries none of this code). index.ts
+// sends a request here only when ./target.mjs, reading the function's own SUPABASE_URL at start, said "preview", and
+// each function below refuses again unless it is the branch.
 //
 // The seed (../_shared/preview-seed.mjs) refuses any database that already holds data, and it must keep doing so. So
 // each rebuild starts the copy from empty instead, all in ONE transaction, under the runner's lock:
@@ -9,15 +10,15 @@
 //   2. the reset: the app schema dropped (as dog_owner, as the Oct 24 fresh build did), and the three site keys and the
 //      mark that the seed made deleted from Vault. Nothing else: the dog_* roles are shared by the cluster and reused
 //      by the migrations, and migration 022 gives the copy's login (dog_web) a new password in Vault;
-//   3. every migration of the merged commit, by the runner's own code (./core.mjs run, unchanged), which also checks
+//   3. every migration of the merged commit, by the runner's own code (../dog-migrate/core.mjs run, unchanged), which also checks
 //      the result, records the run in app.change_log and records the token so it can't be used again;
 //   4. the seed: new made-up members, agents, posts, tasks, site keys and the mark.
 // If anything fails, nothing changes: the old copy stands. Returns versions, counts and check names only.
 import { MARKER, SITE_KEYS, seed } from '../_shared/preview-seed.mjs';
-import { run, tokenUsed } from './core.mjs';
+import { run, tokenUsed } from '../dog-migrate/core.mjs';
 import { isBranch } from './target.mjs';
 
-const LOCK = 'dayonegreat.migrate'; // the runner's own lock (./core.mjs): one run at a time, here too
+const LOCK = 'dayonegreat.migrate'; // the runner's own lock (../dog-migrate/core.mjs): one run at a time, here too
 const NOT_BRANCH = "refused: not the preview copy's runner";
 
 // Why this database may not be reset, or null when it may. Read-only. Takes a transaction.
@@ -39,7 +40,7 @@ export async function resetRefusal(t) {
   return null;
 }
 
-// Resets, migrates and reseeds the copy in one transaction. loaded: ./core.mjs load() of the merged commit; claims: the
+// Resets, migrates and reseeds the copy in one transaction. loaded: ../dog-migrate/core.mjs load() of the merged commit; claims: the
 // checked identity token; where: ./target.mjs's choice.
 export async function rebuild(sql, { files }, claims, where) {
   if (!isBranch(where)) throw new Error(NOT_BRANCH);
@@ -63,8 +64,8 @@ export async function rebuild(sql, { files }, claims, where) {
   });
 }
 
-// One request to the branch's runner, after index.ts has read its body. Production never comes here, and if it ever
-// did, it would be refused before any check: isBranch(PRODUCTION) is false.
+// One request to the branch's dog-copy, after index.ts has read its body. On production it is never deployed, and if it
+// ever were, every request would be refused before any check: isBranch(PRODUCTION) is false.
 //   verify: ../_shared/github-oidc.mjs verify (its keys and clock are the caller's); load(commit): that commit's files.
 export async function handleCopy({ body, token }, { where, sql, verify, Refused, load }) {
   if (!isBranch(where)) return { status: 500, body: { ok: false, error: NOT_BRANCH } };
