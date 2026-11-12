@@ -310,7 +310,10 @@ test('2.6: a canary\'s truth is committed in the log before Second Look decides 
   assert.ok(canary.held.length > 0 && canary.body.length > 0);
   const [planted] = await q(`select at, detail from app.audit_log where action = 'review.canary' and subject_id = '${canary.post_id}'`);
   assert.match(planted.detail.commitment, /^[0-9a-f]{64}$/);
-  assert.strictEqual(JSON.stringify(planted.detail).includes('bad'), false, 'the truth isn\'t in the commitment entry');
+  // The truth isn't in the commitment entry: only the hash and the fixed scheme. (Searching the entry for "bad" failed by
+  // chance on main, Nov 12: the 64 random hex digits can spell it, about 1 run in 70.)
+  assert.deepStrictEqual(Object.keys(planted.detail).sort(), ['commitment', 'scheme'], 'the truth isn\'t in the commitment entry');
+  assert.strictEqual(planted.detail.scheme, 'sha256(id:truth:nonce:sha256(text))');
   // Second Look clears both (a known-bad canary slips through).
   const decide = (post) => run({ actor: 'anon' }, (t) => t`select app.sl_decide(${post}::uuid, 'v1', 'mistral/ministral-3b', 'clear', ${t.json(CLEAN)}::jsonb, 0, 'fine', false, null, 10) as r`).then((r) => r[0].r);
   seen.push(await decide(canary.post_id), await decide(id));
