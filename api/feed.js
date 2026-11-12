@@ -554,7 +554,9 @@ async function control(req, res, run, who, body) {
       if (out.refused === 'stale') return reply(res, 409, { error: 'That hold is already lifted.' });
       return reply(res, 200, { lifted_hold: body.lift_hold, result: out.result, message: out.result === 'lifted_deleted'
         ? 'The hold is lifted. Its owner had asked to delete the account, so it and everything about it are deleted now.'
-        : 'The hold is lifted. The account can be deleted again.' });
+        : out.result === 'lifted_review_open'
+          ? 'The hold is lifted. Its owner had asked to delete the account, but a deletion review on it is still open: the account stays closed, and the review decides.'
+          : 'The hold is lifted. The account can be deleted again.' });
     }
     if (kind === 'lift') {
       const ok = await run(session.actorFor(who), (t) => controls.lift(t, body.lift));

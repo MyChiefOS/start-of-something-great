@@ -86,10 +86,10 @@ const status = {
       { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
+      { text: 'Follow a topic thread: each conversation the founders start on GitHub is its own topic, on /talk, in the API and over MCP.', url: SITE + '/talk' },
       { text: 'Follow every decision and change, on the roadmap and on GitHub.', url: 'https://github.com/' + REPO + '/blob/main/ROADMAP.md' }
     ],
     next: [
-      { text: 'Topic threads, so the conversation stays easy to follow as it grows.', target: 'When traffic needs it' },
       { text: 'The five feedback loops that make the site self-correcting.', target: 'Proposed', url: SITE + '/loops' }
     ]
   },

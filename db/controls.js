@@ -208,7 +208,7 @@ async function placeHold(t, { member, reason }) {
     throw e;
   }
 }
-// { result: 'lifted' | 'lifted_deleted' } or { refused: 'not_found' | 'stale' }.
+// { result: 'lifted' | 'lifted_deleted' | 'lifted_review_open' } or { refused: 'not_found' | 'stale' }.
 async function liftHold(t, { hold, reason }) {
   const id = v.uuid('hold', hold);
   const why = holdReason(reason);
