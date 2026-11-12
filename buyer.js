@@ -31,7 +31,8 @@
     return a;
   };
   var random = function (n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return a; };
-  var busy = function (yes) { make.disabled = yes; signin.disabled = yes; };
+  var backup = $('buyer-backup');
+  var busy = function (yes) { make.disabled = yes; signin.disabled = yes; if (backup) backup.disabled = yes; };
   var region = $('buyer-region'), regionText = $('buyer-region-text'), regionYes = $('buyer-region-yes');
   var confirmed = false;
   var done = function (r) {
@@ -87,6 +88,25 @@
       var body = { cred: b64(cred.rawId), cd: b64(res.clientDataJSON), ad: b64(res.authenticatorData), sig: b64(res.signature) };
       if (confirmed) body.confirm = '1';
       return post('/auth/buyer/sign-in', body).then(done);
+    }).catch(failed);
+  });
+  // 065 (Aaron, Nov 12): one backup passkey, from a sign-in in the last 10 minutes (the server checks).
+  if (backup) backup.addEventListener('click', function () {
+    busy(true); say('Follow your device’s steps to make a backup passkey…');
+    challenge().then(function (ch) {
+      return navigator.credentials.create({ publicKey: {
+        challenge: unb64(ch), rp: { id: location.hostname, name: 'Day One Great' },
+        user: { id: random(16), name: 'Day One Great buyer (backup)', displayName: 'Day One Great buyer (backup)' },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }], timeout: 120000, attestation: 'none',
+        authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' } } });
+    }).then(function (cred) {
+      var res = cred.response;
+      if (!res.getPublicKey || !res.getAuthenticatorData || !res.getPublicKeyAlgorithm) throw new Error('old browser');
+      return post('/auth/buyer/backup', { cred: b64(cred.rawId), cd: b64(res.clientDataJSON), ad: b64(res.getAuthenticatorData()),
+        spki: b64(res.getPublicKey()), alg: String(res.getPublicKeyAlgorithm()) });
+    }).then(function (r) {
+      busy(false);
+      say(r && r.added ? 'Backup passkey added. Either passkey now signs you in.' : (r && r.error) || 'Something went wrong. Please try again.');
     }).catch(failed);
   });
   if (regionYes) regionYes.addEventListener('click', function () { confirmed = true; region.hidden = true; signin.click(); });

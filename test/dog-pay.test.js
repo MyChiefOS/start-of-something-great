@@ -44,7 +44,7 @@ function fakeStripe() {
     if (key && byKey.has(init.method + u.pathname + key)) return json(200, byKey.get(init.method + u.pathname + key));
     let out;
     const p = u.pathname;
-    const meta = params['metadata[bounty]'] ? { bounty: params['metadata[bounty]'] } : {};
+    const meta = params['metadata[bounty]'] ? { bounty: params['metadata[bounty]'], ...(params['metadata[review]'] ? { review: params['metadata[review]'] } : {}) } : {};
     // Lists Stripe answers before a retry makes anything (find, in core.mjs).
     if (init.method === 'GET' && (p === '/v1/transfers' || p === '/v1/refunds' || /\/reversals$/.test(p))) {
       const data = [...objects.values()].filter((o) => o.list === p && (!params.transfer_group || o.transfer_group === params.transfer_group)
@@ -56,7 +56,7 @@ function fakeStripe() {
     else if (p === '/v1/checkout/sessions') out = { id: 'cs_test_' + id('s').slice(2), url: 'https://checkout.stripe.com/c/pay/' + id('x'), amount_total: Number(params['line_items[0][price_data][unit_amount]']),
       currency: 'usd', client_reference_id: params.client_reference_id, payment_status: 'unpaid', livemode: false };
     else if (p === '/v1/transfers') out = { id: id('tr'), amount: Number(params.amount), transfer_group: params.transfer_group, metadata: meta, list: p };
-    else if (p === '/v1/refunds') out = { id: id('re'), amount: 5000, payment_intent: params.payment_intent, metadata: meta, list: p };
+    else if (p === '/v1/refunds') out = { id: id('re'), amount: params.amount ? Number(params.amount) : 5000, payment_intent: params.payment_intent, metadata: meta, list: p };
     else if (/^\/v1\/transfers\/tr_[a-z0-9_]+\/reversals$/.test(p)) out = { id: id('trr'), amount: 4250, metadata: meta, list: p };
     else if (init.method === 'GET' && objects.has(p.split('/').pop())) return json(200, objects.get(p.split('/').pop()));
     else return json(404, { error: { code: 'resource_missing' } });
@@ -311,4 +311,52 @@ test('PM23: a chargeback while a transfer is in flight waits for Stripe to send 
   fake.objects.set('dp_two', { id: 'dp_two', charge: b.stripe_charge_id, amount: 5000 });
   await assert.rejects(deliver(event('charge.dispute.created', { id: 'dp_two' })), /busy/);
   assert.equal((await q(`select count(*)::int as n from app.pay_events where object_id = 'dp_two'`))[0].n, 0, 'not recorded, so Stripe\'s next try is handled');
+});
+
+// 065 (Aaron, Nov 12): a peer reviewer's fee, 2% of the bounty for every decided review, and the refund less those fees.
+async function peerReview(taskId, verdict) {
+  const reviewer = await member('Reviewer' + n);
+  await su.begin(async (t) => { await t.unsafe('set local role dog_pay'); await t.unsafe(`insert into app.pay_accounts (member_id, stripe_account, livemode, payouts_enabled, details_submitted) values ('${reviewer.id}', 'acct_REVIEW${n}XXXXXX', false, true, true)`); });
+  const b = await bountyOf(taskId);
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, code_hash, expires_at) values ('${taskId}', '${worker.id}', '${crypto.randomBytes(32).toString('hex')}', now() + interval '1 day') returning id`);
+  const [sb] = await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, artifact_kind, artifact_url, seal_key, seal, status, decided_by)
+    values ('${taskId}', '${cl.id}', 'member', '${worker.id}', 'link', 'https://example.org/w', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', '${verdict === 'pass' ? 'passed' : 'failed'}', 'peer') returning id`);
+  const [r] = await q(`insert into app.peer_reviews (submission_id, task_id, bounty_id, reviewer_member, status, verdict, reason, assigned_at, expires_at, decided_at)
+    values ('${sb.id}', '${taskId}', '${b.id}', '${reviewer.id}', 'decided', '${verdict}', 'Checked it', now(), now() + interval '1 day', now()) returning id`);
+  const [{ cents }] = await q(`select app.bounty_peer_fee('${r.id}') as cents`);
+  return { reviewer, review: r.id, cents };
+}
+
+test('PM24 (065): a peer reviewer is paid 2% of the bounty for a decided review, pass or fail, once, from the bounty’s own charge', async () => {
+  const t1 = await task();
+  await paidSession(t1);
+  const pass = await peerReview(t1, 'fail');
+  assert.equal(pass.cents, 100, '2% of $50, for a fail as for a pass');
+  const before = fake.calls.length;
+  await P.tick(su, stripe);
+  const tr = fake.calls.slice(before).find((x) => x.path === '/v1/transfers' && x.method === 'POST');
+  assert.equal(tr.params.amount, '100');
+  assert.equal(tr.params.destination, (await q(`select stripe_account from app.pay_accounts where member_id = '${pass.reviewer.id}'`))[0].stripe_account, 'to the reviewer\u2019s own account');
+  assert.equal(tr.params['metadata[review]'], pass.review);
+  const [led] = await q(`select kind, amount_cents, member_id from app.pay_ledger where kind = 'reviewer_fee' and member_id = '${pass.reviewer.id}'`);
+  assert.deepEqual([led.kind, led.amount_cents], ['reviewer_fee', -100]);
+  // Never twice: the same review queues no second fee, and a retried tick finds Stripe's transfer.
+  await q(`select app.bounty_peer_fee('${pass.review}')`);
+  await P.tick(su, stripe);
+  assert.equal((await q(`select count(*)::int as n from app.pay_ledger where kind = 'reviewer_fee' and member_id = '${pass.reviewer.id}'`))[0].n, 1);
+});
+
+test('PM25 (065): a refund after one peer review returns 98%; with none, 100%', async () => {
+  const t1 = await task();
+  await paidSession(t1);
+  const b = await bountyOf(t1);
+  assert.equal((await q(`select app.bounty_refund_cents('${b.id}') as c`))[0].c, 5000, 'no review yet: all of it');
+  await peerReview(t1, 'fail');
+  assert.equal((await q(`select app.bounty_refund_cents('${b.id}') as c`))[0].c, 4900, 'after one review: 98%');
+  await q(`update app.work_tasks set status = 'removed' where id = '${t1}'`);
+  const before = fake.calls.length;
+  await P.tick(su, stripe);
+  const re = fake.calls.slice(before).find((x) => x.path === '/v1/refunds' && x.method === 'POST');
+  assert.equal(re.params.amount, '4900');
+  assert.equal((await bountyOf(t1)).status, 'refunded');
 });

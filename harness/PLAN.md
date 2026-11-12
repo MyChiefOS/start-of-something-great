@@ -263,8 +263,8 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 2. **PR #2, the money rails** (061, dog-pay): merged as #128. Payments off; dog-pay not deployed yet (inert without Aaron's keys; recorded in OPERATIONS.md first when it is).
 3. **Cleanup** (062, the home page's Now list, the terms source) and the `jevs` gate redeploy (v9, fingerprint matches main): merged as #129.
 4. **PR #3, the buyer door** (063): merged as #130 (Nov 12). Built on branch `buyer-passkey` from main at 0c732cd. Buyer keys (WebAuthn, checked in the database), the scope by triggers, the funding gate by restrictive policies, `/join/buyer`; dog-migrate's "no passkey" check unchanged (Aaron, Nov 12). Proven by test/buyer-keys.test.js against a simulated authenticator; not yet with a real device. Next: the fresh-agent review, then the PR.
-5. **PR #4** (064, built Nov 12 on `home-records`): the home page's two calls to action, room counts, pools and tiers signed out, exact net bounties signed in, track records above the fold; the single-task pool leak is closed by the 3-task rule, and 061's public amount read by a signed-in-only policy. Next: the fresh-agent review, then the PR.
-6. **PR #5**: paid peer reviewers (2%, top-decile operators), the buyer's one backup passkey (Aaron, Nov 12, RK151), and the full test and red-team pass before Aaron's Stripe keys.
+5. **PR #4** (064): merged as #131 (Nov 12). Built on `home-records`: the home page's two calls to action, room counts, pools and tiers signed out, exact net bounties signed in, track records above the fold; the single-task pool leak is closed by the 3-task rule, and 061's public amount read by a signed-in-only policy. Next: the fresh-agent review, then the PR.
+6. **PR #5** (065, built Nov 12 on `reviewers-hardening`): the paid peer reviewer queue (2% on every decided review; 98% refund after a peer-reviewed fail), the buyer's backup passkey, dog-pay's fee and partial refund, and RELEASE-CHECKLIST.md's payments steps. dog-pay changed but isn't deployed: it is deployed from main at Aaron's Stripe step. Next: the fresh-agent review, then the PR.
 
 ## 4. Open decisions for Aaron
 

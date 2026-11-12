@@ -100,7 +100,6 @@ constraint app.browser_keys browser_keys_public_key_key UNIQUE (public_key)
 constraint app.buyer_keys buyer_keys_credential_id_check CHECK (((octet_length(credential_id) >= 16) AND (octet_length(credential_id) <= 1023)))
 constraint app.buyer_keys buyer_keys_credential_id_key UNIQUE (credential_id)
 constraint app.buyer_keys buyer_keys_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
-constraint app.buyer_keys buyer_keys_member_id_key UNIQUE (member_id)
 constraint app.buyer_keys buyer_keys_pkey PRIMARY KEY (id)
 constraint app.buyer_keys buyer_keys_public_key_check CHECK ((octet_length(public_key) = 65))
 constraint app.buyer_keys buyer_keys_public_key_key UNIQUE (public_key)
@@ -413,21 +412,33 @@ constraint app.pay_events pay_events_type_check CHECK (((char_length(type) <= 10
 constraint app.pay_ledger pay_ledger_amount_cents_check CHECK ((((amount_cents >= '-100000000'::integer) AND (amount_cents <= 100000000)) AND (amount_cents <> 0)))
 constraint app.pay_ledger pay_ledger_bounty_id_fkey FOREIGN KEY (bounty_id) REFERENCES app.work_bounties(id) ON DELETE SET NULL
 constraint app.pay_ledger pay_ledger_check CHECK (((kind = ANY (ARRAY['charge'::text, 'reversal'::text])) = (amount_cents > 0)))
-constraint app.pay_ledger pay_ledger_kind_check CHECK ((kind = ANY (ARRAY['charge'::text, 'transfer'::text, 'refund'::text, 'reversal'::text, 'chargeback'::text])))
+constraint app.pay_ledger pay_ledger_kind_check CHECK ((kind = ANY (ARRAY['charge'::text, 'transfer'::text, 'refund'::text, 'reversal'::text, 'chargeback'::text, 'reviewer_fee'::text])))
 constraint app.pay_ledger pay_ledger_kind_stripe_object_id_key UNIQUE (kind, stripe_object_id)
 constraint app.pay_ledger pay_ledger_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.pay_ledger pay_ledger_pkey PRIMARY KEY (id)
 constraint app.pay_ledger pay_ledger_stripe_object_id_check CHECK (((char_length(stripe_object_id) <= 255) AND (stripe_object_id ~ '^[a-z]+_[A-Za-z0-9_]+$'::text)))
 constraint app.pay_requests pay_requests_attempts_check CHECK (((attempts >= 0) AND (attempts <= 30)))
 constraint app.pay_requests pay_requests_bounty_id_fkey FOREIGN KEY (bounty_id) REFERENCES app.work_bounties(id) ON DELETE SET NULL
-constraint app.pay_requests pay_requests_check CHECK ((((kind = ANY (ARRAY['fund_task'::text, 'release'::text, 'refund'::text, 'reverse'::text])) = (bounty_id IS NOT NULL)) OR (bounty_id IS NULL)))
+constraint app.pay_requests pay_requests_check CHECK ((((kind = ANY (ARRAY['fund_task'::text, 'release'::text, 'refund'::text, 'reverse'::text, 'reviewer_fee'::text])) = (bounty_id IS NOT NULL)) OR (bounty_id IS NULL)))
 constraint app.pay_requests pay_requests_error_code_check CHECK (((char_length(error_code) <= 64) AND (error_code ~ '^[a-z_]+$'::text)))
 constraint app.pay_requests pay_requests_hosted_url_check CHECK (((char_length(hosted_url) <= 2048) AND (hosted_url ~ '^https://(checkout|connect)\.stripe\.com/[A-Za-z0-9/_#?=&%.-]+$'::text)))
-constraint app.pay_requests pay_requests_kind_check CHECK ((kind = ANY (ARRAY['connect_onboard'::text, 'fund_task'::text, 'release'::text, 'refund'::text, 'reverse'::text, 'reconcile'::text])))
+constraint app.pay_requests pay_requests_kind_check CHECK ((kind = ANY (ARRAY['connect_onboard'::text, 'fund_task'::text, 'release'::text, 'refund'::text, 'reverse'::text, 'reconcile'::text, 'reviewer_fee'::text])))
 constraint app.pay_requests pay_requests_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
+constraint app.pay_requests pay_requests_peer_review_id_fkey FOREIGN KEY (peer_review_id) REFERENCES app.peer_reviews(id) ON DELETE SET NULL
 constraint app.pay_requests pay_requests_pkey PRIMARY KEY (id)
+constraint app.pay_requests pay_requests_reviewer_fee_check CHECK ((((kind = 'reviewer_fee'::text) = (peer_review_id IS NOT NULL)) AND ((kind <> 'reviewer_fee'::text) OR (bounty_id IS NOT NULL))))
 constraint app.pay_requests pay_requests_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'working'::text, 'done'::text, 'failed'::text])))
 constraint app.pay_requests pay_requests_stripe_object_id_check CHECK (((char_length(stripe_object_id) <= 255) AND (stripe_object_id ~ '^[a-z]+_[A-Za-z0-9_]+$'::text)))
+constraint app.peer_reviews peer_reviews_bounty_id_fkey FOREIGN KEY (bounty_id) REFERENCES app.work_bounties(id) ON DELETE SET NULL
+constraint app.peer_reviews peer_reviews_check CHECK (((status = 'decided'::text) = ((verdict IS NOT NULL) AND (decided_at IS NOT NULL))))
+constraint app.peer_reviews peer_reviews_fee_cents_check CHECK (((fee_cents >= 0) AND (fee_cents <= 100000000)))
+constraint app.peer_reviews peer_reviews_pkey PRIMARY KEY (id)
+constraint app.peer_reviews peer_reviews_reason_check CHECK (((char_length(reason) >= 3) AND (char_length(reason) <= 300)))
+constraint app.peer_reviews peer_reviews_reviewer_member_fkey FOREIGN KEY (reviewer_member) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.peer_reviews peer_reviews_status_check CHECK ((status = ANY (ARRAY['assigned'::text, 'decided'::text, 'lapsed'::text, 'released'::text])))
+constraint app.peer_reviews peer_reviews_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
+constraint app.peer_reviews peer_reviews_task_id_fkey FOREIGN KEY (task_id) REFERENCES app.work_tasks(id) ON DELETE CASCADE
+constraint app.peer_reviews peer_reviews_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text])))
 constraint app.pin_keys pin_keys_pin_key_check CHECK ((octet_length(pin_key) = 32))
 constraint app.pin_keys pin_keys_pkey PRIMARY KEY (id)
 constraint app.pin_keys pin_keys_singleton_check CHECK (singleton)
@@ -868,7 +879,7 @@ constraint app.work_submissions work_submissions_check4 CHECK (((artifact_kind =
 constraint app.work_submissions work_submissions_check5 CHECK (((artifact_kind = 'pr'::text) = (pr_number IS NOT NULL)))
 constraint app.work_submissions work_submissions_claim_id_fkey FOREIGN KEY (claim_id) REFERENCES app.work_claims(id) ON DELETE CASCADE
 constraint app.work_submissions work_submissions_confidence_check CHECK (((confidence >= 0) AND (confidence <= 100)))
-constraint app.work_submissions work_submissions_decided_by_check CHECK ((decided_by = ANY (ARRAY['jevs'::text, 'poster'::text, 'person'::text, 'timeout'::text, 'third_look'::text])))
+constraint app.work_submissions work_submissions_decided_by_check CHECK ((decided_by = ANY (ARRAY['jevs'::text, 'poster'::text, 'person'::text, 'timeout'::text, 'third_look'::text, 'peer'::text])))
 constraint app.work_submissions work_submissions_decided_seq_check CHECK ((decided_seq >= 0))
 constraint app.work_submissions work_submissions_final_size_check CHECK ((final_size = ANY (ARRAY[1, 2, 3, 5, 8])))
 constraint app.work_submissions work_submissions_held_reason_check CHECK ((char_length(held_reason) <= 200))
@@ -1072,6 +1083,9 @@ default app.pay_requests.created_at = now()
 default app.pay_requests.id = app.uuid_v7()
 default app.pay_requests.next_at = now()
 default app.pay_requests.status = 'queued'::text
+default app.peer_reviews.assigned_at = now()
+default app.peer_reviews.id = app.uuid_v7()
+default app.peer_reviews.status = 'assigned'::text
 default app.pin_keys.id = app.uuid_v7()
 default app.pin_keys.singleton = true
 default app.post_search.id = app.uuid_v7()
@@ -1354,6 +1368,8 @@ function app.audit_net_keep() owner=dog_owner execute=dog_owner language=plpgsql
 function app.audit_net_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fc5a72e8973ce0cab35d4ab7a491bb1d
 function app.audit_upkeep_run() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=410ef431719a4501b4170fc8deffba3c
 function app.bounty_fund_request(p_task uuid, p_cents integer) owner=dog_pay execute=dog_pay,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=18af2394747095a2317a230e782260e4
+function app.bounty_peer_fee(p_review uuid) owner=dog_pay execute=dog_pay,dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=8f48ece0b26bf3a28b9de9b327e1e0a0
+function app.bounty_refund_cents(p_bounty uuid) owner=dog_pay execute=dog_pay language=sql volatile=s definer=true config=search_path=pg_catalog returns=integer body_md5=6f1c5dcdd984c97b7baa1e51e0e0820d
 function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b9bba9af26b586a124ac1a0ea3ca91ba
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
@@ -1364,7 +1380,9 @@ function app.browser_key_add(p_member uuid, p_public bytea, p_label text) owner=
 function app.browser_key_public(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=5ddb4ef0bc738763a8871ba29c536f44
 function app.browser_key_remove(p_key_id uuid) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d3263de289d756c3e1a4731b1d953ffe
 function app.browser_sign_in(p_key_id uuid, p_display_name text, p_session_hash text, p_session_days integer, p_region text, p_pin text, p_challenge text, p_origin text, p_signature bytea) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean, tries_left smallint) body_md5=b43db5492fba08d15572606e39bea498
+function app.buyer_attested(p_credential_id bytea, p_public_key bytea, p_client_data bytea, p_auth_data bytea) owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=bigint body_md5=0f0e3542b0969ae1bd1854062883ed46
 function app.buyer_identity_guard() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=e68cfe85743a99e6b2ce9ec69caf07b1
+function app.buyer_key_backup(p_credential_id bytea, p_public_key bytea, p_client_data bytea, p_auth_data bytea, p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=449d88280063ee078b418483922d2a22
 function app.buyer_key_public(p_credential_id bytea) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=67474ad363cc4bb023dc055e231a8afe
 function app.buyer_member_guard() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=f2c53552da45f1472d7f9b49e127a636
 function app.buyer_register(p_credential_id bytea, p_public_key bytea, p_client_data bytea, p_auth_data bytea, p_display_name text, p_session_hash text, p_session_days integer) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(status text, member_id uuid, is_new boolean, trust_level smallint, is_admin boolean) body_md5=5ee4504135192970cdda327c95ee4938
@@ -1509,6 +1527,11 @@ function app.p256_point_ok(pub bytea) owner=dog_owner execute=dog_owner,dog_sign
 function app.p256_powmod(b numeric, e numeric, m numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=dfafa15c1e41e7644ac53dfc16dc6196
 function app.p256_verify(pub bytea, msg bytea, sig bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6d74a56a095e7b22c6640eb1b22397d7
 function app.pay_ledger_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=23e2f5684fb534d328a40d68bb4bba8b
+function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9b5d99539262215a73e25dcf7402e225
+function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=8785e32961ef7921e84b048b9ccf9378
+function app.peer_review_release(p_review uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=47b6a0b555d6f082d9530fc5226b3287
+function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=041aba5d591241bb4353a2254a8a5038
+function app.peer_top_decile(p_member uuid, p_room text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=64720e8fd0cb94cc255f0e7f71dbf5a7
 function app.pin_change(p_current text, p_new text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=318f0c2327d38f43884b5fcde77c3019
 function app.pin_digest(p_member uuid, p_salt bytea, p_pin text) owner=dog_signin execute=dog_signin language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=27ff3f479653e63606de4edc718b9c03
 function app.pin_matches(p_member uuid, p_pin text) owner=dog_signin execute=dog_signin language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=ce254d82aeeb312a8aae565440c1ad05
@@ -1687,7 +1710,7 @@ function app.work_room(p_code text) owner=dog_work execute=dog_work,dog_app lang
 function app.work_rooms_list() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=85d8813bb323e8c1589979c1280776c3
 function app.work_size_band(p_lines integer) owner=dog_owner execute=dog_owner,dog_work,dog_app language=sql volatile=i definer=false config= returns=smallint body_md5=8bd9979c9224532d944fc0a330c6285c
 function app.work_sort_value(p_sort text, s app.work_stat) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=s definer=false config=search_path=pg_catalog returns=numeric body_md5=c0a2b86725996c4e6fd05bcff4447801
-function app.work_stats(p_room uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF app.work_stat body_md5=9801c908a33e5f7f7ad11b8f1c536ebc
+function app.work_stats(p_room uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF app.work_stat body_md5=213f5b389195e6b3714893e4ea6e44e9
 function app.work_submit(p_task uuid, p_kind text, p_url text, p_sha256 text, p_note text, p_hits integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0f36a558848bbe70e645ccedc825e228
 function app.work_summary() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1587b0ae36be6aa3ab7518a811114776
 function app.work_task(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=ea5f727f358e1a7957a51692f4254daf
@@ -2313,9 +2336,12 @@ grant app.pay_accounts dog_pay SELECT
 grant app.pay_accounts dog_pay UPDATE
 grant app.pay_accounts.details_submitted dog_app SELECT
 grant app.pay_accounts.id dog_app SELECT
+grant app.pay_accounts.id dog_work SELECT
 grant app.pay_accounts.livemode dog_app SELECT
 grant app.pay_accounts.member_id dog_app SELECT
+grant app.pay_accounts.member_id dog_work SELECT
 grant app.pay_accounts.payouts_enabled dog_app SELECT
+grant app.pay_accounts.payouts_enabled dog_work SELECT
 grant app.pay_accounts.updated_at dog_app SELECT
 grant app.pay_events dog_pay INSERT
 grant app.pay_events dog_pay SELECT
@@ -2338,7 +2364,30 @@ grant app.pay_requests.hosted_url dog_app SELECT
 grant app.pay_requests.id dog_app SELECT
 grant app.pay_requests.kind dog_app SELECT
 grant app.pay_requests.member_id dog_app SELECT
+grant app.pay_requests.peer_review_id dog_pay UPDATE
 grant app.pay_requests.status dog_app SELECT
+grant app.peer_reviews dog_work INSERT
+grant app.peer_reviews dog_work SELECT
+grant app.peer_reviews dog_work UPDATE
+grant app.peer_reviews.assigned_at dog_app SELECT
+grant app.peer_reviews.bounty_id dog_pay SELECT
+grant app.peer_reviews.decided_at dog_app SELECT
+grant app.peer_reviews.decided_at dog_pay SELECT
+grant app.peer_reviews.expires_at dog_app SELECT
+grant app.peer_reviews.fee_cents dog_app SELECT
+grant app.peer_reviews.fee_cents dog_pay SELECT
+grant app.peer_reviews.id dog_app SELECT
+grant app.peer_reviews.id dog_pay SELECT
+grant app.peer_reviews.reason dog_app SELECT
+grant app.peer_reviews.reviewer_member dog_pay SELECT
+grant app.peer_reviews.status dog_app SELECT
+grant app.peer_reviews.status dog_pay SELECT
+grant app.peer_reviews.submission_id dog_app SELECT
+grant app.peer_reviews.submission_id dog_pay SELECT
+grant app.peer_reviews.task_id dog_app SELECT
+grant app.peer_reviews.task_id dog_pay SELECT
+grant app.peer_reviews.verdict dog_app SELECT
+grant app.peer_reviews.verdict dog_pay SELECT
 grant app.pin_keys dog_signin SELECT
 grant app.post_search dog_public DELETE
 grant app.post_search dog_public INSERT
@@ -2644,18 +2693,23 @@ grant app.work_bounties dog_pay INSERT
 grant app.work_bounties dog_pay SELECT
 grant app.work_bounties dog_pay UPDATE
 grant app.work_bounties.bounty_cents dog_app SELECT
+grant app.work_bounties.bounty_cents dog_work SELECT
 grant app.work_bounties.created_at dog_app SELECT
 grant app.work_bounties.currency dog_app SELECT
 grant app.work_bounties.funded_at dog_app SELECT
 grant app.work_bounties.id dog_app SELECT
+grant app.work_bounties.id dog_work SELECT
 grant app.work_bounties.listed dog_app SELECT
 grant app.work_bounties.payee_member dog_app SELECT
 grant app.work_bounties.payer_member dog_app SELECT
 grant app.work_bounties.platform_fee_bps dog_app SELECT
 grant app.work_bounties.refunded_at dog_app SELECT
 grant app.work_bounties.released_at dog_app SELECT
+grant app.work_bounties.reviewer_fee_bps dog_work SELECT
 grant app.work_bounties.status dog_app SELECT
+grant app.work_bounties.status dog_work SELECT
 grant app.work_bounties.task_id dog_app SELECT
+grant app.work_bounties.task_id dog_work SELECT
 grant app.work_checks dog_work INSERT
 grant app.work_checks dog_work SELECT
 grant app.work_checks dog_work UPDATE
@@ -2962,11 +3016,15 @@ policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SE
 policy app.notices notices_work_insert cmd=a permissive=true to=dog_work using= check=((kind = ANY (ARRAY['work_claimed'::text, 'work_submitted'::text, 'work_decided'::text, 'engine'::text])) OR ((member_id IS NULL) AND (kind = 'alert'::text)))
 policy app.pay_accounts pay_accounts_app cmd=r permissive=true to=dog_app using=(member_id = ( SELECT app.current_member() AS current_member)) check=
 policy app.pay_accounts pay_accounts_pay cmd=* permissive=true to=dog_pay using=true check=true
+policy app.pay_accounts pay_accounts_work_select cmd=r permissive=true to=dog_work using=true check=
 policy app.pay_events pay_events_pay cmd=* permissive=true to=dog_pay using=true check=true
 policy app.pay_ledger pay_ledger_app cmd=r permissive=true to=dog_app using=((member_id = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.pay_ledger pay_ledger_pay cmd=* permissive=true to=dog_pay using=true check=true
 policy app.pay_requests pay_requests_app cmd=r permissive=true to=dog_app using=(member_id = ( SELECT app.current_member() AS current_member)) check=
 policy app.pay_requests pay_requests_pay cmd=* permissive=true to=dog_pay using=true check=true
+policy app.peer_reviews peer_reviews_app cmd=r permissive=true to=dog_app using=((reviewer_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
+policy app.peer_reviews peer_reviews_pay_select cmd=r permissive=true to=dog_pay using=true check=
+policy app.peer_reviews peer_reviews_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.pin_keys pin_keys_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.pin_keys pin_keys_signin cmd=r permissive=true to=dog_signin using=true check=
 policy app.post_search post_search_public cmd=* permissive=true to=dog_public using=true check=true
@@ -3089,6 +3147,7 @@ policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=
 policy app.work_actions work_actions_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_bounties work_bounties_app cmd=r permissive=true to=dog_app using=((payer_member = ( SELECT app.current_member() AS current_member)) OR (payee_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (listed AND (status = 'funded'::text) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])))) check=
 policy app.work_bounties work_bounties_pay cmd=* permissive=true to=dog_pay using=true check=true
+policy app.work_bounties work_bounties_work_select cmd=r permissive=true to=dog_work using=true check=
 policy app.work_checks work_checks_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_claims work_claims_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_dispute_evidence work_dispute_evidence_work cmd=* permissive=true to=dog_work using=true check=true
@@ -3204,6 +3263,7 @@ trigger app.notices enabled=A CREATE TRIGGER notices_guard BEFORE UPDATE ON app.
 trigger app.pay_accounts enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.pay_accounts FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_change BEFORE DELETE OR UPDATE ON app.pay_ledger FOR EACH ROW EXECUTE FUNCTION app.pay_ledger_append_only()
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_truncate BEFORE TRUNCATE ON app.pay_ledger FOR EACH STATEMENT EXECUTE FUNCTION app.pay_ledger_append_only()
+trigger app.peer_reviews enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF reviewer_member ON app.peer_reviews FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('reviewer_member')
 trigger app.posts enabled=A CREATE CONSTRAINT TRIGGER posts_scored AFTER INSERT ON app.posts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION app.posts_scored()
 trigger app.posts enabled=A CREATE TRIGGER post_search_sync AFTER INSERT OR UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.post_search_sync()
 trigger app.posts enabled=A CREATE TRIGGER posts_after_review AFTER UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.posts_after_review()

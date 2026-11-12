@@ -255,6 +255,10 @@
     {
       "version": "064_market_figures",
       "sha256": "9d544b32cb8a3d20c70e46a950f664fbf4aa8e87d4946b9ec8955b20100a4a8a"
+    },
+    {
+      "version": "065_peer_reviewers",
+      "sha256": "bf71f8554a7ec5486239a09fae0e12c85148045b9b50fd474536e83ef4b48d74"
     }
   ]
 }
