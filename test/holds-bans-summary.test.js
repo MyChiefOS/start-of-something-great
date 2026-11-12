@@ -36,7 +36,9 @@ test('the words: the join page tells a held member the truth, the gate takes the
   assert.match(job, /permissions:\n {6}contents: read\n {6}id-token: write/, 'the bans job has only the rights it needs');
   assert.ok(!/discussions: write|issues: write/.test(job));
   assert.ok(!/\$\{\{\s*github\.event/.test(job), 'no event text in a command');
-  assert.match(job, /jq -e 'type == "object" and \(\(\.ids \/\/ \[\]\) \| type == "array"\)' moderation\/bans\.json/, 'a file that can’t be read is an error, never an empty list');
+  assert.match(job, /jq -e 'type == "object" and has\("ids"\) and \(\.ids \| type == "array"\)' moderation\/bans\.json/, 'a file that can’t be read, or has no ids list, is an error, never an empty list');
+  assert.match(job, /concurrency:\n {6}group: jevs-bans\n {6}cancel-in-progress: false/, 'one ban list at a time');
+  assert.match(job, /if \[ "\$head" != "\$GITHUB_SHA" \]; then .*exit 0; fi/, 'a run whose commit is no longer main stops, so an older list never lands last');
   assert.match(read('api/cron.js'), /select app\.daily_summary\(\)/);
 });
 
