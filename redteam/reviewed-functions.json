@@ -246,6 +246,6 @@
   },
   "work_market": {
     "kind": "public figures, by design",
-    "why": "064: counts, tiers and room pools of at least 3 funded tasks rounded down to the $100, for anyone; no price, no person and no Stripe ID."
+    "why": "064: counts and tier badges of funded open tasks, overall and per room, for anyone; no dollar figure (Aaron, Nov 12), no person and no Stripe ID."
   }
 }

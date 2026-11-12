@@ -1652,7 +1652,7 @@ function app.work_integrity() owner=dog_work execute=dog_work language=sql volat
 function app.work_jevs_rules(f jsonb) owner=dog_owner execute=dog_owner,dog_work,dog_app language=plpgsql volatile=i definer=false config= returns=jsonb body_md5=6e0277c07f4f65bd20e2f877effe43a7
 function app.work_jevs_run(p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=02eca869100351e8dd811abe539a92d5
 function app.work_ledger_alert() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=e716291eb03fb8d11c69d98a0a4b4420
-function app.work_market() owner=dog_pay execute=dog_pay,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=fb945b5fdc60238deb8108c5be1a3cd9
+function app.work_market() owner=dog_pay execute=dog_pay,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=f4a21321ca501f29274c5106592b06d7
 function app.work_may_settle(p_dispute uuid, p_member uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9f18a43c2fc8a432063276f73a071686
 function app.work_milestone_add(p_project uuid, p_title text, p_target date, p_gate boolean) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=51f9288930ed7fa473d8f8cbbe14526a
 function app.work_milestone_card(p_id uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4afd260e62319ba841fd52bb46278958
@@ -1694,7 +1694,7 @@ function app.work_task(p_id uuid) owner=dog_work execute=dog_work,dog_app langua
 function app.work_task_create(p_project uuid, p_title text, p_description text, p_class text, p_size integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=4526f944079120d74230ec01a1831ceb
 function app.work_task_of(p_sub uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=f89e623568c43d1ddc2e87846bfdea13
 function app.work_tasks(p_status text, p_room text, p_project uuid, p_q text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=b5c34b8a3e08c291904cadd04329987a
-function app.work_tasks_pay() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=acf6706f5400b9a6ab9a0077d3527c2d
+function app.work_tasks_pay() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=fd9835b886b24c5b31c99150eb549661
 function app.work_tasks_pay_delete() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=c2bd2da5c316a3de16732c36b75fafbc
 function app.work_tick() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=034aa9ea7a90b48a2f991d69f6db0ad2
 function app.work_tier(p_cents integer) owner=dog_owner execute=dog_owner,dog_pay language=sql volatile=i definer=false config=search_path=pg_catalog returns=smallint body_md5=bd708a19d88816c287bb0335924641e6

@@ -1,5 +1,5 @@
 // 064: funded work on the public pages without public prices (Aaron, Nov 12, 2026), against a real Postgres.
-// Signed out: counts, tiers and room pools of at least 3 tasks rounded down to the $100. Signed in: the exact net on
+// Signed out: counts and tier badges, never a dollar sum (Aaron, Nov 12, after the fresh review's differencing leak). Signed in: the exact net on
 // open tasks. Claimed or later: amounts only for the payer, the payee and the administrator. ACCEPTANCE.md MK1 to MK5.
 'use strict';
 
@@ -19,7 +19,7 @@ const NAME = 'dog_064_test_' + crypto.randomBytes(4).toString('hex');
 const WEB = NAME + '_web';
 const PW = crypto.randomBytes(18).toString('base64url');
 const ANON = { actor: 'anon' };
-let server, su, web, poster, worker, stranger, roomA, roomB, project;
+let server, su, web, poster, stranger, roomA, roomB, project;
 const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
@@ -54,7 +54,6 @@ test.before(async () => {
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   poster = await member('Poster');
-  worker = await member('Worker');
   stranger = await member('Stranger');
   [{ id: roomA }, { id: roomB }] = await q(`select id from app.work_rooms order by ord limit 2`);
   [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('P', '${roomA}', 'member', '${poster.id}') returning id`);
@@ -76,30 +75,34 @@ test('MK1: signed out, nobody reads a bounty’s amount through the site’s rol
   assert.strictEqual((await read(ctxOf(poster)))[0].bounty_cents, 12345, 'its payer, always');
 });
 
-test('MK2: the public figures: counts and tiers, and a room’s pool only from 3 funded tasks, rounded down to the $100', async () => {
+test('MK2: the public figures are counts and tier badges only, with no dollar sum, so funding or claiming one task never gives its price away', async () => {
   const before = await run(ANON, (t) => work.market(t));
-  const base = before.funded_tasks;
+  const dollars = (m) => JSON.stringify(m).match(/"[a-z_]*(?:pool|dollar|cents|amount|price)[a-z_]*"/g);
+  assert.strictEqual(dollars(before), null, 'no dollar field at all');
   await funded(roomA, 4321);
-  let m = await run(ANON, (t) => work.market(t));
-  const a = m.rooms.find((r) => r.funded_tasks === 1 && r.pool_dollars === null);
-  assert.ok(a, 'a room with one funded task shows no pool: ' + JSON.stringify(m.rooms));
-  assert.strictEqual(m.funded_tasks, base + 1);
-  assert.ok(!/4321|43\.21/.test(JSON.stringify(m)), 'no price anywhere in the figures');
+  const one = await run(ANON, (t) => work.market(t));
+  assert.strictEqual(one.funded_tasks, before.funded_tasks + 1);
+  // The fresh review of PR #4 (critical): differencing two reads. What changed is a count in one tier, nothing more:
+  // a task's tier is public, so the change can't place its price any closer than its tier.
+  const diff = (a, b) => { const out = []; const walk = (x, y, p) => { if (typeof x === 'object' && x && y) { for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(x[k], y[k], p + '.' + k); } else if (x !== y) out.push(p); }; walk(a, b, ''); return out; };
+  const changed = diff(before, one).filter((p) => !/^\.rooms\.\d+\.(code|name)$/.test(p));
+  assert.ok(changed.every((p) => /funded_tasks$|\.tasks$|\.tiers\.[1-4]$|^\.rooms(\.\d+)?$/.test(p)), 'only counts change: ' + changed.join(', '));
+  assert.ok(!/4321|43\.21/.test(JSON.stringify(one)), 'no price anywhere in the figures');
+  const roomA1 = one.rooms.find((r) => r.funded_tasks >= 1 && r.tiers['1'] >= 1);
+  assert.ok(roomA1, 'the room shows its tier badge: ' + JSON.stringify(one.rooms));
+  assert.deepStrictEqual(one.tiers.map((x) => x.label), ['$10 to $100', '$100 to $500', '$500 to $2,500', '$2,500 and up']);
   await funded(roomA, 9999);
-  m = await run(ANON, (t) => work.market(t));
-  assert.ok(m.rooms.every((r) => r.funded_tasks >= 3 || r.pool_dollars === null), 'two tasks: still no pool');
   await funded(roomA, 250000);
-  m = await run(ANON, (t) => work.market(t));
-  const three = m.rooms.find((r) => r.funded_tasks === 3);
-  assert.strictEqual(three.pool_dollars, 2600, '43.21 + 99.99 + 2,500.00 = 2,643.20, shown as 2,600');
-  // Tier edges: $99.99 is tier 1, $2,500 tier 4; a claimed task leaves the figures.
+  const m = await run(ANON, (t) => work.market(t));
   const tiers = Object.fromEntries(m.tiers.map((x) => [x.tier, x.tasks]));
-  assert.ok(tiers[1] >= 2 && tiers[4] >= 1, JSON.stringify(m.tiers));
-  assert.deepStrictEqual(m.tiers.map((x) => x.label), ['$10 to $100', '$100 to $500', '$500 to $2,500', '$2,500 and up']);
+  assert.ok(tiers[1] >= 2 && tiers[4] >= 1, 'tier edges: $99.99 is tier 1, $2,500 tier 4: ' + JSON.stringify(m.tiers));
+  assert.strictEqual(dollars(m), null);
+  // A claimed task leaves the figures.
   const t4 = await funded(roomA, 50000);
+  const withIt = await run(ANON, (t) => work.market(t));
   await q(`update app.work_tasks set status = 'claimed' where id = '${t4}'`);
   const after = await run(ANON, (t) => work.market(t));
-  assert.strictEqual(after.funded_tasks, m.funded_tasks, 'a claimed task isn’t counted as open funded work');
+  assert.strictEqual(after.funded_tasks, withIt.funded_tasks - 1, 'a claimed task isn’t counted as open funded work');
 });
 
 test('MK3: one task’s bounty: signed out its tier; signed in its exact net; claimed, only its parties', async () => {
@@ -126,7 +129,7 @@ test('MK4: the API: /api/work/market is public and cached; /api/work/bounty is n
     await api.handle({ method: 'GET', url: u.pathname + u.search, headers: { host: 'dayonegreat.com', ...headers }, query: Object.fromEntries(u.searchParams) }, r, run);
     return { status: r.statusCode, cache: r.headers['cache-control'], body: JSON.parse(r.body) };
   };
-  if (typeof api.handle !== 'function') return;
+  assert.strictEqual(typeof api.handle, 'function', 'the handler is exported, so this test runs');
   const m = await call('/api/work?route=market');
   assert.strictEqual(m.status, 200);
   assert.ok(Number.isInteger(m.body.funded_tasks));
@@ -146,6 +149,11 @@ test('MK5: the home page and /build say so: the two calls to action, funded figu
   assert.match(home, /id="market"/);
   assert.match(home, /id="records"/);
   assert.ok(home.indexOf('id="records"') < home.indexOf('<!-- shell:foot -->'));
+  // No claim that paying works while payments are off (the fresh review of PR #4, medium).
+  assert.doesNotMatch(home, /needs only a passkey|paying for work needs/);
+  assert.match(home, /Funded tasks, posted with a passkey alone, open when payments do\./);
   const build = fs.readFileSync(require('path').join(__dirname, '..', 'build.html'), 'utf8');
   assert.match(build, /id="market"/);
+  assert.match(build, /never a dollar sum/);
+  assert.match(fs.readFileSync(require('path').join(__dirname, '..', 'workpages.js'), 'utf8'), /fetch\('\/api\/work\/market'/, '/rooms shows each room\u2019s funded tasks and tier badges');
 });

@@ -254,7 +254,7 @@
 
   // ---- /rooms ----
   function rooms() {
-    var all = false, data = null;
+    var all = false, data = null, funded = {};
     function draw() {
       var list = $('rooms');
       list.textContent = '';
@@ -266,7 +266,9 @@
         a.href = '/rooms/' + r.code;
         slot(a, 'code').textContent = r.code;
         slot(a, 'name').textContent = txt(r.name);
-        slot(a, 'open').textContent = n(r.open) + ' open';
+        var f = funded[r.code];
+        var badges = f ? [1, 2, 3, 4].filter(function (k) { return n(f.tiers && f.tiers[k]) > 0; }).map(function (k) { return 'Tier ' + k + ' \u00d7' + n(f.tiers[k]); }) : [];
+        slot(a, 'open').textContent = n(r.open) + ' open' + (f && n(f.funded_tasks) ? ' \u00b7 ' + n(f.funded_tasks) + ' funded (' + badges.join(', ') + ')' : '');
         list.appendChild(a);
       });
       $('rooms-empty').hidden = list.children.length > 0;
@@ -279,6 +281,11 @@
     $('show-open').addEventListener('click', function () { all = false; if (data) draw(); });
     $('show-all').addEventListener('click', function () { all = true; if (data) draw(); });
     loader('/api/work/rooms', function (d) { data = d; draw(); }, 'the rooms');
+    // PR #4 (Aaron, Nov 12; 064): each room's funded tasks and their tier badges, never a dollar figure.
+    fetch('/api/work/market', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) { (m && Array.isArray(m.rooms) ? m.rooms : []).forEach(function (x) { if (x && isRoom(x.code)) funded[x.code] = x; }); if (data) draw(); })
+      .catch(function () {});
   }
 
   // ---- /rooms/<code> ----

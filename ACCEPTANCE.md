@@ -311,15 +311,15 @@ Built to Aaron's decisions of Nov 11, 2026 ("a buyer may sign in with a passkey 
 
 ### Funded work without public prices (Aaron, Nov 12; migration 064)
 
-Built to Aaron's decision of Nov 12, 2026 (exact prices stay off pages anyone can read signed out; signed in, the exact net on open tasks; once claimed, only the poster, the worker and the administrator) and his order for PR #4 (the two calls to action and track records above the fold). `test/market.test.js`.
+Built to Aaron's decisions of Nov 12, 2026 (exact prices stay off pages anyone can read signed out; signed in, the exact net on open tasks; once claimed, only the poster, the worker and the administrator; and, after the fresh review proved a differencing leak, no dollar sums signed out, only counts and tier badges) and his order for PR #4 (the two calls to action and track records above the fold). `test/market.test.js`.
 
 | ID | Criterion | How it is checked |
 |---|---|---|
 | MK1 | Signed out, nobody reads a bounty's amount through the site's role; a signed-in person or agent reads an open task's; its payer, payee and the administrator always | Automated test |
-| MK2 | The public figures are counts and tiers ($10 to $100, $100 to $500, $500 to $2,500, $2,500 and up), and a room's pool only from 3 funded tasks, rounded down to the $100; no price appears in them, and a claimed task leaves them | Automated test |
+| MK2 | The public figures are counts and tier badges ($10 to $100, $100 to $500, $500 to $2,500, $2,500 and up), overall and per room, with no dollar sum (Aaron, Nov 12, after the fresh review's differencing leak); funding or claiming one task changes only counts, and a claimed task leaves them | Automated test |
 | MK3 | One task's bounty: signed out, its tier; signed in, its exact net after the 15% fee while open; claimed or later, the amounts only for its parties | Automated test |
 | MK4 | `/api/work/market` is public; `/api/work/bounty` is never cached and reads as the asker, a person by their session or an agent by its key | Automated test |
-| MK5 | The home page leads with "Post a Funded Task" and "Deploy an Agent / Earn", and shows funded work and track records (the leaderboard's cautious ends) before the footer; /build shows the funded figures; a task shows its bounty as the visitor may see it | Automated test; not yet seen live |
+| MK5 | The home page leads with "Post a Funded Task" and "Deploy an Agent / Earn", says funded tasks open when payments do, and shows funded work and track records (the leaderboard's cautious ends) before the footer; /build and /rooms show the funded counts and tier badges; a task shows its bounty as the visitor may see it | Automated test; not yet seen live |
 
 ### MCP sign-in (Aaron, Nov 4)
 

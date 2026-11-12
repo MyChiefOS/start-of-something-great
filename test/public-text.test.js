@@ -88,7 +88,7 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
     [['btn p', '/join/buyer', 'Post a Funded Task'], ['btn', '/connect', 'Deploy an Agent / Earn'], ['btn', '/join', 'Join with GitHub']]);
   // Phase 1 admits GitHub users only (Oct 23), and buyers with a passkey (Nov 11); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. Posting, doing work and owning agents need a GitHub account \(they're free\); posting and paying for work needs only a passkey\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. Joining needs a GitHub account \(they're free\)\. Funded tasks, posted with a passkey alone, open when payments do\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
   assert.match(hero, /<p class="kick">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');

@@ -20,8 +20,8 @@
     .catch(failed);
 })();
 
-// PR #4 (Aaron, Nov 11 and 12): funded work and track records, above the fold. Funded work is counts, tiers and room
-// pools of at least 3 tasks rounded down to the $100 (064, /api/work/market): never a price. Track records are the
+// PR #4 (Aaron, Nov 11 and 12): funded work and track records, above the fold. Funded work is counts and tier badges
+// only (064, /api/work/market): no price and no dollar sum (Aaron, Nov 12, after a sum was shown to give prices away). Track records are the
 // leaderboard's cautious ends (/api/work/board), the first three established citizens by reliability. Drawn with
 // textContent only; a failed read says where the figures are.
 (function () {
@@ -39,13 +39,14 @@
     get('/api/work/market').then(function (m) {
       if (!m || !Array.isArray(m.tiers)) { line.textContent = 'The funded-work figures are on the Build page.'; return; }
       var n = num(m.funded_tasks);
-      line.textContent = n === 0 ? 'No funded tasks yet.'
-        : n + (n === 1 ? ' funded task is' : ' funded tasks are') + ' open' + (m.pool_dollars ? ', about $' + num(m.pool_dollars).toLocaleString('en-US') + ' in all.' : '.');
+      line.textContent = n === 0 ? 'No funded tasks yet.' : n + (n === 1 ? ' funded task is' : ' funded tasks are') + ' open.';
       m.tiers.forEach(function (t) { li(tiers, 'Tier ' + num(t.tier) + ' (' + String(t.label || '') + '): ' + num(t.tasks)); });
-      var withPool = (Array.isArray(m.rooms) ? m.rooms : []).slice(0, 5).map(function (r) {
-        return String(r.name || r.code || '') + ': ' + num(r.funded_tasks) + (r.pool_dollars ? ', about $' + num(r.pool_dollars).toLocaleString('en-US') : '');
+      var byRoom = (Array.isArray(m.rooms) ? m.rooms : []).slice(0, 5).map(function (r) {
+        var t = r.tiers || {};
+        var badges = [1, 2, 3, 4].filter(function (k) { return num(t[k]) > 0; }).map(function (k) { return 'Tier ' + k + ' \u00d7' + num(t[k]); });
+        return String(r.name || r.code || '') + ': ' + num(r.funded_tasks) + ' funded' + (badges.length ? ' (' + badges.join(', ') + ')' : '');
       });
-      rooms.textContent = withPool.length ? 'By room: ' + withPool.join(' · ') + '. ' + String(m.pool_rule || '') : String(m.pool_rule || '');
+      rooms.textContent = byRoom.length ? 'By room: ' + byRoom.join(' · ') + '.' : '';
     }).catch(function () { line.textContent = 'The funded-work figures are on the Build page.'; });
   }
 
