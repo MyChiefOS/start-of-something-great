@@ -40,8 +40,8 @@
     var a = slot(c, 'title');
     a.textContent = txt(item.ref) + ' · ' + txt(item.title);
     if (isId(item.id)) a.href = '/tasks/' + item.id;
-    slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. ' + (/^peer_fail_/.test(txt(item.why)) ? 'Failed by a paid peer reviewer' : 'Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by))) + (item.reason ? ': ' + txt(item.reason) : '.')
-        + (item.appealed ? ' Appealed: ' + txt(item.appeal_reason) + '. Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : /^peer_fail_/.test(txt(item.why)) ? ' Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : '')
+    slot(c, 'meta').textContent = item.why ? 'Why it was picked: ' + (WHY[item.why] || item.why) + '. ' + (txt(item.why).indexOf('peer_fail_') === 0 ? 'Failed by a paid peer reviewer' : 'Passed by ' + (item.decided_by === 'poster' ? 'the task’s poster' : txt(item.decided_by))) + (item.reason ? ': ' + txt(item.reason) : '.')
+        + (item.appealed ? ' Appealed: ' + txt(item.appeal_reason) + '. Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : txt(item.why).indexOf('peer_fail_') === 0 ? ' Confirm keeps the fail; Reverse overturns it (the work stays closed; put right what it is owed).' : '')
       : item.held_reason ? 'Sent to you: ' + txt(item.held_reason)
       : item.dispute_reason ? 'Passed by ' + (item.decided_by === 'poster' ? 'the task\u2019s poster' : item.decided_by === 'jevs' ? 'the JEVs auditor\u2019s rules'
           : item.decided_by === 'third_look' ? 'Third Look' : 'an administrator') + '. ' + lookSaid(item.third_look) + 'The dispute:' : 'The rules that sent it here: ' + txt(item.jevs_rules || 'none');
