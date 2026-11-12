@@ -224,6 +224,23 @@ test('LH4: lifting a hold needs a reason; if the member had asked to be deleted,
   assert.strictEqual(await statusOf(quiet), null);
 });
 
+test('LH6: lifting a hold never erases an account a deletion review still has open; the review decides (062)', async () => {
+  const m = await member('Under review');
+  const h = await control(aaron, { hold: m.id, reason: 'Held while the matter is open.' });
+  assert.deepStrictEqual(await erase(m), { held: true });
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_jevs');
+    const [dec] = await t`insert into app.jevs_decisions (action, subject_kind, member_id, level, mode, effect, applied, error, total, scores)
+      values ('account.delete', 'member', ${m.id}, 'high', 'enforce', 'hold', true, false, 0, '{}'::jsonb) returning id`;
+    await t`insert into app.deletion_reviews (member_id, decision_id) values (${m.id}, ${dec.id})`;
+  });
+  const l = await control(aaron, { lift_hold: h.json.hold, reason: 'The matter is closed; request honored.' });
+  assert.deepStrictEqual([l.status, l.json.result], [200, 'lifted_review_open']);
+  assert.match(l.json.message, /a deletion review on it is still open/);
+  assert.notStrictEqual(await statusOf(m), null, 'the account is still there');
+  assert.strictEqual((await statusOf(m)).status, 'disabled', 'and still closed');
+});
+
 // ---- Linked bans ----
 
 test('LB1: a ban on the site reaches the same person’s posts on GitHub, and their linked machine account’s; an unban ends it', async () => {

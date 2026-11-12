@@ -243,6 +243,10 @@
     {
       "version": "061_pay_rails",
       "sha256": "f3d3051cddbd2d127d34a40528bb60a0e88ac977bd38f628209f0356305cd445"
+    },
+    {
+      "version": "062_hold_lift_review",
+      "sha256": "38879bfa998ad63d8a64ef230ebc5dc8c7120e1687c56ba46cafcd088dd79ee3"
     }
   ]
 }
