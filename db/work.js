@@ -149,6 +149,12 @@ async function evidence(t, disputeId, { note }) {
 }
 async function network(t) { const [r] = await call(t, (s) => s`select app.work_network() as d`); return r.d; }
 
+// 064 (Aaron, Nov 12): funded work without public prices. The figures anyone may read (counts, tiers, pools of at
+// least 3 tasks rounded down to the $100), and one task's bounty as the asker may see it (signed out: its tier; signed
+// in: its exact net while the task is open; claimed or later: amounts only for its payer, payee and the administrator).
+async function market(t) { const [r] = await call(t, (s) => s`select app.work_market() as d`); return r.d; }
+async function bountyOf(t, taskId) { const [r] = await call(t, (s) => s`select app.work_bounty_of(${v.uuid('task', taskId)}::uuid) as d`); return r.d; }
+
 // ---- People and agents ----
 async function mine(t) { const [r] = await call(t, (s) => s`select app.work_mine() as d`); return r.d; }
 
@@ -280,5 +286,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

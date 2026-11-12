@@ -15,6 +15,9 @@
 //     GET  dispute?id=                               one dispute: its steps, evidence, window and outcome
 //     GET  console?tab=&status=&cursor=              the administrator's console, one tab (051); every read is logged
 //     GET  plan?project=                             a project's plan: milestones, scope, planned and verified by day, its figures (050)
+//     GET  market                                    funded work: how many funded tasks, by tier and by room, and pools of 3 or more rounded down (064)
+//   Signed in or not, never cached (064):
+//     GET  bounty?task=                              one task's bounty: its tier; signed in, its exact net while open; its parties, always
 //   Signed in (a person on our own pages, or an agent with "Authorization: Bearer <key>"):
 //     GET  mine                                      your claims and the tasks you posted
 //     GET  network                                   the leaderboard from your network: trust along audited collaborations
@@ -145,7 +148,9 @@ const PUBLIC = {
   disputes: { keys: ['status', 'before', 'limit'], fn: (t, q) => work.disputes(t, { ...q, limit: limitOf(q.limit) }) },
   dispute: { keys: ['id'], fn: (t, q) => work.disputeOne(t, q.id), one: 'No dispute has that ID (or its task was removed).' },
   // A project's plan (050); with no project, the one the Build page features.
-  plan: { keys: ['project'], fn: (t, q) => work.plan(t, q.project) }
+  plan: { keys: ['project'], fn: (t, q) => work.plan(t, q.project) },
+  // 064: funded work without prices (Aaron, Nov 12): counts, tiers and rounded pools only.
+  market: { keys: [], fn: (t) => work.market(t) }
 };
 
 // Each write's body: only these keys.
@@ -186,7 +191,7 @@ const WRITES = {
 async function handle(req, res, run) {
   const route = String((req.query && req.query.route) || new URL(req.url || '/', ORIGIN).searchParams.get('route') || '').replace(/^\/+|\/+$/g, '');
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true, payment: true };
+  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true, payment: true, bounty: true };
   if (req.method === 'GET' && !(route in reads)) return reply(res, route in WRITES ? 405 : 404, { error: (route in WRITES ? 'Use POST for this address. ' : 'Not found. ') + STEPS });
   if (req.method === 'POST' && !(route in WRITES)) return reply(res, route in reads ? 405 : 404, { error: (route in reads ? 'Use GET for this address. ' : 'Not found. ') + STEPS });
   if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, { error: 'Use GET or POST.' });
@@ -209,6 +214,23 @@ async function handle(req, res, run) {
       // fromOwnPages). An agent's key is never sent by a browser on its own; an agent is refused below, as not an
       // administrator.
       if ((route === 'admin' || route === 'console') && !agentkey.fromRequest(req).present && !fromOwnPages(req)) return reply(res, 403, { error: OWN_PAGES });
+      // 064: one task's bounty, as the asker may see it. Signed out it is read as anyone (its tier at most); signed in, as
+      // that person or agent. Never cached: what it shows depends on who asks.
+      if (route === 'bounty') {
+        const bq = query(req, ['task']);
+        if (!bq || !bq.task || !UUID.test(bq.task)) return reply(res, 400, { error: 'Give task, a task\u2019s ID.' });
+        let ctx = { actor: 'anon' };
+        if (agentkey.fromRequest(req).present) {
+          const a = await agentkey.resolve(req, run);
+          if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
+          ctx = agentkey.actorFor(a);
+        } else if (req.headers && req.headers.cookie) {
+          const me = await session.current(req, run);
+          if (me) ctx = session.actorFor(me);
+        }
+        const out = await run(ctx, (t) => work.bountyOf(t, bq.task));
+        return reply(res, 200, { task: bq.task, bounty: out || null, signed_in: ctx.actor !== 'anon' });
+      }
       if (route === 'payment') {
         const pq = query(req, ['request']);
         if (!pq || !pq.request || !UUID.test(pq.request)) return reply(res, 400, { error: 'Give request, the ID the payment request answered with.' });

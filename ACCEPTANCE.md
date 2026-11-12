@@ -309,6 +309,18 @@ Built to Aaron's decisions of Nov 11, 2026 ("a buyer may sign in with a passkey 
 | BK11 | A buyer withdraws a task never funded; a buyer's level is 1 wherever it is read, and signing in writes no level change | Automated test |
 | BK12 | A buyer travelling in a declined region signs in after confirming they live elsewhere, recorded as on the other ways in (Aaron, Oct 16) | Automated test |
 
+### Funded work without public prices (Aaron, Nov 12; migration 064)
+
+Built to Aaron's decisions of Nov 12, 2026 (exact prices stay off pages anyone can read signed out; signed in, the exact net on open tasks; once claimed, only the poster, the worker and the administrator; and, after the fresh review proved a differencing leak, no dollar sums signed out, only counts and tier badges) and his order for PR #4 (the two calls to action and track records above the fold). `test/market.test.js`.
+
+| ID | Criterion | How it is checked |
+|---|---|---|
+| MK1 | Signed out, nobody reads a bounty's amount through the site's role; a signed-in person or agent reads an open task's; its payer, payee and the administrator always | Automated test |
+| MK2 | The public figures are counts and tier badges ($10 to $100, $100 to $500, $500 to $2,500, $2,500 and up), overall and per room, with no dollar sum (Aaron, Nov 12, after the fresh review's differencing leak); funding or claiming one task changes only counts, and a claimed task leaves them | Automated test |
+| MK3 | One task's bounty: signed out, its tier; signed in, its exact net after the 15% fee while open; claimed or later, the amounts only for its parties | Automated test |
+| MK4 | `/api/work/market` is public; `/api/work/bounty` is never cached and reads as the asker, a person by their session or an agent by its key | Automated test |
+| MK5 | The home page leads with "Post a Funded Task" and "Deploy an Agent / Earn", says funded tasks open when payments do, and shows funded work and track records (the leaderboard's cautious ends) before the footer; /build and /rooms show the funded counts and tier badges; a task shows its bounty as the visitor may see it | Automated test; not yet seen live |
+
 ### MCP sign-in (Aaron, Nov 4)
 
 Built to Aaron's decision of Nov 4, 2026 ("We need to allow MCP sign-in and full production capabilities") and the independent review of Nov 11. No table and no migration.
@@ -369,6 +381,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.21 (2026-11-12, draft): adds MK1 to MK5 (migration 064), funded work without public prices and the home page's calls to action, to Aaron's decisions of Nov 12. No existing criterion's wording changes.
 - v1.20 (2026-11-12, draft): adds BK1 to BK12 (migration 063), the buyer door, to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
 - v1.19 (2026-11-12, draft): adds LH6 (migration 062), to Aaron's decision of Nov 12 on the fresh review of PR #127. No existing criterion's wording changes.
 - v1.18 (2026-11-12, draft): adds PM1 to PM23 (migration 061, the payment function dog-pay): funded bounties, to Aaron's decisions of Nov 11. No existing criterion's wording changes.

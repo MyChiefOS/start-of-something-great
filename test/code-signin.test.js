@@ -220,13 +220,13 @@ if (!SERVER) {
     assert.match(s.code, /^DOG-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
     assert.strictEqual(s.expires_in, 600);
     assert.deepStrictEqual(await finish(b), { status: 200, waiting: true }, 'not posted yet');
-    const g = await post(8001, 'coder', s.code);
+    const g = await post(970153246, 'coder', s.code);
     assert.deepStrictEqual(g.signin, { claimed: true, founder: false, alone: true });
     assert.match(g.reply, /This code is now claimed for `@coder`: the browser that asked for it can sign in to Day One Great as you\. If that wasn't you, sign out everywhere/);
     assert.strictEqual(g.alert, false, 'an ordinary member\'s sign-in alerts no one');
     const replay = await G.handle(su, { event: 'discussion_comment', action: 'created', mode: 'enforce', discussion: 1,
       post: { node_id: 'DC_code_' + n, thread_node_id: 'c' + n, body: s.code, created_at: new Date().toISOString() },
-      author: { id: 8001, login: 'coder', type: 'User', created_at: '2015-01-01T00:00:00Z' } }, { key: GATE_KEY });
+      author: { id: 970153246, login: 'coder', type: 'User', created_at: '2015-01-01T00:00:00Z' } }, { key: GATE_KEY });
     assert.deepStrictEqual(replay.signin, { claimed: true, founder: false, alone: true }, 'a retried run of the same post still says claimed (the CSO\'s finding 8)');
     const f = await finish(b);
     assert.deepStrictEqual(f, { status: 200, signed_in: true, go: '/feed' });
@@ -237,12 +237,12 @@ if (!SERVER) {
     assert.ok(Number.isInteger(who.unread) && who.unread >= 0, 'unread is a count: ' + who.unread);
     const [{ mine }] = await owner(`select count(*)::int as mine from app.notices where member_id = '${who.member_id}' and read_at is null`);
     assert.ok(who.unread >= mine, 'it counts at least their own unread notices');
-    const [row] = await owner(`select s.expires_at > now() + interval '29 days 23 hours' as thirty, i.provider, i.fingerprint = '${c.fingerprints(SITE_KEYS, 'github', '8001')[0]}' as same_fp
+    const [row] = await owner(`select s.expires_at > now() + interval '29 days 23 hours' as thirty, i.provider, i.fingerprint = '${c.fingerprints(SITE_KEYS, 'github', '970153246')[0]}' as same_fp
       from app.sessions s join app.identities i on i.id = s.identity_id where s.member_id = '${who.member_id}'`);
     assert.deepStrictEqual(row, { thirty: true, provider: 'github', same_fp: true },
       'a 30-day session, and the same fingerprint GitHub sign-in gives this account, so both ways reach one member');
     const dump = JSON.stringify(await owner(`select * from app.code_signins`));
-    assert.ok(!dump.includes(s.code) && !dump.includes('8001') && !dump.includes('coder'), 'no code, ID or name is stored, only keyed hashes');
+    assert.ok(!dump.includes(s.code) && !dump.includes('970153246') && !dump.includes('coder'), 'no code, ID or name is stored, only keyed hashes (a nine-digit ID: a four-digit one turned up by chance inside random hashes, Nov 12)');
   });
 
   test('a code on its own line under a hello signs the person in and the message stays up; a mention, two codes, another thread or a lookalike sign nobody in, each with a reply', async () => {

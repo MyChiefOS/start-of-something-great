@@ -118,6 +118,22 @@
       link($('room'), roomHref(d.room), txt(d.room && d.room.code) + ' ' + txt(d.room && d.room.name));
       $('poster').textContent = who(d.poster);
       $('class-text').textContent = CLASS_TEXT[d.class] || '';
+      // PR #4 (Aaron, Nov 12; 064): the bounty as this visitor may see it. Signed out, its tier; signed in, the exact net
+      // while the task is open; claimed or later, the amounts only for its poster, its worker and the administrator.
+      var bounty = $('bounty');
+      if (bounty) {
+        fetch('/api/work/bounty?task=' + encodeURIComponent(String(d.id)), { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (x) {
+            var b = x && x.bounty;
+            var TIERS = { 1: '$10 to $100', 2: '$100 to $500', 3: '$500 to $2,500', 4: '$2,500 and up' };
+            if (!b) { bounty.textContent = 'None'; return; }
+            var tier = 'Tier ' + n(b.tier) + ' (' + (TIERS[n(b.tier)] || '') + ')';
+            bounty.textContent = b.net_cents !== undefined && b.net_cents !== null
+              ? '$' + (n(b.net_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' to the worker, after the 15% fee. ' + tier
+              : tier + (x.signed_in ? '' : '. Sign in to see the exact amount.');
+          }).catch(function () { bounty.textContent = 'Couldn\u2019t be read just now.'; });
+      }
       $('claim').textContent = d.claim ? 'Claimed by ' + who(d.claim.by) + ' until ' + when(d.claim.expires_at) + '.' : 'Holds for 72 hours, then reopens if nothing is submitted.';
       var gh = safeUrl(d.url);
       $('github').textContent = '';
@@ -238,7 +254,7 @@
 
   // ---- /rooms ----
   function rooms() {
-    var all = false, data = null;
+    var all = false, data = null, funded = {};
     function draw() {
       var list = $('rooms');
       list.textContent = '';
@@ -250,7 +266,9 @@
         a.href = '/rooms/' + r.code;
         slot(a, 'code').textContent = r.code;
         slot(a, 'name').textContent = txt(r.name);
-        slot(a, 'open').textContent = n(r.open) + ' open';
+        var f = funded[r.code];
+        var badges = f ? [1, 2, 3, 4].filter(function (k) { return n(f.tiers && f.tiers[k]) > 0; }).map(function (k) { return 'Tier ' + k + ' \u00d7' + n(f.tiers[k]); }) : [];
+        slot(a, 'open').textContent = n(r.open) + ' open' + (f && n(f.funded_tasks) ? ' \u00b7 ' + n(f.funded_tasks) + ' funded (' + badges.join(', ') + ')' : '');
         list.appendChild(a);
       });
       $('rooms-empty').hidden = list.children.length > 0;
@@ -263,6 +281,11 @@
     $('show-open').addEventListener('click', function () { all = false; if (data) draw(); });
     $('show-all').addEventListener('click', function () { all = true; if (data) draw(); });
     loader('/api/work/rooms', function (d) { data = d; draw(); }, 'the rooms');
+    // PR #4 (Aaron, Nov 12; 064): each room's funded tasks and their tier badges, never a dollar figure.
+    fetch('/api/work/market', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) { (m && Array.isArray(m.rooms) ? m.rooms : []).forEach(function (x) { if (x && isRoom(x.code)) funded[x.code] = x; }); if (data) draw(); })
+      .catch(function () {});
   }
 
   // ---- /rooms/<code> ----

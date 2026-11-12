@@ -196,14 +196,14 @@ test('PM6: a funded task removed with no final points refunds its payer', async 
   assert.equal((await requests(b, 'refund')).length, 1);
 });
 
-test('PM7: amounts are private: public only while the task is open and funded; else the payer, the payee and the administrator', async () => {
+test('PM7: amounts are private: to signed-in people only while the task is open and funded (064, Aaron, Nov 12); else the payer, the payee and the administrator', async () => {
   const t1 = await task(poster);
   await fund(poster, t1, 5000);
   const see = (m) => run(m ? ctxOf(m) : { actor: 'anon' }, (t) => t`select bounty_cents from app.work_bounties where task_id = ${t1}`);
   assert.equal((await see(null)).length, 0, 'not yet funded: nobody but the payer');
   assert.equal((await see(poster)).length, 1);
   await markFunded(await bountyOf(t1));
-  assert.equal((await see(null)).length, 1, 'open and funded: the price shows');
+  assert.equal((await see(null)).length, 0, 'open and funded: signed out, still no price (064)');
   assert.equal((await see(other)).length, 1);
   await q(`update app.work_tasks set status = 'claimed' where id = '${t1}'`);
   assert.equal((await see(null)).length, 0, 'claimed: private');
