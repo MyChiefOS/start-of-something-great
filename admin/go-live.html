@@ -44,7 +44,7 @@
       <p class="dek">Everything that needs Aaron for a release (accounts, settings, decisions) is in one checklist, delivered once.</p>
       <dl>
         <dt>Criterion</dt><dd>SF6 in ACCEPTANCE.md, checked by: Release checklist exists before the release starts</dd>
-        <dt>Boxes</dt><dd class="tn">7 of 24 ticked in the file</dd>
+        <dt>Boxes</dt><dd class="tn">7 of 25 ticked in the file</dd>
         <dt>Stage</dt><dd>launch.json says <strong>public</strong></dd>
       </dl>
       <p>Rewritten Oct 29, 2026 for the go-live release. Everything Release 2 needs, in one place. Under route B (Oct 26) every step is a pull request Claude builds and Aaron merges; Aaron's merge of the go-live PR is the go-live decision. Claude never sees, handles or types a secret. There is no preview stage (Aaron, Oct 24: &quot;NO preview systems&quot;).</p>
@@ -95,6 +95,7 @@
         <li><span class="pill">Open</span> <strong>Claude:</strong> a pull request that sets <code>payments.json</code> to &quot;on&quot;; Aaron's merge switches funding on, in test mode while the key is a test key.</li>
         <li><span class="pill">Open</span> <strong>Aaron, the live end-to-end check, in test mode:</strong> on a phone or laptop, make a buyer account on <code>/join/buyer</code> and add a backup passkey; post a task and fund it for $10 with Stripe's test card 4242 4242 4242 4242; see it open on /build as Tier 1. From a second, GitHub account: set up payouts on the account page (Stripe's test onboarding), claim the task, submit work; as the buyer, approve it. When its points are final (after the dispute window), Stripe's dashboard shows a transfer of $8.50 to the worker. Then fund a second task and close it before anyone claims it: a refund of $10.00. Claude checks each step read-only and records it in OPERATIONS.md.</li>
         <li><span class="pill">Open</span> <strong>The peer reviewer fee, once a room has a top-decile reviewer:</strong> a held submission on a funded task decided through <code>/peer</code> shows a transfer of 2% to the reviewer, and a refund after a peer-reviewed fail returns 98%. Until a room has 10 established auditors nobody is in its top decile, so this waits for real records (RISKS.md RK152).</li>
+        <li><span class="pill">Open</span> <strong>Claude, before the live switch:</strong> a read-only count, shown to Aaron, of what test mode leaves behind: payout accounts and bounties with <code>livemode</code> false, and money requests still queued or working. A live key can't act on test-mode objects, so each would fail or wait; Aaron decides how they are closed (the red-team review of PR #5, M5).</li>
         <li><span class="pill">Open</span> <strong>Aaron, live mode, after counsel:</strong> make a restricted live key (<code>rk_live_</code>) with the same access, replace <code>dog_pay_stripe_key</code> in Vault with it, and delete the two secrets dog-pay made in test mode, <code>dog_pay_webhook_secret</code> and <code>dog_pay_connect_secret</code> (their endpoints are test mode's; with them gone, dog-pay makes live ones). <strong>Claude</strong> then redeploys <code>dog-pay</code> from main, recorded first, because a running copy keeps the keys it read; and checks that two live webhook endpoints exist. Then the same end-to-end steps with a real card for $10.</li>
       </ul>
     </main>

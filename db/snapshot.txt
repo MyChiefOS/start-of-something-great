@@ -735,6 +735,7 @@ constraint app.work_bounties work_bounties_payee_member_fkey FOREIGN KEY (payee_
 constraint app.work_bounties work_bounties_payer_member_fkey FOREIGN KEY (payer_member) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.work_bounties work_bounties_pkey PRIMARY KEY (id)
 constraint app.work_bounties work_bounties_platform_fee_bps_check CHECK (((platform_fee_bps >= 0) AND (platform_fee_bps <= 3000)))
+constraint app.work_bounties work_bounties_review_fees_check CHECK (((3 * reviewer_fee_bps) <= platform_fee_bps))
 constraint app.work_bounties work_bounties_reviewer_fee_bps_check CHECK (((reviewer_fee_bps >= 0) AND (reviewer_fee_bps <= 500)))
 constraint app.work_bounties work_bounties_status_check CHECK ((status = ANY (ARRAY['funding'::text, 'funded'::text, 'releasing'::text, 'transferring'::text, 'released'::text, 'awaiting_payee'::text, 'refunding'::text, 'sending_refund'::text, 'refunded'::text, 'reversing'::text, 'reversed'::text, 'reversal_failed'::text, 'chargeback'::text, 'failed'::text])))
 constraint app.work_bounties work_bounties_stripe_charge_id_check CHECK (((char_length(stripe_charge_id) <= 255) AND (stripe_charge_id ~ '^(ch|py)_[A-Za-z0-9]+$'::text)))
@@ -1368,8 +1369,8 @@ function app.audit_net_keep() owner=dog_owner execute=dog_owner language=plpgsql
 function app.audit_net_no_change() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fc5a72e8973ce0cab35d4ab7a491bb1d
 function app.audit_upkeep_run() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=410ef431719a4501b4170fc8deffba3c
 function app.bounty_fund_request(p_task uuid, p_cents integer) owner=dog_pay execute=dog_pay,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=18af2394747095a2317a230e782260e4
-function app.bounty_peer_fee(p_review uuid) owner=dog_pay execute=dog_pay,dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=8f48ece0b26bf3a28b9de9b327e1e0a0
-function app.bounty_refund_cents(p_bounty uuid) owner=dog_pay execute=dog_pay language=sql volatile=s definer=true config=search_path=pg_catalog returns=integer body_md5=6f1c5dcdd984c97b7baa1e51e0e0820d
+function app.bounty_peer_fee(p_review uuid) owner=dog_pay execute=dog_pay,dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=bbc0607a9deeb92f8bb75e89fdaa6ca8
+function app.bounty_refund_cents(p_bounty uuid) owner=dog_pay execute=dog_pay language=sql volatile=s definer=true config=search_path=pg_catalog returns=integer body_md5=2a86da89dc83da726c7c65825127b14c
 function app.brakes_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b9bba9af26b586a124ac1a0ea3ca91ba
 function app.brakes_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1ff43bbbda54c5f24469335d6440b9e4
 function app.brakes_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=626062e2c0dfbeb7bb707dc7abebdcee
@@ -1527,10 +1528,10 @@ function app.p256_point_ok(pub bytea) owner=dog_owner execute=dog_owner,dog_sign
 function app.p256_powmod(b numeric, e numeric, m numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=dfafa15c1e41e7644ac53dfc16dc6196
 function app.p256_verify(pub bytea, msg bytea, sig bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6d74a56a095e7b22c6640eb1b22397d7
 function app.pay_ledger_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=23e2f5684fb534d328a40d68bb4bba8b
-function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9b5d99539262215a73e25dcf7402e225
-function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=8785e32961ef7921e84b048b9ccf9378
+function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=b940ed481cc290e321089b6ce4924274
+function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=38ba00d85676d8f0ff2d197f86a3a067
 function app.peer_review_release(p_review uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=47b6a0b555d6f082d9530fc5226b3287
-function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=041aba5d591241bb4353a2254a8a5038
+function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=40166a09d1c658da02d0c3778b3d0dba
 function app.peer_top_decile(p_member uuid, p_room text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=64720e8fd0cb94cc255f0e7f71dbf5a7
 function app.pin_change(p_current text, p_new text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=318f0c2327d38f43884b5fcde77c3019
 function app.pin_digest(p_member uuid, p_salt bytea, p_pin text) owner=dog_signin execute=dog_signin language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=27ff3f479653e63606de4edc718b9c03
@@ -2366,27 +2367,18 @@ grant app.pay_requests.kind dog_app SELECT
 grant app.pay_requests.member_id dog_app SELECT
 grant app.pay_requests.peer_review_id dog_pay UPDATE
 grant app.pay_requests.status dog_app SELECT
+grant app.peer_reviews dog_app SELECT
 grant app.peer_reviews dog_work INSERT
 grant app.peer_reviews dog_work SELECT
 grant app.peer_reviews dog_work UPDATE
-grant app.peer_reviews.assigned_at dog_app SELECT
 grant app.peer_reviews.bounty_id dog_pay SELECT
-grant app.peer_reviews.decided_at dog_app SELECT
 grant app.peer_reviews.decided_at dog_pay SELECT
-grant app.peer_reviews.expires_at dog_app SELECT
-grant app.peer_reviews.fee_cents dog_app SELECT
 grant app.peer_reviews.fee_cents dog_pay SELECT
-grant app.peer_reviews.id dog_app SELECT
 grant app.peer_reviews.id dog_pay SELECT
-grant app.peer_reviews.reason dog_app SELECT
 grant app.peer_reviews.reviewer_member dog_pay SELECT
-grant app.peer_reviews.status dog_app SELECT
 grant app.peer_reviews.status dog_pay SELECT
-grant app.peer_reviews.submission_id dog_app SELECT
 grant app.peer_reviews.submission_id dog_pay SELECT
-grant app.peer_reviews.task_id dog_app SELECT
 grant app.peer_reviews.task_id dog_pay SELECT
-grant app.peer_reviews.verdict dog_app SELECT
 grant app.peer_reviews.verdict dog_pay SELECT
 grant app.pin_keys dog_signin SELECT
 grant app.post_search dog_public DELETE

@@ -215,3 +215,51 @@ test('PV7: the API: the queue is for a person on our pages; an agent is refused;
   assert.match(src, /'peer\/decide': \{ keys: \['review', 'verdict', 'reason'\], fn: \(t, b\) => work\.peerDecide\(t, b\), pay: true, personOnly: true \}/);
   assert.match(fs.readFileSync(require('path').join(__dirname, '..', 'peer.js'), 'utf8'), /\/api\/work\//);
 });
+
+test('PV8 (the red-team review of PR #5): no fee once the task is closed or refunded; ties count either way round; no more than 3 of one poster’s tasks; never an administrator; only risk holds', async () => {
+  const r = await member('Reviewer nine');
+  await payouts(r);
+  await topDecile([r]);
+  // H1: the task is closed and refunded while the review is open: no decision, no fee.
+  const h = await held();
+  const got = await take(r);
+  await q(`update app.work_tasks set status = 'closed' where id = '${h.task}'`);
+  assert.deepStrictEqual(await decide(r, got.review, 'fail'), { result: 'not_waiting' });
+  assert.strictEqual((await q(`select count(*)::int as n from app.pay_requests where peer_review_id = '${got.review}'`))[0].n, 0);
+  assert.strictEqual((await q(`select app.bounty_peer_fee('${got.review}') as c`))[0].c, 0);
+  await clear();
+  // M1: the reviewer worked on a task the worker posted: blocked, the other way round from PV5.
+  const r2 = await member('Reviewer ten');
+  await payouts(r2);
+  await topDecile([r2]);
+  const h2 = await held();
+  const [p3] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('W', '${room}', 'member', '${worker.id}') returning id`);
+  const [t3] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member) values ('${p3.id}', '${room}', 'T', 'either', 1, 'member', '${worker.id}') returning id`);
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, code_hash, expires_at) values ('${t3.id}', '${r2.id}', '${crypto.randomBytes(32).toString('hex')}', now() + interval '1 day') returning id`);
+  await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, artifact_kind, artifact_url, seal_key, seal, status, decided_by)
+    values ('${t3.id}', '${cl.id}', 'member', '${r2.id}', 'link', 'https://example.org/w', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'failed', 'poster')`);
+  assert.strictEqual(await block(r2, h2.sub), 'collaborated');
+  // M3: 3 of one poster's tasks in 30 days, whoever the worker.
+  const r3 = await member('Reviewer eleven');
+  await payouts(r3);
+  await topDecile([r3]);
+  await q(`insert into app.peer_reviews (submission_id, task_id, reviewer_member, status, verdict, reason, expires_at, decided_at)
+    select s.id, s.task_id, '${r3.id}', 'decided', 'fail', 'Earlier', now(), now() from app.work_submissions s join app.work_tasks t on t.id = s.task_id
+     where t.poster_member = '${poster.id}' limit 3`);
+  assert.strictEqual(await block(r3, h2.sub), 'rotation');
+  // L4: an administrator isn't a paid reviewer.
+  const adm = await member('Admin');
+  await payouts(adm);
+  await topDecile([adm]);
+  await su.begin(async (t) => { await t.unsafe('alter table app.members disable trigger members_guard'); await t.unsafe(`update app.members set is_admin = true where id = '${adm.id}'`); await t.unsafe('alter table app.members enable always trigger members_guard'); }).catch(() => q(`update app.members set is_admin = true where id = '${adm.id}'`));
+  assert.strictEqual(await block(adm, h2.sub), 'admin');
+  // M2: work held only because its poster didn't check it in time, and work routed to Third Look ('held'), aren't offered.
+  await q(`update app.work_submissions set held_reason = 'The task''s poster didn''t check it within 72 hours.' where id = '${h2.sub}'`);
+  const r4 = await member('Reviewer twelve');
+  await payouts(r4);
+  await topDecile([r4]);
+  assert.strictEqual((await take(r4)).review, null);
+  await q(`update app.work_submissions set held_reason = null, route = 'held' where id = '${h2.sub}'`);
+  assert.strictEqual((await take(r4)).review, null);
+  await clear();
+});

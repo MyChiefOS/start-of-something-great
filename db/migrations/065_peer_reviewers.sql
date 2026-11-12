@@ -8,12 +8,14 @@
 --      time, for 24 hours, and decided pass or fail with a reason. It finishes as any person's decision does (042's
 --      app.work_finish), recorded as decided by 'peer', with the reviewer's vote kept for calibration. The
 --      administrator can still decide it first; the assignment then lapses.
---      Eligible: a person (never an agent, never a buyer account, 063), active, at JEVs level 2, with payouts set up at
+--      Only work held for a person by JEVs's risk rules (route 'admin'), not a poster's timeout and not work an
+--      administrator is a party to (route 'held', Third Look's). Eligible: a person (never an agent, never a buyer
+--      account, 063, never an administrator), active, at JEVs level 2, with payouts set up at
 --      Stripe (Connect Express's own identity checks: Aaron's Nov 11 "payout identity"), and in the top decile for
 --      calibration among auditors in the task's room (045's leaderboard band 'top10', which needs an established
---      record). Blocked: the worker, the poster, either one's agent owner, anyone who did work for this poster or
---      had this worker do work for them in the last 90 days, and a reviewer who has already decided 3 of this
---      worker's submissions in 30 days. Each block is checked when the work is taken and again when it is decided.
+--      record). Blocked: the worker, the poster, either one's agent owner, anyone who worked with either of them, in
+--      either role, in the last 90 days, and a reviewer who has already decided 3 of this worker's submissions, or 3 of
+--      this poster's tasks, in 30 days. Each block is checked when the work is taken and again when it is decided.
 --      At most 3 paid peer reviews per task; after that the administrator decides, as before.
 --   2. The fee (Aaron, Nov 12): 2% of the bounty on every completed review, pass or fail, so no reviewer earns by
 --      passing. On a pass the bounty splits 85% to the worker, 13% to ChiefOS, 2% to the reviewer. After a peer-reviewed
@@ -57,7 +59,8 @@ create policy peer_reviews_pay_select on app.peer_reviews for select to dog_pay 
 create policy peer_reviews_app on app.peer_reviews for select to dog_app using (reviewer_member = (select app.current_member()) or (select app.actor_kind()) = 'admin');
 grant select, insert, update on app.peer_reviews to dog_work;
 grant select (id, submission_id, task_id, bounty_id, reviewer_member, status, verdict, fee_cents, decided_at) on app.peer_reviews to dog_pay;
-grant select (id, submission_id, task_id, status, verdict, reason, fee_cents, assigned_at, expires_at, decided_at) on app.peer_reviews to dog_app;
+-- The site reads a reviewer's own rows (and the administrator all); row-level security limits the rows.
+grant select on app.peer_reviews to dog_app;
 
 -- The fee's request and its ledger line.
 alter table app.pay_requests add column peer_review_id uuid references app.peer_reviews (id) on delete set null;
@@ -80,14 +83,18 @@ grant select (id, task_id, status, bounty_cents, reviewer_fee_bps) on app.work_b
 create policy work_bounties_work_select on app.work_bounties for select to dog_work using (true);
 grant update (peer_review_id) on app.pay_requests to dog_pay;
 create index pay_requests_review on app.pay_requests (peer_review_id) where peer_review_id is not null;
+-- Three paid reviews never take more than the platform's fee (the red-team review of PR #5, L3).
+alter table app.work_bounties add constraint work_bounties_review_fees_check check (3 * reviewer_fee_bps <= platform_fee_bps);
 
 -- ---- 4. A buyer's backup key: at most 2 keys a buyer ----
 alter table app.buyer_keys drop constraint buyer_keys_member_id_key;
 create index buyer_keys_member on app.buyer_keys (member_id);
 reset role;
 
--- A peer reviewer is never a buyer account (063's scope).
+-- A peer reviewer is never a buyer account (063's scope). Rights on a function are its owner's to give.
+set local role dog_signin;
 grant execute on function app.buyer_scope() to dog_owner;
+reset role;
 set local role dog_owner;
 create trigger a_buyer_scope before insert or update of reviewer_member on app.peer_reviews for each row execute function app.buyer_scope('reviewer_member');
 reset role;
@@ -107,7 +114,8 @@ begin
   select x.id, x.status, x.bounty_id, x.reviewer_member into r from app.peer_reviews x where x.id = p_review;
   if r.id is null or r.status <> 'decided' or r.bounty_id is null then return 0; end if;
   select * into b from app.work_bounties x where x.id = r.bounty_id;
-  if b.id is null or b.status = any (array['funding', 'failed']) then return 0; end if;
+  -- Only while the money is still held for the work (the red-team review of PR #5, H1: never after a refund began).
+  if b.id is null or b.status <> all (array['funded', 'releasing', 'transferring', 'awaiting_payee', 'released']) then return 0; end if;
   cents := (b.bounty_cents * b.reviewer_fee_bps) / 10000;
   if cents <= 0 then return 0; end if;
   insert into app.pay_requests (member_id, kind, bounty_id, peer_review_id) values (r.reviewer_member, 'reviewer_fee', b.id, r.id) on conflict do nothing;
@@ -116,8 +124,10 @@ end $$;
 -- What a refund returns: the bounty less every fee its peer reviews earned (98% after one; 100% before any).
 create function app.bounty_refund_cents(p_bounty uuid) returns integer
 language sql stable security definer set search_path = pg_catalog as $$
+  -- Only fees actually owed: a review whose fee request failed for good, or never queued, takes nothing (L1).
   select greatest(0, b.bounty_cents - ((b.bounty_cents * b.reviewer_fee_bps) / 10000)
-                    * (select count(*) from app.peer_reviews r where r.bounty_id = b.id and r.status = 'decided'))::integer
+                    * (select count(*) from app.peer_reviews r where r.bounty_id = b.id and r.status = 'decided'
+                         and exists (select 1 from app.pay_requests q where q.peer_review_id = r.id and q.kind = 'reviewer_fee' and q.status <> 'failed')))::integer
     from app.work_bounties b where b.id = p_bounty
 $$;
 revoke execute on function app.bounty_peer_fee(uuid), app.bounty_refund_cents(uuid) from public;
@@ -148,6 +158,8 @@ begin
   select * into t from app.work_tasks x where x.id = s.task_id;
   select x.id, x.status, x.trust_level, x.is_admin into m from app.members x where x.id = p_member;
   if m.id is null or m.status <> 'active' then return 'inactive'; end if;
+  -- The administrator decides held work as the administrator, never for the fee (the red-team review of PR #5, L4).
+  if m.is_admin then return 'admin'; end if;
   if app.is_buyer(p_member) then return 'buyer'; end if;
   if m.trust_level < 2 then return 'level'; end if;
   if not exists (select 1 from app.pay_accounts a where a.member_id = p_member and a.payouts_enabled) then return 'payouts'; end if;
@@ -155,18 +167,24 @@ begin
   worker := coalesce(s.worker_member, (select g.owner_id from app.agents g where g.id = s.worker_agent));
   poster := coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent));
   if p_member = worker or p_member = poster then return 'party'; end if;
-  -- Collaboration in the last 90 days: the reviewer did work for this poster, or had this worker do work for them.
+  -- Collaboration in the last 90 days, either way round (the red-team review of PR #5, M1): any audited or submitted
+  -- work between the reviewer and the worker or the poster, whoever posted and whoever did it.
   if exists (select 1 from app.work_submissions x join app.work_tasks y on y.id = x.task_id
-              where x.created_at > now() - interval '90 days'
-                and ((coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) = p_member
-                      and coalesce(y.poster_member, (select g.owner_id from app.agents g where g.id = y.poster_agent)) = poster)
-                  or (coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) = worker
-                      and coalesce(y.poster_member, (select g.owner_id from app.agents g where g.id = y.poster_agent)) = p_member))) then
+              cross join lateral (select coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) as w,
+                                         coalesce(y.poster_member, (select g.owner_id from app.agents g where g.id = y.poster_agent)) as p) z
+              where x.created_at > now() - interval '90 days' and x.task_id <> s.task_id
+                and ((z.w = p_member and z.p in (worker, poster)) or (z.p = p_member and z.w in (worker, poster)))) then
     return 'collaborated';
   end if;
   if (select count(*) from app.peer_reviews r join app.work_submissions x on x.id = r.submission_id
        where r.reviewer_member = p_member and r.status = 'decided' and r.decided_at > now() - interval '30 days'
          and coalesce(x.worker_member, (select g.owner_id from app.agents g where g.id = x.worker_agent)) = worker) >= 3 then
+    return 'rotation';
+  end if;
+  -- And per poster: no more than 3 of one poster's tasks in 30 days (M3).
+  if (select count(*) from app.peer_reviews r join app.work_tasks y on y.id = r.task_id
+       where r.reviewer_member = p_member and r.status = 'decided' and r.decided_at > now() - interval '30 days'
+         and coalesce(y.poster_member, (select g.owner_id from app.agents g where g.id = y.poster_agent)) = poster) >= 3 then
     return 'rotation';
   end if;
   select r.code into code from app.work_rooms r where r.id = t.room_id;
@@ -190,7 +208,11 @@ begin
   for x in select s.id as sub, s.task_id, b.id as bounty
              from app.work_submissions s join app.work_tasks t on t.id = s.task_id
              join app.work_bounties b on b.task_id = t.id and b.status = 'funded'
-            where s.status = 'review' and s.route = any (array['admin', 'held'])
+            -- Work JEVs held for a person (route 'admin'); not work sent there only because its poster didn't check it in
+            -- time, and not 'held' work, which an administrator is a party to and 052 keeps for Third Look (the red-team
+            -- review of PR #5, M2).
+            where s.status = 'review' and s.route = 'admin'
+              and coalesce(s.held_reason, '') not like 'The task''s poster didn''t check it%'
               and not exists (select 1 from app.peer_reviews r where r.submission_id = s.id and r.status = 'assigned')
               and (select count(*) from app.peer_reviews r where r.task_id = t.id and r.status = 'decided') < 3
             order by coalesce(s.routed_at, s.created_at) limit 200 loop
@@ -225,6 +247,12 @@ begin
   end if;
   select * into s from app.work_submissions x where x.id = r.submission_id for update;
   if s.status <> 'review' then
+    update app.peer_reviews x set status = 'released' where x.id = r.id;
+    return 'not_waiting';
+  end if;
+  -- The money must still be held for this work (H1): a task closed or refunded meanwhile gives no fee and no decision.
+  if not exists (select 1 from app.work_bounties b join app.work_tasks t on t.id = b.task_id
+                  where b.id = r.bounty_id and b.status = 'funded' and t.status <> all (array['closed', 'removed'])) then
     update app.peer_reviews x set status = 'released' where x.id = r.id;
     return 'not_waiting';
   end if;

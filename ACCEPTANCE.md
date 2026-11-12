@@ -334,6 +334,7 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | PV5 | Red team: nobody reviews work they did or posted, or work tied to them in the last 90 days; a buyer account is never a reviewer | Automated test |
 | PV6 | Red team: a tie that arises after the work was taken stops the decision; a reviewer can't decide more than 3 of one worker's submissions in 30 days | Automated test |
 | PV7 | The queue is three POSTs for a person on our own pages (`peer/take`, `peer/decide`, `peer/release`); /peer runs only our own scripts | Automated test |
+| PV8 | From the red-team review: no decision and no fee once the task is closed or refunded; ties count either way round; no more than 3 of one poster's tasks in 30 days; an administrator isn't a paid reviewer; only work held for its risk is offered (not a poster's timeout, not Third Look's 'held' work) | Automated test |
 | PM24 | dog-pay sends a decided review's 2% fee once, from the bounty's own charge to the reviewer's connected account, and records it in the ledger | Automated test (fake Stripe) |
 | PM25 | A refund after one peer review returns 98% of the bounty; with no peer review, all of it | Automated test (fake Stripe) |
 | BK13 | A signed-in buyer adds one backup passkey from a session begun in the last 10 minutes, checked as at sign-up; either key signs in; never a third; the buyer is told | Automated test; not yet seen with a real device |
@@ -398,7 +399,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
-- v1.22 (2026-11-12, draft): adds PV1 to PV7, PM24, PM25 and BK13 (migration 065), to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
+- v1.22 (2026-11-12, draft): adds PV1 to PV8, PM24, PM25 and BK13 (migration 065), to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
 - v1.21 (2026-11-12, draft): adds MK1 to MK5 (migration 064), funded work without public prices and the home page's calls to action, to Aaron's decisions of Nov 12. No existing criterion's wording changes.
 - v1.20 (2026-11-12, draft): adds BK1 to BK12 (migration 063), the buyer door, to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
 - v1.19 (2026-11-12, draft): adds LH6 (migration 062), to Aaron's decision of Nov 12 on the fresh review of PR #127. No existing criterion's wording changes.
