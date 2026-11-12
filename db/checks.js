@@ -154,6 +154,8 @@ const DEFINERS = {
   // 065: the paid peer reviewer queue (the work role's: take, decide, give back; the blocks only they read), the fee
   // and refund steps (the payment role's: the queue queues a fee; dog-pay reads the refund as itself), and a buyer's
   // backup key (the sign-in role's, with the attested-key check only it uses).
+  // 066: the worker or the poster appeals a peer fail (Aaron, Nov 12, RK152).
+  'app.work_fail_appeal(uuid, text)': 'dog_work',
   'app.peer_review_take()': 'dog_work',
   'app.peer_review_decide(uuid, text, text)': 'dog_work',
   'app.peer_review_release(uuid)': 'dog_work',

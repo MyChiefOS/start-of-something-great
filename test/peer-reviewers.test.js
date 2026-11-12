@@ -263,3 +263,55 @@ test('PV8 (the red-team review of PR #5): no fee once the task is closed or refu
   assert.strictEqual((await take(r4)).review, null);
   await clear();
 });
+
+test('PV9 (066; Aaron, Nov 12, RK152): a sample of peer fails, and any appeal, is checked again; an overturned fail lowers the reviewer’s calibration and reverses nothing', async () => {
+  const r = await member('Reviewer thirteen');
+  await payouts(r);
+  await topDecile([r]);
+  // Every fail sampled, for the test (15% in production).
+  await q(`update app.work_settings set fail_sample_rate = 1`);
+  const h = await held();
+  const got = await take(r);
+  assert.deepStrictEqual(await decide(r, got.review, 'fail'), { result: 'fail' });
+  const [k] = await q(`select id, why, status from app.work_checks where submission_id = '${h.sub}'`);
+  assert.deepStrictEqual([k.why, k.status], ['peer_fail_sample', 'open']);
+  // The poster appeals too: it joins the check already open.
+  assert.deepStrictEqual(await run(ctxOf(poster), (t) => work.failAppeal(t, { submission: h.sub, reason: 'The work did what the task asked' })), { result: 'already' });
+  await assert.rejects(run(ctxOf(r), (t) => work.failAppeal(t, { submission: h.sub, reason: 'Not mine to appeal' })), /only the worker or the poster/i);
+  // The administrator overturns it: nothing is reversed, the worker is told, calibration counts it as not held.
+  const [adm] = await q(`select id from app.members where id = '${poster.id}'`);
+  void adm;
+  await q(`set role dog_work; update app.work_checks set status = 'reversed', reason = 'The work was fine', decided_at = now() where id = '${k.id}'; reset role`);
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${h.sub}'`))[0].status, 'failed', 'a fail is never reversed into anything');
+  const [st] = await q(`select cal_k, cal_n from app.work_stats(null) where kind = 'member' and ref = '${r.id}'`);
+  assert.deepStrictEqual([Number(st.cal_k), Number(st.cal_n)], [0, 1], 'an overturned fail lowers calibration');
+  // With no sample, the worker appeals within the window; after it, too late.
+  await q(`update app.work_settings set fail_sample_rate = 0`);
+  await clear();
+  const h2 = await held();
+  const r2 = await member('Reviewer fourteen');
+  await payouts(r2);
+  await topDecile([r2]);
+  const g2 = await take(r2);
+  await decide(r2, g2.review, 'fail');
+  assert.strictEqual((await q(`select count(*)::int as n from app.work_checks where submission_id = '${h2.sub}'`))[0].n, 0, 'not sampled');
+  assert.deepStrictEqual(await run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h2.sub, reason: 'I did what was asked' })), { result: 'appealed' });
+  const [k2] = await q(`select why, appealed_by from app.work_checks where submission_id = '${h2.sub}'`);
+  assert.deepStrictEqual([k2.why, k2.appealed_by], ['peer_fail_appeal', worker.id]);
+  const h3 = await held();
+  const r3 = await member('Reviewer fifteen');
+  await payouts(r3);
+  await topDecile([r3]);
+  const g3 = await take(r3);
+  await decide(r3, g3.review, 'fail');
+  await q(`update app.work_submissions set decided_at = now() - interval '73 hours' where id = '${h3.sub}'`);
+  await assert.rejects(run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h3.sub, reason: 'Too late' })), /has passed|too late|window/i);
+  await q(`update app.work_settings set fail_sample_rate = 0.15`);
+  await clear();
+});
+
+test('PV10 (066): the administrator’s check of a peer fail, through the real decision, reverses no work', async () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'db', 'migrations', '066_fail_rechecks.sql'), 'utf8');
+  assert.match(src, /if p_decision = 'reverse' and k\.why = any \(array\['peer_fail_sample', 'peer_fail_appeal'\]\) then/);
+  assert.match(src, /elsif p_decision = 'reverse' then\n    perform app\.work_reverse/);
+});
