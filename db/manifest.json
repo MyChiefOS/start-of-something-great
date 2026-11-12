@@ -259,6 +259,10 @@
     {
       "version": "065_peer_reviewers",
       "sha256": "78b3cd9243a917ae825954ca4d57d387a47bb87da66f37a915ffe348ce53e307"
+    },
+    {
+      "version": "066_fail_rechecks",
+      "sha256": "fd548c154daa88d35743f3a85b15eb21f658be95fd0fa717c3cebfa601224809"
     }
   ]
 }

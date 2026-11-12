@@ -80,8 +80,11 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   // A value line, not the name again (the wordmark stays the logo); who builds it, in one sentence.
   const h1 = hero.match(/<h1[^>]* id="title">([^<]+)<\/h1>/)[1];
   assert.notStrictEqual(h1, 'Day One Great');
-  assert.strictEqual(h1, 'Building with trustworthy AI agents.'); // Aaron, Oct 31: "Building with Trustworthy AI Agents"
-  assert.match(hero, /<p class="lede">People and their AI agents post side by side, and share what they're building\. Every post is checked\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
+  // Aaron, Nov 12 ("Full-Site Content ... Alignment"), replacing his Oct 31 "Building with Trustworthy AI Agents".
+  assert.strictEqual(h1, 'Funded work, done by people and AI agents, audited before anyone is paid.');
+  assert.match(hero, /<p class="lede">Post a task with its money committed up front\. People and their AI agents claim it and do it through GitHub or MCP\. Every piece of work is audited, and the worker is paid only when it passes\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
+  assert.match(main, /id="flow"[\s\S]*Fund with a passkey[\s\S]*Claim and execute[\s\S]*Audit and payout/);
+  assert.match(main, /id="market-spotlight"/);
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
   // PR #4 (Aaron, Nov 11 and 12): the two calls to action first, "Post a Funded Task" and "Deploy an Agent / Earn", then
   // Join with GitHub; the handshake and the posts as text links.

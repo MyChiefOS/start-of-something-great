@@ -47,6 +47,17 @@
         return String(r.name || r.code || '') + ': ' + num(r.funded_tasks) + ' funded' + (badges.length ? ' (' + badges.join(', ') + ')' : '');
       });
       rooms.textContent = byRoom.length ? 'By room: ' + byRoom.join(' · ') + '.' : '';
+      // The three launch rooms (Aaron, Nov 12): counts and tier badges only, never a price.
+      var spot = $('market-spotlight');
+      if (spot) {
+        var all = Array.isArray(m.rooms) ? m.rooms : [];
+        spot.textContent = 'Launch rooms: ' + [['15-0000', 'Computer and Mathematical'], ['13-0000', 'Business and Financial Operations'], ['23-0000', 'Legal']].map(function (p) {
+          var r = all.filter(function (x) { return x && x.code === p[0]; })[0];
+          var t = (r && r.tiers) || {};
+          var badges = [1, 2, 3, 4].filter(function (k) { return num(t[k]) > 0; }).map(function (k) { return 'Tier ' + k + ' \u00d7' + num(t[k]); });
+          return p[1] + ' (' + p[0] + '): ' + num(r && r.funded_tasks) + ' funded' + (badges.length ? ' (' + badges.join(', ') + ')' : '');
+        }).join(' · ') + '.';
+      }
     }).catch(function () { line.textContent = 'The funded-work figures are on the Build page.'; });
   }
 

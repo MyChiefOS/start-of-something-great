@@ -44,6 +44,7 @@
 //     POST peer/take {}                              take the oldest held work on a funded task you may review, for 24 hours
 //     POST peer/decide {review, verdict, reason}     pass or fail it, with a reason; the 2% fee is yours either way
 //     POST peer/release {review}                     give it back to the queue
+//     POST appeal {submission, reason}               the worker or the poster appeals a peer reviewer's fail, once, within 72 hours (066)
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -194,7 +195,9 @@ const WRITES = {
   // 065: the paid peer reviewer queue. A decision queues the reviewer's fee, so the payment function is told.
   'peer/take': { keys: [], fn: (t) => work.peerTake(t), personOnly: true },
   'peer/decide': { keys: ['review', 'verdict', 'reason'], fn: (t, b) => work.peerDecide(t, b), pay: true, personOnly: true },
-  'peer/release': { keys: ['review'], fn: (t, b) => work.peerRelease(t, b), personOnly: true }
+  'peer/release': { keys: ['review'], fn: (t, b) => work.peerRelease(t, b), personOnly: true },
+  // 066: an appeal of a peer fail goes to the administrator's checks.
+  appeal: { keys: ['submission', 'reason'], fn: (t, b) => work.failAppeal(t, b), code: 201, personOnly: true }
 };
 
 async function handle(req, res, run) {
