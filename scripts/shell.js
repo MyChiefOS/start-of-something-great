@@ -33,9 +33,9 @@ const STYLES = Object.fromEntries(Object.values(S).map((d) => [cls(d), d]));
 const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents'], ['/team', 'About'], ['/search', 'Search']];
 // The modules that are live (042: the work module; 045: the leaderboard; 046: disputes): shown before the "Proposed" label, so the row never calls a live
 // page proposed (the CLJO's review of Nov 6).
-const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/admin/console'];
+const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/peer', '/admin/console'];
 // The design's order, except that a live module comes before the ones not live yet (Disputes before Loops, 046).
-const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/disputes', 'Disputes'],
+const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/disputes', 'Disputes'], ['/peer', 'Peer review'],
   ['/loops', 'Loops'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
 const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
 const TRUST = [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'Decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'],

@@ -4,7 +4,7 @@ We publish every target date and whether we hit it. If a date slips, the origina
 
 "Done" means every check for that milestone in [ACCEPTANCE.md](ACCEPTANCE.md) passes.
 
-_Last updated: October 29, 2026 (the site sign-in row). The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Joining is GitHub through giscus on /join and /talk; signing in to the site itself (a GitHub username, a key file and a code posted on /join) is built and merged (#53), off until launch; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md)._
+_Last updated: November 12, 2026 (the rows for #127 to #132, and this branch). Earlier: October 29, 2026 (the site sign-in row). The private preview is dropped (Aaron, Oct 24: "NO preview systems"). Joining is GitHub through giscus on /join and /talk, and the site's own sign-in is open since Oct 29; JEVs checks every account and post; the plan is [USE-CASES.md](USE-CASES.md). Payments are built and switched off until Aaron's go-live decision._
 
 | Milestone | Target | Actual | Result | Depends on |
 |---|---|---|---|---|
@@ -30,6 +30,14 @@ _Last updated: October 29, 2026 (the site sign-in row). The private preview is d
 | Joining with GitHub on /join (giscus) | Thu, Oct 22 (Aaron: "a production system delivered today") | Fri, Oct 23 | ✅ Done, 1 day late: posting through giscus; nothing of ours recorded yet | Claude |
 | Signing in to the site: GitHub username, key file and a code posted on /join, 30 days (Aaron's design, Oct 28) | With Release 2 (Fri, Nov 20) | Thu, Oct 29 (built and merged, #53) | Built and merged, switched off until launch; not yet proven live | Claude builds; Aaron merges |
 | Release 2 public: every role working (USE-CASES.md) | Fri, Nov 20 | | In progress (Oct 29): fixes 1 to 4 and the site sign-in merged; the site's own system built and switched off; order in harness/STATUS.md | Claude builds; Aaron merges each PR |
+| #127: production readiness (topic threads, the legal hold and linked bans, the daily summary) | Wed, Nov 11 (added Nov 10) | Wed, Nov 11 | Merged Nov 11; not yet proven live (no hold, linked ban or summary exercised yet) | Claude builds; Aaron merges |
+| #128: payment rails (funded bounties, Stripe Connect payouts, the money ledger), switched off | Wed, Nov 11 (added that day) | Wed, Nov 11 | Merged Nov 11; not live: payments are off and the payment function isn't deployed | Claude builds; Aaron's go-live decision |
+| #129: cleanup, and the JEVs gate redeployed from main | Thu, Nov 12 (added Nov 11) | Thu, Nov 12 | ✅ Done, same day: gate v9 live, its source digest checked against main | Claude, with Aaron's approval |
+| #130: the buyer door (a passkey and no GitHub account, for posting and paying for work) | Thu, Nov 12 (added Nov 11) | Thu, Nov 12 | Merged Nov 12; not live: the door stays shut while payments are off | Claude builds; Aaron merges |
+| #131: funded work on the home page, /build and /rooms without public prices (counts and tiers only) | Thu, Nov 12 (added that day) | Thu, Nov 12 | ✅ Done, same day: the figures read zero funded tasks until payments go on | Claude builds; Aaron merges |
+| #132: paid peer reviewers (2% a decided review), a buyer's backup passkey | Thu, Nov 12 (added that day) | Thu, Nov 12 | Merged Nov 12; not live: the queue is empty until a room has 10 established auditors and payments are on | Claude builds; Aaron merges |
+| This branch: a 15% sample of peer fails and appeals checked again (066); site text, llms.txt, terms and privacy brought up to #132 | Thu, Nov 12 (added that day) | | In progress: pull request open for Aaron's review | Claude builds; Aaron merges |
+| Payments go live (Stripe test key in Vault, the payment function deployed, the live end-to-end check, then payments.json "on") | Not set yet (Aaron) | | In progress: waits for this branch's merge and Aaron's key | Aaron's decision; Claude deploys with his approval |
 
 ## How we report
 
