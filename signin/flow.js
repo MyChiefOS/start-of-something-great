@@ -612,6 +612,23 @@ function make(deps) {
     async buyerSignIn(req, res) {
       return buyerDoor(req, res, false);
     },
+    // 065 (Aaron, Nov 12, RK151): a signed-in buyer adds one backup passkey, from a session begun in the last 10
+    // minutes. The database checks the key exactly as at sign-up, and that this is the buyer's own fresh session.
+    async buyerBackup(req, res) {
+      if (!h.sameSite(req)) return json(res, 403, { error: 'Please start again from the buyer page.' });
+      const me = await current(req);
+      if (!me) return json(res, 401, { error: 'Sign in with your passkey first, then add a backup within 10 minutes.' });
+      const form = (await h.form(req, 8192)) || {};
+      const cred = bytesOf(form.cred, 16, 1023), cd = bytesOf(form.cd, 50, 2048), ad = bytesOf(form.ad, 37, 4096);
+      const pub = c.p256FromSpki(bytesOf(form.spki, 91, 91));
+      if (!cred || !cd || !ad || !clientDataOk(cd, 'webauthn.create')) return json(res, 200, { error: BUYER_HELP, retry: true });
+      if (!pub || form.alg !== '-7') return json(res, 200, { error: 'This device made a kind of passkey we don\u2019t take. Please try another device or browser.' });
+      const out = await run(session.strongActorFor(me), (t) => store.buyerKeyBackup(t, { credentialId: cred, publicKey: pub, clientData: cd, authData: ad, sessionHash: sessionHash(req) }));
+      const SAY = { fresh: 'For safety, sign in with your passkey again, then add the backup within 10 minutes.', full: 'Your account already has a backup passkey (2 in all).',
+        taken: 'That passkey is already on an account.', not_buyer: 'Backup passkeys are for buyer accounts.', bad_proof: BUYER_HELP };
+      if (out === 'ok') return json(res, 200, { added: true });
+      return json(res, 200, { error: SAY[out] || BUYER_HELP });
+    },
 
     async emailStart(req, res) {
       if (!h.sameSite(req)) return h.redirect(res, '/join?error=expired');

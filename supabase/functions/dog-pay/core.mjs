@@ -158,10 +158,12 @@ async function check(sql) {
 const done = (t, r, fields = {}) => t`update app.pay_requests set status = 'done', done_at = now(), error_code = null,
   hosted_url = ${fields.url || null}, stripe_object_id = ${fields.object || null} where id = ${r.id}`;
 
-// What Stripe already has for this bounty, so a retry under a new key never makes it twice.
-async function find(stripe, path, params, bountyId) {
+// What Stripe already has for this bounty, so a retry under a new key never makes it twice. A bounty's transfers are
+// told apart by role (065: the worker's has none, a reviewer's fee carries its review's ID).
+async function find(stripe, path, params, bountyId, review = null) {
   const list = await stripe.call('GET', path, { ...params, limit: 10 });
-  return ((list && list.data) || []).find((x) => x.metadata && x.metadata.bounty === bountyId) || null;
+  return ((list && list.data) || []).find((x) => x.metadata && x.metadata.bounty === bountyId
+    && (review ? x.metadata.review === review : !x.metadata.review)) || null;
 }
 // Moves a bounty from one state to the next only if it is still in the first; false if something else moved it.
 async function move(t, id, from, to) {
@@ -240,13 +242,43 @@ async function doRequest(sql, stripe, r, site) {
   if (r.kind === 'refund') {
     if (b.status !== 'refunding' && b.status !== 'sending_refund') return asPay(sql, (t) => done(t, r));
     if (b.status === 'refunding' && !(await asPay(sql, (t) => move(t, b.id, 'refunding', 'sending_refund')))) return asPay(sql, (t) => done(t, r));
+    // 065 (Aaron, Nov 12): the payer gets the bounty back less every fee its peer reviews earned (98% after one review;
+    // all of it before any). The database says how much.
+    const [{ cents }] = await asPay(sql, (t) => t`select app.bounty_refund_cents(${b.id}) as cents`);
     const re = (await find(stripe, '/v1/refunds', { payment_intent: b.stripe_payment_intent_id }, b.id))
-      || await stripe.call('POST', '/v1/refunds', { payment_intent: b.stripe_payment_intent_id, metadata: { bounty: b.id } }, r.id);
+      || await stripe.call('POST', '/v1/refunds', { payment_intent: b.stripe_payment_intent_id, amount: cents, metadata: { bounty: b.id } }, r.id);
     return asPay(sql, async (t) => {
       await t`update app.work_bounties set status = 'refunded', stripe_refund_id = ${re.id}, refunded_at = now() where id = ${b.id}`;
       await t`insert into app.pay_ledger (bounty_id, member_id, kind, amount_cents, stripe_object_id) values (${b.id}, ${b.payer_member}, 'refund', ${-re.amount}, ${re.id})
         on conflict do nothing`;
       await done(t, r, { object: re.id });
+    });
+  }
+  // 065: a peer reviewer's fee, 2% of the bounty, for every decided review (Aaron, Nov 12: pass or fail). Sent from the
+  // bounty's own charge to the reviewer's connected account; it waits while their payouts aren't ready.
+  if (r.kind === 'reviewer_fee') {
+    const [rv] = await asPay(sql, (t) => t`select id, reviewer_member, status from app.peer_reviews where id = ${r.peer_review_id}`);
+    if (!rv || rv.status !== 'decided') return asPay(sql, (t) => done(t, r));
+    if (b.status === 'funding' || b.status === 'failed' || b.status === 'chargeback') return asPay(sql, (t) => done(t, r));
+    // A reviewer had payouts ready to take the work; if Stripe has since paused them, the fee waits and is tried again
+    // over days (a 503 backs off like a Stripe outage) rather than being dropped.
+    const [acct] = await asPay(sql, (t) => t`select stripe_account, payouts_enabled from app.pay_accounts where member_id = ${rv.reviewer_member}`);
+    if (!acct) throw new PayError('reviewer_not_ready', 503);
+    if (!acct.payouts_enabled) {
+      const a = await stripe.call('GET', '/v1/accounts/' + acct.stripe_account, {});
+      await asPay(sql, (t) => t`update app.pay_accounts set payouts_enabled = ${Boolean(a.payouts_enabled)}, details_submitted = ${Boolean(a.details_submitted)}, updated_at = now()
+        where stripe_account = ${acct.stripe_account}`);
+      if (!a.payouts_enabled) throw new PayError('reviewer_not_ready', 503);
+    }
+    const amount = Math.floor(b.bounty_cents * b.reviewer_fee_bps / 10000);
+    const tr = (await find(stripe, '/v1/transfers', { transfer_group: b.id }, b.id, rv.id)) || await stripe.call('POST', '/v1/transfers', {
+      amount, currency: 'usd', destination: acct.stripe_account, transfer_group: b.id, source_transaction: b.stripe_charge_id || undefined,
+      metadata: { bounty: b.id, review: rv.id }
+    }, r.id);
+    return asPay(sql, async (t) => {
+      await t`insert into app.pay_ledger (bounty_id, member_id, kind, amount_cents, stripe_object_id) values (${b.id}, ${rv.reviewer_member}, 'reviewer_fee', ${-tr.amount}, ${tr.id})
+        on conflict do nothing`;
+      await done(t, r, { object: tr.id });
     });
   }
   if (r.kind === 'reverse') {

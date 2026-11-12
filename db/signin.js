@@ -334,6 +334,13 @@ async function buyerRegister(t, { credentialId, publicKey, clientData, authData,
   const [r] = await t.savepoint((x) => x`select * from app.buyer_register(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}, ${args[5]}, ${args[6]}::integer)`);
   return out(r);
 }
+// 065: a signed-in buyer's backup key ('ok', 'fresh', 'full', 'bad_proof', 'taken' or 'not_buyer').
+async function buyerKeyBackup(t, { credentialId, publicKey, clientData, authData, sessionHash }) {
+  const args = [between('credentialId', credentialId, 16, 1023), bytes('publicKey', publicKey, 65), between('clientData', clientData, 50, 2048),
+    between('authData', authData, 37, 4096), hex('sessionHash', sessionHash)];
+  const [r] = await t.savepoint((x) => x`select app.buyer_key_backup(${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]}) as s`);
+  return r.s;
+}
 async function buyerSignIn(t, { credentialId, clientData, authData, signature, displayName, sessionHash, sessionDays, region: rg = null }) {
   const args = [between('credentialId', credentialId, 16, 1023), between('clientData', clientData, 50, 2048), between('authData', authData, 37, 4096),
     bytes('signature', signature, 64), v.text('displayName', displayName, { max: 80 }), hex('sessionHash', sessionHash),
@@ -391,4 +398,4 @@ async function watchTravel(t, { sessionHash, place = null, km = null, prev = nul
 }
 
 module.exports = { watchSignin, watchReach, watchSession, watchTravel, codeIssue, challengeIssue, codeStatus, codeSignInPin, fileSignInPin,
-  browserSignIn, browserKeyPublic, buyerKeyPublic, buyerRegister, buyerSignIn, signinMethods, browserKeyRemove, pinChange, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };
+  browserSignIn, browserKeyPublic, buyerKeyPublic, buyerRegister, buyerSignIn, buyerKeyBackup, signinMethods, browserKeyRemove, pinChange, rateLimitHit, emailTokenIssue, emailTokenRedeem, signIn, link, unlink, regionConfirmUse, known, sessionResolve, sessionEnd, sessionsEndAll, account, rename, deleteAccount };

@@ -54,6 +54,7 @@ const DESIGN = {
   "join.html": {"nav":[],"proposed":[],"rows":[]},
   "join/pin.html": {"nav":[],"proposed":[],"rows":[]},
   "join/buyer.html": {"nav":[],"proposed":[],"rows":[]},
+  "peer.html": {"nav":[],"proposed":[],"rows":[]},
   "team.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/team"]}]},
   "handshake.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/handshake"]}]},
   "name.html": {"nav":["/team"],"proposed":[],"rows":[{"kind":"about","on":["/name"]}]},

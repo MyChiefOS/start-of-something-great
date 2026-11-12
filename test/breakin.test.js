@@ -210,6 +210,12 @@ test.before(async () => {
     // 063: a buyer key (the fixture's member A has one too, so the break-in checks cover the table).
     await t.unsafe(`insert into app.buyer_keys (member_id, credential_id, public_key) values ('${A.id}', '\\x${'5'.repeat(64)}', '\\x04${'6'.repeat(128)}')`);
   });
+  // 065: a peer review by member A (the work role writes it), on the fixture's submission.
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_work');
+    await t.unsafe(`insert into app.peer_reviews (submission_id, task_id, reviewer_member, expires_at)
+      select s.id, s.task_id, '${A.id}', now() + interval '1 day' from app.work_submissions s limit 1`);
+  });
   await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
   // 026: a country the behaviour watch saw A sign in from (a keyed hash).
   await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.watch_seen (member_id, kind, key_hash)

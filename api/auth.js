@@ -60,7 +60,9 @@ const ROUTES = {
   // 063 (Aaron, Nov 11, 2026): the buyer door, a buyer key (a WebAuthn passkey) and no GitHub account, for posting,
   // funding, reviewing and disputing tasks only. Shut while payments are off.
   'POST buyer/register': (f, q, s) => f.buyerRegister(q, s),
-  'POST buyer/sign-in': (f, q, s) => f.buyerSignIn(q, s)
+  'POST buyer/sign-in': (f, q, s) => f.buyerSignIn(q, s),
+  // 065 (Aaron, Nov 12): a signed-in buyer's one backup passkey.
+  'POST buyer/backup': (f, q, s) => f.buyerBackup(q, s)
 };
 
 function plain(res, status, text) {

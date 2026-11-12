@@ -151,6 +151,18 @@ const DEFINERS = {
   // asker may see it: the payment role reads the money rows, the site's role only calls these.
   'app.work_market()': 'dog_pay',
   'app.work_bounty_of(uuid)': 'dog_pay',
+  // 065: the paid peer reviewer queue (the work role's: take, decide, give back; the blocks only they read), the fee
+  // and refund steps (the payment role's: the queue queues a fee; dog-pay reads the refund as itself), and a buyer's
+  // backup key (the sign-in role's, with the attested-key check only it uses).
+  'app.peer_review_take()': 'dog_work',
+  'app.peer_review_decide(uuid, text, text)': 'dog_work',
+  'app.peer_review_release(uuid)': 'dog_work',
+  'app.peer_block(uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.peer_top_decile(uuid, text)': { owner: 'dog_work', callers: '' },
+  'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
+  'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
+  'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',
+  'app.buyer_attested(bytea, bytea, bytea, bytea)': { owner: 'dog_signin', callers: '' },
   // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
   // site, and the GitHub ban list carried to the site. The site's role can't call either.
   'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },

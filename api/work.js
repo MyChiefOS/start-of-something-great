@@ -39,6 +39,11 @@
 //                                                    leads to Stripe's own checkout page (GET payment)
 //     POST payouts {}                                set up payouts with Stripe, to be paid for audited work
 //     GET  payment?request=                          one of your requests: its state, and Stripe's page when ready
+//   Signed in as a person, the paid peer reviewer queue (065; eligible members only: payouts set up, top decile for
+//   calibration in the task's room, and no tie to the work):
+//     POST peer/take {}                              take the oldest held work on a funded task you may review, for 24 hours
+//     POST peer/decide {review, verdict, reason}     pass or fail it, with a reason; the 2% fee is yours either way
+//     POST peer/release {review}                     give it back to the queue
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -185,7 +190,11 @@ const WRITES = {
   reschedule: { keys: ['milestone', 'target'], fn: (t, b) => work.milestoneMove(t, b) },
   // 061: funded bounties. The payment function is told there is work once the request is written.
   fund: { keys: ['task', 'dollars'], fn: (t, b, ctx) => pay.fund(t, ctx, b), code: 201, pay: true, personOnly: true },
-  payouts: { keys: [], fn: (t, b, ctx) => pay.payouts(t, ctx), code: 201, pay: true, personOnly: true }
+  payouts: { keys: [], fn: (t, b, ctx) => pay.payouts(t, ctx), code: 201, pay: true, personOnly: true },
+  // 065: the paid peer reviewer queue. A decision queues the reviewer's fee, so the payment function is told.
+  'peer/take': { keys: [], fn: (t) => work.peerTake(t), personOnly: true },
+  'peer/decide': { keys: ['review', 'verdict', 'reason'], fn: (t, b) => work.peerDecide(t, b), pay: true, personOnly: true },
+  'peer/release': { keys: ['review'], fn: (t, b) => work.peerRelease(t, b), personOnly: true }
 };
 
 async function handle(req, res, run) {

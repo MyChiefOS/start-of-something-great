@@ -44,7 +44,7 @@
       <p class="dek">Everything that needs Aaron for a release (accounts, settings, decisions) is in one checklist, delivered once.</p>
       <dl>
         <dt>Criterion</dt><dd>SF6 in ACCEPTANCE.md, checked by: Release checklist exists before the release starts</dd>
-        <dt>Boxes</dt><dd class="tn">7 of 16 ticked in the file</dd>
+        <dt>Boxes</dt><dd class="tn">7 of 25 ticked in the file</dd>
         <dt>Stage</dt><dd>launch.json says <strong>public</strong></dd>
       </dl>
       <p>Rewritten Oct 29, 2026 for the go-live release. Everything Release 2 needs, in one place. Under route B (Oct 26) every step is a pull request Claude builds and Aaron merges; Aaron's merge of the go-live PR is the go-live decision. Claude never sees, handles or types a secret. There is no preview stage (Aaron, Oct 24: &quot;NO preview systems&quot;).</p>
@@ -83,6 +83,20 @@
         <li><span class="pill">Open</span> Claude carries out its on-merge steps (OPERATIONS.md): the runner applies 028, <code>jevs</code> is redeployed and compared with the merge, and the live answers are checked read-only.</li>
         <li><span class="pill">Open</span> Aaron's administrator account exists after the merge (029, Aaron's request Oct 29); his first code sign-in on /join lands in it and sets his key file (RISKS.md RK92); Claude records it.</li>
         <li><span class="pill">Open</span> Fix 10: Claude proves every flow live and records it in OPERATIONS.md (harness/PLAN.md).</li>
+      </ul>
+
+      <h2>Payments go live (the Nov 11 sprint: PRs #127 to #131 and the peer reviewer PR)</h2>
+      <p>Aaron's decisions of Nov 11 and 12, 2026: Stripe only, separate charges and transfers, restricted keys only, a fake Stripe in tests, and the live end-to-end check run by Aaron before go-live. Claude never sees, handles or types a key. Every Claude step is recorded in OPERATIONS.md before it is taken.</p>
+      <ul>
+        <li><span class="pill">Open</span> Counsel's answers on RISKS.md RK150 (holding funds, money transmission, the fee's tax, 1099s). Live mode waits for them; test mode does not.</li>
+        <li><span class="pill">Open</span> <strong>Aaron, test mode:</strong> in Stripe's dashboard, in a sandbox (test mode), make a restricted key (it starts <code>rk_test_</code>). Give it Write for what dog-pay creates (Checkout Sessions, Refunds, Transfers and their reversals, Connect accounts and account links, Webhook Endpoints) and Read for what it only reads (Payment Intents, Charges, Disputes); everything else None. Stripe's own labels may differ a little from these names; if a step fails, the key's request logs in the dashboard show a 403 and Stripe's error names the permission to add (Stripe's restricted-key page, checked Nov 12). dog-pay refuses any key that isn't a restricted key.</li>
+        <li><span class="pill">Open</span> <strong>Aaron:</strong> in Supabase, Project Settings, Vault, add a secret named <code>dog_pay_stripe_key</code> holding that key. Nowhere else: never in chat, a pull request or a file.</li>
+        <li><span class="pill">Open</span> <strong>Claude:</strong> records the deployment in OPERATIONS.md, deploys <code>dog-pay</code> from main, and checks its <code>x-source-digest</code> against main's. The first tick makes dog-pay's two webhook endpoints (the platform's and the connected accounts') and keeps their secrets in Vault itself.</li>
+        <li><span class="pill">Open</span> <strong>Claude:</strong> a pull request that sets <code>payments.json</code> to &quot;on&quot;; Aaron's merge switches funding on, in test mode while the key is a test key.</li>
+        <li><span class="pill">Open</span> <strong>Aaron, the live end-to-end check, in test mode:</strong> on a phone or laptop, make a buyer account on <code>/join/buyer</code> and add a backup passkey; post a task and fund it for $10 with Stripe's test card 4242 4242 4242 4242; see it open on /build as Tier 1. From a second, GitHub account: set up payouts on the account page (Stripe's test onboarding), claim the task, submit work; as the buyer, approve it. When its points are final (after the dispute window), Stripe's dashboard shows a transfer of $8.50 to the worker. Then fund a second task and close it before anyone claims it: a refund of $10.00. Claude checks each step read-only and records it in OPERATIONS.md.</li>
+        <li><span class="pill">Open</span> <strong>The peer reviewer fee, once a room has a top-decile reviewer:</strong> a held submission on a funded task decided through <code>/peer</code> shows a transfer of 2% to the reviewer, and a refund after a peer-reviewed fail returns 98%. Until a room has 10 established auditors nobody is in its top decile, so this waits for real records (RISKS.md RK152).</li>
+        <li><span class="pill">Open</span> <strong>Claude, before the live switch:</strong> a read-only count, shown to Aaron, of what test mode leaves behind: payout accounts and bounties with <code>livemode</code> false, and money requests still queued or working. A live key can't act on test-mode objects, so each would fail or wait; Aaron decides how they are closed (the red-team review of PR #5, M5).</li>
+        <li><span class="pill">Open</span> <strong>Aaron, live mode, after counsel:</strong> make a restricted live key (<code>rk_live_</code>) with the same access, replace <code>dog_pay_stripe_key</code> in Vault with it, and delete the two secrets dog-pay made in test mode, <code>dog_pay_webhook_secret</code> and <code>dog_pay_connect_secret</code> (their endpoints are test mode's; with them gone, dog-pay makes live ones). <strong>Claude</strong> then redeploys <code>dog-pay</code> from main, recorded first, because a running copy keeps the keys it read; and checks that two live webhook endpoints exist. Then the same end-to-end steps with a real card for $10.</li>
       </ul>
     </main>
 

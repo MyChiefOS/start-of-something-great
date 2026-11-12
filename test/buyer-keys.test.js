@@ -353,3 +353,33 @@ test('BK12 (the fresh review of PR #3, M1; Aaron, Oct 16): a buyer travelling in
   const [r] = await q(`select count(*)::int as n from app.audit_log where action = 'member.region_confirmed' and subject_id = '${b.id}'`);
   assert.strictEqual(r.n, 1);
 });
+
+test('BK13 (065; Aaron, Nov 12, RK151): a signed-in buyer adds one backup passkey from a fresh session; either signs in; never a third', async () => {
+  const b = await buyer();
+  const backupOf = async (d, ctx, session) => {
+    const ch = await challenge();
+    return run(ctx, (t) => store.buyerKeyBackup(t, { credentialId: d.cred, publicKey: d.pub, clientData: clientData('webauthn.create', ch),
+      authData: authData(d, { attested: true }), sessionHash: session }));
+  };
+  const second = device();
+  assert.strictEqual(await backupOf(second, ctxOf(b), b.session), 'ok');
+  assert.strictEqual((await q(`select count(*)::int as n from app.buyer_keys where member_id = '${b.id}'`))[0].n, 2);
+  const s2 = await signIn(second);
+  assert.strictEqual(s2.status, 'ok');
+  assert.strictEqual(s2.memberId, b.id, 'the backup opens the same account');
+  assert.strictEqual((await signIn(b.d)).memberId, b.id, 'and the first still does');
+  assert.strictEqual(await backupOf(device(), ctxOf(b), b.session), 'full', 'at most 2 keys');
+  // Only from a session begun in the last 10 minutes, and only for a buyer.
+  const c2 = await buyer();
+  await q(`update app.sessions set created_at = now() - interval '11 minutes' where token_hash = '${c2.session}'`);
+  assert.strictEqual(await backupOf(device(), ctxOf(c2), c2.session), 'fresh');
+  assert.strictEqual(await backupOf(device(), ctxOf(member), member.session), 'not_buyer');
+  // The key is checked as at sign-up: another key's bytes in the authenticator's data are refused.
+  const c3 = await buyer();
+  const d3 = device();
+  const ch = await challenge();
+  assert.strictEqual(await run(ctxOf(c3), (t) => store.buyerKeyBackup(t, { credentialId: d3.cred, publicKey: d3.pub, clientData: clientData('webauthn.create', ch),
+    authData: authData(d3, { attested: true, key: device().pub }), sessionHash: c3.session })), 'bad_proof');
+  const [nt] = await q(`select count(*)::int as n from app.notices where member_id = '${b.id}' and title = 'A backup passkey was added'`);
+  assert.strictEqual(nt.n, 1, 'the buyer is told');
+});
