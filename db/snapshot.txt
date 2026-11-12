@@ -1624,6 +1624,7 @@ function app.work_approve_as(p_task uuid, p_citizen text, p_onbehalf text) owner
 function app.work_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=8048cdd4c4c79bb8ee29bd1676fcad6f
 function app.work_board(p_kind text, p_room text, p_sort text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=7a03fc0ceb1360b2451b27df1630096e
 function app.work_bounties_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=36dc2fd1b5c528bee38b257781d41b78
+function app.work_bounty_of(p_task uuid) owner=dog_pay execute=dog_pay,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=7a3d5ae147c8be8abc8be28cf7ff1e73
 function app.work_brake_check(p_member uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=void body_md5=271beffcad096ef4110d8703be3cd893
 function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=41e1f0deaca11407531e0b52b554d34b
 function app.work_cap(p_agent uuid, p_root uuid, p_kind text, p_new_claim boolean) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=023b626206cf906f98900fde64a05f3b
@@ -1651,6 +1652,7 @@ function app.work_integrity() owner=dog_work execute=dog_work language=sql volat
 function app.work_jevs_rules(f jsonb) owner=dog_owner execute=dog_owner,dog_work,dog_app language=plpgsql volatile=i definer=false config= returns=jsonb body_md5=6e0277c07f4f65bd20e2f877effe43a7
 function app.work_jevs_run(p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=02eca869100351e8dd811abe539a92d5
 function app.work_ledger_alert() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=e716291eb03fb8d11c69d98a0a4b4420
+function app.work_market() owner=dog_pay execute=dog_pay,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=fb945b5fdc60238deb8108c5be1a3cd9
 function app.work_may_settle(p_dispute uuid, p_member uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9f18a43c2fc8a432063276f73a071686
 function app.work_milestone_add(p_project uuid, p_title text, p_target date, p_gate boolean) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=51f9288930ed7fa473d8f8cbbe14526a
 function app.work_milestone_card(p_id uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4afd260e62319ba841fd52bb46278958
@@ -1695,6 +1697,7 @@ function app.work_tasks(p_status text, p_room text, p_project uuid, p_q text, p_
 function app.work_tasks_pay() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=acf6706f5400b9a6ab9a0077d3527c2d
 function app.work_tasks_pay_delete() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=c2bd2da5c316a3de16732c36b75fafbc
 function app.work_tick() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=034aa9ea7a90b48a2f991d69f6db0ad2
+function app.work_tier(p_cents integer) owner=dog_owner execute=dog_owner,dog_pay language=sql volatile=i definer=false config=search_path=pg_catalog returns=smallint body_md5=bd708a19d88816c287bb0335924641e6
 function app.work_who() owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(kind text, member_id uuid, agent_id uuid, tree_root uuid, citizen text, level smallint, is_admin boolean) body_md5=9a2409fa12cb06a52d2c6b47ec4672c0
 function app.work_wilson(k bigint, n bigint) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=87a6858aee93f9f285df021471dc1750
 grant app.actor_keys dog_signin SELECT
@@ -2697,6 +2700,10 @@ grant app.work_projects dog_work INSERT
 grant app.work_projects dog_work SELECT
 grant app.work_projects dog_work UPDATE
 grant app.work_rooms dog_work SELECT
+grant app.work_rooms.code dog_pay SELECT
+grant app.work_rooms.id dog_pay SELECT
+grant app.work_rooms.name dog_pay SELECT
+grant app.work_rooms.ord dog_pay SELECT
 grant app.work_settings dog_work SELECT
 grant app.work_settings.last_alert_day dog_work UPDATE
 grant app.work_settings.last_tick_at dog_work UPDATE
@@ -2713,6 +2720,7 @@ grant app.work_tasks dog_work SELECT
 grant app.work_tasks dog_work UPDATE
 grant app.work_tasks.id dog_pay SELECT
 grant app.work_tasks.poster_member dog_pay SELECT
+grant app.work_tasks.room_id dog_pay SELECT
 grant app.work_tasks.status dog_pay SELECT
 grant app.work_tasks.status dog_pay UPDATE
 grant app.work_tasks.title dog_pay SELECT
@@ -3079,7 +3087,7 @@ policy app.watch_settings watch_settings_owner cmd=* permissive=true to=dog_owne
 policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) check=
 policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.work_actions work_actions_work cmd=* permissive=true to=dog_work using=true check=true
-policy app.work_bounties work_bounties_app cmd=r permissive=true to=dog_app using=((payer_member = ( SELECT app.current_member() AS current_member)) OR (payee_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (listed AND (status = 'funded'::text))) check=
+policy app.work_bounties work_bounties_app cmd=r permissive=true to=dog_app using=((payer_member = ( SELECT app.current_member() AS current_member)) OR (payee_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (listed AND (status = 'funded'::text) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])))) check=
 policy app.work_bounties work_bounties_pay cmd=* permissive=true to=dog_pay using=true check=true
 policy app.work_checks work_checks_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_claims work_claims_work cmd=* permissive=true to=dog_work using=true check=true
@@ -3095,6 +3103,7 @@ policy app.work_points work_points_pay_select cmd=r permissive=true to=dog_pay u
 policy app.work_points work_points_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_projects work_projects_buyer cmd=* permissive=false to=dog_work using=((poster_member IS NULL) OR (poster_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (NOT app.is_buyer(poster_member)) OR (EXISTS ( SELECT 1 FROM app.work_tasks t WHERE ((t.project_id = work_projects.id) AND (t.status <> 'funding'::text))))) check=
 policy app.work_projects work_projects_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_rooms work_rooms_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.work_rooms work_rooms_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_settings work_settings_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_submissions work_submissions_work cmd=* permissive=true to=dog_work using=true check=true

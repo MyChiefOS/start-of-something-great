@@ -147,6 +147,10 @@ const DEFINERS = {
   'app.buyer_task_guard()': { owner: 'dog_signin', callers: '' },
   'app.buyer_task_open_guard()': { owner: 'dog_pay', callers: '' },
   'app.buyer_task_funded()': { owner: 'dog_pay', callers: '' },
+  // 064: the public funded-work figures (counts, tiers, pools of 3 or more rounded down) and one task's bounty, as the
+  // asker may see it: the payment role reads the money rows, the site's role only calls these.
+  'app.work_market()': 'dog_pay',
+  'app.work_bounty_of(uuid)': 'dog_pay',
   // 060: linked bans. Called only by the JEVs gate, as its own role: is this GitHub account's owner banned on the
   // site, and the GitHub ban list carried to the site. The site's role can't call either.
   'app.gh_site_banned(text[])': { owner: 'dog_jevs', callers: '' },

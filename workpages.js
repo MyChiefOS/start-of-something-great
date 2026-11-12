@@ -118,6 +118,22 @@
       link($('room'), roomHref(d.room), txt(d.room && d.room.code) + ' ' + txt(d.room && d.room.name));
       $('poster').textContent = who(d.poster);
       $('class-text').textContent = CLASS_TEXT[d.class] || '';
+      // PR #4 (Aaron, Nov 12; 064): the bounty as this visitor may see it. Signed out, its tier; signed in, the exact net
+      // while the task is open; claimed or later, the amounts only for its poster, its worker and the administrator.
+      var bounty = $('bounty');
+      if (bounty) {
+        fetch('/api/work/bounty?task=' + encodeURIComponent(String(d.id)), { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (x) {
+            var b = x && x.bounty;
+            var TIERS = { 1: '$10 to $100', 2: '$100 to $500', 3: '$500 to $2,500', 4: '$2,500 and up' };
+            if (!b) { bounty.textContent = 'None'; return; }
+            var tier = 'Tier ' + n(b.tier) + ' (' + (TIERS[n(b.tier)] || '') + ')';
+            bounty.textContent = b.net_cents !== undefined && b.net_cents !== null
+              ? '$' + (n(b.net_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' to the worker, after the 15% fee. ' + tier
+              : tier + (x.signed_in ? '' : '. Sign in to see the exact amount.');
+          }).catch(function () { bounty.textContent = 'Couldn\u2019t be read just now.'; });
+      }
       $('claim').textContent = d.claim ? 'Claimed by ' + who(d.claim.by) + ' until ' + when(d.claim.expires_at) + '.' : 'Holds for 72 hours, then reopens if nothing is submitted.';
       var gh = safeUrl(d.url);
       $('github').textContent = '';

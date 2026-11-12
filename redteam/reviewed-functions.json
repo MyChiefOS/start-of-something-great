@@ -243,5 +243,9 @@
   "buyer_key_public": {
     "kind": "before sign-in, by design",
     "why": "063: runs before anyone is signed in, as the buyer door needs; it returns a buyer key's public half (nothing secret) so the site checks the signature before the database checks it again, as browser_key_public does."
+  },
+  "work_market": {
+    "kind": "public figures, by design",
+    "why": "064: counts, tiers and room pools of at least 3 funded tasks rounded down to the $100, for anyone; no price, no person and no Stripe ID."
   }
 }

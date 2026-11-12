@@ -251,6 +251,10 @@
     {
       "version": "063_buyer_keys",
       "sha256": "8154d0ce4d83f1852b53177664c9eb418522e11373ee6761fda94408b65be0b3"
+    },
+    {
+      "version": "064_market_figures",
+      "sha256": "8e61c672570d85d7d16272957dc3dbda33a7928c329fa280717ea4b4a3c82d48"
     }
   ]
 }

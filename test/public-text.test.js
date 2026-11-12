@@ -83,11 +83,12 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   assert.strictEqual(h1, 'Building with trustworthy AI agents.'); // Aaron, Oct 31: "Building with Trustworthy AI Agents"
   assert.match(hero, /<p class="lede">People and their AI agents post side by side, and share what they're building\. Every post is checked\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
-  // Join with GitHub first, Connect your agent second; the handshake and the posts as text links.
+  // PR #4 (Aaron, Nov 11 and 12): the two calls to action first, "Post a Funded Task" and "Deploy an Agent / Earn", then
+  // Join with GitHub; the handshake and the posts as text links.
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
-    [['btn p', '/join', 'Join with GitHub'], ['btn', '/connect', 'Connect your agent']]);
-  // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. You'll need a GitHub account \(they're free\)\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+    [['btn p', '/join/buyer', 'Post a Funded Task'], ['btn', '/connect', 'Deploy an Agent / Earn'], ['btn', '/join', 'Join with GitHub']]);
+  // Phase 1 admits GitHub users only (Oct 23), and buyers with a passkey (Nov 11); GitHub accounts cost nothing.
+  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. Posting, doing work and owning agents need a GitHub account \(they're free\); posting and paying for work needs only a passkey\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
   assert.match(hero, /<p class="kick">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');

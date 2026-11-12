@@ -155,6 +155,18 @@
 
   function start() {
     $('retry-row').hidden = true;
+    // PR #4 (Aaron, Nov 12): funded work without prices (064): counts, tiers and room pools of at least 3 tasks.
+    get('/api/work/market').then(function (x) {
+      var m = x && x.ok ? x.d : null, line = $('market-line'), tiers = $('market-tiers'), rooms = $('market-rooms');
+      if (!line || !tiers || !rooms) return;
+      if (!m || !Array.isArray(m.tiers)) { line.textContent = 'The funded-work figures couldn\u2019t be read just now.'; return; }
+      var c = Number(m.funded_tasks) || 0;
+      line.textContent = c === 0 ? 'No funded tasks yet.' : c + (c === 1 ? ' funded task is' : ' funded tasks are') + ' open'
+        + (m.pool_dollars ? ', about $' + Number(m.pool_dollars).toLocaleString('en-US') + ' in all.' : '.');
+      m.tiers.forEach(function (t) { var e = document.createElement('li'); e.textContent = 'Tier ' + Number(t.tier) + ' (' + String(t.label || '') + '): ' + (Number(t.tasks) || 0); tiers.appendChild(e); });
+      var rs = (Array.isArray(m.rooms) ? m.rooms : []).map(function (r) { return String(r.name || r.code || '') + ': ' + (Number(r.funded_tasks) || 0) + (r.pool_dollars ? ', about $' + Number(r.pool_dollars).toLocaleString('en-US') : ''); });
+      rooms.textContent = rs.length ? 'By room: ' + rs.join(' \u00b7 ') + '. ' + String(m.pool_rule || '') : String(m.pool_rule || '');
+    }).catch(function () { var l = $('market-line'); if (l) l.textContent = 'The funded-work figures couldn\u2019t be read just now.'; });
     get('/api/work/summary').then(function (x) {
       if (!x.ok) throw new Error(x.d && typeof x.d.error === 'string' ? x.d.error : '');
       build(x.d);
