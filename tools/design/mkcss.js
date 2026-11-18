@@ -100,6 +100,12 @@ const lightRevoke = styles[revoke] ? '\n@media (prefers-color-scheme: light){.d1
 // design's own rules, so it wins.
 const phones = '@media(max-width:820px){.d1 .mpanel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}'
   + '.d1 .mpanel .k,.d1 .mpanel [data-nav="account"]{grid-column:1/-1}.d1 .li .pill{justify-self:start}}\n';
-const served = (head + css + '\n' + phones + classes(styles) + lightRevoke).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
+// The top bar (Aaron, Nov 18): five links and Join on wide screens, then Menu, which opens a panel of every other link
+// (its first five links and Join repeat the bar's, so they're hidden there). And the payments-off line under the header.
+const wide = '@media(min-width:821px){.d1 .hd{position:relative}.d1 .mnav{display:block;position:relative;margin:0 0 0 8px;max-width:none}'
+  + '.d1 .mnav .mpanel{position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:32rem;max-width:90vw;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px;padding:12px 16px;background:var(--ink);border:1px solid var(--rule-strong);border-radius:12px}'
+  + '.d1 .mnav .mpanel .k{grid-column:1/-1}.d1 .mnav .mpanel>a:nth-child(-n+5),.d1 .mnav .mpanel [data-nav="account"]{display:none}}\n'
+  + '.d1 .paybar{margin:0;padding:8px 16px;font-family:var(--display);font-size:14px;text-align:center;border-bottom:1px solid var(--rule);background:color-mix(in srgb,var(--amber) 14%,transparent)}\n';
+const served = (head + css + '\n' + phones + wide + classes(styles) + lightRevoke).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').replace(/^\n/, '');
 fs.writeFileSync(out, '/* Day One Great: Aaron\'s design (the handoff of Nov 5, 2026). Built by tools/design/mkcss.js and css.js, which say what changed for production. */\n' + served);
 console.log('wrote', out, Object.keys(styles).length, 'shared inline classes');

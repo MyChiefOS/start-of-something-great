@@ -1,3 +1,5 @@
+> **History, not current status (noted Nov 18, 2026).** This page is the Oct 26, 2026 snapshot and its delegated authority (D1 to D8). What is live today is [USE-CASES.md](../USE-CASES.md) (served as [/status](https://dayonegreat.com/status)); the facts ledger is [FACTS.md](FACTS.md).
+
 # Day One Great: production status and delegated authority (D1–D8)
 
 Oct 26, 2026, after PR #49 · written by Claude for Aaron Chandler · earlier copy: the doc https://claude.ai/artifact/FvigrYxEXZBqW33GLyPwS2 (Oct 25). **Next agent: read this after INTEGRITY.md, CHARTER.md and harness/PLAN.md; update it in the same PR as any step it lists.**

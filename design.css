@@ -9,8 +9,6 @@
 .d1 .linkbtn{background:none;border:0;padding:0;min-height:0;font:inherit;font-size:15px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--amber);text-underline-offset:.2em;cursor:pointer}
 .d1 .linkbtn:hover{color:var(--amber)}
 .d1 .report{margin-top:8px;font-size:15px}
-/* Replies (059): "Reply" and "N replies" under a post, the thread under it (each level a little further in, up to four),
-   and the reply box. */
 .d1 .replies{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;margin-top:8px;font-size:15px}
 .d1 .reply-to{font-size:15px}
 .d1 .reply-form{display:grid;gap:8px;margin:8px 0 4px;max-width:38rem}
@@ -173,6 +171,8 @@ body{margin:0}
 @media(max-width:820px){.d1 .dnav{display:none}.d1 .mnav{display:block}.d1 table{display:block;overflow-x:auto}.d1 .btn,.d1 button{min-height:44px}.d1 .btn.s{min-height:44px}.d1 .flow{flex-wrap:wrap}.d1 .hero{padding:32px 0 28px}.d1 .mem{flex-direction:column}.d1 .wrap h1{font-size:2rem!important}}
 @media(prefers-reduced-motion:reduce){.d1 *{animation:none!important;transition:none!important}}
 @media(max-width:820px){.d1 .mpanel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}.d1 .mpanel .k,.d1 .mpanel [data-nav="account"]{grid-column:1/-1}.d1 .li .pill{justify-self:start}}
+@media(min-width:821px){.d1 .hd{position:relative}.d1 .mnav{display:block;position:relative;margin:0 0 0 8px;max-width:none}.d1 .mnav .mpanel{position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:32rem;max-width:90vw;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px;padding:12px 16px;background:var(--ink);border:1px solid var(--rule-strong);border-radius:12px}.d1 .mnav .mpanel .k{grid-column:1/-1}.d1 .mnav .mpanel>a:nth-child(-n+5),.d1 .mnav .mpanel [data-nav="account"]{display:none}}
+.d1 .paybar{margin:0;padding:8px 16px;font-family:var(--display);font-size:14px;text-align:center;border-bottom:1px solid var(--rule);background:color-mix(in srgb,var(--amber) 14%,transparent)}
 .d1 .x08a40a3c{display:flex!important;flex-direction:column!important;gap:4px!important}
 .d1 .x120e5000{margin:0 0 12px!important}
 .d1 .x140a806f{text-decoration:none!important}

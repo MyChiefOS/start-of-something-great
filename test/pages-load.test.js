@@ -112,29 +112,28 @@ test('every page, the 404 included, carries the shell exactly as scripts/shell.j
   assert.strictEqual(footers.size, 1, 'one footer');
 });
 
-test('the menu (the design handoff of Nov 5, 2026, README "Shell"): Post, Talk, Proposals, For agents, About, Search, then Join as a pill', () => {
+test('the menu (Aaron, Nov 18, 2026: five destinations, the rest behind Menu): Work, Talk, For agents, Trust, About, Join; Menu holds every link', () => {
   const linksOf = (h) => [...h.matchAll(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => m[1] + ' ' + m[2].replace(/<[^>]+>/g, ''));
   const main = shell.MAIN.map(([h, t]) => h + ' ' + t);
+  assert.deepStrictEqual(main, ['/build Work', '/talk Talk', '/connect For agents', '/status Trust', '/team About']);
+  const take = shell.TAKE_PART.filter(([h]) => shell.exists(h)).map(([h, t]) => h + ' ' + t);
   // The built modules in the design's order, the live ones first (042: a live page is never called proposed).
-  const built = shell.PROPOSED.filter(([h]) => shell.exists(h));
+  const built = shell.PROPOSED.filter(([h]) => shell.exists(h) && !shell.MAIN.some(([m]) => m === h));
   const proposed = built.filter(([h]) => shell.LIVE.includes(h)).concat(built.filter(([h]) => !shell.LIVE.includes(h))).map(([h, t]) => h + ' ' + t);
   for (const f of navPages) {
     const top = topOf(f);
-    // The wide row: the six links, then Join as the pill (the design's .join).
+    // The wide row: five links, then Join as the pill (the design's .join). Never more than six links.
     const wide = top.match(/<nav class="nav dnav" aria-label="Main">[\s\S]*?<\/nav>/)[0];
     assert.deepStrictEqual(linksOf(wide), [...main, '/join Join'], f);
     assert.match(wide, /<a href="\/join" class="join" data-nav="account">Join<\/a><\/nav>$/, f);
-    // On phones: Menu, a <details> holding every link (all of them stay in the HTML), the Proposed group, then Join.
+    // Menu, a <details> holding every link (all of them stay in the HTML): the five, Take part, Work, Proposed, Join.
     const menu = top.match(/<details class="mnav"><summary>Menu<\/summary><div class="mpanel">[\s\S]*?<\/div><\/details>/);
     assert.ok(menu, f + ': the Menu');
-    assert.deepStrictEqual(linksOf(menu[0]), [...main, ...proposed, '/join Join'], f);
-    // Under the header, from 820 px: the modules row, with only the modules that are built: the live ones first, then
-    // "Proposed" and the designs not live yet (042; the CLJO's review of Nov 6: a live page is never called proposed).
-    const row = top.match(/<div class="sub2 dnav" aria-label="Modules">[\s\S]*?<\/div>/)[0];
-    assert.deepStrictEqual(linksOf(row), proposed, f);
-    const label = row.indexOf('>Proposed</span>');
-    for (const h of ['/build', '/rooms', '/projects']) if (row.includes('href="' + h + '"')) assert.ok(label < 0 || row.indexOf('href="' + h + '"') < label, f + ': ' + h + ' before "Proposed"');
-    assert.ok((top.match(/<nav class="nav dnav"[\s\S]*?<\/nav>/)[0].match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the row');
+    assert.deepStrictEqual(linksOf(menu[0]), [...main, ...take, ...proposed, '/join Join'], f);
+    // No second row of modules under the header any more: one place for each link (the outside review's "duplicated build").
+    assert.ok(!/aria-label="Modules"/.test(top), f + ': no modules row');
+    assert.strictEqual((top.match(/href="\/build"/g) || []).length, 2, f + ': /build once in the bar, once in the Menu');
+    assert.ok((wide.match(/aria-current=/g) || []).length <= 1, f + ': at most one current mark in the row');
   }
   assert.match(topOf('team.html'), /<a class="on" href="\/team" aria-current="page">About<\/a>/);
   // The about pages carry the About row: Team, The handshake, The name, Research.
