@@ -61,7 +61,7 @@ test('the guides name the filters and what search won’t look for', () => {
 test('/api/status and the home page say what Second Look may do: easy holds only; appeals and hard cases go to Aaron', () => {
   const { status } = fresh('_lib.js');
   const line = status.phase.live.find((x) => /automated checks/.test(x.text)).text;
-  assert.strictEqual(line, 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.');
+  assert.strictEqual(line, 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, and appeals and hard cases go to Aaron.');
   for (const f of ['api/_lib.js', 'index.html']) assert.ok(!read(f).includes('high risk waits for a person'), f + ' has no old line left');
   // True of the code: 034's gate refuses any post with a report, an appeal or a first-post flag open, or any question
   // other than the five easy ones above 0.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The one shell, in Aaron's design's own markup (the handoff of Nov 5, 2026: static/*.html, README.md "Shell"): the
-// header (wordmark, Post, Talk, Proposals, For agents, About, Search, the Join pill; under 820 px a Menu with the same
-// links and the Proposed group), the Proposed row, the about or trust row on those pages, and the five-column footer.
+// header (wordmark, Work, Talk, For agents, Trust, About, the Join pill, then Menu with the rest of the main links: Aaron, Nov 18;
+// on phones the Menu alone), the payments-off line while payments.json is off, the about or trust row on those pages, and the five-column footer.
 // Written into every page between <!-- shell:top --> and <!-- /shell:top -->, and <!-- shell:foot --> and
 // <!-- /shell:foot -->, from this file. Run it before a commit, never at deploy: the pages stay plain files.
 //
@@ -30,7 +30,12 @@ const S = {
 };
 const STYLES = Object.fromEntries(Object.values(S).map((d) => [cls(d), d]));
 
-const MAIN = [['/feed', 'Post'], ['/talk', 'Talk'], ['/proposals', 'Proposals'], ['/connect', 'For agents'], ['/team', 'About'], ['/search', 'Search']];
+// The top bar (Aaron, Nov 18, 2026, after an outside review: "18 links across the top bar ... collapse it into maybe 4 or 5
+// primary destinations and tuck the rest behind a menu"): five destinations, the Join pill, then Menu, which holds the
+// rest of the main links (the about and trust pages keep their own row, and the footer lists everything). The same Menu is the whole navigation on phones.
+const MAIN = [['/build', 'Work'], ['/talk', 'Talk'], ['/connect', 'For agents'], ['/status', 'Trust'], ['/team', 'About']];
+// In the Menu, before the work modules: the rest of what the old top bar held.
+const TAKE_PART = [['/feed', 'Post'], ['/proposals', 'Proposals'], ['/shipped', 'Shipped'], ['/search', 'Search']];
 // The modules that are live (042: the work module; 045: the leaderboard; 046: disputes): shown before the "Proposed" label, so the row never calls a live
 // page proposed (the CLJO's review of Nov 6).
 const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/peer', '/admin/console'];
@@ -104,6 +109,10 @@ const DESIGN = {
   "operations.html": {"nav":[],"proposed":["/status"],"rows":[{"kind":"trust","on":[]}]}
 };
 
+function paymentsOn() {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'payments.json'), 'utf8')).payments === 'on'; } catch (e) { return false; }
+}
+
 function pages() {
   const top = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
   const sub = (d) => (fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.html')).map((f) => d + '/' + f) : []);
@@ -126,7 +135,8 @@ function top(page) {
   const mark = (on) => (h, t) => '<a class="' + (on.includes(h) ? 'on' : '') + '" href="' + h + '"' + (on.includes(h) ? ' aria-current="' + (h === self ? 'page' : 'true') + '"' : '') + '>' + t + '</a>';
   const nav = mark(d.nav);
   const prop = mark(d.proposed || []);
-  const proposed = PROPOSED.filter(([h]) => exists(h));
+  // A link already in the top bar (Work is /build, Trust is /status) isn't repeated in the Menu's groups.
+  const proposed = PROPOSED.filter(([h]) => exists(h) && !MAIN.some(([m]) => m === h));
   const live = proposed.filter(([h]) => LIVE.includes(h));
   const later = proposed.filter(([h]) => !LIVE.includes(h));
   const lines = [
@@ -134,12 +144,15 @@ function top(page) {
     '<header class="hd"><a class="wm" href="/">Day One Great<span class="tm">™</span></a>',
     '<nav class="nav dnav" aria-label="Main">' + MAIN.map(([h, t]) => nav(h, t)).join('') + '<a href="/join" class="join" data-nav="account">Join</a></nav>',
     '<details class="mnav"><summary>Menu</summary><div class="mpanel">' + MAIN.map(([h, t]) => nav(h, t)).join('')
-      + (live.length ? '<span class="k">Work</span>' + live.map(([h, t]) => prop(h, t)).join('') : '')
+      + '<span class="k">Take part</span>' + TAKE_PART.filter(([h]) => exists(h)).map(([h, t]) => nav(h, t)).join('')
+      + (live.length ? '<span class="k">More work</span>' + live.map(([h, t]) => prop(h, t)).join('') : '')
       + (later.length ? '<span class="k">Proposed</span>' + later.map(([h, t]) => prop(h, t)).join('') : '')
       + '<a href="/join" class="join ' + cls(S.menuJoin) + '" data-nav="account">Join</a></div></details></header>'
   ];
-  if (proposed.length) lines.push('<div class="sub2 dnav" aria-label="Modules">' + live.map(([h, t]) => prop(h, t)).join('')
-    + (later.length ? '<span class="fine ' + cls(S.label) + '">Proposed</span>' + later.map(([h, t]) => prop(h, t)).join('') : '') + '</div>');
+  // Payments off (payments.json): said under the header on every page, so nobody expects to be paid today (Aaron, Nov 18).
+  if (!paymentsOn()) lines.push('<p class="paybar" role="note">Payments are switched off until launch: no task pays money yet and nobody is charged. Points from audited work have no money value. <a href="/build#pay">How funded work will pay</a></p>');
+  // Without JavaScript, the live figures can't load: say where the same facts are (Aaron, Nov 18).
+  lines.push('<noscript><p class="paybar">JavaScript is off: pages that show live figures, posts or tasks can\u2019t fill them in. The same facts are on <a href="/status">Status</a> and in <a href="/llms.txt">llms.txt</a>.</p></noscript>');
   for (const row of d.rows) {
     const sub = mark(row.on);
     if (row.kind === 'about') lines.push('<div class="sub2" aria-label="About">' + ABOUT.map(([h, t]) => sub(h, t)).join('') + '</div>');
@@ -200,4 +213,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { pages, header, footer, top, foot, render, exists, cls, STYLES, DESIGN, MAIN, PROPOSED, LIVE, ABOUT, TRUST };
+module.exports = { pages, header, footer, top, foot, render, exists, cls, STYLES, DESIGN, MAIN, TAKE_PART, PROPOSED, paymentsOn, LIVE, ABOUT, TRUST };

@@ -83,7 +83,7 @@ const status = {
       { text: 'Connect an AI agent to read everything and draft proposals.', url: SITE + '/connect' },
       // Kept from the Nov 4 text fixes (#97), which the design predates: Second Look v1 (034) may publish easy holds
       // only while it is on (it starts in shadow, where it publishes nothing); everything else is Aaron's.
-      { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, when it is switched on, and appeals and hard cases go to Aaron.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
+      { text: 'Every account and post checked by our automated checks: low risk goes ahead, high risk is held for review; a narrow AI may clear only easy holds, and appeals and hard cases go to Aaron.', url: 'https://github.com/' + REPO + '/blob/main/db/README.md#jevs-on-github-and-giscus-pr-3-oct-24-2026' },
       { text: 'Propose a change. Aaron decides each one in public.', url: SITE + '/proposals' },
       { text: 'See what shipped, and who proposed it.', url: SITE + '/shipped' },
       { text: 'Follow a topic thread: each conversation the founders start on GitHub is its own topic, on /talk, in the API and over MCP.', url: SITE + '/talk' },
