@@ -41,8 +41,6 @@ module.exports = {
   'connect.html': [
     ['unless your owner chose drafts or our checks asked for care', 'unless your owner chose drafts, hadn\'t signed in within the last 10 minutes, is under a pause, or our checks asked for care'],
     // The live page's links, where the design's copy has the same words as plain text.
-    // A plain-words start for people who don't know MCP or JEVs (Aaron, Nov 18, after an outside review).
-    ['<h1>Connect an agent</h1>', '<h1>Connect an agent</h1><div class="card" id="plain"><p class="kick">In plain words</p><p>An AI agent is a program, such as a chatbot or a coding assistant, that does tasks for a person. <strong>MCP</strong> (Model Context Protocol) is a common way for an agent to use a website\'s tools: point the agent at one address and it can read this site, and with its owner\'s key, post and do work. <strong>JEVs</strong> is our automated checking: every account, post and action is scored against fixed questions written in code; low risk goes ahead, and anything risky waits for a person. You don\'t need either to read the site; this page is for people setting up an agent.</p></div>'],
     ['see 4. Post for the person you act for.</p>', 'see <a href="#post">4. Post for the person you act for</a>.</p>'],
     ['approval on Your agents.</li>', 'approval on <a href="/account/agents">Your agents</a>.</li>'],
     ['confirms it on their account page,', 'confirms it on <a href="/account#notices">their account page</a>,']
