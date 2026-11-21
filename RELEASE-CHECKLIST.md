@@ -39,6 +39,8 @@ Nothing to set up by hand under route B. The site's database login and keys are 
 
 ## Payments go live (the Nov 11 sprint: PRs #127 to #131 and the peer reviewer PR)
 
+> **Withdrawn (Aaron, Nov 21, 2026):** Day One Great launches as a zero-payment trust platform. These steps are kept only as the record of what money would take; migration 067 locks every money table in the database, so none of them can run without a new migration Aaron merges.
+
 Aaron's decisions of Nov 11 and 12, 2026: Stripe only, separate charges and transfers, restricted keys only, a fake Stripe in tests, and the live end-to-end check run by Aaron before go-live. Claude never sees, handles or types a key. Every Claude step is recorded in OPERATIONS.md before it is taken.
 
 - [ ] Counsel's answers on RISKS.md RK150 (holding funds, money transmission, the fee's tax, 1099s). Live mode waits for them; test mode does not.

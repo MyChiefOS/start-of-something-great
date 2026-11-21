@@ -62,6 +62,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await require('./helpers').liftMoneyLock(su); // 067: these tests prove the dormant payment code (see helpers.js)
   await shadowMode(su); // the features under JEVs, tested without it (helpers.js)
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 3 });

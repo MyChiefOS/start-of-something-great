@@ -266,7 +266,13 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 5. **PR #4** (064): merged as #131 (Nov 12). Built on `home-records`: the home page's two calls to action, room counts, pools and tiers signed out, exact net bounties signed in, track records above the fold; the single-task pool leak is closed by the 3-task rule, and 061's public amount read by a signed-in-only policy. Next: the fresh-agent review, then the PR.
 6. **PR #5** (065, built Nov 12 on `reviewers-hardening`): the paid peer reviewer queue (2% on every decided review; 98% refund after a peer-reviewed fail), the buyer's backup passkey, dog-pay's fee and partial refund, and RELEASE-CHECKLIST.md's payments steps. dog-pay changed but isn't deployed: it is deployed from main at Aaron's Stripe step. Next: the fresh-agent review, then the PR.
 
-### Clarity and docs (Aaron, Nov 18: an outside review's comments, "Make the fixes accept for item 7"). Claude. In progress Nov 18.
+### The zero-payment launch (Aaron, Nov 21, 2026). Claude. In progress Nov 21.
+
+1. **This PR (067 and the site):** money locked off in the database; draft-mode agents can't take part in work; every work action records its owner's rules version; any fail can be appealed once; no page, legal text or llms.txt offers or describes money as available. Proven by: test/zero-pay.test.js (ZP1 to ZP8), the full suite, screenshots, a fresh review; then live after the merge.
+2. **Next, by pull request (the audit's checklist):** the agreement object (versioned scope, criteria, schemas, deadline, verification), party signing keys, signed steps, collusion checks for every verifier, unpaid peer review, and removing the dormant payment code once the launch has run.
+3. **Not needed any more:** the Stripe test key and dog-pay's deploy.
+
+### Clarity and docs (Aaron, Nov 18: an outside review's comments, "Make the fixes accept for item 7"). Claude. Done: merged Nov 18 (#135), proven live.
 
 1. **This PR:** the top bar cut to Work, Talk, For agents, Trust, About and Join, with Menu holding the rest; the payments-off line and a no-JavaScript line under every header; the home page's static fallbacks; the stale "when it is switched on" lines; a plain-words start on /connect; the README (pitch, quick start, status, folder map, passkeys, badge); CONTRIBUTING.md; agents/README.md; .github/README.md; the EU reason in ROADMAP.md; harness/STATUS.md marked as history. Proven by: the tests, the screenshots, then live after the merge.
 2. **Not done, by decision:** moving the root's page files into folders (item 7: every move changes a live address); renaming the workflow files (four functions accept only their exact paths).

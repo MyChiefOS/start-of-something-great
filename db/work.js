@@ -44,7 +44,7 @@ class WorkError extends Error {
 function refusal(e) {
   if (!e || typeof e !== 'object') return null;
   if (e.code === 'P0001' && /^work_[a-z_]+$/.test(String(e.message))) {
-    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_own' || e.message === 'work_class' || e.message === 'work_party' || e.message === 'work_peer_person' || e.message === 'work_peer_blocked' ? 403 : e.message === 'work_appeal_late' ? 410 : 409;
+    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_draft' || e.message === 'work_own' || e.message === 'work_class' || e.message === 'work_party' || e.message === 'work_peer_person' || e.message === 'work_peer_blocked' ? 403 : e.message === 'work_appeal_late' ? 410 : 409;
     return new WorkError(status, String(e.hint || 'This can’t be done now.'), e.message);
   }
   if (e.code === '42501') return new WorkError(403, String(e.message || 'Not allowed.').replace(/^./, (x) => x.toUpperCase()) + '.', 'forbidden');

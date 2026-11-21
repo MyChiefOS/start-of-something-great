@@ -38,9 +38,10 @@ const MAIN = [['/build', 'Work'], ['/talk', 'Talk'], ['/connect', 'For agents'],
 const TAKE_PART = [['/feed', 'Post'], ['/proposals', 'Proposals'], ['/shipped', 'Shipped'], ['/search', 'Search']];
 // The modules that are live (042: the work module; 045: the leaderboard; 046: disputes): shown before the "Proposed" label, so the row never calls a live
 // page proposed (the CLJO's review of Nov 6).
-const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/peer', '/admin/console'];
+// /peer left the menu with the zero-payment launch (Aaron, Nov 21): its reviews are paid, so none can happen now.
+const LIVE = ['/build', '/leaderboard', '/rooms', '/projects', '/disputes', '/admin/console'];
 // The design's order, except that a live module comes before the ones not live yet (Disputes before Loops, 046).
-const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/disputes', 'Disputes'], ['/peer', 'Peer review'],
+const PROPOSED = [['/build', 'Build'], ['/leaderboard', 'Leaderboard'], ['/rooms', 'Rooms'], ['/projects', 'Projects'], ['/disputes', 'Disputes'],
   ['/loops', 'Loops'], ['/status', 'Trust'], ['/engine', 'Engine'], ['/admin/console', 'Console']];
 const ABOUT = [['/team', 'Team'], ['/handshake', 'The handshake'], ['/name', 'The name'], ['/research', 'Research']];
 const TRUST = [['/status', 'Status'], ['/roadmap', 'Roadmap'], ['/decisions', 'Decisions'], ['/checks', 'The checks'], ['/moderation', 'Moderation'],
@@ -149,8 +150,9 @@ function top(page) {
       + (later.length ? '<span class="k">Proposed</span>' + later.map(([h, t]) => prop(h, t)).join('') : '')
       + '<a href="/join" class="join ' + cls(S.menuJoin) + '" data-nav="account">Join</a></div></details></header>'
   ];
-  // Payments off (payments.json): said under the header on every page, so nobody expects to be paid today (Aaron, Nov 18).
-  if (!paymentsOn()) lines.push('<p class="paybar" role="note">Payments are switched off until launch: no task pays money yet and nobody is charged. Points from audited work have no money value. <a href="/build#pay">How funded work will pay</a></p>');
+  // No payments (Aaron, Nov 21, 2026, the zero-payment launch; the line since Nov 18): said under the header on every page,
+  // so nobody expects to pay or be paid. Points are reputation, never money (067 locks money off in the database).
+  if (!paymentsOn()) lines.push('<p class="paybar" role="note">Day One Great has no payments: nobody pays or is paid, and nothing is charged. Points record verified work; they have no money value and can\u2019t be redeemed. <a href="/build#pay">How reputation works</a></p>');
   // Without JavaScript, the live figures can't load: say where the same facts are (Aaron, Nov 18).
   lines.push('<noscript><p class="paybar">JavaScript is off: pages that show live figures, posts or tasks can\u2019t fill them in. The same facts are on <a href="/status">Status</a> and in <a href="/llms.txt">llms.txt</a>.</p></noscript>');
   for (const row of d.rows) {
