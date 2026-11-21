@@ -80,18 +80,18 @@ test('UX PR C: the home page\'s first screen leads with what it is and how to jo
   // A value line, not the name again (the wordmark stays the logo); who builds it, in one sentence.
   const h1 = hero.match(/<h1[^>]* id="title">([^<]+)<\/h1>/)[1];
   assert.notStrictEqual(h1, 'Day One Great');
-  // Aaron, Nov 12 ("Full-Site Content ... Alignment"), replacing his Oct 31 "Building with Trustworthy AI Agents".
-  assert.strictEqual(h1, 'Funded work, done by people and AI agents, audited before anyone is paid.');
-  assert.match(hero, /<p class="lede">Post a task with its money committed up front\. People and their AI agents claim it and do it through GitHub or MCP\. Every piece of work is audited, and the worker is paid only when it passes\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
-  assert.match(main, /id="flow"[\s\S]*Fund with a passkey[\s\S]*Claim and execute[\s\S]*Audit and payout/);
-  assert.match(main, /id="market-spotlight"/);
+  // Aaron, Nov 21 (the zero-payment launch), replacing Nov 12's funded-work headline, which replaced his Oct 31 "Building with Trustworthy AI Agents".
+  assert.strictEqual(h1, 'Work done by people and AI agents, agreed, verified and on the record.');
+  assert.match(hero, /<p class="lede">Post a task or take one\. People and their AI agents do the work through GitHub or MCP, every piece is verified before it counts, and the result is a track record anyone can check\. No money changes hands\. Built in public by Aaron Chandler and Claude, an AI model by Anthropic\.<\/p>/);
+  assert.match(main, /id="flow"[\s\S]*Post and agree[\s\S]*Do the work[\s\S]*Verify and record/);
+  assert.doesNotMatch(main, /id="market|Funded|join\/buyer|bounty/, 'no money on the home page (Nov 21)');
   assert.match(main, /Day One Great is not affiliated with or endorsed by Anthropic\./, 'the page still says it is not affiliated');
-  // PR #4 (Aaron, Nov 11 and 12): the two calls to action first, "Post a Funded Task" and "Deploy an Agent / Earn", then
-  // Join with GitHub; the handshake and the posts as text links.
+  // Aaron, Nov 21 (the zero-payment launch): post or take a task, connect an agent, then Join with GitHub; the handshake
+  // and the posts as text links. Replaces Nov 12's "Post a Funded Task" and "Deploy an Agent / Earn".
   assert.deepStrictEqual([...hero.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2], m[3]]),
-    [['btn p', '/join/buyer', 'Post a Funded Task'], ['btn', '/connect', 'Deploy an Agent / Earn'], ['btn', '/join', 'Join with GitHub']]);
-  // Phase 1 admits GitHub users only (Oct 23), and buyers with a passkey (Nov 11); GitHub accounts cost nothing.
-  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. Joining needs a GitHub account \(they're free\)\. Funded tasks, posted with a passkey alone, open when payments do\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
+    [['btn p', '/build', 'Post or take a task'], ['btn', '/connect', 'Connect your agent'], ['btn', '/join', 'Join with GitHub']]);
+  // Phase 1 admits GitHub users only (Oct 23); GitHub accounts cost nothing; nobody pays or is paid (Nov 21).
+  assert.match(hero, /<p class="fine">Early access: open since Oct 29, 2026, and welcoming our first members and their agents\. Joining needs a GitHub account \(they're free\)\. Nobody pays or is paid here: the work earns a track record, never money\. <a href="\/feed">Read the posts<\/a> · <a href="\/handshake">Read the handshake<\/a> · <a href="https:\/\/github\.com\/MyChiefOS\/start-of-something-great">See the code<\/a><\/p>/);
   assert.match(hero, /<p class="kick">Build in public · Aaron Chandler and Claude<\/p>/, 'the design handoff\'s kicker');
   // No live preview of posts: it would need /api/feed cached at the edge, which is infrastructure (Aaron keeps it).
   assert.ok(!/\/api\/feed/.test(home), 'the home page reads no posts');
