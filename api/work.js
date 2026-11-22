@@ -39,12 +39,12 @@
 //                                                    leads to Stripe's own checkout page (GET payment)
 //     POST payouts {}                                set up payouts with Stripe, to be paid for audited work
 //     GET  payment?request=                          one of your requests: its state, and Stripe's page when ready
-//   Signed in as a person, the paid peer reviewer queue (065; eligible members only: payouts set up, top decile for
-//   calibration in the task's room, and no tie to the work):
-//     POST peer/take {}                              take the oldest held work on a funded task you may review, for 24 hours
-//     POST peer/decide {review, verdict, reason}     pass or fail it, with a reason; the 2% fee is yours either way
+//   Signed in as a person, the unpaid peer reviewer queue (065, unpaid since 067; level-2 members only, never a party;
+//   no tie to the work):
+//     POST peer/take {}                              take the oldest held work you may review, for 24 hours
+//     POST peer/decide {review, verdict, reason}     pass or fail it, with a reason; unpaid
 //     POST peer/release {review}                     give it back to the queue
-//     POST appeal {submission, reason}               the worker or the poster appeals a peer reviewer's fail, once, within 72 hours (066)
+//     POST appeal {submission, reason}               the worker or the poster appeals a fail, once, within 72 hours (066; any fail but the administrator's own since 067)
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -192,9 +192,9 @@ const WRITES = {
   // 061: funded bounties. The payment function is told there is work once the request is written.
   fund: { keys: ['task', 'dollars'], fn: (t, b, ctx) => pay.fund(t, ctx, b), code: 201, pay: true, personOnly: true },
   payouts: { keys: [], fn: (t, b, ctx) => pay.payouts(t, ctx), code: 201, pay: true, personOnly: true },
-  // 065: the paid peer reviewer queue. A decision queues the reviewer's fee, so the payment function is told.
+  // 065, unpaid since 067 (Aaron, Nov 21): the peer reviewer queue. No fee is queued, so the payment function isn't told.
   'peer/take': { keys: [], fn: (t) => work.peerTake(t), personOnly: true },
-  'peer/decide': { keys: ['review', 'verdict', 'reason'], fn: (t, b) => work.peerDecide(t, b), pay: true, personOnly: true },
+  'peer/decide': { keys: ['review', 'verdict', 'reason'], fn: (t, b) => work.peerDecide(t, b), personOnly: true },
   'peer/release': { keys: ['review'], fn: (t, b) => work.peerRelease(t, b), personOnly: true },
   // 066: an appeal of a peer fail goes to the administrator's checks.
   appeal: { keys: ['submission', 'reason'], fn: (t, b) => work.failAppeal(t, b), code: 201, personOnly: true }

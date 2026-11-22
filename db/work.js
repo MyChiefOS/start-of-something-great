@@ -152,8 +152,8 @@ async function network(t) { const [r] = await call(t, (s) => s`select app.work_n
 // 064 (Aaron, Nov 12): funded work without public prices. The figures anyone may read (counts, tiers, pools of at
 // least 3 tasks rounded down to the $100), and one task's bounty as the asker may see it (signed out: its tier; signed
 // in: its exact net while the task is open; claimed or later: amounts only for its payer, payee and the administrator).
-// 065 (Aaron, Nov 11 and 12): the paid peer reviewer queue. Take the oldest held work on a funded task you may review
-// (24 hours), decide it pass or fail with a reason (2% of the bounty either way), or give it back.
+// 065, unpaid since 067 (Aaron, Nov 21): the peer reviewer queue. Take the oldest held work you may review
+// (24 hours), decide it pass or fail with a reason, or give it back.
 // 066 (Aaron, Nov 12): the worker or the poster appeals a fail a paid peer reviewer decided, once, within the dispute window.
 async function failAppeal(t, { submission, reason }) {
   const why = v.text('reason', reason, { min: 3, max: 300 });

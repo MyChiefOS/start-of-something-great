@@ -12,7 +12,6 @@ const postgres = require('postgres');
 const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
-const audit = require('../db/work-audit');
 const workjobs = require('../db/workjobs');
 const { migrate } = require('../scripts/migrate');
 
@@ -107,10 +106,6 @@ async function task(owner, pj, over = {}, opts = {}) {
   return r.json.id;
 }
 const page = async (id) => (await work('GET', 'task', { search: '?id=' + id })).json;
-// Since 055 (RK140) only dog_ghsync records GitHub's facts: the dog-github function's role, as it acts.
-const sync = (payload) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select app.work_github_sync(${t.json(payload)}::jsonb) as r`; }).then((r) => r[0].r);
-const wanted = (n) => su.begin(async (t) => { await t.unsafe('set local role dog_ghsync'); return t`select number from app.work_github_wanted(${n}::integer)`; });
-const AARON_ID = 304218593; // MyChiefOS, by GitHub ID
 const tick = async () => { await asWork('update app.work_settings set last_tick_at = null'); return workjobs.run(run); };
 const moneyRows = async () => (await q(`select (select count(*) from app.pay_requests)::int + (select count(*) from app.pay_ledger)::int + (select count(*) from app.work_bounties)::int + (select count(*) from app.pay_accounts)::int as n`))[0].n;
 
@@ -143,10 +138,26 @@ test('ZP2: the money lock holds in the database itself, whoever writes: the fund
   const id = await task(ada, pj);
   await assert.rejects(run({ actor: 'member', memberId: ada.id, session: c.sha256hex(ada.cookie.split('=')[1]), fresh: true }, (t) => t`select app.bounty_fund_request(${id}, 5000)`), /money_off|no payments/i);
   await assert.rejects(su.begin(async (t) => { await t.unsafe('set local role dog_pay'); await t.unsafe(`insert into app.pay_requests (member_id, kind) values ('${ada.id}', 'connect_onboard')`); }), /money_off/);
-  for (const tb of ['work_bounties', 'pay_requests', 'pay_accounts', 'pay_ledger']) {
-    const [{ n }] = await q(`select count(*)::int as n from pg_trigger where tgname = 'money_locked' and tgrelid = 'app.${tb}'::regclass and tgenabled <> 'D'`);
+  for (const tb of ['work_bounties', 'pay_requests', 'pay_accounts', 'pay_ledger', 'pay_events']) {
+    const [{ n, ev }] = await q(`select count(*)::int as n, bool_and(tgtype & 28 = 28) as ev from pg_trigger where tgname = 'money_locked' and tgrelid = 'app.${tb}'::regclass and tgenabled <> 'D'`);
     assert.strictEqual(n, 1, tb + ' has the lock, enabled');
+    assert.strictEqual(ev, true, tb + ': the lock covers insert, update and delete (the fresh review, H1)');
   }
+  // A row written while the lock was lifted can't be changed or removed once it is back.
+  await su.begin(async (t) => {
+    await t.unsafe('alter table app.pay_requests disable trigger money_locked');
+    await t.unsafe(`insert into app.pay_requests (member_id, kind) values ('${ada.id}', 'connect_onboard')`);
+    await t.unsafe('alter table app.pay_requests enable trigger money_locked');
+    await assert.rejects(t.unsafe(`update app.pay_requests set kind = kind where member_id = '${ada.id}'`), /money_off/);
+    throw new Error('rollback');
+  }).catch((e) => { if (e.message !== 'rollback') throw e; });
+  // The fresh review (M2): emptying a money table is refused too, and the lock fires in replica mode.
+  await assert.rejects(q('truncate app.pay_ledger'), /money_off/);
+  await su.begin(async (t) => {
+    await t.unsafe("set local session_replication_role = replica");
+    await assert.rejects(t.unsafe(`insert into app.pay_requests (member_id, kind) values ('${ada.id}', 'connect_onboard')`), /money_off/);
+    throw new Error('rollback');
+  }).catch((e) => { if (e.message !== 'rollback') throw e; });
   assert.strictEqual(await moneyRows(), 0);
   const [{ d }] = await q(`select obj_description('app.work_point_entries'::regclass) as d`);
   assert.match(d, /never money/, 'the points ledger says what it is');
@@ -187,6 +198,10 @@ test('ZP5 (gap G4): an agent in draft mode can read the work but not take part i
   const rd = await work('GET', 'task', { search: '?id=' + id });
   assert.strictEqual(rd.status, 200);
   assert.strictEqual(rd.json.status, 'open', 'the refused claim left the task open');
+  // The fresh review (H2): only the steps that commit are held. The agent still reads its own work with its key.
+  const mine = await work('GET', 'mine', { key: draft.key });
+  assert.notStrictEqual(mine.json && mine.json.reason, 'work_draft', 'a draft agent reads its own work: ' + JSON.stringify(mine.json));
+  assert.ok(mine.status < 400, 'mine answers: ' + mine.status + ' ' + JSON.stringify(mine.json));
 });
 
 test('ZP6 (gap G4): every agent work action records the version of its owner’s rules', async () => {

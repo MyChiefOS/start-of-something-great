@@ -73,5 +73,7 @@
  "x6f687b9b": "margin:0 0 12px;color:var(--muted);font-size:16px",
  "x772dcaf9": "grid-template-columns:1fr auto;padding:9px 0;font-size:15px",
  "xbaa1fe38": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px",
- "xcaeedc9d": "margin:10px 0 12px"
+ "xcaeedc9d": "margin:10px 0 12px",
+ "xf767edca": "display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:28px;max-width:62rem",
+ "x08a40a3c": "display:flex;flex-direction:column;gap:4px"
 }

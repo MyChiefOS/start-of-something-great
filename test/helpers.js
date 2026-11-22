@@ -102,7 +102,7 @@ async function shadowMode(su) {
 // of the dormant payment code (061 to 066) lift it on their own scratch database only, to prove that code still works
 // if Aaron ever turns money on again by a migration. test/zero-pay.test.js proves the lock itself holds.
 async function liftMoneyLock(su) {
-  for (const t of ['work_bounties', 'pay_requests', 'pay_accounts', 'pay_ledger']) await su.unsafe(`alter table app.${t} disable trigger money_locked`);
+  for (const t of ['work_bounties', 'pay_requests', 'pay_accounts', 'pay_ledger', 'pay_events']) await su.unsafe(`alter table app.${t} disable trigger money_locked`);
 }
 
 // 037, after its independent review (H1): the site's role can no longer make a session without a PIN and a browser

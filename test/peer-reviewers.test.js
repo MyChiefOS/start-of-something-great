@@ -84,14 +84,10 @@ test.after(async () => {
   }
 });
 
-test('PV1: who may review: a person at level 2 with payouts, in the room’s top decile; nobody is in it until the room has an established record', async () => {
+test('PV1 (067: unpaid): who may review: a person at level 2; no payouts and no top decile are needed', async () => {
   const h = await held();
   const r = await member('Reviewer one');
-  assert.strictEqual(await block(r, h.sub), 'payouts');
-  await payouts(r);
-  assert.strictEqual(await block(r, h.sub), 'not_top_decile', '045’s real top decile: nobody in a room with no established auditors');
-  await topDecile([r]);
-  assert.strictEqual(await block(r, h.sub), null);
+  assert.strictEqual(await block(r, h.sub), null, 'level 2 is enough: no Stripe account, and a room with no established auditors still has reviewers');
   const low = await member('Level one', { level2: false });
   await payouts(low);
   await topDecile([r, low]);
@@ -101,7 +97,7 @@ test('PV1: who may review: a person at level 2 with payouts, in the room’s top
   await clear();
 });
 
-test('PV2: an eligible reviewer takes held work for 24 hours, one at a time, and decides it; the 2% fee is queued, pass or fail', async () => {
+test('PV2 (067: unpaid): an eligible reviewer takes held work for 24 hours, one at a time, and decides it; no fee is queued', async () => {
   const h = await held();
   const r = await member('Reviewer two');
   await payouts(r);
@@ -117,10 +113,8 @@ test('PV2: an eligible reviewer takes held work for 24 hours, one at a time, and
   const [s] = await q(`select status, decided_by from app.work_submissions where id = '${h.sub}'`);
   assert.deepStrictEqual([s.status, s.decided_by], ['failed', 'peer']);
   const [pr] = await q(`select status, verdict, fee_cents from app.peer_reviews where id = '${got.review}'`);
-  assert.deepStrictEqual([pr.status, pr.verdict, pr.fee_cents], ['decided', 'fail', 200], '2% of $100, for a fail');
-  const [req] = await q(`select kind, member_id, bounty_id from app.pay_requests where peer_review_id = '${got.review}'`);
-  assert.deepStrictEqual([req.kind, req.member_id, req.bounty_id], ['reviewer_fee', r.id, h.bounty]);
-  assert.strictEqual((await q(`select app.bounty_refund_cents('${h.bounty}') as c`))[0].c, 9800, 'a refund now returns 98%');
+  assert.deepStrictEqual([pr.status, pr.verdict, pr.fee_cents], ['decided', 'fail', null], 'unpaid: no fee');
+  assert.strictEqual((await q(`select count(*)::int as n from app.pay_requests where peer_review_id = '${got.review}'`))[0].n, 0, 'no payment request');
   // The reviewer's vote is kept for calibration (045, now counting peer passes).
   assert.strictEqual((await q(`select count(*)::int as n from app.work_person_votes where submission_id = '${h.sub}' and member_id = '${r.id}'`))[0].n, 1);
   await clear();
@@ -213,7 +207,7 @@ test('PV7: the API: the queue is for a person on our pages; an agent is refused;
   const fs = require('fs');
   const src = fs.readFileSync(require('path').join(__dirname, '..', 'api', 'work.js'), 'utf8');
   assert.match(src, /'peer\/take': \{ keys: \[\], fn: \(t\) => work\.peerTake\(t\), personOnly: true \}/);
-  assert.match(src, /'peer\/decide': \{ keys: \['review', 'verdict', 'reason'\], fn: \(t, b\) => work\.peerDecide\(t, b\), pay: true, personOnly: true \}/);
+  assert.match(src, /'peer\/decide': \{ keys: \['review', 'verdict', 'reason'\], fn: \(t, b\) => work\.peerDecide\(t, b\), personOnly: true \}/, 'unpaid: the payment function is never told');
   assert.match(fs.readFileSync(require('path').join(__dirname, '..', 'peer.js'), 'utf8'), /\/api\/work\//);
 });
 
@@ -316,6 +310,32 @@ test('PV9 (066; Aaron, Nov 12, RK152): a sample of peer fails, and any appeal, i
   await q(`update app.work_submissions set decided_at = now() - interval '73 hours' where id = '${h3.sub}'`);
   await assert.rejects(run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h3.sub, reason: 'Too late' })), /has passed|too late|window/i);
   await q(`update app.work_settings set fail_sample_rate = 0.15`);
+  await clear();
+});
+
+test('PV11 (067: unpaid): held work on a task with no bounty is offered, and a closed task is not', async () => {
+  const r = await member('Reviewer sixteen');
+  const [t] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member, status)
+    values ('${project}', '${room}', 'Unfunded held work', 'either', 1, 'member', '${poster.id}', 'submitted') returning id`);
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, code_hash, expires_at, status) values ('${t.id}', '${worker.id}', '${crypto.randomBytes(32).toString('hex')}', now() + interval '1 day', 'submitted') returning id`);
+  const [s] = await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, artifact_kind, artifact_url, seal_key, seal, status, route, routed_at)
+    values ('${t.id}', '${cl.id}', 'member', '${worker.id}', 'link', 'https://example.org/w', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'review', 'admin', now() - interval '1 hour') returning id`);
+  const got = await take(r);
+  assert.strictEqual(got.submission, s.id, 'no bounty needed');
+  assert.deepStrictEqual(await decide(r, got.review, 'pass'), { result: 'pass' });
+  assert.strictEqual((await q(`select decided_by from app.work_submissions where id = '${s.id}'`))[0].decided_by, 'peer');
+  await clear();
+});
+
+test('PV12 (067, the fresh review H1): a peer’s pass is checked after: one in five, and its points wait for the check', async () => {
+  const r = await member('Reviewer seventeen');
+  await q(`update app.work_settings set tl_check_rate = 1`);
+  const h = await held();
+  const got = await take(r);
+  assert.deepStrictEqual(await decide(r, got.review, 'pass'), { result: 'pass' });
+  const [k] = await q(`select why, status from app.work_checks where submission_id = '${h.sub}'`);
+  assert.ok(k && ['random', 'pair'].includes(k.why) && k.status === 'open', 'a check is open: ' + JSON.stringify(k));
+  await q(`update app.work_settings set tl_check_rate = 0.2`);
   await clear();
 });
 
