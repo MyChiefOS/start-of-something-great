@@ -429,6 +429,22 @@ constraint app.pay_requests pay_requests_pkey PRIMARY KEY (id)
 constraint app.pay_requests pay_requests_reviewer_fee_check CHECK ((((kind = 'reviewer_fee'::text) = (peer_review_id IS NOT NULL)) AND ((kind <> 'reviewer_fee'::text) OR (bounty_id IS NOT NULL))))
 constraint app.pay_requests pay_requests_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'working'::text, 'done'::text, 'failed'::text])))
 constraint app.pay_requests pay_requests_stripe_object_id_check CHECK (((char_length(stripe_object_id) <= 255) AND (stripe_object_id ~ '^[a-z]+_[A-Za-z0-9_]+$'::text)))
+constraint app.peer_cases peer_cases_appeal_reason_check CHECK (((char_length(appeal_reason) >= 3) AND (char_length(appeal_reason) <= 300)))
+constraint app.peer_cases peer_cases_appealed_by_fkey FOREIGN KEY (appealed_by) REFERENCES app.members(id) ON DELETE SET NULL
+constraint app.peer_cases peer_cases_check CHECK (((kind = 'check'::text) = (check_id IS NOT NULL)))
+constraint app.peer_cases peer_cases_check1 CHECK (((kind = 'dispute'::text) = (dispute_id IS NOT NULL)))
+constraint app.peer_cases peer_cases_check2 CHECK ((((kind = 'check'::text) AND ((decision IS NULL) OR (decision = ANY (ARRAY['confirm'::text, 'reverse'::text])))) OR ((kind = 'dispute'::text) AND ((decision IS NULL) OR (decision = ANY (ARRAY['uphold'::text, 'dismiss'::text]))))))
+constraint app.peer_cases peer_cases_check3 CHECK (((status <> ALL (ARRAY['proposed'::text, 'appealed'::text, 'applied'::text])) OR ((decision IS NOT NULL) AND (decided_at IS NOT NULL))))
+constraint app.peer_cases peer_cases_check4 CHECK (((status <> 'assigned'::text) OR (decision IS NULL)))
+constraint app.peer_cases peer_cases_check_id_fkey FOREIGN KEY (check_id) REFERENCES app.work_checks(id) ON DELETE CASCADE
+constraint app.peer_cases peer_cases_decision_check CHECK ((decision = ANY (ARRAY['confirm'::text, 'reverse'::text, 'uphold'::text, 'dismiss'::text])))
+constraint app.peer_cases peer_cases_dispute_id_fkey FOREIGN KEY (dispute_id) REFERENCES app.work_disputes(id) ON DELETE CASCADE
+constraint app.peer_cases peer_cases_kind_check CHECK ((kind = ANY (ARRAY['check'::text, 'dispute'::text])))
+constraint app.peer_cases peer_cases_pkey PRIMARY KEY (id)
+constraint app.peer_cases peer_cases_reason_check CHECK (((char_length(reason) >= 3) AND (char_length(reason) <= 300)))
+constraint app.peer_cases peer_cases_reviewer_member_fkey FOREIGN KEY (reviewer_member) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.peer_cases peer_cases_status_check CHECK ((status = ANY (ARRAY['assigned'::text, 'proposed'::text, 'appealed'::text, 'applied'::text, 'superseded'::text, 'lapsed'::text, 'released'::text])))
+constraint app.peer_cases peer_cases_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.peer_reviews peer_reviews_bounty_id_fkey FOREIGN KEY (bounty_id) REFERENCES app.work_bounties(id) ON DELETE SET NULL
 constraint app.peer_reviews peer_reviews_check CHECK (((status = 'decided'::text) = ((verdict IS NOT NULL) AND (decided_at IS NOT NULL))))
 constraint app.peer_reviews peer_reviews_fee_cents_check CHECK (((fee_cents >= 0) AND (fee_cents <= 100000000)))
@@ -748,6 +764,7 @@ constraint app.work_bounties work_bounties_task_id_key UNIQUE (task_id)
 constraint app.work_bounties work_bounties_transferred_cents_check CHECK (((transferred_cents >= 0) AND (transferred_cents <= 1000000)))
 constraint app.work_checks work_checks_appeal_reason_check CHECK (((char_length(appeal_reason) >= 3) AND (char_length(appeal_reason) <= 300)))
 constraint app.work_checks work_checks_appealed_by_fkey FOREIGN KEY (appealed_by) REFERENCES app.members(id) ON DELETE SET NULL
+constraint app.work_checks work_checks_decided_kind_check CHECK ((decided_kind = ANY (ARRAY['admin'::text, 'peer'::text])))
 constraint app.work_checks work_checks_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.work_checks work_checks_pkey PRIMARY KEY (id)
 constraint app.work_checks work_checks_reason_check CHECK (((char_length(reason) >= 3) AND (char_length(reason) <= 300)))
@@ -770,6 +787,7 @@ constraint app.work_dispute_evidence work_dispute_evidence_note_check CHECK (((c
 constraint app.work_dispute_evidence work_dispute_evidence_pkey PRIMARY KEY (id)
 constraint app.work_dispute_evidence work_dispute_evidence_role_check CHECK ((role = ANY (ARRAY['opener'::text, 'worker'::text, 'poster'::text, 'admin'::text])))
 constraint app.work_disputes work_disputes_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES app.members(id) ON DELETE SET NULL
+constraint app.work_disputes work_disputes_decided_kind_check CHECK ((decided_kind = ANY (ARRAY['admin'::text, 'peer'::text])))
 constraint app.work_disputes work_disputes_decision_check CHECK (((char_length(decision) >= 3) AND (char_length(decision) <= 300)))
 constraint app.work_disputes work_disputes_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.work_disputes work_disputes_pkey PRIMARY KEY (id)
@@ -1087,6 +1105,9 @@ default app.pay_requests.created_at = now()
 default app.pay_requests.id = app.uuid_v7()
 default app.pay_requests.next_at = now()
 default app.pay_requests.status = 'queued'::text
+default app.peer_cases.assigned_at = now()
+default app.peer_cases.id = app.uuid_v7()
+default app.peer_cases.status = 'assigned'::text
 default app.peer_reviews.assigned_at = now()
 default app.peer_reviews.id = app.uuid_v7()
 default app.peer_reviews.status = 'assigned'::text
@@ -1258,6 +1279,7 @@ default app.work_bounties.status = 'funding'::text
 default app.work_bounties.undo_requested = false
 default app.work_bounties.updated_at = now()
 default app.work_checks.created_at = now()
+default app.work_checks.decided_kind = 'admin'::text
 default app.work_checks.id = app.uuid_v7()
 default app.work_checks.status = 'open'::text
 default app.work_claims.created_at = now()
@@ -1266,6 +1288,7 @@ default app.work_claims.status = 'active'::text
 default app.work_dispute_evidence.created_at = now()
 default app.work_dispute_evidence.id = app.uuid_v7()
 default app.work_disputes.created_at = now()
+default app.work_disputes.decided_kind = 'admin'::text
 default app.work_disputes.id = app.uuid_v7()
 default app.work_disputes.status = 'open'::text
 default app.work_github_codes.id = app.uuid_v7()
@@ -1535,9 +1558,15 @@ function app.p256_powmod(b numeric, e numeric, m numeric) owner=dog_owner execut
 function app.p256_verify(pub bytea, msg bytea, sig bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6d74a56a095e7b22c6640eb1b22397d7
 function app.pay_ledger_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=23e2f5684fb534d328a40d68bb4bba8b
 function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=eeb58a61f72586445d0873da132939f5
+function app.peer_case_appeal(p_case uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=3834063677f5c1406d3254bb3a94900b
+function app.peer_case_block(p_member uuid, p_sub uuid, p_dispute uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=b76869d2213ca6bbbf59563e24508e9f
+function app.peer_case_decide(p_case uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=035921c811b6ca8b58bc78dcddddc842
+function app.peer_case_release(p_case uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=139240e197c5409cb219e50e7b31e7a4
+function app.peer_case_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=a2cb94ce610d31a088437ddf5b17cd9b
+function app.peer_cases_due() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=59938ad1fa0c7e0f7967313e39a6f733
 function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=025068a6f7e699fd163f2b05f43adb19
 function app.peer_review_release(p_review uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=47b6a0b555d6f082d9530fc5226b3287
-function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0d704753843d8cda6ce0f38a6ad1a7af
+function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=ed3b610763bfcfb4c225e90109c6ee3f
 function app.peer_top_decile(p_member uuid, p_room text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=64720e8fd0cb94cc255f0e7f71dbf5a7
 function app.pin_change(p_current text, p_new text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=318f0c2327d38f43884b5fcde77c3019
 function app.pin_digest(p_member uuid, p_salt bytea, p_pin text) owner=dog_signin execute=dog_signin language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=27ff3f479653e63606de4edc718b9c03
@@ -1660,7 +1689,8 @@ function app.work_brake_check(p_member uuid) owner=dog_work execute=dog_work lan
 function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=41e1f0deaca11407531e0b52b554d34b
 function app.work_cap(p_agent uuid, p_root uuid, p_kind text, p_new_claim boolean) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=023b626206cf906f98900fde64a05f3b
 function app.work_card(p_task uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d7b60f17e3dd2a7e9805740af9fe72c1
-function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d4d5314d8f0f237d06b2e9fcf7ad89b5
+function app.work_check_apply(p_check uuid, p_decision text, p_reason text, p_member uuid, p_kind text) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=9c5bd880be6a4a1a1aa5c46f3a65a645
+function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=9c4f7433dd4ef2c3384cf877de9d5ffb
 function app.work_citizen(p_kind text, p_ref text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=53e435a822c38d112351c7fddafccf22
 function app.work_claim(p_task uuid, p_code_hash text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e197c4ae1c535a34356691c397cdbd4
 function app.work_confirmed_size(p_sub uuid, p_by text) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=smallint body_md5=17268c22ad5a3e0dbe598e040dca3d6d
@@ -1668,7 +1698,8 @@ function app.work_console(p_tab text, p_status text, p_cursor text) owner=dog_wo
 function app.work_console_integrity() owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=17b4ac8e016b401fa2fc854de867ce22
 function app.work_display(p_member uuid, p_agent uuid, p_github text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e5dbe77c9b350b1ca967f865a1fb60a
 function app.work_dispute(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=9f0cafd7c5dad956ab6feb0de07c8d4a
-function app.work_dispute_decide(p_dispute uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=bee55d6cc561ab9ba57d7d8decd01557
+function app.work_dispute_apply(p_dispute uuid, p_decision text, p_reason text, p_member uuid, p_kind text) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=4e288181c4679727a54719d923067a0e
+function app.work_dispute_decide(p_dispute uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=757b0055dadad7be11b25e655dee44b0
 function app.work_dispute_page(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=0c8ea9b371b27a4fa132b4c3858cccce
 function app.work_disputes_list(p_status text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eb8b09e55fae21d1249b346263d25f37
 function app.work_evidence_add(p_dispute uuid, p_note text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=1033cabfb44daccacc27b6e74c2adb29
@@ -2375,6 +2406,10 @@ grant app.pay_requests.kind dog_app SELECT
 grant app.pay_requests.member_id dog_app SELECT
 grant app.pay_requests.peer_review_id dog_pay UPDATE
 grant app.pay_requests.status dog_app SELECT
+grant app.peer_cases dog_app SELECT
+grant app.peer_cases dog_work INSERT
+grant app.peer_cases dog_work SELECT
+grant app.peer_cases dog_work UPDATE
 grant app.peer_reviews dog_app SELECT
 grant app.peer_reviews dog_work INSERT
 grant app.peer_reviews dog_work SELECT
@@ -3024,6 +3059,8 @@ policy app.pay_ledger pay_ledger_app cmd=r permissive=true to=dog_app using=((me
 policy app.pay_ledger pay_ledger_pay cmd=* permissive=true to=dog_pay using=true check=true
 policy app.pay_requests pay_requests_app cmd=r permissive=true to=dog_app using=(member_id = ( SELECT app.current_member() AS current_member)) check=
 policy app.pay_requests pay_requests_pay cmd=* permissive=true to=dog_pay using=true check=true
+policy app.peer_cases peer_cases_app cmd=r permissive=true to=dog_app using=((reviewer_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
+policy app.peer_cases peer_cases_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.peer_reviews peer_reviews_app cmd=r permissive=true to=dog_app using=((reviewer_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.peer_reviews peer_reviews_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.peer_reviews peer_reviews_work cmd=* permissive=true to=dog_work using=true check=true

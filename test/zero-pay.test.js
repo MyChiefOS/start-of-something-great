@@ -110,6 +110,8 @@ const tick = async () => { await asWork('update app.work_settings set last_tick_
 const moneyRows = async () => (await q(`select (select count(*) from app.pay_requests)::int + (select count(*) from app.pay_ledger)::int + (select count(*) from app.work_bounties)::int + (select count(*) from app.pay_accounts)::int as n`))[0].n;
 
 test('ZP1: a person posts, another person’s agent claims and submits, the poster verifies it, and the points go final, with no money anywhere', async () => {
+  // The 5% random check after a poster's pass (052) would hold the points: off for this path, so it is the same every run.
+  await q(`update app.work_settings set check_rate = 0`);
   const ada = await member('Ada');
   const bo = await member('Bo');
   const agent = await newAgent(bo, 'Bo_helper', 'act');
@@ -216,7 +218,7 @@ test('ZP6 (gap G4): every agent work action records the version of its owner’s
   assert.ok(mine.every((r) => r.rules_version === null), 'a person’s own actions have no rules version');
 });
 
-test('ZP7 (gap G11): the worker appeals a poster’s fail; an administrator overturns it; nothing is reversed and the worker is told', async () => {
+test('ZP7 (gap G11; 068): the worker appeals a poster’s fail; an administrator overturns it; the work passes and the worker is told', async () => {
   const ada = await member('Ada7'); const bo = await member('Bo7'); const cy = await member('Cy7');
   const id = await task(ada, await project(ada, 'Appeal trial'));
   await work('POST', 'claim', { cookie: bo.cookie, json: { task: id } });
@@ -229,7 +231,7 @@ test('ZP7 (gap G11): the worker appeals a poster’s fail; an administrator over
   assert.deepStrictEqual([k.why, k.appealed_by], ['fail_appeal', bo.id]);
   const rv = await work('POST', 'review', { cookie: aaron.cookie, json: { check: k.id, decision: 'reverse', reason: 'The work was fine.' } });
   assert.strictEqual(rv.status, 200, JSON.stringify(rv.json));
-  assert.strictEqual((await q(`select status from app.work_submissions where id = '${sub}'`))[0].status, 'failed', 'an overturned fail is never turned into anything');
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${sub}'`))[0].status, 'passed', '068: an overturned fail is put right: the work passes');
   assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id = '${bo.id}' and dedupe_key = 'work:fail-overturned:${k.id}'`))[0].n, 1, 'the worker is told');
   assert.strictEqual((await work('POST', 'appeal', { cookie: bo.cookie, json: { submission: sub, reason: 'Again please.' } })).status, 409, 'once only');
   // The administrator's own fail can't be appealed: it would go back to him.

@@ -44,6 +44,10 @@
 //     POST peer/take {}                              take the oldest held work you may review, for 24 hours
 //     POST peer/decide {review, verdict, reason}     pass or fail it, with a reason; unpaid
 //     POST peer/release {review}                     give it back to the queue
+//     POST peer/case/take {}                         take the oldest open check or dispute you may decide, for 24 hours (068)
+//     POST peer/case/decide {case, decision, reason} propose confirm/reverse (a check) or uphold/dismiss (a dispute); it takes effect in 72 hours
+//     POST peer/case/release {case}                  give it back
+//     POST peer/case/appeal {case, reason}           the worker, the poster or the one who disputed sends it to the administrator instead
 //     POST appeal {submission, reason}               the worker or the poster appeals a fail, once, within 72 hours (066; any fail but the administrator's own since 067)
 //   Aaron only:
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
@@ -196,6 +200,11 @@ const WRITES = {
   'peer/take': { keys: [], fn: (t) => work.peerTake(t), personOnly: true },
   'peer/decide': { keys: ['review', 'verdict', 'reason'], fn: (t, b) => work.peerDecide(t, b), personOnly: true },
   'peer/release': { keys: ['review'], fn: (t, b) => work.peerRelease(t, b), personOnly: true },
+  // 068 (Aaron, Nov 22): peers decide checks and disputes first; the administrator is the last appeal.
+  'peer/case/take': { keys: [], fn: (t) => work.caseTake(t), personOnly: true },
+  'peer/case/decide': { keys: ['case', 'decision', 'reason'], fn: (t, b) => work.caseDecide(t, b), personOnly: true },
+  'peer/case/release': { keys: ['case'], fn: (t, b) => work.caseRelease(t, b), personOnly: true },
+  'peer/case/appeal': { keys: ['case', 'reason'], fn: (t, b) => work.caseAppeal(t, b), code: 201, personOnly: true },
   // 066: an appeal of a peer fail goes to the administrator's checks.
   appeal: { keys: ['submission', 'reason'], fn: (t, b) => work.failAppeal(t, b), code: 201, personOnly: true }
 };

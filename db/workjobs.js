@@ -142,6 +142,8 @@ function shapeProposals(issues) {
 async function run(runDb) {
   const out = {};
   await step('tick', out, () => runDb({ actor: 'anon' }, (t) => t`select app.work_tick() as r`).then((r) => r[0].r));
+  // 068: peers' decisions nobody appealed take effect when their window ends.
+  await step('peer cases', out, () => runDb({ actor: 'anon' }, (t) => t`select app.peer_cases_due() as r`).then((r) => r[0].r));
   return out;
 }
 

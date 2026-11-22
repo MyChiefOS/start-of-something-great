@@ -247,5 +247,9 @@
   "work_market": {
     "kind": "public figures, by design",
     "why": "064: counts and tier badges of funded open tasks, overall and per room, for anyone; no dollar figure (Aaron, Nov 12), no person and no Stripe ID."
+  },
+  "peer_cases_due": {
+    "kind": "timer",
+    "why": "068: applies peers' decisions on checks and disputes whose dispute window has ended without an appeal. It takes no input and only does what the window already settled, so calling it early changes nothing; the work timer calls it every minute."
   }
 }

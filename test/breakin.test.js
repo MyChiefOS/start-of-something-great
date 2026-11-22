@@ -216,6 +216,11 @@ test.before(async () => {
     await t.unsafe('set local role dog_work');
     await t.unsafe(`insert into app.peer_reviews (submission_id, task_id, reviewer_member, expires_at)
       select s.id, s.task_id, '${A.id}', now() + interval '1 day' from app.work_submissions s limit 1`);
+    // 068: a peer case taken by member A, on a check of the fixture's submission.
+    await t.unsafe(`insert into app.work_checks (submission_id, why) select s.id, 'note' from app.work_submissions s
+      where not exists (select 1 from app.work_checks k where k.submission_id = s.id) limit 1`);
+    await t.unsafe(`insert into app.peer_cases (kind, check_id, submission_id, reviewer_member, expires_at)
+      select 'check', k.id, k.submission_id, '${A.id}', now() + interval '1 day' from app.work_checks k limit 1`);
   });
   await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
   // 026: a country the behaviour watch saw A sign in from (a keyed hash).

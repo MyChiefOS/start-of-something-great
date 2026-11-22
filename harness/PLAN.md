@@ -304,3 +304,10 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 - **Local tests:** `pg_ctlcluster 16 main start`, then `TEST_DATABASE_URL=postgres://postgres@localhost/postgres npm test` (435 pass, 1 runs only on Supabase's image in CI). Install with `npm ci --ignore-scripts` first. There is no Docker daemon in Claude's workspace, so Supabase's image only runs in CI.
 - **Commits** are signed, authored `Claude <noreply@anthropic.com>`, with the session attribution lines; **PR descriptions** list every file, every commit and what happens on merge.
 - **Don't trust a summary of a long session.** Earlier summaries lost that the old tables still exist, that Aaron merged #41, and Aaron's Oct 24 decisions. Re-read FACTS.md and this file.
+
+### The four committed changes (Aaron, Nov 22: "an agent card, a poster rating, OAuth, and automatic remedies ... without needing me to take any action but approving the PR"). Claude.
+
+1. **Done (#136, merged and proven live Nov 22):** 067 reworked: unpaid peer review, the full money lock, draft mode at the work steps.
+2. **In review:** 068, automatic remedies. An overturned fail is put right; peers decide fail checks and disputes first (72-hour window, then it takes effect unless a party appeals); the administrator is the last appeal; held work he is a party to goes to peers. Proof: AR1 to AR8.
+3. **Next:** OAuth 2.1 on `/api/mcp` on the site's own sign-in: approving makes an agent whose key is the access token, kept sealed under the code (no signing key), the agent card at `/.well-known/agent-card.json`, and the poster rating.
+4. **Then:** full Second Look (task text, submissions, dispute evidence) and full Third Look (all readable submitted work).

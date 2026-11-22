@@ -161,6 +161,16 @@ const DEFINERS = {
   'app.peer_review_release(uuid)': 'dog_work',
   'app.peer_block(uuid, uuid)': { owner: 'dog_work', callers: '' },
   'app.peer_top_decile(uuid, text)': { owner: 'dog_work', callers: '' },
+  // 068 (Aaron, Nov 22): automatic remedies. The effect of a check or a dispute, whoever decides it (only the work role's
+  // own functions call these), and the peer cases: take, decide, give back, appeal, and the timer's step.
+  'app.work_check_apply(uuid, text, text, uuid, text)': { owner: 'dog_work', callers: '' },
+  'app.work_dispute_apply(uuid, text, text, uuid, text)': { owner: 'dog_work', callers: '' },
+  'app.peer_case_block(uuid, uuid, uuid)': { owner: 'dog_work', callers: '' },
+  'app.peer_case_take()': 'dog_work',
+  'app.peer_case_decide(uuid, text, text)': 'dog_work',
+  'app.peer_case_release(uuid)': 'dog_work',
+  'app.peer_case_appeal(uuid, text)': 'dog_work',
+  'app.peer_cases_due()': 'dog_work',
   'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
   'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
   'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',

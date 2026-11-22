@@ -168,6 +168,21 @@ async function peerDecide(t, { review, verdict, reason }) {
   return { result: r.d };
 }
 async function peerRelease(t, { review }) { const [r] = await call(t, (s) => s`select app.peer_review_release(${v.uuid('review', review)}::uuid) as d`); return { result: r.d }; }
+// 068 (Aaron, Nov 22): peers decide checks and disputes first; a decision takes effect after the dispute window unless
+// a party appeals it, and then an administrator decides, the last appeal.
+async function caseTake(t) { const [r] = await call(t, (s) => s`select app.peer_case_take() as d`); return r.d; }
+async function caseDecide(t, { case: id, decision, reason }) {
+  const d = v.oneOf('decision', decision, ['confirm', 'reverse', 'uphold', 'dismiss']);
+  const why = v.text('reason', reason, { min: 3, max: 300 });
+  const [r] = await call(t, (s) => s`select app.peer_case_decide(${v.uuid('case', id)}::uuid, ${d}, ${why}) as d`);
+  return r.d;
+}
+async function caseRelease(t, { case: id }) { const [r] = await call(t, (s) => s`select app.peer_case_release(${v.uuid('case', id)}::uuid) as d`); return { result: r.d }; }
+async function caseAppeal(t, { case: id, reason }) {
+  const why = v.text('reason', reason, { min: 3, max: 300 });
+  const [r] = await call(t, (s) => s`select app.peer_case_appeal(${v.uuid('case', id)}::uuid, ${why}) as d`);
+  return { result: r.d };
+}
 async function market(t) { const [r] = await call(t, (s) => s`select app.work_market() as d`); return r.d; }
 async function bountyOf(t, taskId) { const [r] = await call(t, (s) => s`select app.work_bounty_of(${v.uuid('task', taskId)}::uuid) as d`); return r.d; }
 
@@ -302,5 +317,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { failAppeal, peerTake, peerDecide, peerRelease, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };
