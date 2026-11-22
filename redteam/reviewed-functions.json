@@ -271,5 +271,13 @@
   "sl_item_status": {
     "kind": "public read",
     "why": "070: whether Second Look has read a task, a submission, a dispute or a note of evidence, and its decision word (clear, reject, leave); never the text or the reasons."
+  },
+  "idem_begin": {
+    "kind": "proof-based",
+    "why": "071: answers only for a scope hash, which the site makes from who is signed in and the key they sent; another caller can't name someone else's scope, and what it returns is sealed under the key."
+  },
+  "idem_put": {
+    "kind": "proof-based",
+    "why": "071: keeps a sealed answer under a scope hash made from who is signed in and their key; only the first answer for a scope is kept, and rows go after 24 hours."
   }
 }

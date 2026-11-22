@@ -185,6 +185,9 @@ const DEFINERS = {
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',
   'app.tl_read(uuid, text, text)': 'dog_work',
+  // 071: idempotency keys. Before a write, wait for the same key and say what was kept; after it, keep the sealed answer.
+  'app.idem_begin(text, text, text)': 'dog_work',
+  'app.idem_put(text, text, text, integer, bytea)': 'dog_work',
   'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
   'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
   'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',
