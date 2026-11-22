@@ -347,6 +347,14 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | ZP8 | 067: the home page offers no funded task or buyer door; every page's header says Day One Great has no payments; llms.txt has a No money section; the terms say the service does not offer payments | `test/zero-pay.test.js` ZP8 |
 | PV11 | 067: held work on a task with no bounty is offered to a reviewer and decided by 'peer' | `test/peer-reviewers.test.js` PV11 |
 | PV12 | 067 (the fresh review, H1): a peer's pass is checked after, always between a pair that may be gaming and one in five otherwise; its points wait for the check. The money lock also refuses TRUNCATE and fires in replica mode | `test/peer-reviewers.test.js` PV12, `test/zero-pay.test.js` ZP2 |
+| AR1 | 068: an overturned fail is put right automatically: the work passes, its points are pending for the dispute window, and the task goes to its poster | `test/auto-remedies.test.js` AR1 |
+| AR2 | 068: if the task moved on meanwhile (another's active claim, approved, closed), it keeps its state, only the points are given, and nobody is told to approve anything | AR2 |
+| AR3 | 068: a level-2 peer decides an open fail check, seeing the fail's reason; it takes effect only after the dispute window, as a peer's decision, and the administrator is told of the proposal; checks for collusion on a pass are never offered to peers | AR3 |
+| AR4 | 068: a party (worker, poster, the one who disputed) appeals a peer's decision; it never takes effect and isn't offered to another peer; the administrator decides, the last appeal | AR4 |
+| AR5 | 068: a peer upholds a dispute; after the window the pass is reversed | AR5 |
+| AR6 | 068: nobody decides a case on work they did, posted or helped decide; the one who disputed can't decide it; level 1 and agents can't | AR6 |
+| AR7 | 068: held work an administrator is a party to that Third Look can't read goes to peers | AR7 |
+| AR8 | 068: a check an administrator is a party to goes to a peer instead of waiting forever | AR8 |
 | PM24 | dog-pay sends a decided review's 2% fee once, from the bounty's own charge to the reviewer's connected account, and records it in the ledger | Automated test (fake Stripe) |
 | PM25 | A refund after one peer review returns 98% of the bounty; with no peer review, all of it | Automated test (fake Stripe) |
 | BK13 | A signed-in buyer adds one backup passkey from a session begun in the last 10 minutes, checked as at sign-up; either key signs in; never a third; the buyer is told | Automated test; not yet seen with a real device |
@@ -411,6 +419,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.26 (2026-11-22, draft): adds AR1 to AR8 (migration 068, automatic remedies, Aaron, Nov 22).
 - v1.25 (2026-11-22, draft): PV1, PV2, ZP2 and ZP5 reworded for unpaid peer review, the full money lock and draft mode at the work steps; adds PV11.
 - v1.24 (2026-11-21, draft): adds ZP1 to ZP8 (migration 067, the zero-payment launch, Aaron, Nov 21). No existing criterion's wording changes; the payment criteria (PM, BK, MK, PV) still hold for the dormant code, tested with the money lock lifted on their own scratch databases.
 - v1.23 (2026-11-12, draft): adds PV9 and PV10 (migration 066: the 15% sample of peer fails and appeals, Aaron, Nov 12, RK152). No existing criterion's wording changes.

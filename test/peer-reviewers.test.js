@@ -255,7 +255,7 @@ test('PV8 (the red-team review of PR #5): no fee once the task is closed or refu
   await topDecile([r4]);
   assert.strictEqual((await take(r4)).review, null);
   await q(`update app.work_submissions set held_reason = null, route = 'held' where id = '${h2.sub}'`);
-  assert.strictEqual((await take(r4)).review, null);
+  assert.strictEqual((await take(r4)).submission, h2.sub, '068: held work Third Look can’t read (not a pull request) goes to peers too');
   await clear();
 });
 
@@ -284,8 +284,8 @@ test('PV9 (066; Aaron, Nov 12, RK152): a sample of peer fails, and any appeal, i
   assert.strictEqual((await run(asAdm, (t) => work.review(t, k.id, { decision: 'reverse', reason: 'The work was fine' }))).result !== undefined, true);
   const told = await q(`select count(*)::int as n from app.notices where member_id = '${worker.id}' and kind = 'work_decided' and dedupe_key like 'work:fail-overturned:%'`);
   assert.notStrictEqual(told[0].n, 0, 'the worker is told');
-  await assert.rejects(run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h.sub, reason: 'Again please' })), /already checked this fail/);
-  assert.strictEqual((await q(`select status from app.work_submissions where id = '${h.sub}'`))[0].status, 'failed', 'a fail is never reversed into anything');
+  await assert.rejects(run(ctxOf(worker), (t) => work.failAppeal(t, { submission: h.sub, reason: 'Again please' })), /already checked this fail|can be appealed/);
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${h.sub}'`))[0].status, 'passed', '068: an overturned fail is put right: the work passes');
   const [st] = await q(`select cal_k, cal_n from app.work_stats(null) where kind = 'member' and ref = '${r.id}'`);
   assert.deepStrictEqual([Number(st.cal_k), Number(st.cal_n)], [0, 1], 'an overturned fail lowers calibration');
   // With no sample, the worker appeals within the window; after it, too late.

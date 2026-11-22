@@ -267,6 +267,10 @@
     {
       "version": "067_zero_payment",
       "sha256": "661b66cff19bcc4a2aa68a4c1d0308b0344ba20b4a11e4983e265ea03c2ae2c4"
+    },
+    {
+      "version": "068_auto_remedies",
+      "sha256": "b99224cdd221e46a860753f3fbeeba6f40f2a409145f07902cd163fc0692ee2e"
     }
   ]
 }
