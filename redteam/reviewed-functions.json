@@ -251,5 +251,21 @@
   "peer_cases_due": {
     "kind": "timer",
     "why": "068: applies peers' decisions on checks and disputes whose dispute window has ended without an appeal. It takes no input and only does what the window already settled, so calling it early changes nothing; the work timer calls it every minute."
+  },
+  "oauth_register": {
+    "kind": "before sign-in, by design",
+    "why": "069: any app may register itself (RFC 7591, public clients); it can only name itself and its return addresses, rate-limited per address by the site. Registering approves nothing: a person must approve the app, signed in, on our page. The look-alike risk is RK156."
+  },
+  "oauth_client": {
+    "kind": "public read",
+    "why": "069: an app's public name and return addresses, for the consent page; nothing private is kept about an app."
+  },
+  "oauth_code_take": {
+    "kind": "proof-based",
+    "why": "069: the token endpoint. It needs the one-time code, which only the app holds, plus the matching client and return address; the site then checks the PKCE verifier. Without all of these it returns nothing."
+  },
+  "work_poster_rating": {
+    "kind": "public read",
+    "why": "069: a poster's public record as counts (tasks posted, work checked, fails overturned, disputes dismissed, median hours to check), like the leaderboard; nothing private."
   }
 }

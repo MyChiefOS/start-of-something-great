@@ -171,6 +171,13 @@ const DEFINERS = {
   'app.peer_case_release(uuid)': 'dog_work',
   'app.peer_case_appeal(uuid, text)': 'dog_work',
   'app.peer_cases_due()': 'dog_work',
+  // 069 (Aaron, Nov 22): OAuth for agents (the sign-in role's: register a public client, read it for the consent page,
+  // keep a code with its sealed key, take the code once) and the poster rating (the work role's, public).
+  'app.oauth_register(text, text, text[])': 'dog_signin',
+  'app.oauth_client(text)': 'dog_signin',
+  'app.oauth_code_put(text, text, text, text, uuid, bytea)': 'dog_signin',
+  'app.oauth_code_take(text, text, text)': 'dog_signin',
+  'app.work_poster_rating(uuid)': 'dog_work',
   'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
   'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
   'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',

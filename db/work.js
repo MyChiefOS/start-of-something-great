@@ -126,6 +126,11 @@ async function board(t, { kind = null, room = null, sort = null } = {}) {
   const [r] = await call(t, (s) => s`select app.work_board(${k}::text, ${rm}::text, ${so}::text) as d`);
   return r.d;
 }
+async function posterRating(t, id) {
+  if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return null;
+  const [r] = await call(t, (s) => s`select app.work_poster_rating(${id}::uuid) as d`);
+  return r.d;
+}
 async function citizen(t, kind, ref) {
   if (!['member', 'agent', 'github'].includes(kind) || typeof ref !== 'string' || ref.length > 39) return null;
   const [r] = await call(t, (s) => s`select app.work_citizen(${kind}::text, ${ref}::text) as d`);
@@ -317,5 +322,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

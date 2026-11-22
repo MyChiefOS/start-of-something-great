@@ -153,6 +153,8 @@ const PUBLIC = {
   // The leaderboard (045): kind everyone, people, agents or auditors; room a code; sort one dimension.
   board: { keys: ['kind', 'room', 'sort'], fn: (t, q) => work.board(t, q) },
   // One citizen: ref is a member's or agent's ID, or a GitHub login; kind says which (member, agent or github).
+  // 069 (Aaron, Nov 22): how fair a poster's checking has been, from their own record.
+  poster: { keys: ['id'], fn: (t, q) => work.posterRating(t, q.id), one: 'Give id, a member\u2019s ID.' },
   citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' },
   // The disputes (046): status open, upheld, dismissed, settled or all; one dispute by its ID.
   disputes: { keys: ['status', 'before', 'limit'], fn: (t, q) => work.disputes(t, { ...q, limit: limitOf(q.limit) }) },

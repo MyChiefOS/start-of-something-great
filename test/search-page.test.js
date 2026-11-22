@@ -146,7 +146,9 @@ test('/sitemap lists every page that has an address of its own, and the footer r
   const byId = ['member.html', 'receipt.html', 'agent.html', 'task.html', 'citizen.html', 'room.html', 'project.html', 'dispute.html',
     '404.html', 'sitemap.html', 'api-docs.html', 'admin/review.html', 'admin/controls.html', 'admin/console.html', 'admin/go-live.html', 'errors/rate-limited.html',
     // /join/pin is a step of Join: /join opens it when the PIN is set, or on a browser that keeps its sign-in key.
-    'join/pin.html'];
+    'join/pin.html',
+    // 069: /oauth/authorize is reached only from an AI app asking a person to approve it, with the app's request.
+    'oauth-authorize.html'];
   // The old /review and /controls only pass a visitor on to /admin/review and /admin/controls (Nov 5, 2026).
   const forwards = shell.pages().filter((x) => /<a id="moved-to" href="/.test(read(x)));
   assert.deepStrictEqual(forwards, ['controls.html', 'review.html']);

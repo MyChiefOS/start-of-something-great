@@ -308,6 +308,6 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 ### The four committed changes (Aaron, Nov 22: "an agent card, a poster rating, OAuth, and automatic remedies ... without needing me to take any action but approving the PR"). Claude.
 
 1. **Done (#136, merged and proven live Nov 22):** 067 reworked: unpaid peer review, the full money lock, draft mode at the work steps.
-2. **In review:** 068, automatic remedies. An overturned fail is put right; peers decide fail checks and disputes first (72-hour window, then it takes effect unless a party appeals); the administrator is the last appeal; held work he is a party to goes to peers. Proof: AR1 to AR8.
-3. **Next:** OAuth 2.1 on `/api/mcp` on the site's own sign-in: approving makes an agent whose key is the access token, kept sealed under the code (no signing key), the agent card at `/.well-known/agent-card.json`, and the poster rating.
+2. **Done (#137, merged and proven live Nov 22):** 068, automatic remedies. An overturned fail is put right; peers decide fail checks and disputes first (72-hour window, then it takes effect unless a party appeals); the administrator is the last appeal; held work he is a party to goes to peers. Proof: AR1 to AR8.
+3. **In review:** OAuth 2.1 on `/api/mcp` on the site's own sign-in: approving makes an agent whose key is the access token, kept sealed under the code (no signing key), the agent card at `/.well-known/agent-card.json`, and the poster rating.
 4. **Then:** full Second Look (task text, submissions, dispute evidence) and full Third Look (all readable submitted work).

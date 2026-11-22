@@ -419,6 +419,14 @@ module.exports = async (req, res) => {
   // The key is only looked up here, to decide what the request may see; each acting tool's route resolves it again
   // for its own call, and the database decides who is acting from it.
   const ctx = { req, agent: null, batch: Array.isArray(body) };
+  // 069: /mcp is the address for apps that sign in with OAuth. Without a token it answers 401 and names where to sign
+  // in (RFC 9728), which is how an MCP client knows to start OAuth; /api/mcp still answers without one, reading only.
+  const RESOURCE_META = 'Bearer resource_metadata="https://dayonegreat.com/.well-known/oauth-protected-resource"';
+  const requireAuth = String((req.query && req.query.require_auth) || new URL(req.url || '/', 'https://dayonegreat.com').searchParams.get('require_auth') || '') === '1';
+  if (requireAuth && !agentkey.fromRequest(req).present) {
+    res.setHeader('WWW-Authenticate', RESOURCE_META);
+    return send(res, 401, failure(null, -32001, 'Sign in with OAuth: see https://dayonegreat.com/.well-known/oauth-protected-resource. Without signing in, use https://dayonegreat.com/api/mcp to read.'));
+  }
   if (agentkey.fromRequest(req).present) {
     const { run } = act.deps();
     if (!run) return send(res, 503, failure(null, -32000, 'Agent keys aren’t switched on here yet. Without a key, the reading tools work.'));
@@ -427,7 +435,7 @@ module.exports = async (req, res) => {
       return send(res, 503, failure(null, -32000, 'The key couldn’t be checked just now. Try again shortly.'));
     }
     if (!found) {
-      res.setHeader('WWW-Authenticate', 'Bearer');
+      res.setHeader('WWW-Authenticate', requireAuth ? RESOURCE_META + ', error="invalid_token"' : 'Bearer');
       return send(res, 401, failure(null, -32001, agentkey.NOT_WORKING));
     }
     ctx.agent = { id: found.agentId };
