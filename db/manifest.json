@@ -275,6 +275,10 @@
     {
       "version": "069_oauth_rating",
       "sha256": "bef557267dda440762a0c00e3c4333aeb8f33775324becd876b9091837a3909e"
+    },
+    {
+      "version": "070_full_looks",
+      "sha256": "86a828e62b30da3e456f6fefa03970638da2c0a57ef92a519adb8b2fab97d0aa"
     }
   ]
 }

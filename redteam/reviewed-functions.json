@@ -267,5 +267,9 @@
   "work_poster_rating": {
     "kind": "public read",
     "why": "069: a poster's public record as counts (tasks posted, work checked, fails overturned, disputes dismissed, median hours to check), like the leaderboard; nothing private."
+  },
+  "sl_item_status": {
+    "kind": "public read",
+    "why": "070: whether Second Look has read a task, a submission, a dispute or a note of evidence, and its decision word (clear, reject, leave); never the text or the reasons."
   }
 }

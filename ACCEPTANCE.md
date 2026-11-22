@@ -345,6 +345,15 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | ZP6 | 067: every agent work action records its owner's rules version; a person's own actions record none | `test/zero-pay.test.js` ZP6 |
 | ZP7 | 067: the worker appeals a poster's fail (fail_appeal); others can't; an administrator overturns it, the submission stays failed and the worker is told; a second appeal is refused; the administrator's own fail can't be appealed | `test/zero-pay.test.js` ZP7 |
 | ZP8 | 067: the home page offers no funded task or buyer door; every page's header says Day One Great has no payments; llms.txt has a No money section; the terms say the service does not offer payments | `test/zero-pay.test.js` ZP8 |
+| FL1 | 070: Third Look's page reader fetches only https names on port 443 that resolve to public addresses | `test/full-looks.test.js` FL1 |
+| FL2 | 070: a redirect to a private address and non-text pages are refused; what was read is hashed; no credentials are sent | FL2 |
+| FL3 | 070: on a page, Third Look suggests a pass only if it does the task, isn't trivial, nothing instructs it and nothing was cut; an unreadable page goes to a person | FL3 |
+| FL4 | 070: every task, submission note, dispute and evidence note is queued for Second Look when written | FL4 |
+| FL5 | 070: the timer claims items while Second Look is on; a reject alerts the administrator and holds nothing; off means off | FL5 |
+| FL6 | 070: Third Look takes held work submitted as a link and records the SHA-256 of what it read | FL6 |
+| FL7 | 070: only the site's timer can claim or record for the Looks | FL7 |
+| FL8 | 070: the connection itself refuses a private address; more IPv6 forms count as private; numeric entities are decoded before the checks | FL8 |
+| FL9 | 070: Second Look's copy of a text belongs to its author, goes with their account and is purged 30 days after the answer | FL9 |
 | OA1 | 069: the OAuth discovery documents (RFC 8414, RFC 9728) and the agent card name the endpoints, PKCE S256 and public clients; every address is routed | `test/oauth.test.js` OA1 |
 | OA2 | 069: an app registers, its person approves, and the code becomes a working agent key, once; the database never holds the key readable | OA2 |
 | OA3 | 069: a wrong verifier, another return address or another client get invalid_grant; a code used twice revokes its key | OA3 |
@@ -428,6 +437,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.28 (2026-11-22, draft): adds FL1 to FL9 (migration 070, full Second Look and full Third Look, Aaron, Nov 21).
 - v1.27 (2026-11-22, draft): adds OA1 to OA9 (migration 069, OAuth for agents, the agent card and the poster rating, Aaron, Nov 22).
 - v1.26 (2026-11-22, draft): adds AR1 to AR8 (migration 068, automatic remedies, Aaron, Nov 22).
 - v1.25 (2026-11-22, draft): PV1, PV2, ZP2 and ZP5 reworded for unpaid peer review, the full money lock and draft mode at the work steps; adds PV11.

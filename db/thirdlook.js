@@ -9,7 +9,7 @@
 
 const v1 = require('../thirdlook/v1');
 
-async function run(runTx, token, { fetchImpl, n = 3 } = {}) {
+async function run(runTx, token, { fetchImpl, n = 3, pageImpl, pageOpts } = {}) {
   let claimed;
   try {
     claimed = await runTx({ actor: 'anon' }, (t) => t`select * from app.tl_claim(${n})`);
@@ -18,8 +18,18 @@ async function run(runTx, token, { fetchImpl, n = 3 } = {}) {
   }
   let decided = 0, released = 0;
   for (const it of claimed) {
-    const r = await v1.review({ item: { taskTitle: it.task_title, taskDescription: it.task_description, note: it.note, prTitle: it.pr_title },
-      files: Array.isArray(it.files) ? it.files : null, token, model: it.model, fetchImpl });
+    let r;
+    if (it.artifact_kind === 'link') {
+      // 070: a link, read by the timer itself (thirdlook/page.js); what was read is recorded before the answer.
+      const page = await (pageImpl || require('../thirdlook/page').read)(it.artifact_url, pageOpts || {});
+      if (page && page.sha256) {
+        try { await runTx({ actor: 'anon' }, (t) => t`select app.tl_read(${it.submission_id}::uuid, ${page.url}, ${page.sha256})`); } catch { /* the answer still counts */ }
+      }
+      r = await v1.reviewPage({ item: { taskTitle: it.task_title, taskDescription: it.task_description, note: it.note }, page, token, model: it.model, fetchImpl });
+    } else {
+      r = await v1.review({ item: { taskTitle: it.task_title, taskDescription: it.task_description, note: it.note, prTitle: it.pr_title },
+        files: Array.isArray(it.files) ? it.files : null, token, model: it.model, fetchImpl });
+    }
     try {
       if (r.release) {
         await runTx({ actor: 'anon' }, (t) => t`select app.tl_release(${it.submission_id}::uuid, ${r.release}) as r`);
