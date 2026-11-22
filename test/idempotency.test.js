@@ -13,11 +13,11 @@ const postgres = require('postgres');
 const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
-const workjobs = require('../db/workjobs');
 const { migrate } = require('../scripts/migrate');
 
 const { promote, shadowMode, asSignin } = require('./helpers');
-const ORIGIN = 'https://dayonegreat.com';const CFG = { ipKey: crypto.randomBytes(32) };const SERVER = process.env.TEST_DATABASE_URL;
+const ORIGIN = 'https://dayonegreat.com';
+const SERVER = process.env.TEST_DATABASE_URL;
 function res() {
   const r = { statusCode: 200, headers: {}, body: '', headersSent: false };
   r.setHeader = (k, v) => { r.headers[k.toLowerCase()] = v; };
@@ -46,12 +46,11 @@ if (!SERVER) {
 const NAME = 'dog_071_test_' + crypto.randomBytes(4).toString('hex');
 const WEB = NAME + '_web';
 const PW = crypto.randomBytes(18).toString('base64url');
-let server, su, web, aaron;
+let server, su, web;
 const at = (base, d, user, password) => { const u = new URL(base); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sql) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sql); });
-const asWork = (sql) => su.begin(async (t) => { await t.unsafe('set local role dog_work'); return t.unsafe(sql); });
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
@@ -62,7 +61,7 @@ test.before(async () => {
   await asOwner('update app.watch_settings set alert_floor = 1000000, hard_limit_per_hour = 10000000, copy_limit_per_hour = 10000000, repeat_alert_count = 10000000, signup_floor = 1000000');
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
-  aaron = await member('Aaron', { admin: true });
+  await member('Aaron', { admin: true }); // the site's administrator exists, as in production
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
@@ -82,20 +81,6 @@ async function member(name, { admin = false, level = 2 } = {}) {
   return { id: out.memberId, name, cookie: '__Host-dog_session=' + token };
 }
 const work = (method, route, opts = {}) => call(require('../api/work.js').handle, method, route, opts, run);
-async function agents(method, route, { cookie = '', json, key } = {}) {
-  const headers = { host: 'dayonegreat.com', cookie, 'x-vercel-forwarded-for': '198.51.' + (ip >> 8) + '.' + (ip++ & 255), 'x-vercel-ip-country': 'US' };
-  if (method === 'POST' && cookie) headers.origin = ORIGIN;
-  if (key) headers.authorization = 'Bearer ' + key;
-  if (json !== undefined) headers['content-type'] = 'application/json';
-  const r = res();
-  await require('../api/agents.js').handle({ method, url: '/api/agents/' + route, headers, query: { route }, body: json !== undefined ? JSON.stringify(json) : undefined }, r, run, CFG);
-  return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
-}
-async function newAgent(owner, name, post = 'act') {
-  const r = await agents('POST', '', { cookie: owner.cookie, json: { name, post } });
-  assert.strictEqual(r.status, 201, JSON.stringify(r.json));
-  return { id: r.json.agent_id, key: r.json.key };
-}
 async function project(owner, title = 'Make the onboarding clearer', room = '27-0000', opts = {}) {
   const r = await work('POST', 'projects', { ...opts, cookie: owner.cookie, json: { title, description: 'Context for ' + title, room } });
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
@@ -106,9 +91,6 @@ async function task(owner, pj, over = {}, opts = {}) {
   assert.strictEqual(r.status, 201, JSON.stringify(r.json));
   return r.json.id;
 }
-const page = async (id) => (await work('GET', 'task', { search: '?id=' + id })).json;
-const tick = async () => { await asWork('update app.work_settings set last_tick_at = null'); return workjobs.run(run); };
-const moneyRows = async () => (await q(`select (select count(*) from app.pay_requests)::int + (select count(*) from app.pay_ledger)::int + (select count(*) from app.work_bounties)::int + (select count(*) from app.pay_accounts)::int as n`))[0].n;
 
 
 const claim = (who, task, key, extra = {}) => work('POST', 'claim', { cookie: who.cookie, json: { task, ...extra }, ...(key ? { headersExtra: { 'idempotency-key': key } } : {}) });

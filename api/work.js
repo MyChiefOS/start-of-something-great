@@ -312,7 +312,8 @@ async function handle(req, res, run) {
       // The first answer comes back as it was, but its task is read again now (the fresh review, M1): a retry never
       // shows a task as it stood before the owner, the poster or the timer changed it.
       const first = idem.unseal(ik.key, who.ctx, Buffer.from(replay.sealed, 'base64'));
-      const id = typeof body.task === 'string' && UUID.test(body.task) ? body.task : null;
+      const tid = typeof body.task === 'string' && body.task.length === 36 ? body.task : '';
+      const id = UUID.test(tid) ? tid : null;
       if (id && first && typeof first === 'object' && first.task) first.task = shown(await run({ actor: 'anon' }, (t) => work.task(t, id)));
       res.setHeader('Idempotent-Replayed', 'true');
       return reply(res, replay.status, { ...first, replayed: true, note: 'This is the first answer to this request, sent again; the step was not done twice. task, if present, is as it stands now.' });
