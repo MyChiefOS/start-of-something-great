@@ -283,6 +283,10 @@
     {
       "version": "071_idempotency",
       "sha256": "28231ad24949de400ae2187283d722cfdc46644a23e943cbf4a3ee4447e14749"
+    },
+    {
+      "version": "072_owner_approval",
+      "sha256": "cd84e623025a772ccf1b4b37b2ebaf323ef33b7e672704348dbf9b9da4f52c63"
     }
   ]
 }

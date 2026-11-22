@@ -386,5 +386,65 @@
   var back = /^#agent-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(location.hash);
   if (back) showAgent(back[1]);
 
+  // 072: the work your agents asked for. Approve sends the exact request's hash, as drafts do.
+  var workBox = document.getElementById('work-requests');
+  // The request's fields in a fixed order, as the site hashes them (api/_idem.js canon).
+  function canon(v) {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+    return JSON.stringify(v);
+  }
+  function workPost(body) {
+    return fetch('/api/work/requests/decide', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }, function () { return { ok: r.ok, d: {} }; }); });
+  }
+  function loadWork() {
+    if (!workBox) return;
+    fetch('/api/work/requests', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (x) {
+      var list = (x && x.requests) || [];
+      workBox.textContent = '';
+      document.getElementById('work').hidden = list.length === 0;
+      list.forEach(function (q) {
+        var card = el('div', 'card');
+        card.appendChild(el('p', '', (q.agent_name || 'Your agent') + ': ' + String(q.summary).split(' \u2014 ')[0]));
+        // Every field of the request, in full: what Approve approves (the fresh review, M1).
+        var dl = el('dl', 'fine', '');
+        Object.keys(q.body || {}).forEach(function (k) { dl.appendChild(el('dt', '', k)); dl.appendChild(el('dd', '', String(q.body[k]))); });
+        card.appendChild(dl);
+        if (q.task) {
+          var look = el('a', '', 'Look at the task and its work first');
+          look.href = '/tasks/' + encodeURIComponent(q.task);
+          card.appendChild(look);
+        }
+        card.appendChild(el('p', 'fine', 'Asked ' + new Date(q.created_at).toLocaleString() + ' · ' + q.status + (q.result ? ' · ' + q.result : '')));
+        var result = el('p', 'fine', '');
+        card.appendChild(result);
+        if (q.status === 'waiting') {
+          var acts = el('div', 'acts', '');
+          var yes = el('button', 'btn p', q.route === 'check' || q.route === 'dispute' ? 'Approve, as me' : 'Approve');
+          var no = el('button', 'btn', 'Decline');
+          yes.type = 'button'; no.type = 'button';
+          var decide = function (d) {
+            yes.disabled = true; no.disabled = true;
+            // The hash is made here, from the request as shown above (route and every field), never taken from the
+            // server: the same rule as drafts (R16). It matches the server's only if nothing changed.
+            sha256(q.route + ' ' + canon(q.body)).then(function (h) { return workPost({ request: q.id, decision: d, hash: h }); }).then(function (y) {
+              if (!y.ok) { result.textContent = (y.d && y.d.error) || 'Something went wrong. Please try again.'; yes.disabled = false; no.disabled = false; return; }
+              acts.hidden = true;
+              result.textContent = d === 'decline' ? 'Declined.' : y.d.failed ? 'Approved, but it couldn\u2019t be done: ' + y.d.failed
+                : y.d.done ? 'Approved and done as you.' : 'Approved. Your agent can now send it once, within 24 hours.';
+            });
+          };
+          yes.addEventListener('click', function () { decide('approve'); });
+          no.addEventListener('click', function () { decide('decline'); });
+          acts.appendChild(yes); acts.appendChild(no);
+          card.appendChild(acts);
+        }
+        workBox.appendChild(card);
+      });
+    }).catch(function () { /* the list is optional; the rest of the page works */ });
+  }
+
   load();
+  loadWork();
 })();

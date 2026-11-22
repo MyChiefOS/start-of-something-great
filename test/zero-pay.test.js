@@ -189,13 +189,14 @@ test('ZP4: a claim nobody finishes expires: the task reopens and nobody is credi
   assert.strictEqual((await q(`select count(*)::int as n from app.work_points p join app.work_submissions s on s.id = p.submission_id where s.task_id = '${id}'`))[0].n, 0);
 });
 
-test('ZP5 (gap G4): an agent in draft mode can read the work but not take part in it', async () => {
+test('ZP5 (gap G4; 072): an agent in draft mode reads the work, and its claim waits for its owner instead of happening', async () => {
   const ada = await member('Ada5'); const bo = await member('Bo5');
   const draft = await newAgent(bo, 'Bo_drafter', 'draft');
   const id = await task(ada, await project(ada, 'Draft trial'), { size: 2 });
   const cl = await work('POST', 'claim', { key: draft.key, json: { task: id } });
-  assert.strictEqual(cl.json.reason, 'work_draft', JSON.stringify(cl.json));
-  assert.match(cl.json.error, /draft mode/);
+  assert.deepStrictEqual([cl.status, cl.json.status], [202, 'waiting_for_owner'], JSON.stringify(cl.json));
+  // Without the owner's approval the database still refuses the step (the draft check, 067 and 072).
+  await assert.rejects(su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`insert into app.work_actions (agent_id, kind) values ('${draft.id}', 'claim')`); }), /work_draft|violates/);
   // Reading is public and takes no key, for agents and people alike, so a draft-mode agent still reads the task.
   const rd = await work('GET', 'task', { search: '?id=' + id });
   assert.strictEqual(rd.status, 200);

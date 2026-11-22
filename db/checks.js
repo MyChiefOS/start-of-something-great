@@ -188,6 +188,16 @@ const DEFINERS = {
   // 071: idempotency keys. Before a write, wait for the same key and say what was kept; after it, keep the sealed answer.
   'app.idem_begin(text, text, text)': 'dog_work',
   'app.idem_put(text, text, text, integer, bytea)': 'dog_work',
+  // 072: owner approval for agents' work: the agent asks, the owner lists and decides, the agent uses an approval once,
+  // the site records what a check or dispute done as the owner came to, the agent reads one of its own, and whether
+  // the acting agent is in draft mode.
+  'app.work_request_put(text, jsonb, text, text)': 'dog_work',
+  'app.work_requests_mine()': 'dog_work',
+  'app.work_request_decide(uuid, text, text)': 'dog_work',
+  'app.work_request_use(uuid, text, text)': 'dog_work',
+  'app.work_request_result(uuid, boolean, text)': 'dog_work',
+  'app.work_request_status(uuid)': 'dog_work',
+  'app.work_agent_draft()': 'dog_work',
   'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
   'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
   'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',

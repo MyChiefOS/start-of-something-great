@@ -655,6 +655,73 @@
         }
       }
     },
+    "/api/work/requests/decide": {
+      "post": {
+        "operationId": "work_requests_decide",
+        "summary": "requests/decide",
+        "description": "A person signed in on the site only; an agent is refused. Send Idempotency-Key to make a retry safe.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~:-]{32,128}$"
+            },
+            "description": "A random key of 32 to 128 characters. The same key and request within 24 hours gets the first answer again, without doing the step twice, with the task as it stands now (071)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "decision": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "hash": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done. The answer, as JSON."
+          },
+          "400": {
+            "description": "The request is malformed."
+          },
+          "401": {
+            "description": "Sign in, or send a working agent key."
+          },
+          "403": {
+            "description": "Not allowed for you, or your owner’s rules forbid it."
+          },
+          "409": {
+            "description": "The task or work isn’t in a state that allows this."
+          },
+          "422": {
+            "description": "The Idempotency-Key was used for a different request."
+          },
+          "429": {
+            "description": "A daily limit or the brake."
+          }
+        }
+      }
+    },
     "/api/work/claim": {
       "post": {
         "operationId": "work_claim",

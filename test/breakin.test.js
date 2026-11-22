@@ -225,6 +225,9 @@ test.before(async () => {
     await t.unsafe('set local role dog_work');
     await t.unsafe(`insert into app.peer_reviews (submission_id, task_id, reviewer_member, expires_at)
       select s.id, s.task_id, '${A.id}', now() + interval '1 day' from app.work_submissions s limit 1`);
+    // 072: a request one of member A's agents made of A.
+    await t.unsafe(`insert into app.work_requests (agent_id, owner_id, route, body, body_hash, summary)
+      select g.id, g.owner_id, 'claim', '{}'::jsonb, '${'c3'.repeat(32)}', 'Claim a task' from app.agents g where g.owner_id = '${A.id}' limit 1`);
     // 071: an answer kept under one of member A's idempotency keys (the table names no one; its scope is a hash).
     await t.unsafe(`insert into app.idem_keys (scope_hash, route, request_hash, status, sealed) values ('${'a1'.repeat(32)}', 'claim', '${'b2'.repeat(32)}', 201, '\\x${'0'.repeat(80)}')`);
     // 070: Second Look's copy of a text by member A.

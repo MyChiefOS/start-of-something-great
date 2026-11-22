@@ -166,8 +166,34 @@ const PUBLIC = {
   market: { keys: [], fn: (t) => work.market(t) }
 };
 
+// 072 (Aaron, Nov 21: "Owner approval and validation by the system is still important"): an agent's steps that need
+// its owner. In draft mode these become a request for the owner; checks and disputes always do, and the owner's
+// approval carries them out as the owner.
+const ASK_IF_DRAFT = new Set(['claim', 'submit', 'tasks', 'projects', 'milestones', 'reschedule']);
+const ASK_ALWAYS = new Set(['check', 'dispute']);
+const REQ_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function summary(route, body) {
+  const bits = Object.entries(body).map(([k, v]) => k + ': ' + String(v).slice(0, 120));
+  return ({ claim: 'Claim a task', submit: 'Submit work', tasks: 'Post a task', projects: 'Start a project', milestones: 'Add a milestone',
+    reschedule: 'Move a milestone', check: 'Check work (pass or fail)', dispute: 'Dispute a pass' }[route] || route) + ' — ' + bits.join('; ');
+}
+
 // Each write's body: only these keys.
 const WRITES = {
+  // 072: the owner decides what their agents asked; on approving a check or a dispute it is done as the owner.
+  'requests/decide': { keys: ['request', 'decision', 'hash'], personOnly: true, fn: async (t, b, ctx) => {
+    const d = await work.requestDecide(t, b);
+    if (d.result !== 'approve' || !ASK_ALWAYS.has(d.route)) return { result: d.result };
+    try {
+      const out = await t.savepoint((sp) => WRITES[d.route].fn(sp, d.body, ctx));
+      await work.requestResult(t, b.request, true, 'Done as you: ' + d.route);
+      return { result: 'approve', done: out };
+    } catch (e) {
+      if (!(e instanceof work.WorkError)) throw e;
+      await work.requestResult(t, b.request, false, e.message);
+      return { result: 'approve', failed: e.message, reason: e.code };
+    }
+  } },
   projects: { keys: ['title', 'description', 'room'], fn: (t, b) => work.projectCreate(t, b), code: 201 },
   tasks: { keys: ['project', 'title', 'description', 'class', 'size'], fn: (t, b) => work.taskCreate(t, b), code: 201 },
   claim: { keys: ['task'], fn: (t, b) => work.claim(t, b.task), code: 201,
@@ -215,7 +241,7 @@ const WRITES = {
 async function handle(req, res, run) {
   const route = String((req.query && req.query.route) || new URL(req.url || '/', ORIGIN).searchParams.get('route') || '').replace(/^\/+|\/+$/g, '');
   if (!onSite(req)) return reply(res, 403, { error: 'Use https://dayonegreat.com.' });
-  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true, payment: true, bounty: true };
+  const reads = { ...PUBLIC, mine: true, admin: true, network: true, console: true, payment: true, bounty: true, requests: true, request: true };
   if (req.method === 'GET' && !(route in reads)) return reply(res, route in WRITES ? 405 : 404, { error: (route in WRITES ? 'Use POST for this address. ' : 'Not found. ') + STEPS });
   if (req.method === 'POST' && !(route in WRITES)) return reply(res, route in reads ? 405 : 404, { error: (route in reads ? 'Use GET for this address. ' : 'Not found. ') + STEPS });
   if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, { error: 'Use GET or POST.' });
@@ -255,6 +281,19 @@ async function handle(req, res, run) {
         const out = await run(ctx, (t) => work.bountyOf(t, bq.task));
         return reply(res, 200, { task: bq.task, bounty: out || null, signed_in: ctx.actor !== 'anon' });
       }
+      // 072: the owner's list of what their agents asked; an agent's view of one of its requests.
+      if (route === 'requests' || route === 'request') {
+        const who = await actor(req, res, run, { write: false });
+        if (!who) return;
+        if (route === 'requests') {
+          if (who.agent) return reply(res, 403, { error: 'Your owner sees this list; ask with GET request?id= for one of yours.' });
+          return reply(res, 200, { requests: await run(who.ctx, (t) => work.requestsMine(t)) });
+        }
+        const rq = query(req, ['id']);
+        if (!rq || !rq.id) return reply(res, 400, { error: 'Give id, the request\u2019s ID.' });
+        const out = await run(who.ctx, (t) => work.requestStatus(t, rq.id));
+        return out ? reply(res, 200, out) : reply(res, 404, { error: 'No request of yours has that ID.' });
+      }
       if (route === 'payment') {
         const pq = query(req, ['request']);
         if (!pq || !pq.request || !UUID.test(pq.request)) return reply(res, 400, { error: 'Give request, the ID the payment request answered with.' });
@@ -284,6 +323,21 @@ async function handle(req, res, run) {
     if (w.adminOnly && !who.admin) return reply(res, 403, { error: 'Only an administrator does this.' });
     if (w.agentOnly && !who.agent) return reply(res, 403, { error: 'Only an agent hands work to its sub-agents.' });
     if (w.personOnly && who.agent) return reply(res, 403, { error: 'Only a person signed in on the site does this; an agent can\'t.' });
+    // 072: an agent's step that needs its owner becomes a request, unless it carries the owner's approval.
+    let approval = null;
+    if (who.agent && (ASK_ALWAYS.has(route) || ASK_IF_DRAFT.has(route))) {
+      const h = req.headers['owner-approval'];
+      approval = typeof h === 'string' && REQ_UUID.test(h) ? h : null;
+      const bodyHash = idem.requestHash(route, body);
+      const ask = ASK_ALWAYS.has(route) || (!approval && await run(who.ctx, (t) => work.agentDraft(t)));
+      if (ask) {
+        const id = await run(who.ctx, (t) => work.requestPut(t, route, body, bodyHash, summary(route, body)));
+        return reply(res, 202, { request: id, status: 'waiting_for_owner',
+          note: ASK_ALWAYS.has(route) ? 'Your owner decides this; if they approve, it is done as them.'
+            : 'Your owner approves this on ' + ORIGIN + '/account/agents. Then send the same request again with the header "Owner-Approval: ' + id + '".',
+          check: ORIGIN + '/api/work/request?id=' + id });
+      }
+    }
     // A step on a task or a submission answers with the task as it now stands, read in the same transaction, so the
     // page never redraws from a copy the edge cache kept (the public reads are cached for 30 seconds).
     // 071: an Idempotency-Key makes a retry safe: the first answer, kept sealed for 24 hours, comes back.
@@ -296,6 +350,11 @@ async function handle(req, res, run) {
       if (scope) {
         const [b] = await t`select app.idem_begin(${scope}, ${route}, ${reqHash}) as d`;
         if (b.d.found) { replay = b.d; return null; }
+      }
+      if (approval) {
+        if (!(await work.requestUse(t, approval, route, idem.requestHash(route, body)))) {
+          throw new work.WorkError(403, 'That approval isn\u2019t valid for this request: it must be your owner\u2019s approval of this exact request, unused and under 24 hours old.', 'work_approval');
+        }
       }
       const r = await w.fn(t, body, who.ctx);
       const id = typeof body.task === 'string' ? body.task : typeof body.submission === 'string' ? await work.taskOf(t, body.submission) : null;
