@@ -178,6 +178,13 @@ const DEFINERS = {
   'app.oauth_code_put(text, text, text, text, uuid, bytea)': 'dog_signin',
   'app.oauth_code_take(text, text, text)': 'dog_signin',
   'app.work_poster_rating(uuid)': 'dog_work',
+  // 070 (Aaron, Nov 21): full Second Look and full Third Look. The queue's trigger (no caller), the timer's claim and
+  // record for Second Look's items, an item's public status, and what Third Look read.
+  'app.sl_item_queue()': { owner: 'dog_owner', callers: '' },
+  'app.sl_item_claim(integer)': 'dog_work',
+  'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
+  'app.sl_item_status(text, uuid)': 'dog_work',
+  'app.tl_read(uuid, text, text)': 'dog_work',
   'app.bounty_peer_fee(uuid)': { owner: 'dog_pay', callers: 'dog_work' },
   'app.bounty_refund_cents(uuid)': { owner: 'dog_pay', callers: '' },
   'app.buyer_key_backup(bytea, bytea, bytea, bytea, text)': 'dog_signin',

@@ -225,6 +225,8 @@ test.before(async () => {
     await t.unsafe('set local role dog_work');
     await t.unsafe(`insert into app.peer_reviews (submission_id, task_id, reviewer_member, expires_at)
       select s.id, s.task_id, '${A.id}', now() + interval '1 day' from app.work_submissions s limit 1`);
+    // 070: Second Look's copy of a text by member A.
+    await t.unsafe(`insert into app.sl_items (kind, ref, author_member, body) values ('task', gen_random_uuid(), '${A.id}', 'A task text')`);
     // 068: a peer case taken by member A, on a check of the fixture's submission.
     await t.unsafe(`insert into app.work_checks (submission_id, why) select s.id, 'note' from app.work_submissions s
       where not exists (select 1 from app.work_checks k where k.submission_id = s.id) limit 1`);

@@ -26,7 +26,18 @@ async function run(runTx, token, { fetchImpl, n = 3 } = {}) {
       // The post stays held, and is never claimed again (one try each): Aaron decides it as before.
     }
   }
-  return { claimed: claimed.length, decided };
+  // 070 (Aaron, Nov 21: "the full capabilities of second look"): tasks, submissions' notes, disputes and evidence,
+  // after the posts. Each is flagged or cleared; nothing is held or hidden, and a reject alerts the administrator.
+  let items = [];
+  try { items = await runTx({ actor: 'anon' }, (t) => t`select * from app.sl_item_claim(${n})`); } catch { items = []; }
+  for (const i of items) {
+    const r = await v1.review({ text: i.body, held: [], accountDays: 30, signIn: 'a ' + i.kind + ' on the work module (the account\u2019s age isn\u2019t sent for these)', token, model: i.model, fetchImpl });
+    try {
+      await runTx({ actor: 'anon' }, (t) => t`select app.sl_item_decide(${i.id}::uuid, ${r.model}, ${r.decision}, ${r.reason})`);
+      decided++;
+    } catch { /* free again after 3 minutes */ }
+  }
+  return { claimed: claimed.length + items.length, decided };
 }
 
 module.exports = { run };
