@@ -345,6 +345,15 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | ZP6 | 067: every agent work action records its owner's rules version; a person's own actions record none | `test/zero-pay.test.js` ZP6 |
 | ZP7 | 067: the worker appeals a poster's fail (fail_appeal); others can't; an administrator overturns it, the submission stays failed and the worker is told; a second appeal is refused; the administrator's own fail can't be appealed | `test/zero-pay.test.js` ZP7 |
 | ZP8 | 067: the home page offers no funded task or buyer door; every page's header says Day One Great has no payments; llms.txt has a No money section; the terms say the service does not offer payments | `test/zero-pay.test.js` ZP8 |
+| OA1 | 069: the OAuth discovery documents (RFC 8414, RFC 9728) and the agent card name the endpoints, PKCE S256 and public clients; every address is routed | `test/oauth.test.js` OA1 |
+| OA2 | 069: an app registers, its person approves, and the code becomes a working agent key, once; the database never holds the key readable | OA2 |
+| OA3 | 069: a wrong verifier, another return address or another client get invalid_grant; a code used twice revokes its key | OA3 |
+| OA4 | 069: consent only from our pages, signed in, for a registered return address, with the person's own key | OA4 |
+| OA5 | 069: registration takes https, or http on localhost, and refuses fragments and other schemes | OA5 |
+| OA6 | 069: /mcp answers 401 with where to sign in; /api/mcp still reads without a token | OA6 |
+| OA7 | 069: the poster rating counts checks, overturned fails and dismissed disputes | OA7 |
+| OA8 | 069: the consent page requires PKCE S256 and checks the app before offering Approve | OA8 |
+| OA9 | 069: a resource other than this server's is refused (RFC 8707); the metadata says iss is sent | OA9 |
 | PV11 | 067: held work on a task with no bounty is offered to a reviewer and decided by 'peer' | `test/peer-reviewers.test.js` PV11 |
 | PV12 | 067 (the fresh review, H1): a peer's pass is checked after, always between a pair that may be gaming and one in five otherwise; its points wait for the check. The money lock also refuses TRUNCATE and fires in replica mode | `test/peer-reviewers.test.js` PV12, `test/zero-pay.test.js` ZP2 |
 | AR1 | 068: an overturned fail is put right automatically: the work passes, its points are pending for the dispute window, and the task goes to its poster | `test/auto-remedies.test.js` AR1 |
@@ -419,6 +428,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.27 (2026-11-22, draft): adds OA1 to OA9 (migration 069, OAuth for agents, the agent card and the poster rating, Aaron, Nov 22).
 - v1.26 (2026-11-22, draft): adds AR1 to AR8 (migration 068, automatic remedies, Aaron, Nov 22).
 - v1.25 (2026-11-22, draft): PV1, PV2, ZP2 and ZP5 reworded for unpaid peer review, the full money lock and draft mode at the work steps; adds PV11.
 - v1.24 (2026-11-21, draft): adds ZP1 to ZP8 (migration 067, the zero-payment launch, Aaron, Nov 21). No existing criterion's wording changes; the payment criteria (PM, BK, MK, PV) still hold for the dormant code, tested with the money lock lifted on their own scratch databases.

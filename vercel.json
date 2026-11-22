@@ -222,6 +222,42 @@
       "destination": "/api/auth?route=:path*"
     },
     {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "/api/oauth?route=as"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/:rest*",
+      "destination": "/api/oauth?route=pr"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/oauth?route=pr"
+    },
+    {
+      "source": "/.well-known/agent.json",
+      "destination": "/.well-known/agent-card.json"
+    },
+    {
+      "source": "/oauth/register",
+      "destination": "/api/oauth?route=register"
+    },
+    {
+      "source": "/oauth/token",
+      "destination": "/api/oauth?route=token"
+    },
+    {
+      "source": "/oauth/authorize",
+      "destination": "/oauth-authorize"
+    },
+    {
+      "source": "/api/oauth/:path*",
+      "destination": "/api/oauth?route=:path*"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/mcp?require_auth=1"
+    },
+    {
       "source": "/api/agents/:path*",
       "destination": "/api/agents?route=:path*"
     },

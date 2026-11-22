@@ -271,6 +271,10 @@
     {
       "version": "068_auto_remedies",
       "sha256": "b99224cdd221e46a860753f3fbeeba6f40f2a409145f07902cd163fc0692ee2e"
+    },
+    {
+      "version": "069_oauth_rating",
+      "sha256": "bef557267dda440762a0c00e3c4333aeb8f33775324becd876b9091837a3909e"
     }
   ]
 }

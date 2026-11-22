@@ -211,6 +211,15 @@ test.before(async () => {
     // 063: a buyer key (the fixture's member A has one too, so the break-in checks cover the table).
     await t.unsafe(`insert into app.buyer_keys (member_id, credential_id, public_key) values ('${A.id}', '\\x${'5'.repeat(64)}', '\\x04${'6'.repeat(128)}')`);
   });
+  // 069: an app A approved, and its code (the sign-in role writes them).
+  await su.begin(async (t) => {
+    await t.unsafe('set local role dog_signin');
+    const [oc] = await t.unsafe(`insert into app.oauth_clients (client_id, name) values ('doc_${'a'.repeat(22)}', 'An app') returning id`);
+    await t.unsafe(`insert into app.oauth_redirects (client, uri) values ('${oc.id}', 'https://app.example/cb')`);
+    await t.unsafe(`insert into app.oauth_codes (code_hash, client, redirect_uri, challenge, agent_id, owner_id, sealed, expires_at)
+      select '${'7'.repeat(64)}', '${oc.id}', 'https://app.example/cb', '${'b'.repeat(43)}', g.id, g.owner_id, '\\x${'8'.repeat(80)}', now() + interval '10 minutes'
+        from app.agents g where g.owner_id = '${A.id}' limit 1`);
+  });
   // 065: a peer review by member A (the work role writes it), on the fixture's submission.
   await su.begin(async (t) => {
     await t.unsafe('set local role dog_work');

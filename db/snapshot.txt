@@ -399,6 +399,23 @@ constraint app.notices notices_member_id_fkey FOREIGN KEY (member_id) REFERENCES
 constraint app.notices notices_pkey PRIMARY KEY (id)
 constraint app.notices notices_subject_kind_check CHECK (((char_length(subject_kind) <= 32) AND (subject_kind ~ '^[a-z][a-z_]*$'::text)))
 constraint app.notices notices_title_check CHECK (((char_length(title) >= 1) AND (char_length(title) <= 120)))
+constraint app.oauth_clients oauth_clients_client_id_check CHECK (((char_length(client_id) = 26) AND (client_id ~ '^doc_[A-Za-z0-9_-]{22}$'::text)))
+constraint app.oauth_clients oauth_clients_client_id_key UNIQUE (client_id)
+constraint app.oauth_clients oauth_clients_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80)))
+constraint app.oauth_clients oauth_clients_pkey PRIMARY KEY (id)
+constraint app.oauth_codes oauth_codes_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.oauth_codes oauth_codes_challenge_check CHECK (((char_length(challenge) = 43) AND (challenge ~ '^[A-Za-z0-9_-]+$'::text)))
+constraint app.oauth_codes oauth_codes_client_fkey FOREIGN KEY (client) REFERENCES app.oauth_clients(id) ON DELETE CASCADE
+constraint app.oauth_codes oauth_codes_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.oauth_codes oauth_codes_code_hash_key UNIQUE (code_hash)
+constraint app.oauth_codes oauth_codes_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.oauth_codes oauth_codes_pkey PRIMARY KEY (id)
+constraint app.oauth_codes oauth_codes_redirect_uri_check CHECK (((char_length(redirect_uri) >= 8) AND (char_length(redirect_uri) <= 500)))
+constraint app.oauth_codes oauth_codes_sealed_check CHECK (((octet_length(sealed) >= 40) AND (octet_length(sealed) <= 200)))
+constraint app.oauth_redirects oauth_redirects_client_fkey FOREIGN KEY (client) REFERENCES app.oauth_clients(id) ON DELETE CASCADE
+constraint app.oauth_redirects oauth_redirects_client_uri_key UNIQUE (client, uri)
+constraint app.oauth_redirects oauth_redirects_pkey PRIMARY KEY (id)
+constraint app.oauth_redirects oauth_redirects_uri_check CHECK (((char_length(uri) >= 8) AND (char_length(uri) <= 500)))
 constraint app.pay_accounts pay_accounts_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.pay_accounts pay_accounts_member_id_key UNIQUE (member_id)
 constraint app.pay_accounts pay_accounts_pkey PRIMARY KEY (id)
@@ -1092,6 +1109,11 @@ default app.members.status = 'active'::text
 default app.members.trust_level = 0
 default app.notices.created_at = now()
 default app.notices.id = app.uuid_v7()
+default app.oauth_clients.created_at = now()
+default app.oauth_clients.id = app.uuid_v7()
+default app.oauth_codes.created_at = now()
+default app.oauth_codes.id = app.uuid_v7()
+default app.oauth_redirects.id = app.uuid_v7()
 default app.pay_accounts.details_submitted = false
 default app.pay_accounts.id = app.uuid_v7()
 default app.pay_accounts.payouts_enabled = false
@@ -1550,6 +1572,10 @@ function app.money_locked_stmt() owner=dog_owner execute=dog_owner language=plpg
 function app.notices_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=864fc9753cca81b5a55d5228869a732c
 function app.notices_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=72ac586cf0c69c98fb4dbd0a62ba77ad
 function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid, p_dedupe text) owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_signin,dog_log,dog_work,dog_pay language=plpgsql volatile=v definer=false config= returns=boolean body_md5=1d7e0fc1202fc5f18ad0357446da847d
+function app.oauth_client(p_id text) owner=dog_signin execute=dog_signin,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=44dbd3e2811eda8426f6e13db3001671
+function app.oauth_code_put(p_code_hash text, p_client text, p_redirect text, p_challenge text, p_agent uuid, p_sealed bytea) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=430a6b8a354537932e387ff3ceb694b6
+function app.oauth_code_take(p_code_hash text, p_client text, p_redirect text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=48cd06bee95cffa4ff421dcb046addaf
+function app.oauth_register(p_id text, p_name text, p_redirects text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=67e47c4b6e857f9723a12f8007ff44f2
 function app.p256_add(x1 numeric, y1 numeric, z1 numeric, x2 numeric, y2 numeric, z2 numeric, OUT rx numeric, OUT ry numeric, OUT rz numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=record body_md5=6a5bf920470998cf153d1936d3bfd870
 function app.p256_double(x numeric, y numeric, z numeric, OUT rx numeric, OUT ry numeric, OUT rz numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=record body_md5=ef5a2f58358805fe87ae948e434c92ea
 function app.p256_int(b bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=024624c201d4e1af019cbfd21486e2f0
@@ -1733,6 +1759,7 @@ function app.work_points_ledger_backfill() owner=dog_work execute=dog_work langu
 function app.work_points_of(p_size integer, p_confidence integer, p_independence integer, p_cap integer) owner=dog_owner execute=dog_owner,dog_work,dog_app language=sql volatile=i definer=false config= returns=integer body_md5=d6a44cede4bc837eb722a715f2bc0ad3
 function app.work_points_pay() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=b5268439a1ca145a934203c2a90661c7
 function app.work_poster_decide(p_sub uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=e505ea5e9f45b209f58ed3bbe96ad94a
+function app.work_poster_rating(p_member uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=85a4afe776f740ed9989f60c9a774c9c
 function app.work_pr_changes(p_number integer) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1da669746c001f19686d171db397c87f
 function app.work_profile(s app.work_stat) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=88ee4efc0dfdf458486b312f251882f0
 function app.work_project(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=76bb5f609d9fdb3112f791034a35b932
@@ -2371,6 +2398,16 @@ grant app.notices.title dog_pay INSERT
 grant app.notices.title dog_signin INSERT
 grant app.notices.title dog_work INSERT
 grant app.notices.title dog_work SELECT
+grant app.oauth_clients dog_signin DELETE
+grant app.oauth_clients dog_signin INSERT
+grant app.oauth_clients dog_signin SELECT
+grant app.oauth_codes dog_signin DELETE
+grant app.oauth_codes dog_signin INSERT
+grant app.oauth_codes dog_signin SELECT
+grant app.oauth_codes dog_signin UPDATE
+grant app.oauth_redirects dog_signin DELETE
+grant app.oauth_redirects dog_signin INSERT
+grant app.oauth_redirects dog_signin SELECT
 grant app.pay_accounts dog_pay INSERT
 grant app.pay_accounts dog_pay SELECT
 grant app.pay_accounts dog_pay UPDATE
@@ -3051,6 +3088,9 @@ policy app.notices notices_select cmd=r permissive=true to=dog_app using=(((( SE
 policy app.notices notices_signin_insert cmd=a permissive=true to=dog_signin using= check=(((member_id IS NOT NULL) AND (kind = ANY (ARRAY['agent_recovered'::text, 'agent_recovery_set'::text, 'signin_linked'::text, 'signin_unlinked'::text, 'signin_keyfile'::text, 'signin_pin'::text, 'signin_browser'::text]))) OR ((member_id IS NULL) AND (kind = 'alert'::text) AND ((dedupe_key ~~ 'signin:capped:%'::text) OR (dedupe_key ~~ 'watch:%'::text))))
 policy app.notices notices_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (member_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (member_id IS NULL)))
 policy app.notices notices_work_insert cmd=a permissive=true to=dog_work using= check=((kind = ANY (ARRAY['work_claimed'::text, 'work_submitted'::text, 'work_decided'::text, 'engine'::text])) OR ((member_id IS NULL) AND (kind = 'alert'::text)))
+policy app.oauth_clients oauth_clients_signin cmd=* permissive=true to=dog_signin using=true check=true
+policy app.oauth_codes oauth_codes_signin cmd=* permissive=true to=dog_signin using=true check=true
+policy app.oauth_redirects oauth_redirects_signin cmd=* permissive=true to=dog_signin using=true check=true
 policy app.pay_accounts pay_accounts_app cmd=r permissive=true to=dog_app using=(member_id = ( SELECT app.current_member() AS current_member)) check=
 policy app.pay_accounts pay_accounts_pay cmd=* permissive=true to=dog_pay using=true check=true
 policy app.pay_accounts pay_accounts_work_select cmd=r permissive=true to=dog_work using=true check=
