@@ -126,6 +126,7 @@ test('FL8 (the fresh review, M1 and L1): the connection itself refuses a private
   await new Promise((resolve) => page.pinnedLookup('localhost', {}, (err) => { assert.ok(err, 'localhost refused at connect time'); resolve(); }));
   for (const ip of ['2002:a00:1::1', '::10.0.0.1', 'fec0::1', '100::1']) assert.ok(page.privateAddress(ip), ip);
   assert.strictEqual(page.toText('<p>&#105;gnore</p>', 'text/html'), 'ignore', 'numeric entities are decoded before the checks');
+  assert.strictEqual(page.toText('<p>&amp;lt;b&amp;gt;</p>', 'text/html'), '&lt;b&gt;', 'decoded once, never twice');
 });
 
 test('FL9 (the fresh review, H1): Second Look’s copy belongs to its author, goes with their account, and is purged after 30 days', async () => {
