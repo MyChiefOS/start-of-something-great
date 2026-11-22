@@ -98,7 +98,7 @@ function seal(code, key) {
   return Buffer.concat([iv, cipher.getAuthTag(), body]);
 }
 function unseal(code, buf) {
-  const decipher = crypto.createDecipheriv('aes-256-gcm', sealKey(code), buf.subarray(0, 12));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', sealKey(code), buf.subarray(0, 12), { authTagLength: 16 });
   decipher.setAuthTag(buf.subarray(12, 28));
   return Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString('utf8');
 }
