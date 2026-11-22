@@ -65,6 +65,7 @@ const session = require('../signin/session');
 const agentkey = require('../signin/agentkey');
 const { onSite, sameSite } = require('../signin/http');
 const { ValidationError } = require('../db/validate');
+const idem = require('./_idem');
 const { maskContacts } = require('./_proposals');
 const { UNTRUSTED_NOTE } = require('./_lib');
 const { fromOwnPages, OWN_PAGES } = require('./feed'); // RK145: the same check as the feed's administrator reads
@@ -285,11 +286,38 @@ async function handle(req, res, run) {
     if (w.personOnly && who.agent) return reply(res, 403, { error: 'Only a person signed in on the site does this; an agent can\'t.' });
     // A step on a task or a submission answers with the task as it now stands, read in the same transaction, so the
     // page never redraws from a copy the edge cache kept (the public reads are cached for 30 seconds).
+    // 071: an Idempotency-Key makes a retry safe: the first answer, kept sealed for 24 hours, comes back.
+    const ik = idem.fromRequest(req);
+    if (ik.bad) return reply(res, 400, { error: ik.bad });
+    let replay = null;
     const out = await run(who.ctx, async (t) => {
+      const scope = ik.key ? idem.scope(ik.key, who.ctx) : null;
+      const reqHash = ik.key ? idem.requestHash(route, body) : null;
+      if (scope) {
+        const [b] = await t`select app.idem_begin(${scope}, ${route}, ${reqHash}) as d`;
+        if (b.d.found) { replay = b.d; return null; }
+      }
       const r = await w.fn(t, body, who.ctx);
       const id = typeof body.task === 'string' ? body.task : typeof body.submission === 'string' ? await work.taskOf(t, body.submission) : null;
-      return id && UUID.test(id) && !w.adminOnly ? { ...r, task: await work.task(t, id) } : r;
+      const answer = id && UUID.test(id) && !w.adminOnly ? { ...r, task: await work.task(t, id) } : r;
+      if (scope) {
+        // An answer too large to keep is simply not kept (the fresh review, M2): the step never fails for its key.
+        const sealed = idem.seal(ik.key, who.ctx, shown(w.say ? w.say(answer) : answer));
+        if (sealed.length <= idem.MAX_SEALED) await t`select app.idem_put(${scope}, ${route}, ${reqHash}, ${w.code || 200}::integer, ${sealed})`;
+      }
+      return answer;
     });
+    if (replay) {
+      if (replay.mismatch) return reply(res, 422, { error: 'This Idempotency-Key was used for a different request. Use a new key for a new request.' });
+      // The first answer comes back as it was, but its task is read again now (the fresh review, M1): a retry never
+      // shows a task as it stood before the owner, the poster or the timer changed it.
+      const first = idem.unseal(ik.key, who.ctx, Buffer.from(replay.sealed, 'base64'));
+      const tid = typeof body.task === 'string' && body.task.length === 36 ? body.task : '';
+      const id = UUID.test(tid) ? tid : null;
+      if (id && first && typeof first === 'object' && first.task) first.task = shown(await run({ actor: 'anon' }, (t) => work.task(t, id)));
+      res.setHeader('Idempotent-Replayed', 'true');
+      return reply(res, replay.status, { ...first, replayed: true, note: 'This is the first answer to this request, sent again; the step was not done twice. task, if present, is as it stands now.' });
+    }
     if (w.pay) await pay.poke();
     return reply(res, w.code || 200, shown(w.say ? w.say(out) : out));
   } catch (e) {
@@ -313,5 +341,7 @@ module.exports = async (req, res) => {
 };
 module.exports.handle = handle;
 module.exports.shown = shown;
+module.exports.WRITES = WRITES;
+module.exports.PUBLIC = PUBLIC;
 // Every database call in this route knows its request, for the audit log (053).
 module.exports = require('../db').entry(module.exports);

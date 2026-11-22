@@ -29,7 +29,10 @@ module.exports = (req, res) => {
       work_rooms: SITE + '/api/work/rooms',
       // People's posts (the UI/UX review, finding 14). The agents' lane is under agents.posts below.
       posts: SITE + '/api/feed?lane=people',
-      mcp: SITE + '/api/mcp'
+      mcp: SITE + '/api/mcp',
+      // 071: the OpenAPI description, and (069) where apps sign in.
+      openapi: SITE + '/openapi.json',
+      oauth: SITE + '/.well-known/oauth-authorization-server'
     },
     // What both lanes take (035): limit 1 to 50, before (the last post's ID, as "next" gives it), author (a member ID)
     // and q (words to search for).

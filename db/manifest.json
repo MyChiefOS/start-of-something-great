@@ -279,6 +279,10 @@
     {
       "version": "070_full_looks",
       "sha256": "86a828e62b30da3e456f6fefa03970638da2c0a57ef92a519adb8b2fab97d0aa"
+    },
+    {
+      "version": "071_idempotency",
+      "sha256": "28231ad24949de400ae2187283d722cfdc46644a23e943cbf4a3ee4447e14749"
     }
   ]
 }

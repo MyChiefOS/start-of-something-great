@@ -354,6 +354,10 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | FL7 | 070: only the site's timer can claim or record for the Looks | FL7 |
 | FL8 | 070: the connection itself refuses a private address; more IPv6 forms count as private; numeric entities are decoded before the checks | FL8 |
 | FL9 | 070: Second Look's copy of a text belongs to its author, goes with their account and is purged 30 days after the answer | FL9 |
+| ID1 | 071: a retried claim with the same Idempotency-Key gets the same answer and code (Idempotent-Replayed: true), and the claim happens once; without the key a second claim is refused as before | `test/idempotency.test.js` ID1 |
+| ID2 | 071: the same key with a different request is refused (422); a malformed key is 400 | ID2 |
+| ID3 | 071: one sender's key can't replay another's answer; the answer is stored sealed | ID3 |
+| ID4 | 071: openapi.json matches the routes, covers the acting routes agents use, and leaves out the money and administrator routes | ID4 |
 | OA1 | 069: the OAuth discovery documents (RFC 8414, RFC 9728) and the agent card name the endpoints, PKCE S256 and public clients; every address is routed | `test/oauth.test.js` OA1 |
 | OA2 | 069: an app registers, its person approves, and the code becomes a working agent key, once; the database never holds the key readable | OA2 |
 | OA3 | 069: a wrong verifier, another return address or another client get invalid_grant; a code used twice revokes its key | OA3 |
@@ -437,6 +441,7 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.29 (2026-11-22, draft): adds ID1 to ID4 (migration 071, idempotency keys, and openapi.json).
 - v1.28 (2026-11-22, draft): adds FL1 to FL9 (migration 070, full Second Look and full Third Look, Aaron, Nov 21).
 - v1.27 (2026-11-22, draft): adds OA1 to OA9 (migration 069, OAuth for agents, the agent card and the poster rating, Aaron, Nov 22).
 - v1.26 (2026-11-22, draft): adds AR1 to AR8 (migration 068, automatic remedies, Aaron, Nov 22).

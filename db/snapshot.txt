@@ -268,6 +268,13 @@ constraint app.gh_posts gh_posts_pkey PRIMARY KEY (id)
 constraint app.gh_posts gh_posts_risk_check CHECK ((risk = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
 constraint app.gh_posts gh_posts_thread_node_id_check CHECK ((char_length(thread_node_id) <= 100))
 constraint app.gh_posts gh_posts_tree_key_check CHECK ((char_length(tree_key) <= 80))
+constraint app.idem_keys idem_keys_pkey PRIMARY KEY (id)
+constraint app.idem_keys idem_keys_request_hash_check CHECK (((char_length(request_hash) = 64) AND (request_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.idem_keys idem_keys_route_check CHECK (((char_length(route) >= 1) AND (char_length(route) <= 40)))
+constraint app.idem_keys idem_keys_scope_hash_check CHECK (((char_length(scope_hash) = 64) AND (scope_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.idem_keys idem_keys_scope_hash_key UNIQUE (scope_hash)
+constraint app.idem_keys idem_keys_sealed_check CHECK (((octet_length(sealed) >= 29) AND (octet_length(sealed) <= 65536)))
+constraint app.idem_keys idem_keys_status_check CHECK (((status >= 200) AND (status <= 299)))
 constraint app.identities identities_fingerprint_check CHECK (((char_length(fingerprint) = 64) AND (fingerprint ~ '^[0-9a-f]+$'::text)))
 constraint app.identities identities_key_version_check CHECK (((key_version >= 1) AND (key_version <= 999)))
 constraint app.identities identities_level_check CHECK (((level >= 0) AND (level <= 2)))
@@ -1068,6 +1075,8 @@ default app.gh_post_domains.id = app.uuid_v7()
 default app.gh_posts.approved = false
 default app.gh_posts.hidden = false
 default app.gh_posts.id = app.uuid_v7()
+default app.idem_keys.created_at = now()
+default app.idem_keys.id = app.uuid_v7()
 default app.identities.created_at = now()
 default app.identities.id = app.uuid_v7()
 default app.identities.verified_at = now()
@@ -1519,6 +1528,8 @@ function app.gh_bans_apply(p_fps text[]) owner=dog_jevs execute=dog_jevs languag
 function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.gh_hidden(p_nodes text[]) owner=dog_jevs execute=dog_jevs,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF text body_md5=ad846da3a078644d20feb1901d0cb575
 function app.gh_site_banned(p_fps text[]) owner=dog_jevs execute=dog_jevs language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=119345769325afdb478078c067bf111c
+function app.idem_begin(p_scope text, p_route text, p_request text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9feb32a6ff5038dd0119f4874fe960bc
+function app.idem_put(p_scope text, p_route text, p_request text, p_status integer, p_sealed bytea) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=77879f232e713deace1064fbc1ec3751
 function app.identities_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=7515e26c8188fcc76cc26f3ef97c412b
 function app.identity_link(p_provider text, p_fingerprints text[], p_key_version smallint, p_level smallint, p_recheck_after timestamp with time zone, p_session_hash text, p_region text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(member_id uuid, trust_level smallint, is_admin boolean, linked boolean, sessions_ended integer) body_md5=d5b865dd9f30f1b613f2382483a7e1d1
 function app.identity_unlink(p_identity uuid, p_session_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(provider text, trust_level smallint, sessions_ended integer, also_unlinked integer, keys_revoked integer, agents_lowered integer) body_md5=c72d1ffe16f76fab1667af322f90b2c7
@@ -2157,6 +2168,9 @@ grant app.gh_posts dog_jevs DELETE
 grant app.gh_posts dog_jevs INSERT
 grant app.gh_posts dog_jevs SELECT
 grant app.gh_posts dog_jevs UPDATE
+grant app.idem_keys dog_work DELETE
+grant app.idem_keys dog_work INSERT
+grant app.idem_keys dog_work SELECT
 grant app.identities dog_erase DELETE
 grant app.identities dog_signin DELETE
 grant app.identities dog_signin SELECT
@@ -3013,6 +3027,7 @@ policy app.gh_decisions gh_decisions_log_select cmd=r permissive=true to=dog_log
 policy app.gh_erasures gh_erasures_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_post_domains gh_post_domains_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.gh_posts gh_posts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.idem_keys idem_keys_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.identities identities_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.identities identities_erase_update cmd=w permissive=true to=dog_erase using=true check=true
