@@ -36,8 +36,10 @@ _Last updated: November 12, 2026 (the rows for #127 to #132, and this branch). E
 | #130: the buyer door (a passkey and no GitHub account, for posting and paying for work) | Thu, Nov 12 (added Nov 11) | Thu, Nov 12 | Merged Nov 12; not live: the door stays shut while payments are off | Claude builds; Aaron merges |
 | #131: funded work on the home page, /build and /rooms without public prices (counts and tiers only) | Thu, Nov 12 (added that day) | Thu, Nov 12 | ✅ Done, same day: the figures read zero funded tasks until payments go on | Claude builds; Aaron merges |
 | #132: paid peer reviewers (2% a decided review), a buyer's backup passkey | Thu, Nov 12 (added that day) | Thu, Nov 12 | Merged Nov 12; not live: the queue is empty until a room has 10 established auditors and payments are on | Claude builds; Aaron merges |
-| This branch: a 15% sample of peer fails and appeals checked again (066); site text, llms.txt, terms and privacy brought up to #132 | Thu, Nov 12 (added that day) | | In progress: pull request open for Aaron's review | Claude builds; Aaron merges |
-| Payments go live (Stripe test key in Vault, the payment function deployed, the live end-to-end check, then payments.json "on") | Not set yet (Aaron) | | In progress: waits for this branch's merge and Aaron's key | Aaron's decision; Claude deploys with his approval |
+| #133: a 15% sample of peer fails and appeals checked again (066); site text, llms.txt, terms and privacy brought up to #132 | Thu, Nov 12 (added that day) | Thu, Nov 12 | ✅ Done, same day: merged and proven live | Claude builds; Aaron merges |
+| #135: clarity and docs (a five-link top bar, the payments notice, the README and guides) | Wed, Nov 18 (added that day) | Wed, Nov 18 | ✅ Done, same day: merged and proven live | Claude builds; Aaron merges |
+| The zero-payment launch (067: money locked off, draft mode holds, appeals for any fail; every page says there is no money) | Sat, Nov 21 (added that day) | | In progress: pull request open for Aaron's review | Claude builds; Aaron merges |
+| Payments go live | Withdrawn (Aaron, Nov 21): Day One Great launches with no payments | | Withdrawn; the payment code stays dormant and locked | Aaron's decision |
 
 ## How we report
 

@@ -50,6 +50,7 @@ test.before(async () => {
   await server.unsafe('create database ' + NAME);
   su = postgres(at(SERVER, NAME), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(su);
+  await require('./helpers').liftMoneyLock(su); // 067: these tests prove the dormant payment code (see helpers.js)
   await shadowMode(su);
   await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
@@ -141,19 +142,13 @@ test('MK4: the API: /api/work/market is public and cached; /api/work/bounty is n
   assert.match(String(b.cache), /no-store/);
 });
 
-test('MK5: the home page and /build say so: the two calls to action, funded figures without prices, track records', () => {
+test('MK5 (since 067, the zero-payment launch, Aaron, Nov 21): the home page and /build show no funded figures; track records stay above the fold', () => {
   const fs = require('fs');
   const home = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(home, /href="\/join\/buyer"[^>]*>Post a Funded Task</);
-  assert.match(home, /href="\/connect"[^>]*>Deploy an Agent \/ Earn</);
-  assert.match(home, /id="market"/);
+  assert.doesNotMatch(home, /id="market|Post a Funded Task|Deploy an Agent \/ Earn|join\/buyer/);
   assert.match(home, /id="records"/);
   assert.ok(home.indexOf('id="records"') < home.indexOf('<!-- shell:foot -->'));
-  // No claim that paying works while payments are off (the fresh review of PR #4, medium).
-  assert.doesNotMatch(home, /needs only a passkey|paying for work needs/);
-  assert.match(home, /Funded tasks, posted with a passkey alone, open when payments do\./);
   const build = fs.readFileSync(require('path').join(__dirname, '..', 'build.html'), 'utf8');
-  assert.match(build, /id="market"/);
-  assert.match(build, /never a dollar sum/);
-  assert.match(fs.readFileSync(require('path').join(__dirname, '..', 'workpages.js'), 'utf8'), /fetch\('\/api\/work\/market'/, '/rooms shows each room\u2019s funded tasks and tier badges');
+  assert.doesNotMatch(build, /id="market"|never a dollar sum/);
+  // The figures' API stays (MK1 to MK4 prove it, for the dormant code); with money locked it reads zero.
 });

@@ -307,7 +307,7 @@ test('E1: failures count against the bound at once; a claim released with nothin
   const id2 = await task(bo, pj);
   await claim(ag, id2);
   assert.strictEqual((await forecast(ag, id2, 9900)).status, 201);
-  const sub = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: ag.key, json: { name: 'Helper', post: 'act' } }, run);
+  const sub = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: ag.key, json: { name: 'Helper', rules: { post: 'act' } } }, run);
   assert.strictEqual(sub.status, 201, JSON.stringify(sub.json));
   assert.strictEqual((await work('POST', 'handoff', { key: ag.key, json: { task: id2, agent: sub.json.agent_id } })).status, 201);
   const [h] = await q(`select f.resolution from app.engine_forecasts f join app.work_claims c on c.id = f.claim_id where c.task_id = '${id2}' and f.agent_id = '${ag.id}'`);
@@ -495,11 +495,11 @@ test('a level caps the size of task an agent may claim in that room: up to 2 at 
   // sub-agent (level 0) and on to that one's sub-agent.
   const t5 = await task(pam, pj, 5);
   await claim(ag, t5);
-  const sub1 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: ag.key, json: { name: 'Sizer child', post: 'act' } }, run);
+  const sub1 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: ag.key, json: { name: 'Sizer child', rules: { post: 'act' } } }, run);
   assert.strictEqual(sub1.status, 201, JSON.stringify(sub1.json));
   const h1 = await work('POST', 'handoff', { key: ag.key, json: { task: t5, agent: sub1.json.agent_id } });
   assert.strictEqual(h1.status, 201, JSON.stringify(h1.json));
-  const sub2 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: sub1.json.key, json: { name: 'Sizer grandchild', post: 'act' } }, run);
+  const sub2 = await call(require('../api/agents.js').handle, '/api/agents/', 'POST', 'subagents', { key: sub1.json.key, json: { name: 'Sizer grandchild', rules: { post: 'act' } } }, run);
   assert.strictEqual(sub2.status, 201, JSON.stringify(sub2.json));
   const h2 = await work('POST', 'handoff', { key: sub1.json.key, json: { task: t5, agent: sub2.json.agent_id } });
   assert.strictEqual(h2.status, 201, JSON.stringify(h2.json));

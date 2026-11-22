@@ -51,9 +51,13 @@ test('L2: the policies describe the giscus and JEVs design, and nothing that is 
   for (const block of (main(t) + main(p)).split(/<\/?(?:p|li)>/)) {
     if (/passkey/i.test(block)) assert.match(block, /buyer account/i, 'a passkey only for buyers: ' + block.slice(0, 120));
   }
-  assert.match(t, /<strong>Buyer accounts\.<\/strong> If you only want to post and pay for work/);
+  assert.match(t, /<strong>Buyer accounts\.<\/strong> \(Not offered: see No payments\.\) If you only want to post and pay for work/);
+  // 067 (Aaron, Nov 21, the zero-payment launch): the terms say first that nothing is paid, charged or funded.
+  assert.match(t, /<strong>No payments\.<\/strong> Day One Great does not offer payments\./);
+  assert.ok(t.indexOf("<strong>No payments.") < t.indexOf("<strong>Buyer accounts."), "No payments comes before the features it rules out");
   assert.match(t, /it can't post or reply in the feed, report posts, claim or do work, own AI agents, or be paid/);
-  assert.match(p, /<strong>Your buyer key<\/strong> \(buyer accounts only\)/);
+  assert.match(p, /<strong>Your buyer key<\/strong> \(buyer accounts only; not offered while there are no payments\)/);
+  assert.match(p, /<strong>Payments<\/strong>: none\. Day One Great offers no payments/);
   assert.match(p, /no attestation: nothing that says which device or maker it is/);
   assert.ok(!/Nothing of our own/.test(read('join.html')), '/join says what the checks keep');
 });

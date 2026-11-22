@@ -754,7 +754,7 @@ constraint app.work_checks work_checks_reason_check CHECK (((char_length(reason)
 constraint app.work_checks work_checks_status_check CHECK ((status = ANY (ARRAY['open'::text, 'confirmed'::text, 'reversed'::text])))
 constraint app.work_checks work_checks_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.work_checks work_checks_submission_id_key UNIQUE (submission_id)
-constraint app.work_checks work_checks_why_check CHECK ((why = ANY (ARRAY['random'::text, 'size'::text, 'pair'::text, 'note'::text, 'third_look'::text, 'peer_fail_sample'::text, 'peer_fail_appeal'::text])))
+constraint app.work_checks work_checks_why_check CHECK ((why = ANY (ARRAY['random'::text, 'size'::text, 'pair'::text, 'note'::text, 'third_look'::text, 'peer_fail_sample'::text, 'peer_fail_appeal'::text, 'fail_appeal'::text])))
 constraint app.work_claims work_claims_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.work_claims work_claims_code_hash_check CHECK (((char_length(code_hash) = 64) AND (code_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.work_claims work_claims_code_hash_key UNIQUE (code_hash)
@@ -1522,6 +1522,8 @@ function app.members_ban_cleanup() owner=dog_signin execute=dog_signin,dog_app l
 function app.members_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4352c57abc0c9b25143270456b3c3a93
 function app.members_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=df7acce5fec3c9fb400da637cab87fcf
 function app.members_rename_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=7c8aca47d987765e5cad313f2c6839d9
+function app.money_locked() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=f8c0c19ae2f75639683f26b912290e39
+function app.money_locked_stmt() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=f8c0c19ae2f75639683f26b912290e39
 function app.notices_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=864fc9753cca81b5a55d5228869a732c
 function app.notices_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=72ac586cf0c69c98fb4dbd0a62ba77ad
 function app.notify(p_member uuid, p_kind text, p_title text, p_body text, p_link text, p_subject_kind text, p_subject uuid, p_dedupe text) owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_signin,dog_log,dog_work,dog_pay language=plpgsql volatile=v definer=false config= returns=boolean body_md5=1d7e0fc1202fc5f18ad0357446da847d
@@ -1532,10 +1534,10 @@ function app.p256_point_ok(pub bytea) owner=dog_owner execute=dog_owner,dog_sign
 function app.p256_powmod(b numeric, e numeric, m numeric) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=numeric body_md5=dfafa15c1e41e7644ac53dfc16dc6196
 function app.p256_verify(pub bytea, msg bytea, sig bytea) owner=dog_owner execute=dog_owner,dog_signin language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6d74a56a095e7b22c6640eb1b22397d7
 function app.pay_ledger_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=23e2f5684fb534d328a40d68bb4bba8b
-function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=b940ed481cc290e321089b6ce4924274
-function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=ace56106a52f5f047f63147f17f269fa
+function app.peer_block(p_member uuid, p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=eeb58a61f72586445d0873da132939f5
+function app.peer_review_decide(p_review uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=025068a6f7e699fd163f2b05f43adb19
 function app.peer_review_release(p_review uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=47b6a0b555d6f082d9530fc5226b3287
-function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=40166a09d1c658da02d0c3778b3d0dba
+function app.peer_review_take() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0d704753843d8cda6ce0f38a6ad1a7af
 function app.peer_top_decile(p_member uuid, p_room text) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=64720e8fd0cb94cc255f0e7f71dbf5a7
 function app.pin_change(p_current text, p_new text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=318f0c2327d38f43884b5fcde77c3019
 function app.pin_digest(p_member uuid, p_salt bytea, p_pin text) owner=dog_signin execute=dog_signin language=sql volatile=s definer=true config=search_path=pg_catalog returns=bytea body_md5=27ff3f479653e63606de4edc718b9c03
@@ -1645,6 +1647,7 @@ function app.watch_settings_changed() owner=dog_signin execute=dog_signin langua
 function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b3f8d6b9d1684c6c77019b3f9edc3fb
 function app.watch_sweep() owner=dog_signin execute=dog_signin,dog_app,dog_timers language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=030e19df150261b17cda2fdf097e911a
 function app.watch_travel(p_session_hash text, p_place text, p_km integer, p_prev text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d2f9afbaa33f2700dbb23bfd7e48df05
+function app.work_action_rules() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=b7ed6e6835c585a1a95a12ae58255e69
 function app.work_admin() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1e374d6e61c876d6be4a889778c347ba
 function app.work_anchored_through() owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=bigint body_md5=c14adaaf3c4296fba5f95656c336da2d
 function app.work_approve(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=fc123785d75c7610712313bd3bf7d2c5
@@ -1657,7 +1660,7 @@ function app.work_brake_check(p_member uuid) owner=dog_work execute=dog_work lan
 function app.work_cancel(p_task uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=41e1f0deaca11407531e0b52b554d34b
 function app.work_cap(p_agent uuid, p_root uuid, p_kind text, p_new_claim boolean) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=023b626206cf906f98900fde64a05f3b
 function app.work_card(p_task uuid) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d7b60f17e3dd2a7e9805740af9fe72c1
-function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=372680b50cfabdfc40cb4e9a1c5fb424
+function app.work_check_decide(p_check uuid, p_decision text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d4d5314d8f0f237d06b2e9fcf7ad89b5
 function app.work_citizen(p_kind text, p_ref text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=53e435a822c38d112351c7fddafccf22
 function app.work_claim(p_task uuid, p_code_hash text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9e197c4ae1c535a34356691c397cdbd4
 function app.work_confirmed_size(p_sub uuid, p_by text) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=smallint body_md5=17268c22ad5a3e0dbe598e040dca3d6d
@@ -1670,7 +1673,7 @@ function app.work_dispute_page(p_id uuid) owner=dog_work execute=dog_work,dog_ap
 function app.work_disputes_list(p_status text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eb8b09e55fae21d1249b346263d25f37
 function app.work_evidence_add(p_dispute uuid, p_note text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=1033cabfb44daccacc27b6e74c2adb29
 function app.work_facts(p_sub uuid) owner=dog_work execute=dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=5ac4909e11655446c73861b0a2971a1a
-function app.work_fail_appeal(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=165924ac6aabfc7c4b979165e51f10c7
+function app.work_fail_appeal(p_sub uuid, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=76780b914f48559369ba9984b1885fb1
 function app.work_featured() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=501189951942bc92b3724bf176bc06d8
 function app.work_finish(p_sub uuid, p_verdict text, p_by text, p_confidence integer, p_reason text) owner=dog_work execute=dog_work language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=5ba31004d328733c17ff93d01192a0bd
 function app.work_github_issue_ok(p_number integer) owner=dog_work execute=dog_work,dog_log language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=c7c0f0f875963c49f548f21887858b38
@@ -3259,9 +3262,17 @@ trigger app.members enabled=A CREATE TRIGGER post_search_member AFTER UPDATE OF 
 trigger app.members enabled=O CREATE TRIGGER buyer_member_guard BEFORE UPDATE OF is_admin, trust_level ON app.members FOR EACH ROW EXECUTE FUNCTION app.buyer_member_guard()
 trigger app.notices enabled=A CREATE TRIGGER notices_fill BEFORE INSERT ON app.notices FOR EACH ROW EXECUTE FUNCTION app.notices_fill()
 trigger app.notices enabled=A CREATE TRIGGER notices_guard BEFORE UPDATE ON app.notices FOR EACH ROW EXECUTE FUNCTION app.notices_guard()
+trigger app.pay_accounts enabled=A CREATE TRIGGER money_locked BEFORE INSERT OR DELETE OR UPDATE ON app.pay_accounts FOR EACH ROW EXECUTE FUNCTION app.money_locked()
+trigger app.pay_accounts enabled=A CREATE TRIGGER money_locked_truncate BEFORE TRUNCATE ON app.pay_accounts FOR EACH STATEMENT EXECUTE FUNCTION app.money_locked_stmt()
 trigger app.pay_accounts enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.pay_accounts FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
+trigger app.pay_events enabled=A CREATE TRIGGER money_locked BEFORE INSERT OR DELETE OR UPDATE ON app.pay_events FOR EACH ROW EXECUTE FUNCTION app.money_locked()
+trigger app.pay_events enabled=A CREATE TRIGGER money_locked_truncate BEFORE TRUNCATE ON app.pay_events FOR EACH STATEMENT EXECUTE FUNCTION app.money_locked_stmt()
+trigger app.pay_ledger enabled=A CREATE TRIGGER money_locked BEFORE INSERT OR DELETE OR UPDATE ON app.pay_ledger FOR EACH ROW EXECUTE FUNCTION app.money_locked()
+trigger app.pay_ledger enabled=A CREATE TRIGGER money_locked_truncate BEFORE TRUNCATE ON app.pay_ledger FOR EACH STATEMENT EXECUTE FUNCTION app.money_locked_stmt()
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_change BEFORE DELETE OR UPDATE ON app.pay_ledger FOR EACH ROW EXECUTE FUNCTION app.pay_ledger_append_only()
 trigger app.pay_ledger enabled=A CREATE TRIGGER pay_ledger_no_truncate BEFORE TRUNCATE ON app.pay_ledger FOR EACH STATEMENT EXECUTE FUNCTION app.pay_ledger_append_only()
+trigger app.pay_requests enabled=A CREATE TRIGGER money_locked BEFORE INSERT OR DELETE OR UPDATE ON app.pay_requests FOR EACH ROW EXECUTE FUNCTION app.money_locked()
+trigger app.pay_requests enabled=A CREATE TRIGGER money_locked_truncate BEFORE TRUNCATE ON app.pay_requests FOR EACH STATEMENT EXECUTE FUNCTION app.money_locked_stmt()
 trigger app.peer_reviews enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF reviewer_member ON app.peer_reviews FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('reviewer_member')
 trigger app.posts enabled=A CREATE CONSTRAINT TRIGGER posts_scored AFTER INSERT ON app.posts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION app.posts_scored()
 trigger app.posts enabled=A CREATE TRIGGER post_search_sync AFTER INSERT OR UPDATE ON app.posts FOR EACH ROW EXECUTE FUNCTION app.post_search_sync()
@@ -3296,6 +3307,9 @@ trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed
 trigger app.tl_settings enabled=A CREATE TRIGGER tl_settings_audit AFTER UPDATE ON app.tl_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=A CREATE TRIGGER watch_settings_audit AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
+trigger app.work_actions enabled=O CREATE TRIGGER work_action_rules BEFORE INSERT ON app.work_actions FOR EACH ROW EXECUTE FUNCTION app.work_action_rules()
+trigger app.work_bounties enabled=A CREATE TRIGGER money_locked BEFORE INSERT OR DELETE OR UPDATE ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.money_locked()
+trigger app.work_bounties enabled=A CREATE TRIGGER money_locked_truncate BEFORE TRUNCATE ON app.work_bounties FOR EACH STATEMENT EXECUTE FUNCTION app.money_locked_stmt()
 trigger app.work_bounties enabled=A CREATE TRIGGER work_bounties_guard BEFORE INSERT OR UPDATE ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.work_bounties_guard()
 trigger app.work_bounties enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF payee_member ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('payee_member')
 trigger app.work_bounties enabled=O CREATE TRIGGER buyer_task_funded AFTER UPDATE OF status ON app.work_bounties FOR EACH ROW EXECUTE FUNCTION app.buyer_task_funded()

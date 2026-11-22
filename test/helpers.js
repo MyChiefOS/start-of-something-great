@@ -98,6 +98,13 @@ async function shadowMode(su) {
   });
 }
 
+// 067 (the zero-payment launch, Aaron, Nov 21, 2026): no money row can be written while the money lock is on. The tests
+// of the dormant payment code (061 to 066) lift it on their own scratch database only, to prove that code still works
+// if Aaron ever turns money on again by a migration. test/zero-pay.test.js proves the lock itself holds.
+async function liftMoneyLock(su) {
+  for (const t of ['work_bounties', 'pay_requests', 'pay_accounts', 'pay_ledger', 'pay_events']) await su.unsafe(`alter table app.${t} disable trigger money_locked`);
+}
+
 // 037, after its independent review (H1): the site's role can no longer make a session without a PIN and a browser
 // key (it can't call app.sign_in). Tests that only need a member make it as the sign-in role itself, over the test's own
 // superuser connection, exactly as app.sign_in does it; the site's rights stay as production has them.
@@ -127,4 +134,4 @@ async function clearOfWindow(seconds, needMs = 15000) {
   if (left < needMs) await new Promise((r) => setTimeout(r, left + 250));
 }
 
-module.exports = { clearOfWindow, asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, reviewWithReasons, TEST_SYSTEM_SECRET };
+module.exports = { liftMoneyLock, clearOfWindow, asSignin, fakeIssue, mockGitHub, fresh, call, keyFor, agentCtx, trustSystem, promote, shadowMode, reviewWithReasons, TEST_SYSTEM_SECRET };

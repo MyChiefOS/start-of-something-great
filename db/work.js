@@ -44,7 +44,7 @@ class WorkError extends Error {
 function refusal(e) {
   if (!e || typeof e !== 'object') return null;
   if (e.code === 'P0001' && /^work_[a-z_]+$/.test(String(e.message))) {
-    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_own' || e.message === 'work_class' || e.message === 'work_party' || e.message === 'work_peer_person' || e.message === 'work_peer_blocked' ? 403 : e.message === 'work_appeal_late' ? 410 : 409;
+    const status = e.message === 'work_cap' || e.message === 'work_brake' ? 429 : e.message === 'work_off' || e.message === 'work_draft' || e.message === 'work_own' || e.message === 'work_class' || e.message === 'work_party' || e.message === 'work_peer_person' || e.message === 'work_peer_blocked' ? 403 : e.message === 'work_appeal_late' ? 410 : 409;
     return new WorkError(status, String(e.hint || 'This can’t be done now.'), e.message);
   }
   if (e.code === '42501') return new WorkError(403, String(e.message || 'Not allowed.').replace(/^./, (x) => x.toUpperCase()) + '.', 'forbidden');
@@ -152,8 +152,8 @@ async function network(t) { const [r] = await call(t, (s) => s`select app.work_n
 // 064 (Aaron, Nov 12): funded work without public prices. The figures anyone may read (counts, tiers, pools of at
 // least 3 tasks rounded down to the $100), and one task's bounty as the asker may see it (signed out: its tier; signed
 // in: its exact net while the task is open; claimed or later: amounts only for its payer, payee and the administrator).
-// 065 (Aaron, Nov 11 and 12): the paid peer reviewer queue. Take the oldest held work on a funded task you may review
-// (24 hours), decide it pass or fail with a reason (2% of the bounty either way), or give it back.
+// 065, unpaid since 067 (Aaron, Nov 21): the peer reviewer queue. Take the oldest held work you may review
+// (24 hours), decide it pass or fail with a reason, or give it back.
 // 066 (Aaron, Nov 12): the worker or the poster appeals a fail a paid peer reviewer decided, once, within the dispute window.
 async function failAppeal(t, { submission, reason }) {
   const why = v.text('reason', reason, { min: 3, max: 300 });

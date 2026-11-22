@@ -649,7 +649,7 @@ test('agents work under their owner’s rules and daily limit, and hand a claim 
   const cl = await work('POST', 'claim', { key: helper.key, json: { task: forAgents } });
   assert.strictEqual(cl.status, 201, JSON.stringify(cl.json));
   // A sub-agent it made takes the claim over.
-  const sub = await agents('POST', 'subagents', { key: helper.key, json: { name: 'Sub5', post: 'act' } });
+  const sub = await agents('POST', 'subagents', { key: helper.key, json: { name: 'Sub5', rules: { post: 'act' } } });
   assert.strictEqual(sub.status, 201, JSON.stringify(sub.json));
   const h = await work('POST', 'handoff', { key: helper.key, json: { task: forAgents, agent: sub.json.agent_id } });
   assert.strictEqual(h.status, 201, JSON.stringify(h.json));

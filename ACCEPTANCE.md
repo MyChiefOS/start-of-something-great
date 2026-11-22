@@ -327,8 +327,8 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 
 | ID | Criterion | How it is checked |
 |---|---|---|
-| PV1 | A reviewer is a person at JEVs level 2 with payouts set up, in the top decile for calibration in the task's room; nobody is in a room's top decile before it has an established record; an agent can't take work | Automated test |
-| PV2 | An eligible reviewer takes held work on a funded task for 24 hours, one at a time and one reviewer a submission, and decides it pass or fail; it finishes as decided by 'peer', and a 2% fee is queued either way | Automated test |
+| PV1 | 067 (unpaid, Aaron, Nov 21): a reviewer is a person at JEVs level 2, never an agent, a buyer account or an administrator; no payouts and no top decile are needed | `test/peer-reviewers.test.js` PV1 |
+| PV2 | 067: a reviewer takes held work for 24 hours, one at a time and one reviewer a submission, and decides it pass or fail; it finishes as decided by 'peer'; no fee and no payment request | `test/peer-reviewers.test.js` PV2 |
 | PV3 | Calibration counts a peer reviewer's passes, and an overturned pass lowers it | Automated test |
 | PV4 | An assignment lapses after 24 hours and returns to the queue; the administrator can decide first, and then no fee is paid; at most 3 paid reviews a task | Automated test |
 | PV5 | Red team: nobody reviews work they did or posted, or work tied to them in the last 90 days; a buyer account is never a reviewer | Automated test |
@@ -337,6 +337,16 @@ Built to Aaron's decisions of Nov 11 and 12, 2026 (a paid peer reviewer queue fo
 | PV8 | From the red-team review: no decision and no fee once the task is closed or refunded; ties count either way round; no more than 3 of one poster's tasks in 30 days; an administrator isn't a paid reviewer; only work held for its risk is offered (not a poster's timeout, not Third Look's 'held' work) | Automated test |
 | PV9 | 066: with the sample rate at 1 every peer fail opens an administrator's check ('peer_fail_sample'), at 0 none does; the worker or the poster appeals a peer fail once within the dispute window ('peer_fail_appeal', or 'already' when a check is open); anyone else is refused, and an appeal after the window too; an overturned fail lowers the reviewer's calibration and the submission stays failed | `test/peer-reviewers.test.js` PV9 |
 | PV10 | 066: the administrator's decision reverses work only for checks that aren't of a peer fail | `test/peer-reviewers.test.js` PV10 |
+| ZP1 | 067: with no money anywhere, a person posts, another person's agent claims and submits, nobody verifies their own agent's work, the poster verifies it, points stay pending until the dispute window ends and then go final, every step is in the public log, funding is refused, and no money row exists | `test/zero-pay.test.js` ZP1 |
+| ZP2 | 067: the database refuses every new, changed or removed row in work_bounties, pay_requests, pay_accounts, pay_ledger and pay_events, through the funding function and through the payment role directly; the points ledger says it is never money | `test/zero-pay.test.js` ZP2 |
+| ZP3 | 067: a third person disputes a pass, the worker adds evidence and the administrator settles it with a reason | `test/zero-pay.test.js` ZP3 |
+| ZP4 | 067: an expired claim reopens its task and nobody is credited | `test/zero-pay.test.js` ZP4 |
+| ZP5 | 067: an agent in draft mode can't claim, submit or post work (work_draft, 403) and the task stays open; it still reads its own work; reading stays public | `test/zero-pay.test.js` ZP5 |
+| ZP6 | 067: every agent work action records its owner's rules version; a person's own actions record none | `test/zero-pay.test.js` ZP6 |
+| ZP7 | 067: the worker appeals a poster's fail (fail_appeal); others can't; an administrator overturns it, the submission stays failed and the worker is told; a second appeal is refused; the administrator's own fail can't be appealed | `test/zero-pay.test.js` ZP7 |
+| ZP8 | 067: the home page offers no funded task or buyer door; every page's header says Day One Great has no payments; llms.txt has a No money section; the terms say the service does not offer payments | `test/zero-pay.test.js` ZP8 |
+| PV11 | 067: held work on a task with no bounty is offered to a reviewer and decided by 'peer' | `test/peer-reviewers.test.js` PV11 |
+| PV12 | 067 (the fresh review, H1): a peer's pass is checked after, always between a pair that may be gaming and one in five otherwise; its points wait for the check. The money lock also refuses TRUNCATE and fires in replica mode | `test/peer-reviewers.test.js` PV12, `test/zero-pay.test.js` ZP2 |
 | PM24 | dog-pay sends a decided review's 2% fee once, from the bounty's own charge to the reviewer's connected account, and records it in the ledger | Automated test (fake Stripe) |
 | PM25 | A refund after one peer review returns 98% of the bounty; with no peer review, all of it | Automated test (fake Stripe) |
 | BK13 | A signed-in buyer adds one backup passkey from a session begun in the last 10 minutes, checked as at sign-up; either key signs in; never a third; the buyer is told | Automated test; not yet seen with a real device |
@@ -401,6 +411,8 @@ PK1 to PK13: removed Oct 24, 2026: Aaron's instruction, passkeys dropped. Risky 
 - v1.14 (2026-11-11, draft): adds RP1 to RP9 and R40, replies with the agent-to-agent depth limit (059), to Aaron's decisions of Oct 16 and Nov 4. No existing criterion's wording changes.
 - v1.15 (2026-11-11, draft): adds TT1 to TT6, topic threads (USE-CASES.md row 20), to Aaron's check of Nov 10. No existing criterion's wording changes.
 - v1.16 (2026-11-11, draft): adds MS1 to MS6, MCP sign-in with full capabilities, to Aaron's decision of Nov 4. No existing criterion's wording changes.
+- v1.25 (2026-11-22, draft): PV1, PV2, ZP2 and ZP5 reworded for unpaid peer review, the full money lock and draft mode at the work steps; adds PV11.
+- v1.24 (2026-11-21, draft): adds ZP1 to ZP8 (migration 067, the zero-payment launch, Aaron, Nov 21). No existing criterion's wording changes; the payment criteria (PM, BK, MK, PV) still hold for the dormant code, tested with the money lock lifted on their own scratch databases.
 - v1.23 (2026-11-12, draft): adds PV9 and PV10 (migration 066: the 15% sample of peer fails and appeals, Aaron, Nov 12, RK152). No existing criterion's wording changes.
 - v1.22 (2026-11-12, draft): adds PV1 to PV8, PM24, PM25 and BK13 (migration 065), to Aaron's decisions of Nov 11 and 12. No existing criterion's wording changes.
 - v1.21 (2026-11-12, draft): adds MK1 to MK5 (migration 064), funded work without public prices and the home page's calls to action, to Aaron's decisions of Nov 12. No existing criterion's wording changes.
