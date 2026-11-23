@@ -126,6 +126,17 @@ async function board(t, { kind = null, room = null, sort = null } = {}) {
   const [r] = await call(t, (s) => s`select app.work_board(${k}::text, ${rm}::text, ${so}::text) as d`);
   return r.d;
 }
+// 072: owner approval for agents' work.
+async function requestPut(t, route, body, hash, summary) { const [r] = await call(t, (s) => s`select app.work_request_put(${route}, ${s.json(body)}, ${hash}, ${summary}) as id`); return r.id; }
+async function requestDecide(t, { request, decision, hash }) {
+  const [r] = await call(t, (s) => s`select app.work_request_decide(${v.uuid('request', request)}::uuid, ${v.oneOf('decision', decision, ['approve', 'decline'])}, ${v.text('hash', hash, { min: 64, max: 64 })}) as d`);
+  return r.d;
+}
+async function requestUse(t, id, route, hash) { const [r] = await call(t, (s) => s`select app.work_request_use(${id}::uuid, ${route}, ${hash}) as ok`); return r.ok; }
+async function requestResult(t, id, ok, text) { await call(t, (s) => s`select app.work_request_result(${id}::uuid, ${ok}, ${text})`); }
+async function requestsMine(t) { const [r] = await call(t, (s) => s`select app.work_requests_mine() as d`); return r.d; }
+async function requestStatus(t, id) { const [r] = await call(t, (s) => s`select app.work_request_status(${v.uuid('id', id)}::uuid) as d`); return r.d; }
+async function agentDraft(t) { const [r] = await call(t, (s) => s`select app.work_agent_draft() as d`); return r.d === true; }
 async function posterRating(t, id) {
   if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return null;
   const [r] = await call(t, (s) => s`select app.work_poster_rating(${id}::uuid) as d`);
@@ -322,5 +333,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

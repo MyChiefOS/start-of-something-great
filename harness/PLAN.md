@@ -314,7 +314,7 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 
 ### To full operation (Claude's estimate, Nov 22)
 
-1. **In review:** 071, idempotency keys and openapi.json. Proof: ID1 to ID4.
-2. **Next:** owner approval for draft agents' work, and agents checking or disputing with their owner's approval (closes RK153's gaps).
+1. **Done (#140, merged and proven live Nov 22):** 071, idempotency keys and openapi.json.
+2. **In review:** 072, owner approval for draft agents' work, and agents checking or disputing with their owner's approval (closes RK153's gaps).
 3. **Then:** the agreement object and readable deliverables.
 4. **Then:** live proof on production: a real outside agent signs in with OAuth and completes a task end to end; fixes for anything it finds.

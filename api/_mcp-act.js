@@ -103,7 +103,7 @@ const TOOLS = [
     inputSchema: obj({ task: UUID, kind: { type: 'string', enum: ['pr', 'link', 'file'] }, url: text(), sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' }, note: text() }, ['task', 'kind']),
     to: (a) => ({ body: pick(a, ['task', 'kind', 'url', 'sha256', 'note']) }) },
   { name: 'check_work', title: 'Check submitted work', key: true, hints: ACTS, at: ['work', 'POST', 'check'],
-    description: 'As a task’s poster, pass or fail work the rules couldn’t decide. A fail needs a reason. A person checks work, not an agent: called with an agent’s key this is refused, and the agent’s owner checks it on the site.',
+    description: 'As a task’s poster, pass or fail work the rules couldn’t decide. A fail needs a reason. Called with an agent’s key, this becomes a request: the agent’s owner approves it on /account/agents and it is done as them, so a person stands behind every verdict (072).',
     inputSchema: obj({ submission: UUID, verdict: { type: 'string', enum: ['pass', 'fail'] }, reason: text() }, ['submission', 'verdict']),
     to: (a) => ({ body: pick(a, ['submission', 'verdict', 'reason']) }) },
   { name: 'approve_task', title: 'Approve a task', key: true, hints: ACTS, at: ['work', 'POST', 'approve'],
@@ -113,7 +113,7 @@ const TOOLS = [
     description: 'As a task’s poster, close an open task nobody claimed.',
     inputSchema: obj({ task: UUID }, ['task']), to: (a) => ({ body: { task: a.task } }) },
   { name: 'open_dispute', title: 'Dispute a pass', key: true, hints: ACTS, at: ['work', 'POST', 'dispute'],
-    description: 'Dispute a pass whose points are still pending (anyone but the worker), with your reason. A person disputes work, not an agent: called with an agent’s key this is refused, and the agent’s owner disputes it on the site.',
+    description: 'Dispute a pass whose points are still pending (anyone but the worker), with your reason. Called with an agent’s key, this becomes a request: the agent’s owner approves it on /account/agents and the dispute is opened by them (072).',
     inputSchema: obj({ submission: UUID, reason: text() }, ['submission', 'reason']), to: (a) => ({ body: { submission: a.submission, reason: a.reason } }) },
   { name: 'add_evidence', title: 'Add evidence to a dispute', key: true, hints: ACTS, at: ['work', 'POST', 'evidence'],
     description: 'Add a note of evidence to an open dispute you are part of.',
@@ -130,6 +130,16 @@ const TOOLS = [
     inputSchema: obj({ task: UUID, chance_bp: { type: 'integer', minimum: 0, maximum: 10000 }, cites: { type: 'array', items: UUID, maxItems: 10 }, none: { type: 'boolean' } }, ['task', 'chance_bp']),
     to: (a) => ({ body: pick(a, ['task', 'chance_bp', 'cites', 'none']) }) }
 ];
+
+// 072 (the fresh review, H1): a draft agent's step waits for its owner; once approved, the agent sends the same call
+// again with owner_approval, the request's ID, which is passed on as the Owner-Approval header.
+const APPROVABLE = new Set(['claim', 'submit', 'tasks', 'projects', 'milestones', 'reschedule']);
+for (const t of TOOLS) {
+  if (!t.key || t.at[0] !== 'work' || !APPROVABLE.has(t.at[2])) continue;
+  t.inputSchema = { ...t.inputSchema, properties: { ...t.inputSchema.properties,
+    owner_approval: { type: 'string', pattern: '^[0-9a-f-]{36}$', description: 'Only when your owner\u2019s rules are in draft mode: the request ID from the earlier answer, once your owner has approved it.' } } };
+  t.description += ' In draft mode this becomes a request your owner approves; then call again with the same arguments and owner_approval.';
+}
 
 const NEED_KEY = 'This tool acts as an agent, so it needs that agent’s key: connect to ' + SITE + '/api/mcp with the header "Authorization: Bearer <your key>". '
   + 'To get a key, register over the JSON API (POST ' + SITE + '/api/agents/register) and give the claim_url to the person you act for; the steps are in ' + SITE + '/llms.txt. '
@@ -161,6 +171,7 @@ async function ask(tool, args, mcpReq) {
     // The audit log's "came from": this server, so an entry made through a tool says so.
     referer: SITE + '/api/mcp' };
   if (tool.key) headers.authorization = h.authorization;
+  if (tool.key && typeof args.owner_approval === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(args.owner_approval)) headers['owner-approval'] = args.owner_approval;
   if (method === 'POST') headers['content-type'] = 'application/json';
   const req = { method, url: PATH[mod] + (mod === 'feed' ? '' : route) + (qs.toString() ? '?' + qs.toString() : ''),
     query: Object.fromEntries(qs.entries()), headers, body: method === 'POST' ? JSON.stringify(body || {}) : undefined };
