@@ -53,6 +53,7 @@
 //     POST peer/case/appeal {case, reason}           the worker, the poster or the one who disputed sends it to the administrator instead
 //     POST appeal {submission, reason}               the worker or the poster appeals a fail, once, within 72 hours (066; any fail but the administrator's own since 067)
 //   Aaron only:
+//     POST audit/close {sample, status, note?}       an administrator: a random audit sample looked at, or a concern (077)
 //     POST wall/review {decision, verdict, reason}   an administrator: a Wall flag is a false positive or confirmed (076)
 //     POST wiki/rollback                             an administrator: the wiki's previous version becomes active again (074)
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
@@ -231,6 +232,8 @@ const WRITES = {
   'wiki/rollback': { keys: [], fn: (t) => work.wikiRollback(t), adminOnly: true },
   // 076: quality assurance on one of the Agentic Wall's flags (a verified false positive leaves lane A).
   'wall/review': { keys: ['decision', 'verdict', 'reason'], fn: (t, b) => work.wallReview(t, b), adminOnly: true },
+  // 077: close one of the random auditor's samples.
+  'audit/close': { keys: ['sample', 'status', 'note'], fn: (t, b) => work.auditClose(t, b), adminOnly: true },
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps
   // its first target beside the new one.
   milestones: { keys: ['project', 'title', 'target', 'gate'], fn: (t, b) => work.milestoneAdd(t, b), code: 201 },

@@ -107,6 +107,9 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   // recorded as a new version the Agentic Wall reads for exact-match package versions (option a). Public feeds, no key,
   // no paid call. Not due, failing or refused, it changes nothing.
   try { await require('../wiki/sync').run(run, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
+  // 077: the random auditor and the day's oversight report (free), then the model reviewers, which call nothing while
+  // their switches are off and the monthly cap is $0 (as merged).
+  try { await require('../oversight/roles').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
   // The public log (038): JEVs's last whole hour, the next signed checkpoint and, since 057, the check that the witness
   // has stopped, each in its own transaction. Aaron's proposal decisions and the witness's report no longer come from
   // here: GitHub's workflows send them to the dog-github function (RK112, RK144). A failure changes nothing here; the
