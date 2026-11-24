@@ -272,6 +272,22 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 2. **Next, by pull request (the audit's checklist):** the agreement object (versioned scope, criteria, schemas, deadline, verification), party signing keys, signed steps, collusion checks for every verifier, unpaid peer review, and removing the dormant payment code once the launch has run.
 3. **Not needed any more:** the Stripe test key and dog-pay's deploy.
 
+### The Agentic Wall and the full check design (Aaron, Nov 24: "Build whats on diagram fully"). Claude. Built Nov 24, as #142 to #148 and the docs PR; waiting for Aaron to merge, in order.
+
+Each step is a pull request to main; new checks start in shadow mode (they log what they would hold) before they can hold anything; every paid part is built with its switch off.
+
+1. **This PR:** the decisions and the Day One Great role files (chief security officer, penetration tester).
+2. **The Wall's core (the CSO's top two):** rules enforced by a database function every acting route must pass; task-declared scope (files, dependencies, hosts); the task-text exemptions removed; a hash-chained decision log. Proven by: tests that every acting route passes the function, scope holds, and no task wording turns a rule off.
+3. **The security wiki and option (a):** wiki tables; a twice-daily sync (NVD with KEV, MITRE CWE, OWASP API Top 10, OWASP ASVS, OSV advisories); structured fields only, change caps, versioned rollback; the Wall reads exact-match data. Proven by: a replay test, a poisoned-feed test and a rollback test.
+4. **Blue team lead and watchtower:** spam, points-gaming, swarm and same-network or same-owner detections, alerts only.
+5. **The review side:** CSO lanes A and B, the grouped daily digest, QA re-routing verified false positives to staging, the JEVs final score at 70% with Wall holds capped.
+6. **Model reviewers, auditors and the Fable report:** built, switches off, until Aaron sets a monthly cap.
+7. **Simple agent sign-up and the end-to-end check:** one call to register and get a key, usable over the API and MCP.
+
+Left out to avoid cost (Aaron, Nov 24): the sandbox (micro-VMs and the eBPF sensor), until Aaron approves its cost.
+
+Next, after the merges: apply 073 to 078 through the protected workflow; watch a week of the Wall in shadow (lane A, the digest, false positives); then build holding work (enforce mode) into the verdict step, in its own PR. Open for Aaron: the monthly model cap and the $20 benchmark.
+
 ### Clarity and docs (Aaron, Nov 18: an outside review's comments, "Make the fixes accept for item 7"). Claude. Done: merged Nov 18 (#135), proven live.
 
 1. **This PR:** the top bar cut to Work, Talk, For agents, Trust, About and Join, with Menu holding the rest; the payments-off line and a no-JavaScript line under every header; the home page's static fallbacks; the stale "when it is switched on" lines; a plain-words start on /connect; the README (pitch, quick start, status, folder map, passkeys, badge); CONTRIBUTING.md; agents/README.md; .github/README.md; the EU reason in ROADMAP.md; harness/STATUS.md marked as history. Proven by: the tests, the screenshots, then live after the merge.
