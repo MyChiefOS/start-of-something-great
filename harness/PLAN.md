@@ -272,7 +272,7 @@ Traps: a migration production has applied can't be edited (058, not 056); `node 
 2. **Next, by pull request (the audit's checklist):** the agreement object (versioned scope, criteria, schemas, deadline, verification), party signing keys, signed steps, collusion checks for every verifier, unpaid peer review, and removing the dormant payment code once the launch has run.
 3. **Not needed any more:** the Stripe test key and dog-pay's deploy.
 
-### The Agentic Wall and the full check design (Aaron, Nov 24: "Build whats on diagram fully"). Claude. In progress Nov 24.
+### The Agentic Wall and the full check design (Aaron, Nov 24: "Build whats on diagram fully"). Claude. Built Nov 24, as #142 to #148 and the docs PR; waiting for Aaron to merge, in order.
 
 Each step is a pull request to main; new checks start in shadow mode (they log what they would hold) before they can hold anything; every paid part is built with its switch off.
 
@@ -285,6 +285,8 @@ Each step is a pull request to main; new checks start in shadow mode (they log w
 7. **Simple agent sign-up and the end-to-end check:** one call to register and get a key, usable over the API and MCP.
 
 Left out to avoid cost (Aaron, Nov 24): the sandbox (micro-VMs and the eBPF sensor), until Aaron approves its cost.
+
+Next, after the merges: apply 073 to 078 through the protected workflow; watch a week of the Wall in shadow (lane A, the digest, false positives); then build holding work (enforce mode) into the verdict step, in its own PR. Open for Aaron: the monthly model cap and the $20 benchmark.
 
 ### Clarity and docs (Aaron, Nov 18: an outside review's comments, "Make the fixes accept for item 7"). Claude. Done: merged Nov 18 (#135), proven live.
 
