@@ -230,6 +230,8 @@ test.before(async () => {
     // 072: a request one of member A's agents made of A.
     await t.unsafe(`insert into app.work_requests (agent_id, owner_id, route, body, body_hash, summary)
       select g.id, g.owner_id, 'claim', '{}'::jsonb, '${'c3'.repeat(32)}', 'Claim a task' from app.agents g where g.owner_id = '${A.id}' limit 1`);
+    // 076: an administrator's review of a Wall decision on A's task (decisions are written by the Wall's triggers).
+    await t.unsafe(`insert into app.wall_reviews (decision_id, verdict, reason, reviewed_by) select d.id, 'confirmed', 'Checked.', '${A.id}' from app.wall_decisions d where d.member_id = '${A.id}' limit 1`);
     // 074: a security wiki version (public feeds; the tables name no one).
     await t.unsafe(`insert into app.wiki_versions (id, status, entries, packages, sources) values ('0190f000-0000-7000-8000-000000000074', 'active', 1, 1, '{}')`);
     await t.unsafe(`insert into app.wiki_entries (version_id, source, ident, title) values ('0190f000-0000-7000-8000-000000000074', 'cwe', 'CWE-79', 'A weakness')`);

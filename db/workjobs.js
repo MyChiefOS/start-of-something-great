@@ -146,6 +146,8 @@ async function run(runDb) {
   await step('peer cases', out, () => runDb({ actor: 'anon' }, (t) => t`select app.peer_cases_due() as r`).then((r) => r[0].r));
   // 075: the watchtower (spam, points-gaming, swarms, repeated Wall flags), every 10 minutes; alerts only.
   await step('watchtower', out, () => runDb({ actor: 'anon' }, (t) => t`select app.watchtower_run() as r`).then((r) => r[0].r));
+  // 076: incidents at once, and the daily review digest (lanes A and B, grouped).
+  await step('review digest', out, () => runDb({ actor: 'anon' }, (t) => t`select app.review_digest_run() as r`).then((r) => r[0].r));
   return out;
 }
 

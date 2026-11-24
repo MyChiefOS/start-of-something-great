@@ -276,6 +276,10 @@
     "kind": "public read",
     "why": "073: a task's declared scope (the paths, dependencies and hosts its work may touch), public like the task itself; writes nothing."
   },
+  "work_final_score": {
+    "kind": "public read",
+    "why": "076: a submission's final score from facts the site already shows (Second and Third Look's outcomes, an open dispute, a Wall flag), as a number and short reasons; never the flagged text, never who flagged it. Writes nothing."
+  },
   "wiki_summary": {
     "kind": "public read",
     "why": "074: the security wiki's versions, when it last ran and the newest 50 advisories, all from public feeds (NVD, CISA KEV, MITRE CWE, OWASP); no person."
