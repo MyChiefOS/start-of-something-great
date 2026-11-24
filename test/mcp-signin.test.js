@@ -429,3 +429,44 @@ test('a signed-in person’s cookie does nothing here: an acting tool with a coo
   assert.match(r.json.result.content[0].text, /needs that agent’s key/);
   assert.strictEqual((await q('select count(*)::int as n from app.posts'))[0].n, before);
 });
+
+// Aaron, Nov 24: "I want agents to be able to sign up and get a key ... and work through the API and MCP", with the
+// Agentic Wall watching (073 to 077). End to end on one database: one call registers and gives a key; the owner claims
+// it; the agent posts a project and a task with a declared scope over MCP; a second agent, signed up the same way,
+// claims and submits over the JSON API with a link outside the scope; the Wall records its flag in shadow (nothing is
+// held), the work's final score is under 70, and lane A shows it to an administrator.
+test('end to end: sign up with one call, claim, work over MCP and the API, and the Agentic Wall watches', async () => {
+  const signUp = async (name, who) => {
+    const reg = await api('agents', 'POST', 'register', { json: { name } });
+    assert.strictEqual(reg.status, 201, JSON.stringify(reg.json));
+    assert.match(reg.json.key, /^dogk_/);
+    assert.strictEqual((await call('whoami', {}, reg.json.key)).status, 401, 'a key works once its owner claims the agent');
+    const cl = await api('agents', 'POST', 'claim', { cookie: who.cookie, json: { code: reg.json.claim_url.split('#claim=')[1] } });
+    assert.strictEqual(cl.status, 200, JSON.stringify(cl.json));
+    return { id: reg.json.agent_id, key: reg.json.key };
+  };
+  const ownerA = await member('Owner A');
+  const ownerB = await member('Owner B');
+  const a = await signUp('Planner_e2e', ownerA);
+  const b = await signUp('Builder_e2e', ownerB);
+  assert.strictEqual(data(await call('whoami', {}, a.key)).agent.id, a.id);
+  const pj = await call('create_project', { title: 'A docs page', description: 'Context.', room: '27-0000' }, a.key);
+  assert.strictEqual(data(pj).http_status, 201, JSON.stringify(pj.json));
+  const tk = await call('create_task', { project: data(pj).id, title: 'Write the install page', description: 'One page.', class: 'agent', size: 1,
+    scope: { paths: ['docs/'], hosts: ['example.org'] } }, a.key);
+  assert.strictEqual(data(tk).http_status, 201, JSON.stringify(tk.json));
+  const sc = await q(`select kind, value from app.work_task_scope where task_id = '${data(tk).id}' order by kind`);
+  assert.deepStrictEqual(sc.map((r) => r.kind + ':' + r.value), ['host:example.org', 'path:docs/']);
+  const claim = await api('work', 'POST', 'claim', { key: b.key, json: { task: data(tk).id } });
+  assert.strictEqual(claim.status, 201, JSON.stringify(claim.json));
+  const sub = await api('work', 'POST', 'submit', { key: b.key, json: { task: data(tk).id, kind: 'link', url: 'https://other.test/install', note: 'Done.' } });
+  assert.ok(sub.status === 201 || sub.status === 200, JSON.stringify(sub.json));
+  const [s] = await q(`select id, status, route, coalesce(held_reason, '') as held from app.work_submissions where task_id = '${data(tk).id}'`);
+  const [d] = await q(`select decision, mode, flags from app.wall_decisions where ref = '${s.id}' order by created_at desc, id desc limit 1`);
+  assert.deepStrictEqual([d.decision, d.mode], ['hold', 'shadow']);
+  assert.match(JSON.stringify(d.flags), /W24 link outside the task's declared hosts: other\.test/);
+  assert.deepStrictEqual([s.status, s.route, s.held], ['review', 'poster', ''], 'shadow holds nothing: the link goes to its poster, as without the Wall');
+  const score = await api('work', 'GET', 'score', { search: '?submission=' + s.id });
+  assert.strictEqual(score.status, 200, JSON.stringify(score.json));
+  assert.deepStrictEqual([score.json.score, score.json.passes], [69, false]);
+});
