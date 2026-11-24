@@ -659,6 +659,19 @@
         }
       }
     },
+    "/api/work/wiki": {
+      "get": {
+        "operationId": "work_wiki",
+        "summary": "the security wiki: versions, last run, newest 50 advisories (074)",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The answer, as JSON. Fields written by the public are named in untrusted_fields."
+          }
+        }
+      }
+    },
     "/api/work/requests/decide": {
       "post": {
         "operationId": "work_requests_decide",

@@ -189,6 +189,13 @@ const DEFINERS = {
   'app.work_task_scope_get(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_log(integer)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_chain_ok()': { owner: 'dog_work', callers: 'dog_app' },
+  // 074, the security wiki: the Wall's exact-match lookup (owner, no caller), the timer's claim and record, an
+  // administrator's rollback and the public summary.
+  'app.wiki_bad_package(text, text, text)': { owner: 'dog_owner', callers: '' },
+  'app.wiki_claim()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wiki_record(text, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wiki_rollback()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wiki_summary()': { owner: 'dog_work', callers: 'dog_app' },
   'app.sl_item_claim(integer)': 'dog_work',
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',

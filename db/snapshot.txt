@@ -785,6 +785,34 @@ constraint app.watch_settings watch_settings_singleton_key UNIQUE (singleton)
 constraint app.watch_settings watch_settings_travel_kmh_check CHECK (((travel_kmh >= 100) AND (travel_kmh <= 100000)))
 constraint app.watch_settings watch_settings_travel_min_km_check CHECK (((travel_min_km >= 100) AND (travel_min_km <= 20000)))
 constraint app.watch_settings watch_settings_wrong_files_before_check CHECK (((wrong_files_before >= 1) AND (wrong_files_before <= 9)))
+constraint app.wiki_entries wiki_entries_cwe_check CHECK (((char_length(cwe) <= 9) AND (cwe ~ '^CWE-[0-9]{1,5}$'::text)))
+constraint app.wiki_entries wiki_entries_ident_check CHECK (((char_length(ident) <= 24) AND (ident ~ '^(CVE-[0-9]{4}-[0-9]{4,7}|CWE-[0-9]{1,5}|API[0-9]{1,2}:20[0-9]{2}|V[0-9]{1,2}(\.[0-9]{1,2}){0,2})$'::text)))
+constraint app.wiki_entries wiki_entries_pkey PRIMARY KEY (id)
+constraint app.wiki_entries wiki_entries_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
+constraint app.wiki_entries wiki_entries_source_check CHECK ((source = ANY (ARRAY['nvd'::text, 'cwe'::text, 'owasp_api'::text, 'asvs'::text])))
+constraint app.wiki_entries wiki_entries_title_check CHECK (((char_length(title) >= 1) AND (char_length(title) <= 300)))
+constraint app.wiki_entries wiki_entries_version_id_fkey FOREIGN KEY (version_id) REFERENCES app.wiki_versions(id) ON DELETE CASCADE
+constraint app.wiki_entries wiki_entries_version_id_source_ident_key UNIQUE (version_id, source, ident)
+constraint app.wiki_packages wiki_packages_advisory_check CHECK (((char_length(advisory) <= 20) AND (advisory ~ '^CVE-[0-9]{4}-[0-9]{4,7}$'::text)))
+constraint app.wiki_packages wiki_packages_ecosystem_check CHECK ((ecosystem = ANY (ARRAY['npm'::text])))
+constraint app.wiki_packages wiki_packages_name_check CHECK ((((char_length(name) >= 1) AND (char_length(name) <= 214)) AND (name ~ '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$'::text)))
+constraint app.wiki_packages wiki_packages_pkey PRIMARY KEY (id)
+constraint app.wiki_packages wiki_packages_version_check CHECK ((((char_length(version) >= 1) AND (char_length(version) <= 64)) AND (version ~ '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'::text)))
+constraint app.wiki_packages wiki_packages_version_id_ecosystem_name_version_advisory_key UNIQUE (version_id, ecosystem, name, version, advisory)
+constraint app.wiki_packages wiki_packages_version_id_fkey FOREIGN KEY (version_id) REFERENCES app.wiki_versions(id) ON DELETE CASCADE
+constraint app.wiki_settings wiki_settings_claim_hash_check CHECK (((char_length(claim_hash) = 64) AND (claim_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.wiki_settings wiki_settings_every_hours_check CHECK (((every_hours >= 6) AND (every_hours <= 168)))
+constraint app.wiki_settings wiki_settings_max_change_pct_check CHECK (((max_change_pct >= 1) AND (max_change_pct <= 100)))
+constraint app.wiki_settings wiki_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'on'::text])))
+constraint app.wiki_settings wiki_settings_pkey PRIMARY KEY (id)
+constraint app.wiki_settings wiki_settings_singleton_check CHECK (singleton)
+constraint app.wiki_settings wiki_settings_singleton_key UNIQUE (singleton)
+constraint app.wiki_versions wiki_versions_entries_check CHECK (((entries >= 0) AND (entries <= 20000)))
+constraint app.wiki_versions wiki_versions_packages_check CHECK (((packages >= 0) AND (packages <= 20000)))
+constraint app.wiki_versions wiki_versions_pkey PRIMARY KEY (id)
+constraint app.wiki_versions wiki_versions_reason_check CHECK ((char_length(reason) <= 300))
+constraint app.wiki_versions wiki_versions_sources_check CHECK (((jsonb_typeof(sources) = 'object'::text) AND (octet_length((sources)::text) <= 2000)))
+constraint app.wiki_versions wiki_versions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'kept'::text, 'refused'::text])))
 constraint app.work_actions work_actions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.work_actions work_actions_kind_check CHECK ((kind = ANY (ARRAY['claim'::text, 'submit'::text, 'post'::text])))
 constraint app.work_actions work_actions_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
@@ -1349,6 +1377,16 @@ default app.watch_settings.travel_kmh = 1000
 default app.watch_settings.travel_min_km = 1000
 default app.watch_settings.updated_at = now()
 default app.watch_settings.wrong_files_before = 3
+default app.wiki_entries.id = app.uuid_v7()
+default app.wiki_entries.kev = false
+default app.wiki_packages.id = app.uuid_v7()
+default app.wiki_settings.every_hours = 12
+default app.wiki_settings.id = app.uuid_v7()
+default app.wiki_settings.max_change_pct = 25
+default app.wiki_settings.mode = 'on'::text
+default app.wiki_settings.singleton = true
+default app.wiki_versions.created_at = now()
+default app.wiki_versions.id = app.uuid_v7()
 default app.work_actions.created_at = now()
 default app.work_actions.id = app.uuid_v7()
 default app.work_bounties.created_at = now()
@@ -1767,7 +1805,7 @@ function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d18c4ac53114c1822c22c6a7f3dd8744
 function app.wall_chain_ok() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=a95afe81f1f141d0a5adb192d2e8fcce
 function app.wall_decisions_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fa85897676c14290138e725a173530c0
-function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=94dac34d4630e1ff3ee00ca11e4f82f4
+function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=14d51464d125de8c8e5f8dff2590c856
 function app.wall_gate() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=3543f9d75d8974eb499ab360d02902d8
 function app.wall_log(p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=308eb9dbb31ca741c29a844c477da571
 function app.wall_text_flags(p_text text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=ae5a0bcf99b809d42aea99dde9a86408
@@ -1780,6 +1818,11 @@ function app.watch_settings_changed() owner=dog_signin execute=dog_signin langua
 function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b3f8d6b9d1684c6c77019b3f9edc3fb
 function app.watch_sweep() owner=dog_signin execute=dog_signin,dog_app,dog_timers language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=030e19df150261b17cda2fdf097e911a
 function app.watch_travel(p_session_hash text, p_place text, p_km integer, p_prev text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d2f9afbaa33f2700dbb23bfd7e48df05
+function app.wiki_bad_package(p_eco text, p_name text, p_version text) owner=dog_owner execute=dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=2cfbb62c3f326c698a9ca0a078befa29
+function app.wiki_claim() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=aa9565857dcb6203581225c98aad770a
+function app.wiki_record(p_claim text, p jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=7fc0be63ae631910f5dbbe24f9516492
+function app.wiki_rollback() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=ef895019259a01e76c52b4e6a3b21ea4
+function app.wiki_summary() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=be9062cbc4c1c777b8dc66a4f1274d6f
 function app.work_action_rules() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=ebd6567db52fea13ab337b1ae7748ce0
 function app.work_admin() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=1e374d6e61c876d6be4a889778c347ba
 function app.work_agent_draft() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=f716aade8f025cd2ac1a1175d1855f67
@@ -2858,6 +2901,22 @@ grant app.watch_sessions.session_id dog_signin INSERT
 grant app.watch_sessions.ua_hash dog_signin INSERT
 grant app.watch_settings dog_app SELECT
 grant app.watch_settings dog_signin SELECT
+grant app.wiki_entries dog_work DELETE
+grant app.wiki_entries dog_work INSERT
+grant app.wiki_entries dog_work SELECT
+grant app.wiki_entries dog_work UPDATE
+grant app.wiki_packages dog_work DELETE
+grant app.wiki_packages dog_work INSERT
+grant app.wiki_packages dog_work SELECT
+grant app.wiki_packages dog_work UPDATE
+grant app.wiki_settings dog_work DELETE
+grant app.wiki_settings dog_work INSERT
+grant app.wiki_settings dog_work SELECT
+grant app.wiki_settings dog_work UPDATE
+grant app.wiki_versions dog_work DELETE
+grant app.wiki_versions dog_work INSERT
+grant app.wiki_versions dog_work SELECT
+grant app.wiki_versions dog_work UPDATE
 grant app.work_actions dog_work INSERT
 grant app.work_actions dog_work SELECT
 grant app.work_bounties dog_pay INSERT
@@ -3339,6 +3398,14 @@ policy app.watch_sessions watch_sessions_signin_update cmd=w permissive=true to=
 policy app.watch_settings watch_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) check=
 policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.wiki_entries wiki_entries_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.wiki_entries wiki_entries_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.wiki_packages wiki_packages_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.wiki_packages wiki_packages_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.wiki_settings wiki_settings_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.wiki_settings wiki_settings_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.wiki_versions wiki_versions_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.wiki_versions wiki_versions_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_actions work_actions_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_bounties work_bounties_app cmd=r permissive=true to=dog_app using=((payer_member = ( SELECT app.current_member() AS current_member)) OR (payee_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR (listed AND (status = 'funded'::text) AND (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'agent'::text])))) check=
 policy app.work_bounties work_bounties_pay cmd=* permissive=true to=dog_pay using=true check=true
