@@ -156,8 +156,9 @@ test('RK140: the site\'s timer no longer reads GitHub\'s pull requests for the w
   const gh = async (p) => { asked.push(p); return []; };
   const out = await workjobs.run(runDb, { gh });
   assert.deepStrictEqual(asked, [], 'GitHub is never read');
-  assert.deepStrictEqual(sql, ['select app.work_tick() as r', 'select app.peer_cases_due() as r'], 'only the work timer, and (068) peers\u2019 decisions that are due');
-  assert.deepStrictEqual(Object.keys(out), ['tick', 'peer cases']);
+  assert.deepStrictEqual(sql, ['select app.work_tick() as r', 'select app.peer_cases_due() as r', 'select app.watchtower_run() as r'],
+    'only the work timer, (068) peers\u2019 decisions that are due, and (075) the watchtower');
+  assert.deepStrictEqual(Object.keys(out), ['tick', 'peer cases', 'watchtower']);
   const cron = read('api/cron.js');
   assert.match(cron, /require\('\.\.\/db\/workjobs'\)\.run\(run\);/, 'the timer passes it no GitHub reader');
   assert.doesNotMatch(read('db/workjobs.js'), /work_github_sync\(|work_github_wanted\(\$/, 'no call to the sync from the site\'s code');
