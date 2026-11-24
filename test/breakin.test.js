@@ -136,6 +136,8 @@ test.before(async () => {
     const [room] = await t.unsafe(`select id from app.work_rooms where code = '15-0000'`);
     const [pj] = await t.unsafe(`insert into app.work_projects (title, room_id, source, poster_member) values ('A project', '${room.id}', 'member', '${A.id}') returning id`);
     const [tk] = await t.unsafe(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member) values ('${pj.id}', '${room.id}', 'A task', 'either', 1, 'member', '${A.id}') returning id`);
+    // 073: the task's declared scope (the Wall's decisions on A's rows are written by its triggers).
+    await t.unsafe(`insert into app.work_task_scope (task_id, kind, value) values ('${tk.id}', 'path', 'site/')`);
     const [cl] = await t.unsafe(`insert into app.work_claims (task_id, member_id, code_hash, expires_at) values ('${tk.id}', '${A.id}', repeat('c', 64), now() + interval '1 day') returning id`);
     await t.unsafe(`insert into app.work_actions (member_id, kind) values ('${A.id}', 'claim')`);
     await t.unsafe(`insert into app.work_github_prs (number, title, author, state, base, created_at) values (1, 'A pull request', 'a-dev', 'open', 'main', now())`);

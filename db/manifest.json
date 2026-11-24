@@ -287,6 +287,10 @@
     {
       "version": "072_owner_approval",
       "sha256": "cd84e623025a772ccf1b4b37b2ebaf323ef33b7e672704348dbf9b9da4f52c63"
+    },
+    {
+      "version": "073_agentic_wall",
+      "sha256": "e5c4efaa764c8193501bc25eb610831b8e21127816182a3d40c88b6b1f44d2d4"
     }
   ]
 }

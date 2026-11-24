@@ -212,12 +212,15 @@ async function projectCreate(t, { title, description, room: rm }) {
   const [r] = await call(t, (s) => s`select app.work_project_create(${ti.text}, ${de.text}, ${code}) as id`);
   return { id: r.id };
 }
-async function taskCreate(t, { project: pj, title, description, class: cls, size }) {
+async function taskCreate(t, { project: pj, title, description, class: cls, size, scope }) {
   const ti = clean('title', title, { min: 3, max: 140, multiline: false });
   const de = clean('description', description, { max: 4000 });
   const k = v.oneOf('class', cls, CLASSES);
   const sz = v.oneOf('size', size, SIZES);
+  // The Agentic Wall's task-declared scope (073): paths, dependencies and hosts the work may touch, set with the task.
+  if (scope !== undefined && (scope === null || typeof scope !== 'object' || Array.isArray(scope))) throw new v.ValidationError('scope', 'must be an object of paths, dependencies and hosts');
   const [r] = await call(t, (s) => s`select app.work_task_create(${v.uuid('project', pj)}::uuid, ${ti.text}, ${de.text}, ${k}, ${sz}::integer) as id`);
+  if (scope !== undefined) await call(t, (s) => s`select app.work_task_scope_put(${r.id}::uuid, ${JSON.stringify(scope)}::text::jsonb)`);
   return { id: r.id };
 }
 // Claims an open task: { claim, task, expires_at, seq, code }. The code is shown once and never stored.

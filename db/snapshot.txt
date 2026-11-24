@@ -724,6 +724,23 @@ constraint app.tl_settings tl_settings_model_check CHECK ((model = ANY (ARRAY['m
 constraint app.tl_settings tl_settings_pkey PRIMARY KEY (id)
 constraint app.tl_settings tl_settings_singleton_check CHECK (singleton)
 constraint app.tl_settings tl_settings_singleton_key UNIQUE (singleton)
+constraint app.wall_decisions wall_decisions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
+constraint app.wall_decisions wall_decisions_decision_check CHECK ((decision = ANY (ARRAY['allow'::text, 'hold'::text])))
+constraint app.wall_decisions wall_decisions_flags_check CHECK (((jsonb_typeof(flags) = 'array'::text) AND (octet_length((flags)::text) <= 4000)))
+constraint app.wall_decisions wall_decisions_hash_check CHECK (((char_length(hash) = 64) AND (hash ~ '^[0-9a-f]+$'::text)))
+constraint app.wall_decisions wall_decisions_hash_key UNIQUE (hash)
+constraint app.wall_decisions wall_decisions_kind_check CHECK ((kind = ANY (ARRAY['task'::text, 'submission'::text, 'dispute'::text, 'evidence'::text, 'pr_files'::text])))
+constraint app.wall_decisions wall_decisions_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.wall_decisions wall_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
+constraint app.wall_decisions wall_decisions_pkey PRIMARY KEY (id)
+constraint app.wall_decisions wall_decisions_prev_hash_check CHECK (((char_length(prev_hash) = 64) AND (prev_hash ~ '^[0-9a-f]+$'::text)))
+constraint app.wall_decisions wall_decisions_prev_hash_key UNIQUE (prev_hash)
+constraint app.wall_decisions wall_decisions_rules_version_check CHECK (((rules_version >= 1) AND (rules_version <= 100000)))
+constraint app.wall_settings wall_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'shadow'::text, 'enforce'::text])))
+constraint app.wall_settings wall_settings_pkey PRIMARY KEY (id)
+constraint app.wall_settings wall_settings_rules_version_check CHECK (((rules_version >= 1) AND (rules_version <= 100000)))
+constraint app.wall_settings wall_settings_singleton_check CHECK (singleton)
+constraint app.wall_settings wall_settings_singleton_key UNIQUE (singleton)
 constraint app.watch_activity watch_activity_check CHECK (((place IS NULL) = (place_at IS NULL)))
 constraint app.watch_activity watch_activity_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.watch_activity watch_activity_member_id_key UNIQUE (member_id)
@@ -965,6 +982,11 @@ constraint app.work_submissions work_submissions_worker_agent_fkey FOREIGN KEY (
 constraint app.work_submissions work_submissions_worker_github_check CHECK (((char_length(worker_github) <= 39) AND (worker_github ~ '^[a-z0-9-]+$'::text)))
 constraint app.work_submissions work_submissions_worker_kind_check CHECK ((worker_kind = ANY (ARRAY['member'::text, 'agent'::text, 'github'::text])))
 constraint app.work_submissions work_submissions_worker_member_fkey FOREIGN KEY (worker_member) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.work_task_scope work_task_scope_kind_check CHECK ((kind = ANY (ARRAY['path'::text, 'dependency'::text, 'host'::text])))
+constraint app.work_task_scope work_task_scope_pkey PRIMARY KEY (id)
+constraint app.work_task_scope work_task_scope_task_id_fkey FOREIGN KEY (task_id) REFERENCES app.work_tasks(id) ON DELETE CASCADE
+constraint app.work_task_scope work_task_scope_task_id_kind_value_key UNIQUE (task_id, kind, value)
+constraint app.work_task_scope work_task_scope_value_check CHECK ((((char_length(value) >= 1) AND (char_length(value) <= 200)) AND (value !~ '[[:space:]]'::text)))
 constraint app.work_tasks work_tasks_approved_seq_check CHECK ((approved_seq >= 0))
 constraint app.work_tasks work_tasks_check CHECK (((source = 'github'::text) = (github_kind IS NOT NULL)))
 constraint app.work_tasks work_tasks_check1 CHECK (((github_kind IS NULL) = (github_number IS NULL)))
@@ -1288,6 +1310,14 @@ default app.tl_settings.mode = 'shadow'::text
 default app.tl_settings.model = 'mistral/ministral-14b'::text
 default app.tl_settings.singleton = true
 default app.tl_settings.updated_at = now()
+default app.wall_decisions.created_at = now()
+default app.wall_decisions.flags = '[]'::jsonb
+default app.wall_decisions.id = app.uuid_v7()
+default app.wall_settings.id = app.uuid_v7()
+default app.wall_settings.mode = 'shadow'::text
+default app.wall_settings.rules_version = 1
+default app.wall_settings.singleton = true
+default app.wall_settings.updated_at = now()
 default app.watch_activity.first_seen = now()
 default app.watch_activity.id = app.uuid_v7()
 default app.watch_activity.last_seen = now()
@@ -1395,6 +1425,8 @@ default app.work_submissions.jevs_rules = ''::text
 default app.work_submissions.note = ''::text
 default app.work_submissions.note_hits = 0
 default app.work_submissions.status = 'waiting'::text
+default app.work_task_scope.created_at = now()
+default app.work_task_scope.id = app.uuid_v7()
 default app.work_tasks.created_at = now()
 default app.work_tasks.description = ''::text
 default app.work_tasks.id = app.uuid_v7()
@@ -1733,6 +1765,12 @@ function app.tl_set_mode(p_mode text) owner=dog_work execute=dog_work,dog_app la
 function app.tl_wants(p_number integer) owner=dog_work execute=dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=85c8ba5cac89bcb5c4326875bd535992
 function app.uuid_v7() owner=dog_owner execute=dog_owner,dog_app,dog_signin,dog_public,dog_erase,dog_delegate,dog_jevs,dog_log,dog_work,dog_pay language=sql volatile=v definer=false config= returns=uuid body_md5=efa02bc56bd284bd7c814b0a22722b1c
 function app.verified_level(p_member uuid) owner=dog_owner execute=dog_owner,dog_signin language=sql volatile=s definer=false config= returns=smallint body_md5=d18c4ac53114c1822c22c6a7f3dd8744
+function app.wall_chain_ok() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=a95afe81f1f141d0a5adb192d2e8fcce
+function app.wall_decisions_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fa85897676c14290138e725a173530c0
+function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=94dac34d4630e1ff3ee00ca11e4f82f4
+function app.wall_gate() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=3543f9d75d8974eb499ab360d02902d8
+function app.wall_log(p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=308eb9dbb31ca741c29a844c477da571
+function app.wall_text_flags(p_text text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=ae5a0bcf99b809d42aea99dde9a86408
 function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
 function app.watch_job() owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=v definer=false config= returns=jsonb body_md5=2d1afb2f5a6de9a3d2966a56543e7525
@@ -1830,6 +1868,8 @@ function app.work_summary() owner=dog_work execute=dog_work,dog_app language=plp
 function app.work_task(p_id uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=ea5f727f358e1a7957a51692f4254daf
 function app.work_task_create(p_project uuid, p_title text, p_description text, p_class text, p_size integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=4526f944079120d74230ec01a1831ceb
 function app.work_task_of(p_sub uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=f89e623568c43d1ddc2e87846bfdea13
+function app.work_task_scope_get(p_task uuid) owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=63c90ac90432b036464bd307999a62e7
+function app.work_task_scope_put(p_task uuid, p_scope jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=43c250c57dc47518a5475cd33fb34642
 function app.work_tasks(p_status text, p_room text, p_project uuid, p_q text, p_before uuid, p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=b5c34b8a3e08c291904cadd04329987a
 function app.work_tasks_pay() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=fd9835b886b24c5b31c99150eb549661
 function app.work_tasks_pay_delete() owner=dog_pay execute=dog_pay language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=c2bd2da5c316a3de16732c36b75fafbc
@@ -2783,6 +2823,8 @@ grant app.tl_settings dog_work SELECT
 grant app.tl_settings.last_claim_at dog_work UPDATE
 grant app.tl_settings.mode dog_work UPDATE
 grant app.tl_settings.updated_at dog_work UPDATE
+grant app.wall_decisions dog_work SELECT
+grant app.wall_settings dog_work SELECT
 grant app.watch_activity dog_signin DELETE
 grant app.watch_activity dog_signin SELECT
 grant app.watch_activity.counted_hour dog_signin UPDATE
@@ -2903,6 +2945,9 @@ grant app.work_submissions dog_work DELETE
 grant app.work_submissions dog_work INSERT
 grant app.work_submissions dog_work SELECT
 grant app.work_submissions dog_work UPDATE
+grant app.work_task_scope dog_work DELETE
+grant app.work_task_scope dog_work INSERT
+grant app.work_task_scope dog_work SELECT
 grant app.work_tasks dog_work DELETE
 grant app.work_tasks dog_work INSERT
 grant app.work_tasks dog_work SELECT
@@ -2964,6 +3009,7 @@ policy app.agents agents_erase_select cmd=r permissive=true to=dog_erase using=t
 policy app.agents agents_insert cmd=a permissive=true to=dog_app using= check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member)) AND (status = 'active'::text) AND (EXISTS ( SELECT 1 FROM app.members m WHERE ((m.id = ( SELECT app.current_member() AS current_member)) AND (m.status = 'active'::text) AND ((m.trust_level >= 2) OR m.is_admin)))))
 policy app.agents agents_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.agents agents_limits_select cmd=r permissive=true to=dog_limits using=true check=
+policy app.agents agents_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.agents agents_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.agents agents_public_select cmd=r permissive=true to=dog_public using=(status <> 'unclaimed'::text) check=
 policy app.agents agents_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND ((id = ( SELECT app.current_agent() AS current_agent)) OR (parent_id = ( SELECT app.current_agent() AS current_agent)))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
@@ -3265,6 +3311,11 @@ policy app.tl_files tl_files_work cmd=* permissive=true to=dog_work using=true c
 policy app.tl_releases tl_releases_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.tl_reviews tl_reviews_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.tl_settings tl_settings_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.wall_decisions wall_decisions_owner_insert cmd=a permissive=true to=dog_owner using= check=true
+policy app.wall_decisions wall_decisions_owner_select cmd=r permissive=true to=dog_owner using=true check=
+policy app.wall_decisions wall_decisions_work_select cmd=r permissive=true to=dog_work using=true check=
+policy app.wall_settings wall_settings_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.wall_settings wall_settings_read cmd=r permissive=true to=dog_work using=true check=
 policy app.watch_activity watch_activity_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.watch_activity watch_activity_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.watch_activity watch_activity_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -3310,7 +3361,10 @@ policy app.work_requests work_requests_work cmd=* permissive=true to=dog_work us
 policy app.work_rooms work_rooms_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.work_rooms work_rooms_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_settings work_settings_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_submissions work_submissions_owner_select cmd=r permissive=true to=dog_owner using=true check=
 policy app.work_submissions work_submissions_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.work_task_scope work_task_scope_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.work_task_scope work_task_scope_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.work_tasks work_tasks_funding cmd=* permissive=false to=dog_work using=((status <> 'funding'::text) OR (poster_member = ( SELECT app.current_member() AS current_member)) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
 policy app.work_tasks work_tasks_pay_select cmd=r permissive=true to=dog_pay using=true check=
 policy app.work_tasks work_tasks_pay_update cmd=w permissive=true to=dog_pay using=(status = 'funding'::text) check=(status = 'open'::text)
@@ -3447,7 +3501,9 @@ trigger app.signin_pins enabled=A CREATE TRIGGER signin_pins_audit AFTER INSERT 
 trigger app.signin_pins enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.signin_pins FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.subagent_settings enabled=A CREATE TRIGGER subagent_settings_audit AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.subagent_settings enabled=O CREATE TRIGGER subagent_settings_changed AFTER UPDATE ON app.subagent_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
+trigger app.tl_files enabled=A CREATE TRIGGER wall_gate AFTER INSERT ON app.tl_files FOR EACH ROW EXECUTE FUNCTION app.wall_gate('pr_files')
 trigger app.tl_settings enabled=A CREATE TRIGGER tl_settings_audit AFTER UPDATE ON app.tl_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.wall_decisions enabled=A CREATE TRIGGER wall_decisions_no_update BEFORE UPDATE ON app.wall_decisions FOR EACH ROW EXECUTE FUNCTION app.wall_decisions_append_only()
 trigger app.watch_settings enabled=A CREATE TRIGGER watch_settings_audit AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.watch_settings enabled=O CREATE TRIGGER watch_settings_changed AFTER UPDATE ON app.watch_settings FOR EACH ROW EXECUTE FUNCTION app.watch_settings_changed()
 trigger app.work_actions enabled=O CREATE TRIGGER work_action_rules BEFORE INSERT ON app.work_actions FOR EACH ROW EXECUTE FUNCTION app.work_action_rules()
@@ -3460,7 +3516,9 @@ trigger app.work_checks enabled=A CREATE TRIGGER work_checks_audit AFTER UPDATE 
 trigger app.work_claims enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.work_claims FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.work_claims enabled=O CREATE TRIGGER engine_after_claim AFTER INSERT OR UPDATE OF status ON app.work_claims FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION app.engine_on_claim()
 trigger app.work_claims enabled=O CREATE TRIGGER engine_before_claim BEFORE INSERT ON app.work_claims FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION app.engine_claim_cap()
+trigger app.work_dispute_evidence enabled=A CREATE TRIGGER wall_gate AFTER INSERT ON app.work_dispute_evidence FOR EACH ROW EXECUTE FUNCTION app.wall_gate('evidence')
 trigger app.work_dispute_evidence enabled=O CREATE TRIGGER sl_item_queue AFTER INSERT ON app.work_dispute_evidence FOR EACH ROW EXECUTE FUNCTION app.sl_item_queue('evidence')
+trigger app.work_disputes enabled=A CREATE TRIGGER wall_gate AFTER INSERT ON app.work_disputes FOR EACH ROW EXECUTE FUNCTION app.wall_gate('dispute')
 trigger app.work_disputes enabled=A CREATE TRIGGER work_disputes_audit AFTER UPDATE ON app.work_disputes FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_disputes enabled=O CREATE TRIGGER sl_item_queue AFTER INSERT ON app.work_disputes FOR EACH ROW EXECUTE FUNCTION app.sl_item_queue('dispute')
 trigger app.work_person_votes enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.work_person_votes FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
@@ -3471,10 +3529,12 @@ trigger app.work_points enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR 
 trigger app.work_points enabled=O CREATE TRIGGER engine_after_points AFTER UPDATE OF status ON app.work_points FOR EACH ROW WHEN (((new.citizen_agent IS NOT NULL) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION app.engine_on_points()
 trigger app.work_points enabled=O CREATE TRIGGER work_points_pay AFTER UPDATE OF status ON app.work_points FOR EACH ROW EXECUTE FUNCTION app.work_points_pay()
 trigger app.work_settings enabled=A CREATE TRIGGER work_settings_audit AFTER UPDATE ON app.work_settings FOR EACH ROW EXECUTE FUNCTION app.work_audit()
+trigger app.work_submissions enabled=A CREATE TRIGGER wall_gate AFTER INSERT ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.wall_gate('submission')
 trigger app.work_submissions enabled=A CREATE TRIGGER work_submissions_audit AFTER UPDATE OF status ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_submissions enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF worker_member ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('worker_member')
 trigger app.work_submissions enabled=O CREATE TRIGGER engine_after_submission AFTER INSERT OR UPDATE OF status ON app.work_submissions FOR EACH ROW WHEN ((new.worker_agent IS NOT NULL)) EXECUTE FUNCTION app.engine_on_submission()
 trigger app.work_submissions enabled=O CREATE TRIGGER sl_item_queue AFTER INSERT ON app.work_submissions FOR EACH ROW EXECUTE FUNCTION app.sl_item_queue('submission')
+trigger app.work_tasks enabled=A CREATE TRIGGER wall_gate AFTER INSERT ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.wall_gate('task')
 trigger app.work_tasks enabled=A CREATE TRIGGER work_tasks_audit AFTER UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.work_audit()
 trigger app.work_tasks enabled=O CREATE TRIGGER buyer_task_guard BEFORE INSERT OR UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.buyer_task_guard()
 trigger app.work_tasks enabled=O CREATE TRIGGER buyer_task_open_guard BEFORE UPDATE OF status ON app.work_tasks FOR EACH ROW EXECUTE FUNCTION app.buyer_task_open_guard()
