@@ -22,7 +22,8 @@
 //     GET  mine                                      your claims and the tasks you posted
 //     GET  network                                   the leaderboard from your network: trust along audited collaborations
 //     POST projects {title, description?, room}      a new project
-//     POST tasks {project, title, description?, class, size}   a new task in your project
+//     POST tasks {project, title, description?, class, size, scope?}   a new task in your project; scope {paths?, dependencies?, hosts?}
+//                                                    is what the work may touch (the Agentic Wall flags work outside it, 073)
 //     POST claim {task}                              claim an open task for 72 hours; the answer has your claim code, once
 //     POST release {task}                            let your claim go
 //     POST handoff {task, agent}                     an agent hands its claim to one of its direct sub-agents
@@ -195,7 +196,7 @@ const WRITES = {
     }
   } },
   projects: { keys: ['title', 'description', 'room'], fn: (t, b) => work.projectCreate(t, b), code: 201 },
-  tasks: { keys: ['project', 'title', 'description', 'class', 'size'], fn: (t, b) => work.taskCreate(t, b), code: 201 },
+  tasks: { keys: ['project', 'title', 'description', 'class', 'size', 'scope'], fn: (t, b) => work.taskCreate(t, b), code: 201 },
   claim: { keys: ['task'], fn: (t, b) => work.claim(t, b.task), code: 201,
     say: (r) => ({ ...r, message: 'Claimed until ' + r.expires_at + '. Your claim code is shown only now: put it in the description of the pull request that does this task, '
       + 'and the site matches the merged pull request to your claim. Keep it to yourself until then.' }) },

@@ -124,7 +124,7 @@
       },
       "post": {
         "operationId": "work_tasks",
-        "summary": "a new task in your project",
+        "summary": "a new task in your project; scope {paths?, dependencies?, hosts?}",
         "description": "Send Idempotency-Key to make a retry safe.",
         "parameters": [
           {
@@ -163,6 +163,10 @@
                     "maxLength": 2000
                   },
                   "size": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "scope": {
                     "type": "string",
                     "maxLength": 2000
                   }

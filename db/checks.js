@@ -181,6 +181,14 @@ const DEFINERS = {
   // 070 (Aaron, Nov 21): full Second Look and full Third Look. The queue's trigger (no caller), the timer's claim and
   // record for Second Look's items, an item's public status, and what Third Look read.
   'app.sl_item_queue()': { owner: 'dog_owner', callers: '' },
+  // 073, the Agentic Wall's core: its gate (a trigger on every place work enters), the scope check it calls, the
+  // poster's scope and its public read, and an administrator's read of the log and its chain check.
+  'app.wall_gate()': { owner: 'dog_owner', callers: '' },
+  'app.wall_files_flags(uuid, jsonb)': { owner: 'dog_owner', callers: '' },
+  'app.work_task_scope_put(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.work_task_scope_get(uuid)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wall_log(integer)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wall_chain_ok()': { owner: 'dog_work', callers: 'dog_app' },
   'app.sl_item_claim(integer)': 'dog_work',
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',
