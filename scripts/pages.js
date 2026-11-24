@@ -315,11 +315,25 @@ async function checks() {
     const name = s && g && s.title !== g.title ? s.title + ' (on GitHub: ' + g.title + ')' : title(id);
     main.push('  <li><strong>' + id + ' ' + esc(name) + '</strong>' + (s ? '<p><b>On the site.</b> ' + esc(s.description) + '</p>' : '') + (g ? '<p><b>On GitHub.</b> ' + esc(g.description) + '</p>' : '') + '</li>');
   }
+  main.push('</ul>');
+  // The work's checks (Aaron, Nov 24: the Agentic Wall and the full check design; 073 to 078), from db/wall.js.
+  const wall = require('../db/wall');
+  main.push('<h2 id="work">The work\u2019s checks</h2>',
+    '<p>Tasks, submitted work, disputes and pull requests pass more checks, in this order. Each says what it does today.</p>',
+    ...tableOpen('The work\u2019s checks, in order'),
+    '  <thead><tr><th scope="col">Check</th><th scope="col">What it does</th><th scope="col">Today</th></tr></thead>',
+    '  <tbody>');
+  for (const [name, what, today] of wall.DESIGN) main.push('    <tr><td>' + esc(name) + '</td><td>' + esc(what) + '</td><td>' + esc(today) + '</td></tr>');
+  main.push('  </tbody>', '</table></div>',
+    '<h3 id="wall">The Agentic Wall\u2019s ' + wall.RULES.length + ' rules</h3>',
+    '<p class="fine">Fixed rules in the database (' + src('db/migrations/073_agentic_wall.sql') + ', ' + src('db/migrations/074_security_wiki.sql') + '). New rules change only by a pull request Aaron merges; the security wiki updates only exact-match data, twice a day.</p>',
+    '<ul>');
+  for (const [id, name, what] of wall.RULES) main.push('  <li><strong>' + esc(id) + ' ' + esc(name) + '</strong><p>' + esc(what) + '</p></li>');
   main.push('</ul>',
     '<p class="fine">The questions and what each one scores are in <a href="' + BLOB + 'db/jevs.js">our code</a> and <a href="/llms.txt">llms.txt</a>. This page is generated from the code before each commit.</p>',
     '<p><a href="/decisions">See what they decided</a> · <a href="/moderation">How held posts are handled</a></p>');
   return page({ file: 'checks.html', heading: 'The checks', main,
-    description: 'The public questions JEVs asks of every account, post and agent action on Day One Great, written in code, with what each one scores.',
+    description: 'The public questions JEVs asks of every account, post and agent action on Day One Great, and the Agentic Wall and other checks on the work, written in code.',
     ogDescription: 'The same public questions, asked of every account, post and agent action. Written in code; no AI decides.' });
 }
 

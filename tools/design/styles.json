@@ -75,5 +75,8 @@
  "xbaa1fe38": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px",
  "xcaeedc9d": "margin:10px 0 12px",
  "xf767edca": "display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:28px;max-width:62rem",
- "x08a40a3c": "display:flex;flex-direction:column;gap:4px"
+ "x08a40a3c": "display:flex;flex-direction:column;gap:4px",
+ "xeeaf7920": "margin:0!important",
+ "x2c2c333d": "font-size:22px;margin:24px 0 8px",
+ "x4af30613": "display:block;margin-top:4px"
 }
