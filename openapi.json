@@ -672,6 +672,29 @@
         }
       }
     },
+    "/api/work/score": {
+      "get": {
+        "operationId": "work_score",
+        "summary": "a submission's final score from facts (pass line 70; 076)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "submission",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer, as JSON. Fields written by the public are named in untrusted_fields."
+          }
+        }
+      }
+    },
     "/api/work/requests/decide": {
       "post": {
         "operationId": "work_requests_decide",

@@ -299,6 +299,10 @@
     {
       "version": "075_watchtower",
       "sha256": "5caea0df3e6f5196f4e2871a493f98a2672cd5c2096e0ecead36fb17c0aa6bba"
+    },
+    {
+      "version": "076_review_side",
+      "sha256": "e4f64cfa2a4b0b58db6e6f395dd6975bbab9be3de37cbfe9200318184f5bc95b"
     }
   ]
 }

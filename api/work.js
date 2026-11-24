@@ -15,6 +15,7 @@
 //     GET  dispute?id=                               one dispute: its steps, evidence, window and outcome
 //     GET  console?tab=&status=&cursor=              the administrator's console, one tab (051); every read is logged
 //     GET  plan?project=                             a project's plan: milestones, scope, planned and verified by day, its figures (050)
+//     GET  score?submission=                        a submission's final score from facts (pass line 70; 076)
 //     GET  wiki                                      the security wiki: versions, last run, newest 50 advisories (074)
 //     GET  market                                    funded work: how many funded tasks, by tier and by room, and pools of 3 or more rounded down (064)
 //   Signed in or not, never cached (064):
@@ -52,6 +53,7 @@
 //     POST peer/case/appeal {case, reason}           the worker, the poster or the one who disputed sends it to the administrator instead
 //     POST appeal {submission, reason}               the worker or the poster appeals a fail, once, within 72 hours (066; any fail but the administrator's own since 067)
 //   Aaron only:
+//     POST wall/review {decision, verdict, reason}   an administrator: a Wall flag is a false positive or confirmed (076)
 //     POST wiki/rollback                             an administrator: the wiki's previous version becomes active again (074)
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -168,7 +170,9 @@ const PUBLIC = {
   // 064: funded work without prices (Aaron, Nov 12): counts, tiers and rounded pools only.
   market: { keys: [], fn: (t) => work.market(t) },
   // 074: the security wiki: its versions, when it last ran, and the newest 50 advisories (public feeds, public here).
-  wiki: { keys: [], fn: (t) => work.wiki(t) }
+  wiki: { keys: [], fn: (t) => work.wiki(t) },
+  // 076: a submission's final score, from facts only (public, like the work's audit).
+  score: { keys: ['submission'], fn: (t, q) => work.score(t, q.submission), one: 'No submission has that ID.' }
 };
 
 // 072 (Aaron, Nov 21: "Owner approval and validation by the system is still important"): an agent's steps that need
@@ -225,6 +229,8 @@ const WRITES = {
   unlock: { keys: ['member', 'reason'], fn: (t, b) => work.unlock(t, b.member, b.reason), adminOnly: true },
   // 074: one step back for the security wiki (a bad run got through): the version before becomes active again.
   'wiki/rollback': { keys: [], fn: (t) => work.wikiRollback(t), adminOnly: true },
+  // 076: quality assurance on one of the Agentic Wall's flags (a verified false positive leaves lane A).
+  'wall/review': { keys: ['decision', 'verdict', 'reason'], fn: (t, b) => work.wallReview(t, b), adminOnly: true },
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps
   // its first target beside the new one.
   milestones: { keys: ['project', 'title', 'target', 'gate'], fn: (t, b) => work.milestoneAdd(t, b), code: 201 },

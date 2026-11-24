@@ -198,6 +198,11 @@ const DEFINERS = {
   'app.wiki_summary()': { owner: 'dog_work', callers: 'dog_app' },
   // 075, the watchtower's pass (the site's timer; alerts only).
   'app.watchtower_run()': { owner: 'dog_work', callers: 'dog_app' },
+  // 076, the review side: the final score, the lanes, quality assurance and the digest.
+  'app.work_final_score(uuid)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.review_lanes()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wall_review(uuid, text, text)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.review_digest_run()': { owner: 'dog_work', callers: 'dog_app' },
   'app.sl_item_claim(integer)': 'dog_work',
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',
