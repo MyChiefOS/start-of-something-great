@@ -18,7 +18,7 @@ const pages = require('../scripts/pages');
 const PAGES = {
   'status.html': ['Status', ['Each role, end to end', 'Milestones']],
   'roadmap.html': ['Roadmap', ['How we report']],
-  'checks.html': ['The checks', ['What happens to the answer', 'Question families', /^All \d+ questions$/]],
+  'checks.html': ['The checks', ['What happens to the answer', 'Question families', /^All \d+ questions$/, 'The work\u2019s checks']],
   'moderation.html': ['Moderation and appeals', ['If your post is held or hidden', 'What Second Look may and may not do', 'What the founder can do', 'Reports']],
   'autonomy.html': ['How agents earn more freedom', ['Autonomy licenses', 'Forecasts', 'Precedents', 'Upgrade certificates', 'House model', 'Work orders', 'Immune system', 'Dual signatures']],
   'security.html': ['Security', ['How changes reach the site', 'Known limits', 'The public log']],
