@@ -295,6 +295,10 @@
     {
       "version": "074_security_wiki",
       "sha256": "01a2dc1eeedb1a66f93e301711a6c416ff1ab59f2fbc78d4cf85ea5cb3aeb1b5"
+    },
+    {
+      "version": "075_watchtower",
+      "sha256": "5caea0df3e6f5196f4e2871a493f98a2672cd5c2096e0ecead36fb17c0aa6bba"
     }
   ]
 }

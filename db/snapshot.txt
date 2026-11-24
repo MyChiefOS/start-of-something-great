@@ -785,6 +785,17 @@ constraint app.watch_settings watch_settings_singleton_key UNIQUE (singleton)
 constraint app.watch_settings watch_settings_travel_kmh_check CHECK (((travel_kmh >= 100) AND (travel_kmh <= 100000)))
 constraint app.watch_settings watch_settings_travel_min_km_check CHECK (((travel_min_km >= 100) AND (travel_min_km <= 20000)))
 constraint app.watch_settings watch_settings_wrong_files_before_check CHECK (((wrong_files_before >= 1) AND (wrong_files_before <= 9)))
+constraint app.watchtower_settings watchtower_settings_every_minutes_check CHECK (((every_minutes >= 1) AND (every_minutes <= 1440)))
+constraint app.watchtower_settings watchtower_settings_gaming_min_passes_check CHECK (((gaming_min_passes >= 2) AND (gaming_min_passes <= 1000)))
+constraint app.watchtower_settings watchtower_settings_gaming_share_pct_check CHECK (((gaming_share_pct >= 50) AND (gaming_share_pct <= 100)))
+constraint app.watchtower_settings watchtower_settings_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'on'::text])))
+constraint app.watchtower_settings watchtower_settings_pkey PRIMARY KEY (id)
+constraint app.watchtower_settings watchtower_settings_singleton_check CHECK (singleton)
+constraint app.watchtower_settings watchtower_settings_singleton_key UNIQUE (singleton)
+constraint app.watchtower_settings watchtower_settings_spam_floor_check CHECK (((spam_floor >= 2) AND (spam_floor <= 10000)))
+constraint app.watchtower_settings watchtower_settings_spam_multiplier_check CHECK (((spam_multiplier >= 1) AND (spam_multiplier <= 100)))
+constraint app.watchtower_settings watchtower_settings_swarm_agents_per_day_check CHECK (((swarm_agents_per_day >= 2) AND (swarm_agents_per_day <= 1000)))
+constraint app.watchtower_settings watchtower_settings_wall_flags_per_day_check CHECK (((wall_flags_per_day >= 1) AND (wall_flags_per_day <= 1000)))
 constraint app.wiki_entries wiki_entries_cwe_check CHECK (((char_length(cwe) <= 9) AND (cwe ~ '^CWE-[0-9]{1,5}$'::text)))
 constraint app.wiki_entries wiki_entries_ident_check CHECK (((char_length(ident) <= 24) AND (ident ~ '^(CVE-[0-9]{4}-[0-9]{4,7}|CWE-[0-9]{1,5}|API[0-9]{1,2}:20[0-9]{2}|V[0-9]{1,2}(\.[0-9]{1,2}){0,2})$'::text)))
 constraint app.wiki_entries wiki_entries_pkey PRIMARY KEY (id)
@@ -1377,6 +1388,16 @@ default app.watch_settings.travel_kmh = 1000
 default app.watch_settings.travel_min_km = 1000
 default app.watch_settings.updated_at = now()
 default app.watch_settings.wrong_files_before = 3
+default app.watchtower_settings.every_minutes = 10
+default app.watchtower_settings.gaming_min_passes = 5
+default app.watchtower_settings.gaming_share_pct = 80
+default app.watchtower_settings.id = app.uuid_v7()
+default app.watchtower_settings.mode = 'on'::text
+default app.watchtower_settings.singleton = true
+default app.watchtower_settings.spam_floor = 20
+default app.watchtower_settings.spam_multiplier = 5
+default app.watchtower_settings.swarm_agents_per_day = 5
+default app.watchtower_settings.wall_flags_per_day = 3
 default app.wiki_entries.id = app.uuid_v7()
 default app.wiki_entries.kev = false
 default app.wiki_packages.id = app.uuid_v7()
@@ -1818,6 +1839,7 @@ function app.watch_settings_changed() owner=dog_signin execute=dog_signin langua
 function app.watch_signin(p_country text, p_net text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b3f8d6b9d1684c6c77019b3f9edc3fb
 function app.watch_sweep() owner=dog_signin execute=dog_signin,dog_app,dog_timers language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=030e19df150261b17cda2fdf097e911a
 function app.watch_travel(p_session_hash text, p_place text, p_km integer, p_prev text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=d2f9afbaa33f2700dbb23bfd7e48df05
+function app.watchtower_run() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=8adebd1de4cce7e4f5b41ea8c8bf8f06
 function app.wiki_bad_package(p_eco text, p_name text, p_version text) owner=dog_owner execute=dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=2cfbb62c3f326c698a9ca0a078befa29
 function app.wiki_claim() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=aa9565857dcb6203581225c98aad770a
 function app.wiki_record(p_claim text, p jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=7fc0be63ae631910f5dbbe24f9516492
@@ -2038,6 +2060,7 @@ grant app.agents.claimed_at dog_app SELECT
 grant app.agents.claimed_at dog_jevs SELECT
 grant app.agents.claimed_at dog_limits SELECT
 grant app.agents.claimed_at dog_signin UPDATE
+grant app.agents.claimed_at dog_work SELECT
 grant app.agents.created_at dog_app SELECT
 grant app.agents.created_at dog_jevs SELECT
 grant app.agents.created_at dog_work SELECT
@@ -2901,6 +2924,8 @@ grant app.watch_sessions.session_id dog_signin INSERT
 grant app.watch_sessions.ua_hash dog_signin INSERT
 grant app.watch_settings dog_app SELECT
 grant app.watch_settings dog_signin SELECT
+grant app.watchtower_settings dog_work SELECT
+grant app.watchtower_settings dog_work UPDATE
 grant app.wiki_entries dog_work DELETE
 grant app.wiki_entries dog_work INSERT
 grant app.wiki_entries dog_work SELECT
@@ -3398,6 +3423,8 @@ policy app.watch_sessions watch_sessions_signin_update cmd=w permissive=true to=
 policy app.watch_settings watch_settings_owner cmd=* permissive=true to=dog_owner using=true check=true
 policy app.watch_settings watch_settings_select cmd=r permissive=true to=dog_app using=(( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text])) check=
 policy app.watch_settings watch_settings_signin_select cmd=r permissive=true to=dog_signin using=true check=
+policy app.watchtower_settings watchtower_settings_owner cmd=r permissive=true to=dog_owner using=true check=
+policy app.watchtower_settings watchtower_settings_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.wiki_entries wiki_entries_owner cmd=r permissive=true to=dog_owner using=true check=
 policy app.wiki_entries wiki_entries_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.wiki_packages wiki_packages_owner cmd=r permissive=true to=dog_owner using=true check=

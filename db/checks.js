@@ -196,6 +196,8 @@ const DEFINERS = {
   'app.wiki_record(text, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wiki_rollback()': { owner: 'dog_work', callers: 'dog_app' },
   'app.wiki_summary()': { owner: 'dog_work', callers: 'dog_app' },
+  // 075, the watchtower's pass (the site's timer; alerts only).
+  'app.watchtower_run()': { owner: 'dog_work', callers: 'dog_app' },
   'app.sl_item_claim(integer)': 'dog_work',
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',
