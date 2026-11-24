@@ -275,13 +275,19 @@ async function dispute(t, submissionId, { reason }) {
 // ---- Aaron ----
 // 076: the queue also carries the review side's lanes (A: the Agentic Wall's unreviewed flags; B: work under the 70% line).
 async function admin(t) {
-  const [r] = await call(t, (s) => s`select app.work_admin() as d, app.review_lanes() as lanes`);
-  return { ...r.d, lanes: r.lanes };
+  const [r] = await call(t, (s) => s`select app.work_admin() as d, app.review_lanes() as lanes, app.oversight_admin() as oversight`);
+  return { ...r.d, lanes: r.lanes, oversight: r.oversight };
 }
 // 076: quality assurance on one of the Wall's flags: a verified false positive, or confirmed.
 async function wallReview(t, { decision, verdict, reason }) {
   const [r] = await call(t, (s) => s`select app.wall_review(${v.uuid('decision', decision)}::uuid, ${v.oneOf('verdict', verdict, ['false_positive', 'confirmed'])},
     ${v.text('reason', reason, { min: 3, max: 300 })}) as d`);
+  return { result: r.d };
+}
+// 077: an administrator closes a random audit sample: looked at, or a concern with a note.
+async function auditClose(t, { sample, status, note }) {
+  const [r] = await call(t, (s) => s`select app.audit_sample_close(${v.uuid('sample', sample)}::uuid, ${v.oneOf('status', status, ['looked', 'concern'])},
+    ${note === undefined || note === null ? null : v.text('note', note, { min: 3, max: 300 })}) as d`);
   return { result: r.d };
 }
 // 076: a submission's final score (facts only; the pass line is 70).
@@ -350,5 +356,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { wallReview, score, wiki, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { auditClose, wallReview, score, wiki, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

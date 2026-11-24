@@ -203,6 +203,13 @@ const DEFINERS = {
   'app.review_lanes()': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_review(uuid, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   'app.review_digest_run()': { owner: 'dog_work', callers: 'dog_app' },
+  // 077: the model reviewers (off, $0), the random auditor and the oversight report.
+  'app.oversight_item(text, uuid)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_claim(text, integer)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_record(text, uuid, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_run()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_admin()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.audit_sample_close(uuid, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   'app.sl_item_claim(integer)': 'dog_work',
   'app.sl_item_decide(uuid, text, text, text)': 'dog_work',
   'app.sl_item_status(text, uuid)': 'dog_work',
