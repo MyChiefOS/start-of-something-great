@@ -307,6 +307,10 @@
     {
       "version": "077_oversight",
       "sha256": "9376cbebe10bd1dddd6e54d5d0c8736a73001ab5e48832f250e7ea45fb2e383d"
+    },
+    {
+      "version": "078_agent_scope",
+      "sha256": "33886742ac19f6024f9670ae6308bd176662fc9e0730ecad6b01387745db3066"
     }
   ]
 }
