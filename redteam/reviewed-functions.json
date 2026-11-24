@@ -276,6 +276,10 @@
     "kind": "public read",
     "why": "073: a task's declared scope (the paths, dependencies and hosts its work may touch), public like the task itself; writes nothing."
   },
+  "wiki_summary": {
+    "kind": "public read",
+    "why": "074: the security wiki's versions, when it last ran and the newest 50 advisories, all from public feeds (NVD, CISA KEV, MITRE CWE, OWASP); no person."
+  },
   "wall_chain_ok": {
     "kind": "public read",
     "why": "073: whether the Agentic Wall's decision log is an unbroken chain, one true or false; no decision, flag or person."

@@ -1,0 +1,2290 @@
+{
+ "about": "Pinned reference lists for the security wiki (074). Data, never instructions. Updated only by a pull request.",
+ "sources": {
+  "cwe": "MITRE CWE 4.21 (2026-10-28), cwe-api.mitre.org; CWE Terms of Use (free use with attribution to MITRE)",
+  "owasp_api": "OWASP API Security Top 10 2023, github.com/OWASP/api-security; CC-BY-SA-4.0 (attribution required; share-alike) (commit 33cea37b)",
+  "asvs": "OWASP ASVS 5.0.0, github.com/OWASP/ASVS; CC-BY-SA-4.0 (attribution required; share-alike)"
+ },
+ "entries": [
+  {
+   "source": "cwe",
+   "ident": "CWE-79",
+   "title": "CWE Top 25 (2025) #1: Improper Neutralization of Input During Web Page Generation",
+   "cwe": "CWE-79"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-89",
+   "title": "CWE Top 25 (2025) #2: Improper Neutralization of Special Elements used in an SQL Command",
+   "cwe": "CWE-89"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-352",
+   "title": "CWE Top 25 (2025) #3: Cross-Site Request Forgery",
+   "cwe": "CWE-352"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-862",
+   "title": "CWE Top 25 (2025) #4: Missing Authorization",
+   "cwe": "CWE-862"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-787",
+   "title": "CWE Top 25 (2025) #5: Out-of-bounds Write",
+   "cwe": "CWE-787"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-22",
+   "title": "CWE Top 25 (2025) #6: Improper Limitation of a Pathname to a Restricted Directory",
+   "cwe": "CWE-22"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-416",
+   "title": "CWE Top 25 (2025) #7: Use After Free",
+   "cwe": "CWE-416"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-125",
+   "title": "CWE Top 25 (2025) #8: Out-of-bounds Read",
+   "cwe": "CWE-125"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-78",
+   "title": "CWE Top 25 (2025) #9: Improper Neutralization of Special Elements used in an OS Command",
+   "cwe": "CWE-78"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-94",
+   "title": "CWE Top 25 (2025) #10: Improper Control of Generation of Code",
+   "cwe": "CWE-94"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-120",
+   "title": "CWE Top 25 (2025) #11: Buffer Copy without Checking Size of Input",
+   "cwe": "CWE-120"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-434",
+   "title": "CWE Top 25 (2025) #12: Unrestricted Upload of File with Dangerous Type",
+   "cwe": "CWE-434"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-476",
+   "title": "CWE Top 25 (2025) #13: NULL Pointer Dereference",
+   "cwe": "CWE-476"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-121",
+   "title": "CWE Top 25 (2025) #14: Stack-based Buffer Overflow",
+   "cwe": "CWE-121"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-502",
+   "title": "CWE Top 25 (2025) #15: Deserialization of Untrusted Data",
+   "cwe": "CWE-502"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-122",
+   "title": "CWE Top 25 (2025) #16: Heap-based Buffer Overflow",
+   "cwe": "CWE-122"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-863",
+   "title": "CWE Top 25 (2025) #17: Incorrect Authorization",
+   "cwe": "CWE-863"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-20",
+   "title": "CWE Top 25 (2025) #18: Improper Input Validation",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-284",
+   "title": "CWE Top 25 (2025) #19: Improper Access Control",
+   "cwe": "CWE-284"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-200",
+   "title": "CWE Top 25 (2025) #20: Exposure of Sensitive Information to an Unauthorized Actor",
+   "cwe": "CWE-200"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-306",
+   "title": "CWE Top 25 (2025) #21: Missing Authentication for Critical Functionality",
+   "cwe": "CWE-306"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-918",
+   "title": "CWE Top 25 (2025) #22: Server-Side Request Forgery",
+   "cwe": "CWE-918"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-77",
+   "title": "CWE Top 25 (2025) #23: Improper Neutralization of Special Elements used in a Command",
+   "cwe": "CWE-77"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-639",
+   "title": "CWE Top 25 (2025) #24: Authorization Bypass Through User-Controlled Key",
+   "cwe": "CWE-639"
+  },
+  {
+   "source": "cwe",
+   "ident": "CWE-770",
+   "title": "CWE Top 25 (2025) #25: Allocation of Resources Without Limits or Throttling",
+   "cwe": "CWE-770"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API1:2023",
+   "title": "API1:2023 Broken Object Level Authorization",
+   "cwe": "CWE-285"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API2:2023",
+   "title": "API2:2023 Broken Authentication",
+   "cwe": "CWE-204"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API3:2023",
+   "title": "API3:2023 Broken Object Property Level Authorization",
+   "cwe": "CWE-213"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API4:2023",
+   "title": "API4:2023 Unrestricted Resource Consumption",
+   "cwe": "CWE-770"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API5:2023",
+   "title": "API5:2023 Broken Function Level Authorization",
+   "cwe": "CWE-285"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API6:2023",
+   "title": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+   "cwe": null
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API7:2023",
+   "title": "API7:2023 Server Side Request Forgery",
+   "cwe": "CWE-918"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API8:2023",
+   "title": "API8:2023 Security Misconfiguration",
+   "cwe": "CWE-2"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API9:2023",
+   "title": "API9:2023 Improper Inventory Management",
+   "cwe": "CWE-1059"
+  },
+  {
+   "source": "owasp_api",
+   "ident": "API10:2023",
+   "title": "API10:2023 Unsafe Consumption of APIs",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.1.1",
+   "title": "ASVS 5.0 Encoding and Sanitization: Encoding and Sanitization Architecture (level 2)",
+   "cwe": "CWE-174"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.1.2",
+   "title": "ASVS 5.0 Encoding and Sanitization: Encoding and Sanitization Architecture (level 2)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.1",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 1)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.2",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 1)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.3",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.4",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 1)",
+   "cwe": "CWE-89"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.5",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 1)",
+   "cwe": "CWE-78"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.6",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 2)",
+   "cwe": "CWE-90"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.7",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 2)",
+   "cwe": "CWE-643"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.8",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.9",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 2)",
+   "cwe": "CWE-624"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.2.10",
+   "title": "ASVS 5.0 Encoding and Sanitization: Injection Prevention (level 3)",
+   "cwe": "CWE-1236"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.1",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 1)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.2",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 1)",
+   "cwe": "CWE-95"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.3",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-138"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.4",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-159"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.5",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-94"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.6",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-918"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.7",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-94"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.8",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-917"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.9",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.10",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-134"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.11",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 2)",
+   "cwe": "CWE-147"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.3.12",
+   "title": "ASVS 5.0 Encoding and Sanitization: Sanitization (level 3)",
+   "cwe": "CWE-1333"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.4.1",
+   "title": "ASVS 5.0 Encoding and Sanitization: Memory, String, and Unmanaged Code (level 2)",
+   "cwe": "CWE-120"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.4.2",
+   "title": "ASVS 5.0 Encoding and Sanitization: Memory, String, and Unmanaged Code (level 2)",
+   "cwe": "CWE-190"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.4.3",
+   "title": "ASVS 5.0 Encoding and Sanitization: Memory, String, and Unmanaged Code (level 2)",
+   "cwe": "CWE-416"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.5.1",
+   "title": "ASVS 5.0 Encoding and Sanitization: Safe Deserialization (level 1)",
+   "cwe": "CWE-611"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.5.2",
+   "title": "ASVS 5.0 Encoding and Sanitization: Safe Deserialization (level 2)",
+   "cwe": "CWE-502"
+  },
+  {
+   "source": "asvs",
+   "ident": "V1.5.3",
+   "title": "ASVS 5.0 Encoding and Sanitization: Safe Deserialization (level 3)",
+   "cwe": "CWE-436"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.1.1",
+   "title": "ASVS 5.0 Validation and Business Logic: Validation and Business Logic Documentation (level 1)",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.1.2",
+   "title": "ASVS 5.0 Validation and Business Logic: Validation and Business Logic Documentation (level 2)",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.1.3",
+   "title": "ASVS 5.0 Validation and Business Logic: Validation and Business Logic Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.2.1",
+   "title": "ASVS 5.0 Validation and Business Logic: Input Validation (level 1)",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.2.2",
+   "title": "ASVS 5.0 Validation and Business Logic: Input Validation (level 1)",
+   "cwe": "CWE-602"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.2.3",
+   "title": "ASVS 5.0 Validation and Business Logic: Input Validation (level 2)",
+   "cwe": "CWE-20"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.3.1",
+   "title": "ASVS 5.0 Validation and Business Logic: Business Logic Security (level 1)",
+   "cwe": "CWE-841"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.3.2",
+   "title": "ASVS 5.0 Validation and Business Logic: Business Logic Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.3.3",
+   "title": "ASVS 5.0 Validation and Business Logic: Business Logic Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.3.4",
+   "title": "ASVS 5.0 Validation and Business Logic: Business Logic Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.3.5",
+   "title": "ASVS 5.0 Validation and Business Logic: Business Logic Security (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.4.1",
+   "title": "ASVS 5.0 Validation and Business Logic: Anti-automation (level 2)",
+   "cwe": "CWE-770"
+  },
+  {
+   "source": "asvs",
+   "ident": "V2.4.2",
+   "title": "ASVS 5.0 Validation and Business Logic: Anti-automation (level 3)",
+   "cwe": "CWE-799"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.1.1",
+   "title": "ASVS 5.0 Web Frontend Security: Web Frontend Security Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.2.1",
+   "title": "ASVS 5.0 Web Frontend Security: Unintended Content Interpretation (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.2.2",
+   "title": "ASVS 5.0 Web Frontend Security: Unintended Content Interpretation (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.2.3",
+   "title": "ASVS 5.0 Web Frontend Security: Unintended Content Interpretation (level 3)",
+   "cwe": "CWE-79"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.3.1",
+   "title": "ASVS 5.0 Web Frontend Security: Cookie Setup (level 1)",
+   "cwe": "CWE-614"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.3.2",
+   "title": "ASVS 5.0 Web Frontend Security: Cookie Setup (level 2)",
+   "cwe": "CWE-1275"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.3.3",
+   "title": "ASVS 5.0 Web Frontend Security: Cookie Setup (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.3.4",
+   "title": "ASVS 5.0 Web Frontend Security: Cookie Setup (level 2)",
+   "cwe": "CWE-1004"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.3.5",
+   "title": "ASVS 5.0 Web Frontend Security: Cookie Setup (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.1",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 1)",
+   "cwe": "CWE-523"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.2",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 1)",
+   "cwe": "CWE-183"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.3",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.4",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 2)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.5",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 2)",
+   "cwe": "CWE-116"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.6",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 2)",
+   "cwe": "CWE-1021"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.7",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.4.8",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Security Mechanism Headers (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.1",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 1)",
+   "cwe": "CWE-352"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.2",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 1)",
+   "cwe": "CWE-346"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.3",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 1)",
+   "cwe": "CWE-650"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.4",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 2)",
+   "cwe": "CWE-668"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.5",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 2)",
+   "cwe": "CWE-346"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.6",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.7",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.5.8",
+   "title": "ASVS 5.0 Web Frontend Security: Browser Origin Separation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.6.1",
+   "title": "ASVS 5.0 Web Frontend Security: External Resource Integrity (level 3)",
+   "cwe": "CWE-829"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.7.1",
+   "title": "ASVS 5.0 Web Frontend Security: Other Browser Security Considerations (level 2)",
+   "cwe": "CWE-477"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.7.2",
+   "title": "ASVS 5.0 Web Frontend Security: Other Browser Security Considerations (level 2)",
+   "cwe": "CWE-601"
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.7.3",
+   "title": "ASVS 5.0 Web Frontend Security: Other Browser Security Considerations (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.7.4",
+   "title": "ASVS 5.0 Web Frontend Security: Other Browser Security Considerations (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V3.7.5",
+   "title": "ASVS 5.0 Web Frontend Security: Other Browser Security Considerations (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.1.1",
+   "title": "ASVS 5.0 API and Web Service: Generic Web Service Security (level 1)",
+   "cwe": "CWE-173"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.1.2",
+   "title": "ASVS 5.0 API and Web Service: Generic Web Service Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.1.3",
+   "title": "ASVS 5.0 API and Web Service: Generic Web Service Security (level 2)",
+   "cwe": "CWE-346"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.1.4",
+   "title": "ASVS 5.0 API and Web Service: Generic Web Service Security (level 3)",
+   "cwe": "CWE-749"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.1.5",
+   "title": "ASVS 5.0 API and Web Service: Generic Web Service Security (level 3)",
+   "cwe": "CWE-345"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.2.1",
+   "title": "ASVS 5.0 API and Web Service: HTTP Message Structure Validation (level 2)",
+   "cwe": "CWE-444"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.2.2",
+   "title": "ASVS 5.0 API and Web Service: HTTP Message Structure Validation (level 3)",
+   "cwe": "CWE-400"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.2.3",
+   "title": "ASVS 5.0 API and Web Service: HTTP Message Structure Validation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.2.4",
+   "title": "ASVS 5.0 API and Web Service: HTTP Message Structure Validation (level 3)",
+   "cwe": "CWE-113"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.2.5",
+   "title": "ASVS 5.0 API and Web Service: HTTP Message Structure Validation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.3.1",
+   "title": "ASVS 5.0 API and Web Service: GraphQL (level 2)",
+   "cwe": "CWE-770"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.3.2",
+   "title": "ASVS 5.0 API and Web Service: GraphQL (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.4.1",
+   "title": "ASVS 5.0 API and Web Service: WebSocket (level 1)",
+   "cwe": "CWE-319"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.4.2",
+   "title": "ASVS 5.0 API and Web Service: WebSocket (level 2)",
+   "cwe": "CWE-346"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.4.3",
+   "title": "ASVS 5.0 API and Web Service: WebSocket (level 2)",
+   "cwe": "CWE-331"
+  },
+  {
+   "source": "asvs",
+   "ident": "V4.4.4",
+   "title": "ASVS 5.0 API and Web Service: WebSocket (level 2)",
+   "cwe": "CWE-319"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.1.1",
+   "title": "ASVS 5.0 File Handling: File Handling Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.1",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 1)",
+   "cwe": "CWE-400"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.2",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 1)",
+   "cwe": "CWE-434"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.3",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 2)",
+   "cwe": "CWE-409"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.4",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 3)",
+   "cwe": "CWE-770"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.5",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 3)",
+   "cwe": "CWE-61"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.2.6",
+   "title": "ASVS 5.0 File Handling: File Upload and Content (level 3)",
+   "cwe": "CWE-400"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.3.1",
+   "title": "ASVS 5.0 File Handling: File Storage (level 1)",
+   "cwe": "CWE-552"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.3.2",
+   "title": "ASVS 5.0 File Handling: File Storage (level 1)",
+   "cwe": "CWE-73"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.3.3",
+   "title": "ASVS 5.0 File Handling: File Storage (level 3)",
+   "cwe": "CWE-23"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.4.1",
+   "title": "ASVS 5.0 File Handling: File Download (level 2)",
+   "cwe": "CWE-641"
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.4.2",
+   "title": "ASVS 5.0 File Handling: File Download (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V5.4.3",
+   "title": "ASVS 5.0 File Handling: File Download (level 2)",
+   "cwe": "CWE-509"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.1.1",
+   "title": "ASVS 5.0 Authentication: Authentication Documentation (level 1)",
+   "cwe": "CWE-307"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.1.2",
+   "title": "ASVS 5.0 Authentication: Authentication Documentation (level 2)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.1.3",
+   "title": "ASVS 5.0 Authentication: Authentication Documentation (level 2)",
+   "cwe": "CWE-306"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.1",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.2",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-620"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.3",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-620"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.4",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.5",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.6",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-549"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.7",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.8",
+   "title": "ASVS 5.0 Authentication: Password Security (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.9",
+   "title": "ASVS 5.0 Authentication: Password Security (level 2)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.10",
+   "title": "ASVS 5.0 Authentication: Password Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.11",
+   "title": "ASVS 5.0 Authentication: Password Security (level 2)",
+   "cwe": "CWE-521"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.2.12",
+   "title": "ASVS 5.0 Authentication: Password Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.1",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 1)",
+   "cwe": "CWE-307"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.2",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 1)",
+   "cwe": "CWE-798"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.3",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 2)",
+   "cwe": "CWE-308"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.4",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 2)",
+   "cwe": "CWE-306"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.5",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 3)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.6",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 3)",
+   "cwe": "CWE-304"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.7",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 3)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.3.8",
+   "title": "ASVS 5.0 Authentication: General Authentication Security (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.1",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 1)",
+   "cwe": "CWE-330"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.2",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 1)",
+   "cwe": "CWE-640"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.3",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 2)",
+   "cwe": "CWE-640"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.4",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 2)",
+   "cwe": "CWE-308"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.5",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 3)",
+   "cwe": "CWE-287"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.4.6",
+   "title": "ASVS 5.0 Authentication: Authentication Factor Lifecycle and Recovery (level 3)",
+   "cwe": "CWE-620"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.1",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 2)",
+   "cwe": "CWE-308"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.2",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 2)",
+   "cwe": "CWE-330"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.3",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 2)",
+   "cwe": "CWE-310"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.4",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 2)",
+   "cwe": "CWE-330"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.5",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 2)",
+   "cwe": "CWE-287"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.6",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 3)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.7",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 3)",
+   "cwe": "CWE-308"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.5.8",
+   "title": "ASVS 5.0 Authentication: General Multi-factor authentication requirements (level 3)",
+   "cwe": "CWE-367"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.6.1",
+   "title": "ASVS 5.0 Authentication: Out-of-Band authentication mechanisms (level 2)",
+   "cwe": "CWE-287"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.6.2",
+   "title": "ASVS 5.0 Authentication: Out-of-Band authentication mechanisms (level 2)",
+   "cwe": "CWE-287"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.6.3",
+   "title": "ASVS 5.0 Authentication: Out-of-Band authentication mechanisms (level 2)",
+   "cwe": "CWE-307"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.6.4",
+   "title": "ASVS 5.0 Authentication: Out-of-Band authentication mechanisms (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.7.1",
+   "title": "ASVS 5.0 Authentication: Cryptographic authentication mechanism (level 3)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.7.2",
+   "title": "ASVS 5.0 Authentication: Cryptographic authentication mechanism (level 3)",
+   "cwe": "CWE-330"
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.8.1",
+   "title": "ASVS 5.0 Authentication: Authentication with an Identity Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.8.2",
+   "title": "ASVS 5.0 Authentication: Authentication with an Identity Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.8.3",
+   "title": "ASVS 5.0 Authentication: Authentication with an Identity Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V6.8.4",
+   "title": "ASVS 5.0 Authentication: Authentication with an Identity Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.1.1",
+   "title": "ASVS 5.0 Session Management: Session Management Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.1.2",
+   "title": "ASVS 5.0 Session Management: Session Management Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.1.3",
+   "title": "ASVS 5.0 Session Management: Session Management Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.2.1",
+   "title": "ASVS 5.0 Session Management: Fundamental Session Management Security (level 1)",
+   "cwe": "CWE-603"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.2.2",
+   "title": "ASVS 5.0 Session Management: Fundamental Session Management Security (level 1)",
+   "cwe": "CWE-798"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.2.3",
+   "title": "ASVS 5.0 Session Management: Fundamental Session Management Security (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.2.4",
+   "title": "ASVS 5.0 Session Management: Fundamental Session Management Security (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.3.1",
+   "title": "ASVS 5.0 Session Management: Session Timeout (level 2)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.3.2",
+   "title": "ASVS 5.0 Session Management: Session Timeout (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.4.1",
+   "title": "ASVS 5.0 Session Management: Session Termination (level 1)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.4.2",
+   "title": "ASVS 5.0 Session Management: Session Termination (level 1)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.4.3",
+   "title": "ASVS 5.0 Session Management: Session Termination (level 2)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.4.4",
+   "title": "ASVS 5.0 Session Management: Session Termination (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.4.5",
+   "title": "ASVS 5.0 Session Management: Session Termination (level 2)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.5.1",
+   "title": "ASVS 5.0 Session Management: Defenses Against Session Abuse (level 2)",
+   "cwe": "CWE-306"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.5.2",
+   "title": "ASVS 5.0 Session Management: Defenses Against Session Abuse (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.5.3",
+   "title": "ASVS 5.0 Session Management: Defenses Against Session Abuse (level 3)",
+   "cwe": "CWE-306"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.6.1",
+   "title": "ASVS 5.0 Session Management: Federated Re-authentication (level 2)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V7.6.2",
+   "title": "ASVS 5.0 Session Management: Federated Re-authentication (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.1.1",
+   "title": "ASVS 5.0 Authorization: Authorization Documentation (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.1.2",
+   "title": "ASVS 5.0 Authorization: Authorization Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.1.3",
+   "title": "ASVS 5.0 Authorization: Authorization Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.1.4",
+   "title": "ASVS 5.0 Authorization: Authorization Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.2.1",
+   "title": "ASVS 5.0 Authorization: General Authorization Design (level 1)",
+   "cwe": "CWE-285"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.2.2",
+   "title": "ASVS 5.0 Authorization: General Authorization Design (level 1)",
+   "cwe": "CWE-639"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.2.3",
+   "title": "ASVS 5.0 Authorization: General Authorization Design (level 2)",
+   "cwe": "CWE-283"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.2.4",
+   "title": "ASVS 5.0 Authorization: General Authorization Design (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.3.1",
+   "title": "ASVS 5.0 Authorization: Operation Level Authorization (level 1)",
+   "cwe": "CWE-602"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.3.2",
+   "title": "ASVS 5.0 Authorization: Operation Level Authorization (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.3.3",
+   "title": "ASVS 5.0 Authorization: Operation Level Authorization (level 3)",
+   "cwe": "CWE-441"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.4.1",
+   "title": "ASVS 5.0 Authorization: Other Authorization Considerations (level 2)",
+   "cwe": "CWE-283"
+  },
+  {
+   "source": "asvs",
+   "ident": "V8.4.2",
+   "title": "ASVS 5.0 Authorization: Other Authorization Considerations (level 3)",
+   "cwe": "CWE-419"
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.1.1",
+   "title": "ASVS 5.0 Self-contained Tokens: Token source and integrity (level 1)",
+   "cwe": "CWE-345"
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.1.2",
+   "title": "ASVS 5.0 Self-contained Tokens: Token source and integrity (level 1)",
+   "cwe": "CWE-757"
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.1.3",
+   "title": "ASVS 5.0 Self-contained Tokens: Token source and integrity (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.2.1",
+   "title": "ASVS 5.0 Self-contained Tokens: Token content (level 1)",
+   "cwe": "CWE-613"
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.2.2",
+   "title": "ASVS 5.0 Self-contained Tokens: Token content (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.2.3",
+   "title": "ASVS 5.0 Self-contained Tokens: Token content (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V9.2.4",
+   "title": "ASVS 5.0 Self-contained Tokens: Token content (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.1.1",
+   "title": "ASVS 5.0 OAuth and OIDC: Generic OAuth and OIDC Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.1.2",
+   "title": "ASVS 5.0 OAuth and OIDC: Generic OAuth and OIDC Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.2.1",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.2.2",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.2.3",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Client (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.3.1",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Resource Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.3.2",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Resource Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.3.3",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Resource Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.3.4",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Resource Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.3.5",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Resource Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.1",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.2",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.3",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.4",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.5",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.6",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.7",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.8",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.9",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.10",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.11",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.12",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.13",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.14",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.15",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.4.16",
+   "title": "ASVS 5.0 OAuth and OIDC: OAuth Authorization Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.5.1",
+   "title": "ASVS 5.0 OAuth and OIDC: OIDC Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.5.2",
+   "title": "ASVS 5.0 OAuth and OIDC: OIDC Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.5.3",
+   "title": "ASVS 5.0 OAuth and OIDC: OIDC Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.5.4",
+   "title": "ASVS 5.0 OAuth and OIDC: OIDC Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.5.5",
+   "title": "ASVS 5.0 OAuth and OIDC: OIDC Client (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.6.1",
+   "title": "ASVS 5.0 OAuth and OIDC: OpenID Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.6.2",
+   "title": "ASVS 5.0 OAuth and OIDC: OpenID Provider (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.7.1",
+   "title": "ASVS 5.0 OAuth and OIDC: Consent Management (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.7.2",
+   "title": "ASVS 5.0 OAuth and OIDC: Consent Management (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V10.7.3",
+   "title": "ASVS 5.0 OAuth and OIDC: Consent Management (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.1.1",
+   "title": "ASVS 5.0 Cryptography: Cryptographic Inventory and Documentation (level 2)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.1.2",
+   "title": "ASVS 5.0 Cryptography: Cryptographic Inventory and Documentation (level 2)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.1.3",
+   "title": "ASVS 5.0 Cryptography: Cryptographic Inventory and Documentation (level 3)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.1.4",
+   "title": "ASVS 5.0 Cryptography: Cryptographic Inventory and Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.2.1",
+   "title": "ASVS 5.0 Cryptography: Secure Cryptography Implementation (level 2)",
+   "cwe": "CWE-327"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.2.2",
+   "title": "ASVS 5.0 Cryptography: Secure Cryptography Implementation (level 2)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.2.3",
+   "title": "ASVS 5.0 Cryptography: Secure Cryptography Implementation (level 2)",
+   "cwe": "CWE-311"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.2.4",
+   "title": "ASVS 5.0 Cryptography: Secure Cryptography Implementation (level 3)",
+   "cwe": "CWE-385"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.2.5",
+   "title": "ASVS 5.0 Cryptography: Secure Cryptography Implementation (level 3)",
+   "cwe": "CWE-310"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.3.1",
+   "title": "ASVS 5.0 Cryptography: Encryption Algorithms (level 1)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.3.2",
+   "title": "ASVS 5.0 Cryptography: Encryption Algorithms (level 1)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.3.3",
+   "title": "ASVS 5.0 Cryptography: Encryption Algorithms (level 2)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.3.4",
+   "title": "ASVS 5.0 Cryptography: Encryption Algorithms (level 3)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.3.5",
+   "title": "ASVS 5.0 Cryptography: Encryption Algorithms (level 3)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.4.1",
+   "title": "ASVS 5.0 Cryptography: Hashing and Hash-based Functions (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.4.2",
+   "title": "ASVS 5.0 Cryptography: Hashing and Hash-based Functions (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.4.3",
+   "title": "ASVS 5.0 Cryptography: Hashing and Hash-based Functions (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.4.4",
+   "title": "ASVS 5.0 Cryptography: Hashing and Hash-based Functions (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.5.1",
+   "title": "ASVS 5.0 Cryptography: Random Values (level 2)",
+   "cwe": "CWE-338"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.5.2",
+   "title": "ASVS 5.0 Cryptography: Random Values (level 3)",
+   "cwe": "CWE-338"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.6.1",
+   "title": "ASVS 5.0 Cryptography: Public Key Cryptography (level 2)",
+   "cwe": "CWE-327"
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.6.2",
+   "title": "ASVS 5.0 Cryptography: Public Key Cryptography (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.7.1",
+   "title": "ASVS 5.0 Cryptography: In-Use Data Cryptography (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V11.7.2",
+   "title": "ASVS 5.0 Cryptography: In-Use Data Cryptography (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.1.1",
+   "title": "ASVS 5.0 Secure Communication: General TLS Security Guidance (level 1)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.1.2",
+   "title": "ASVS 5.0 Secure Communication: General TLS Security Guidance (level 2)",
+   "cwe": "CWE-326"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.1.3",
+   "title": "ASVS 5.0 Secure Communication: General TLS Security Guidance (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.1.4",
+   "title": "ASVS 5.0 Secure Communication: General TLS Security Guidance (level 3)",
+   "cwe": "CWE-299"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.1.5",
+   "title": "ASVS 5.0 Secure Communication: General TLS Security Guidance (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.2.1",
+   "title": "ASVS 5.0 Secure Communication: HTTPS Communication with External Facing Services (level 1)",
+   "cwe": "CWE-319"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.2.2",
+   "title": "ASVS 5.0 Secure Communication: HTTPS Communication with External Facing Services (level 1)",
+   "cwe": "CWE-295"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.3.1",
+   "title": "ASVS 5.0 Secure Communication: General Service to Service Communication Security (level 2)",
+   "cwe": "CWE-319"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.3.2",
+   "title": "ASVS 5.0 Secure Communication: General Service to Service Communication Security (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.3.3",
+   "title": "ASVS 5.0 Secure Communication: General Service to Service Communication Security (level 2)",
+   "cwe": "CWE-319"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.3.4",
+   "title": "ASVS 5.0 Secure Communication: General Service to Service Communication Security (level 2)",
+   "cwe": "CWE-295"
+  },
+  {
+   "source": "asvs",
+   "ident": "V12.3.5",
+   "title": "ASVS 5.0 Secure Communication: General Service to Service Communication Security (level 3)",
+   "cwe": "CWE-295"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.1.1",
+   "title": "ASVS 5.0 Configuration: Configuration Documentation (level 2)",
+   "cwe": "CWE-1059"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.1.2",
+   "title": "ASVS 5.0 Configuration: Configuration Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.1.3",
+   "title": "ASVS 5.0 Configuration: Configuration Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.1.4",
+   "title": "ASVS 5.0 Configuration: Configuration Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.1",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 2)",
+   "cwe": "CWE-287"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.2",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 2)",
+   "cwe": "CWE-272"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.3",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 2)",
+   "cwe": "CWE-255"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.4",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 2)",
+   "cwe": "CWE-732"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.5",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 2)",
+   "cwe": "CWE-918"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.2.6",
+   "title": "ASVS 5.0 Configuration: Backend Communication Configuration (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.3.1",
+   "title": "ASVS 5.0 Configuration: Secret Management (level 2)",
+   "cwe": "CWE-798"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.3.2",
+   "title": "ASVS 5.0 Configuration: Secret Management (level 2)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.3.3",
+   "title": "ASVS 5.0 Configuration: Secret Management (level 3)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.3.4",
+   "title": "ASVS 5.0 Configuration: Secret Management (level 3)",
+   "cwe": "CWE-320"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.1",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.2",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 2)",
+   "cwe": "CWE-497"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.3",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 2)",
+   "cwe": "CWE-548"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.4",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 2)",
+   "cwe": "CWE-749"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.5",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 2)",
+   "cwe": "CWE-1002"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.6",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 3)",
+   "cwe": "CWE-200"
+  },
+  {
+   "source": "asvs",
+   "ident": "V13.4.7",
+   "title": "ASVS 5.0 Configuration: Unintended Information Leakage (level 3)",
+   "cwe": "CWE-552"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.1.1",
+   "title": "ASVS 5.0 Data Protection: Data Protection Documentation (level 2)",
+   "cwe": "CWE-213"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.1.2",
+   "title": "ASVS 5.0 Data Protection: Data Protection Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.1",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 1)",
+   "cwe": "CWE-598"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.2",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 2)",
+   "cwe": "CWE-524"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.3",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 2)",
+   "cwe": "CWE-200"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.4",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.5",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 3)",
+   "cwe": "CWE-444"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.6",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.7",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.2.8",
+   "title": "ASVS 5.0 Data Protection: General Data Protection (level 3)",
+   "cwe": "CWE-212"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.3.1",
+   "title": "ASVS 5.0 Data Protection: Client-side Data Protection (level 1)",
+   "cwe": "CWE-922"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.3.2",
+   "title": "ASVS 5.0 Data Protection: Client-side Data Protection (level 2)",
+   "cwe": "CWE-525"
+  },
+  {
+   "source": "asvs",
+   "ident": "V14.3.3",
+   "title": "ASVS 5.0 Data Protection: Client-side Data Protection (level 2)",
+   "cwe": "CWE-922"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.1.1",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Secure Coding and Architecture Documentation (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.1.2",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Secure Coding and Architecture Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.1.3",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Secure Coding and Architecture Documentation (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.1.4",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Secure Coding and Architecture Documentation (level 3)",
+   "cwe": "CWE-1061"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.1.5",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Secure Coding and Architecture Documentation (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.2.1",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Security Architecture and Dependencies (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.2.2",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Security Architecture and Dependencies (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.2.3",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Security Architecture and Dependencies (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.2.4",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Security Architecture and Dependencies (level 3)",
+   "cwe": "CWE-427"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.2.5",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Security Architecture and Dependencies (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.1",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 1)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.2",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.3",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": "CWE-915"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.4",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": "CWE-348"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.5",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": "CWE-843"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.6",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.3.7",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Defensive Coding (level 2)",
+   "cwe": "CWE-235"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.4.1",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Safe Concurrency (level 3)",
+   "cwe": "CWE-362"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.4.2",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Safe Concurrency (level 3)",
+   "cwe": "CWE-367"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.4.3",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Safe Concurrency (level 3)",
+   "cwe": "CWE-833"
+  },
+  {
+   "source": "asvs",
+   "ident": "V15.4.4",
+   "title": "ASVS 5.0 Secure Coding and Architecture: Safe Concurrency (level 3)",
+   "cwe": "CWE-410"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.1.1",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Security Logging Documentation (level 2)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.2.1",
+   "title": "ASVS 5.0 Security Logging and Error Handling: General Logging (level 2)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.2.2",
+   "title": "ASVS 5.0 Security Logging and Error Handling: General Logging (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.2.3",
+   "title": "ASVS 5.0 Security Logging and Error Handling: General Logging (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.2.4",
+   "title": "ASVS 5.0 Security Logging and Error Handling: General Logging (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.2.5",
+   "title": "ASVS 5.0 Security Logging and Error Handling: General Logging (level 2)",
+   "cwe": "CWE-532"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.3.1",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Security Events (level 2)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.3.2",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Security Events (level 2)",
+   "cwe": "CWE-285"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.3.3",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Security Events (level 2)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.3.4",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Security Events (level 2)",
+   "cwe": "CWE-778"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.4.1",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Log Protection (level 2)",
+   "cwe": "CWE-117"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.4.2",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Log Protection (level 2)",
+   "cwe": "CWE-200"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.4.3",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Log Protection (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.5.1",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Error Handling (level 2)",
+   "cwe": "CWE-210"
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.5.2",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Error Handling (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.5.3",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Error Handling (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V16.5.4",
+   "title": "ASVS 5.0 Security Logging and Error Handling: Error Handling (level 3)",
+   "cwe": "CWE-431"
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.1.1",
+   "title": "ASVS 5.0 WebRTC: TURN Server (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.1.2",
+   "title": "ASVS 5.0 WebRTC: TURN Server (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.1",
+   "title": "ASVS 5.0 WebRTC: Media (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.2",
+   "title": "ASVS 5.0 WebRTC: Media (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.3",
+   "title": "ASVS 5.0 WebRTC: Media (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.4",
+   "title": "ASVS 5.0 WebRTC: Media (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.5",
+   "title": "ASVS 5.0 WebRTC: Media (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.6",
+   "title": "ASVS 5.0 WebRTC: Media (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.7",
+   "title": "ASVS 5.0 WebRTC: Media (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.2.8",
+   "title": "ASVS 5.0 WebRTC: Media (level 3)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.3.1",
+   "title": "ASVS 5.0 WebRTC: Signaling (level 2)",
+   "cwe": null
+  },
+  {
+   "source": "asvs",
+   "ident": "V17.3.2",
+   "title": "ASVS 5.0 WebRTC: Signaling (level 2)",
+   "cwe": null
+  }
+ ]
+}

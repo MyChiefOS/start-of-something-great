@@ -291,6 +291,10 @@
     {
       "version": "073_agentic_wall",
       "sha256": "e5c4efaa764c8193501bc25eb610831b8e21127816182a3d40c88b6b1f44d2d4"
+    },
+    {
+      "version": "074_security_wiki",
+      "sha256": "01a2dc1eeedb1a66f93e301711a6c416ff1ab59f2fbc78d4cf85ea5cb3aeb1b5"
     }
   ]
 }
