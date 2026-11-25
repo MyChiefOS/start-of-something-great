@@ -9,6 +9,7 @@
 
 const REFERENCE = require('./reference.json');
 const NVD = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+const KEV = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
 const DAY = 86400000;
 // 082: threat feeds for the Wall. Feodo Tracker needs no account (CC0). URLhaus, ThreatFox and MalwareBazaar need an
 // abuse.ch key and may need a paid license for commercial use, so they run only when the site has ABUSECH_AUTH_KEY
@@ -113,17 +114,29 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
-async function gather({ fetchImpl = fetch, now = Date.now, key } = {}) {
+async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOpt, pause = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
   const end = new Date(now());
   const start = new Date(end.getTime() - 3 * DAY);
   // The offset's plus sign must be encoded: a bare + in a query reads as a space, and NVD answers 404 (found Nov 25: the
   // live wiki had never recorded a version because of it).
   const iso = (d) => encodeURIComponent(d.toISOString().replace('Z', '+00:00'));
-  const url = NVD + '?lastModStartDate=' + iso(start) + '&lastModEndDate=' + iso(end) + '&resultsPerPage=2000';
-  const r = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
-  if (r.status !== 200) throw new Error('nvd ' + r.status);
-  const body = await r.json();
-  const items = Array.isArray(body && body.vulnerabilities) ? body.vulnerabilities.slice(0, 5000) : [];
+  // NVD's limits (developer docs, Nov 25): 2,000 results a page, paged by startIndex up to totalResults; 5 requests in 30
+  // seconds without a key, 50 with one (header apiKey). A 3-day window held 5,307 CVEs on Nov 25, so one page missed most
+  // of them: read every page, 6.5 s apart without a key (1 s with one), at most 4 pages (8,000 CVEs, about 20 seconds).
+  const nvdKey = nvdKeyOpt === undefined ? process.env.NVD_API_KEY : nvdKeyOpt;
+  const headers = Object.assign({ accept: 'application/json' }, nvdKey ? { apiKey: nvdKey } : {});
+  const items = [];
+  for (let page = 0, startIndex = 0; page < 4; page++) {
+    if (page > 0) await pause(nvdKey ? 1000 : 6500);
+    const url = NVD + '?lastModStartDate=' + iso(start) + '&lastModEndDate=' + iso(end) + '&resultsPerPage=2000&startIndex=' + startIndex;
+    const r = await fetchImpl(url, { headers, signal: AbortSignal.timeout(20000) });
+    if (r.status !== 200) { if (page === 0) throw new Error('nvd ' + r.status); break; }
+    const body = await r.json();
+    const got = Array.isArray(body && body.vulnerabilities) ? body.vulnerabilities.slice(0, 2000) : [];
+    items.push(...got);
+    startIndex += got.length;
+    if (!got.length || startIndex >= Number(body.totalResults || 0)) break;
+  }
   const entries = [];
   const packages = [];
   for (const it of items) {
@@ -131,6 +144,24 @@ async function gather({ fetchImpl = fetch, now = Date.now, key } = {}) {
     if (e) entries.push(e);
     packages.push(...packagesOf(it));
   }
+  // CISA's full Known Exploited Vulnerabilities catalog (public, no key): every listed CVE is kept, not only those NVD
+  // changed in the window. One failing read skips it this run.
+  try {
+    const r = await fetchImpl(KEV, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+    if (r.status === 200) {
+      const body = await r.json();
+      const have = new Map(entries.map((e) => [e.ident, e]));
+      for (const v of (body && Array.isArray(body.vulnerabilities) ? body.vulnerabilities : []).slice(0, 5000)) {
+        const id = String(v && v.cveID);
+        if (!CVE.test(id)) continue;
+        if (have.has(id)) { have.get(id).kev = true; continue; }
+        const cwe = (Array.isArray(v.cwes) ? v.cwes : []).find((c) => CWE.test(String(c)));
+        const added = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.exec(String(v.dateAdded || ''));
+        const e = { source: 'nvd', ident: id, title: String(v.vulnerabilityName || id).replace(/\s+/g, ' ').slice(0, 300) || id, severity: null, cwe: cwe || null, kev: true, published: added ? added[0] : null };
+        entries.push(e); have.set(id, e);
+      }
+    }
+  } catch { /* skipped this run */ }
   for (const e of REFERENCE.entries) entries.push({ source: e.source, ident: e.ident, title: e.title, severity: null, cwe: e.cwe || null, kev: false, published: null });
   const sources = { nvd: entries.filter((e) => e.source === 'nvd').length, kev: entries.filter((e) => e.kev).length, cwe: 0, owasp_api: 0, asvs: 0, npm_packages: packages.length };
   for (const e of REFERENCE.entries) sources[e.source]++;

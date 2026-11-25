@@ -28,12 +28,35 @@ const npm = (name, version, sw = 'node.js') => `cpe:2.3:a:${name}_project:${name
 test('the sync keeps structured fields and exact npm versions only', async () => {
   const f = nvd([cve('CVE-2026-1000', { kev: true, cpe: [npm('left-pad', '1.3.0'), npm('left-pad', '*'), npm('nginx', '1.2.3', '*')] }), { cve: { id: 'not a cve' } }]);
   const p = await sync.gather({ fetchImpl: f.fetchImpl, now: () => Date.parse('2026-11-24T00:00:00Z') });
-  assert.match(f.seen[0], /^https:\/\/services\.nvd\.nist\.gov\/rest\/json\/cves\/2\.0\?lastModStartDate=2026-11-21T00%3A00%3A00\.000%2B00%3A00&lastModEndDate=2026-11-24T00%3A00%3A00\.000%2B00%3A00&resultsPerPage=2000$/);
+  assert.match(f.seen[0], /^https:\/\/services\.nvd\.nist\.gov\/rest\/json\/cves\/2\.0\?lastModStartDate=2026-11-21T00%3A00%3A00\.000%2B00%3A00&lastModEndDate=2026-11-24T00%3A00%3A00\.000%2B00%3A00&resultsPerPage=2000&startIndex=0$/);
   const e = p.entries.find((x) => x.ident === 'CVE-2026-1000');
   assert.deepStrictEqual([e.severity, e.cwe, e.kev, e.published], ['high', 'CWE-79', true, '2026-11-23']);
   assert.deepStrictEqual(p.packages, [{ ecosystem: 'npm', name: 'left-pad', version: '1.3.0', advisory: 'CVE-2026-1000' }]);
   assert.deepStrictEqual([p.sources.nvd, p.sources.kev, p.sources.cwe, p.sources.owasp_api, p.sources.asvs > 300], [1, 1, 25, 10, true]);
   await assert.rejects(sync.gather({ fetchImpl: nvd([], 503).fetchImpl }), /nvd 503/);
+});
+
+test('the sync reads every NVD page within its limits, and CISA\'s whole KEV catalog (Nov 25)', async () => {
+  const seen = []; const waits = [];
+  const fetchImpl = async (url, init) => {
+    seen.push([url, init && init.headers && init.headers.apiKey ? 'key' : '']);
+    if (url.includes('cisa.gov')) return { status: 200, json: async () => ({ vulnerabilities: [{ cveID: 'CVE-2026-1001', vulnerabilityName: 'Listed and changed', dateAdded: '2026-11-20' },
+      { cveID: 'CVE-2021-44228', vulnerabilityName: 'Log4Shell', dateAdded: '2021-12-10', cwes: ['CWE-502'] }, { cveID: 'nope' }] }) };
+    const start = Number(new URL(url).searchParams.get('startIndex'));
+    const ids = start === 0 ? [1000, 1001] : [1002];
+    return { status: 200, json: async () => ({ totalResults: 3, vulnerabilities: ids.map((n) => cve('CVE-2026-' + n)) }) };
+  };
+  const p = await sync.gather({ fetchImpl, key: '', nvdKey: '', pause: async (ms) => { waits.push(ms); } });
+  const nvdCalls = seen.filter(([u]) => u.includes('nvd'));
+  assert.deepStrictEqual(nvdCalls.map(([u]) => new URL(u).searchParams.get('startIndex')), ['0', '2']);
+  assert.deepStrictEqual(waits, [6500], 'over 6 seconds apart without a key (5 requests in 30 seconds)');
+  const byId = Object.fromEntries(p.entries.filter((e) => e.source === 'nvd').map((e) => [e.ident, e]));
+  assert.deepStrictEqual(Object.keys(byId).sort(), ['CVE-2021-44228', 'CVE-2026-1000', 'CVE-2026-1001', 'CVE-2026-1002']);
+  assert.strictEqual(byId['CVE-2026-1001'].kev, true, 'a changed CVE on the catalog is marked');
+  assert.deepStrictEqual([byId['CVE-2021-44228'].kev, byId['CVE-2021-44228'].cwe, byId['CVE-2021-44228'].published], [true, 'CWE-502', '2021-12-10']);
+  await sync.gather({ fetchImpl, key: '', nvdKey: 'k', pause: async (ms) => { waits.push(ms); } });
+  assert.ok(seen.some(([u, k]) => u.includes('nvd') && k === 'key'), 'a key, when the site has one, goes in the apiKey header');
+  assert.strictEqual(waits[waits.length - 1], 1000);
 });
 
 const SERVER = process.env.TEST_DATABASE_URL;
