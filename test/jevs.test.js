@@ -176,7 +176,10 @@ const at = (base, d, user, password) => { const u = new URL(base); u.pathname = 
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
-const setMode = (m) => asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+// 080: high risk now flags and goes ahead (test/no-blockers.test.js); these tests cover the hold path, kept as the
+// one-step rollback, so enforce here means enforce with high_risk = 'hold'.
+const setMode = async (m) => { await asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+  await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`); };
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
@@ -282,7 +285,7 @@ test('thresholds: only the database owner changes them; the site sees only the m
   const m = await member({ level: 1, name: 'Curious' });
   assert.deepStrictEqual((await run(m.ctx, (t) => t`select key, value from app.jevs_settings`)).map((r) => r.key), ['mode'], 'a member sees only the mode');
   assert.deepStrictEqual((await run({ actor: 'anon' }, (t) => t`select key from app.jevs_settings`)).map((r) => r.key), ['mode']);
-  assert.strictEqual((await run(aaron.ctx, (t) => t`select key from app.jevs_settings`)).length, 8, 'Aaron sees every setting on the site');
+  assert.strictEqual((await run(aaron.ctx, (t) => t`select key from app.jevs_settings`)).length, 9, 'Aaron sees every setting on the site (080 added high_risk)');
   for (const ctx of [m.ctx, aaron.ctx, { actor: 'system' }]) {
     await assert.rejects(run(ctx, (t) => t`update app.jevs_settings set value = '1' where key = 'high_any'`), /permission denied/);
     await assert.rejects(run(ctx, (t) => t`insert into app.jevs_settings (key, value) values ('pass_max', '99')`), /permission denied/);

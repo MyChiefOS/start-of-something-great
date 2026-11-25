@@ -3,7 +3,8 @@
 --     block: a clear violation of an established rule (the questions and scores in app.jevs_clear_rules; at the start
 --            J04 85, 60 or more posts in an hour; J09 90, copying five or more members; J10 90, three or more upheld
 --            reports). Refused at once; a post is removed; an agent's own account drops a level (079).
---     flag:  anything else high risk, or scoring that failed. It goes ahead, and the reviewers see it: a post is flagged
+--     A step whose scoring failed is refused for now ("try again shortly"), never held for a person.
+--     flag:  anything else high risk. It goes ahead, and the reviewers see it: a post is flagged
 --            for review, any other step is in the audit log with an alert.
 --   An account deletion JEVs finds high risk still opens a deletion review: deleting can't be undone.
 --   Also: the level figures (079) move into app.agent_level_settings, so they change without a migration; and an agent
@@ -13,7 +14,7 @@
 set local role dog_owner;
 create table app.jevs_clear_rules (
   id uuid primary key default app.uuid_v7(),
-  question text not null unique check (question ~ '^J[0-9]{2}$'),
+  question text not null unique check (char_length(question) = 3 and question ~ '^J[0-9]{2}$'),
   min_score integer not null check (min_score between 1 and 100),
   why text not null check (char_length(why) between 1 and 300)
 );
@@ -41,6 +42,37 @@ alter table app.agent_level_settings force row level security;
 create policy agent_level_settings_read on app.agent_level_settings for select to dog_signin, dog_public using (true);
 grant select on app.agent_level_settings to dog_signin, dog_public;
 
+-- What high risk does: 'flag' (080, the default) or 'hold' (the earlier behavior, kept as a one-step rollback).
+alter table app.jevs_settings drop constraint jevs_settings_key_check;
+alter table app.jevs_settings add constraint jevs_settings_key_check check (key = any (array['mode', 'medium_any', 'high_any', 'medium_total',
+  'high_total', 'pass_max', 'challenge_hours', 'credible_reporter_age_hours', 'high_risk']));
+CREATE OR REPLACE FUNCTION app.jevs_settings_check()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if tg_op = 'UPDATE' and new.key is distinct from old.key then
+    raise exception 'a JEVs setting keeps its name' using errcode = '42501';
+  end if;
+  if new.key = 'mode' then
+    if new.value not in ('shadow', 'enforce') then
+      raise exception 'the JEVs mode is shadow or enforce' using errcode = '22023';
+    end if;
+  elsif new.key = 'high_risk' then
+    if new.value not in ('flag', 'hold') then
+      raise exception 'JEVs high risk is flag or hold' using errcode = '22023';
+    end if;
+  elsif new.value !~ '^[0-9]{1,4}$' then
+    raise exception 'a JEVs threshold is a whole number from 0 to 9999' using errcode = '22023';
+  end if;
+  new.updated_at := now();
+  return new;
+end
+$function$;
+
+alter table app.jevs_settings disable row level security;
+insert into app.jevs_settings (key, value) values ('high_risk', 'flag');
+alter table app.jevs_settings enable row level security;
 alter table app.jevs_decisions drop constraint jevs_decisions_effect_check;
 alter table app.jevs_decisions add constraint jevs_decisions_effect_check
   check (effect = any (array['none', 'challenge', 'hold', 'hide', 'promote', 'queue', 'draft', 'block', 'flag']));
@@ -233,8 +265,12 @@ begin
   -- 080: high risk never waits for a person (Aaron, Nov 25). A clear violation of an established rule is blocked; any
   -- other high risk, or scoring that failed, goes ahead and is flagged for the reviewers. An account deletion still opens
   -- its review: deleting can't be undone.
-  if eff = 'hold' and p_action <> 'account.delete' then
-    if not p_error and exists (select 1 from app.jevs_clear_rules r where coalesce((p_scores ->> r.question)::integer, 0) >= r.min_score) then
+  if eff = 'hold' and p_action <> 'account.delete'
+     and coalesce((select x.value from app.jevs_settings x where x.key = 'high_risk'), 'flag') = 'flag' then
+    if p_error then
+      -- Scoring failed on a step that matters: refused for now, with "try again shortly"; nothing waits for a person.
+      eff := 'block';
+    elsif exists (select 1 from app.jevs_clear_rules r where coalesce((p_scores ->> r.question)::integer, 0) >= r.min_score) then
       eff := 'block';
     else
       eff := 'flag';
@@ -305,7 +341,7 @@ begin
   end if;
 
   -- 080: a block costs an agent's own account a level; a flag outside a post tells the reviewers.
-  if eff = 'block' and s_mode = 'enforce' and judged is not null and app.is_agent_account(judged) then
+  if eff = 'block' and not p_error and s_mode = 'enforce' and judged is not null and app.is_agent_account(judged) then
     perform app.agent_standing_event(judged, 'violation');
   end if;
   if eff = 'flag' and s_mode = 'enforce' and subj_kind is distinct from 'post' then

@@ -156,7 +156,10 @@ const at = (base, d, user, password) => { const u = new URL(base); u.pathname = 
 const run = (ctx, fn) => db.tx(web, ctx, fn);
 const q = (s) => su.unsafe(s);
 const asOwner = (sqlText) => su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(sqlText); });
-const setMode = (m) => asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+// 080: high risk now flags and goes ahead (test/no-blockers.test.js); these tests cover the hold path, kept as the
+// one-step rollback, so enforce here means enforce with high_risk = 'hold'.
+const setMode = async (m) => { await asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+  await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`); };
 
 test.before(async () => {
   server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });

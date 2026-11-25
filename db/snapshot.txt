@@ -316,7 +316,7 @@ constraint app.jevs_challenges jevs_challenges_status_check CHECK ((status = ANY
 constraint app.jevs_challenges jevs_challenges_subject_kind_check CHECK ((subject_kind = ANY (ARRAY['member'::text, 'post'::text, 'agent'::text])))
 constraint app.jevs_clear_rules jevs_clear_rules_min_score_check CHECK (((min_score >= 1) AND (min_score <= 100)))
 constraint app.jevs_clear_rules jevs_clear_rules_pkey PRIMARY KEY (id)
-constraint app.jevs_clear_rules jevs_clear_rules_question_check CHECK ((question ~ '^J[0-9]{2}$'::text))
+constraint app.jevs_clear_rules jevs_clear_rules_question_check CHECK (((char_length(question) = 3) AND (question ~ '^J[0-9]{2}$'::text)))
 constraint app.jevs_clear_rules jevs_clear_rules_question_key UNIQUE (question)
 constraint app.jevs_clear_rules jevs_clear_rules_why_check CHECK (((char_length(why) >= 1) AND (char_length(why) <= 300)))
 constraint app.jevs_decisions jevs_decisions_action_check CHECK ((action = ANY (ARRAY['account.check'::text, 'account.delete'::text, 'agent.claim'::text, 'agent.create'::text, 'agent.key'::text, 'agent.recover'::text, 'agent.recovery_issue'::text, 'agent.register'::text, 'agent.rules'::text, 'agent.subagent'::text, 'draft.create'::text, 'post.approved'::text, 'post.create'::text, 'post.reported'::text, 'signup'::text])))
@@ -339,7 +339,7 @@ constraint app.jevs_post_domains jevs_post_domains_post_id_fkey FOREIGN KEY (pos
 constraint app.jevs_prints jevs_prints_pkey PRIMARY KEY (id)
 constraint app.jevs_prints jevs_prints_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id)
 constraint app.jevs_prints jevs_prints_post_id_key UNIQUE (post_id)
-constraint app.jevs_settings jevs_settings_key_check CHECK ((key = ANY (ARRAY['mode'::text, 'medium_any'::text, 'high_any'::text, 'medium_total'::text, 'high_total'::text, 'pass_max'::text, 'challenge_hours'::text, 'credible_reporter_age_hours'::text])))
+constraint app.jevs_settings jevs_settings_key_check CHECK ((key = ANY (ARRAY['mode'::text, 'medium_any'::text, 'high_any'::text, 'medium_total'::text, 'high_total'::text, 'pass_max'::text, 'challenge_hours'::text, 'credible_reporter_age_hours'::text, 'high_risk'::text])))
 constraint app.jevs_settings jevs_settings_key_key UNIQUE (key)
 constraint app.jevs_settings jevs_settings_pkey PRIMARY KEY (id)
 constraint app.jevs_settings jevs_settings_value_check CHECK (((char_length(value) >= 1) AND (char_length(value) <= 16)))
@@ -1748,7 +1748,7 @@ function app.jevs_answer(p_challenge uuid, p_answer text) owner=dog_jevs execute
 function app.jevs_appealable(p_post uuid) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=11d8f3e3e22b547c00ac25ab72dfec6c
 function app.jevs_challenges_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=0a4982bbee462fa8f73e8c620e47953e
 function app.jevs_challenges_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=639694e6a9015139d80bfb3a58b7d883
-function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=c2ce244ab222b25c175cde85c945cb50
+function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=c89fa8605e0d079c82c807f913b23c03
 function app.jevs_decisions_alert() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=275ad52bf6873a0733fc05daa6a1cc70
 function app.jevs_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=55cdb93da3b2681196ca0311b3f15c77
 function app.jevs_enforcing() owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_delegate language=sql volatile=s definer=false config= returns=boolean body_md5=307b7b21a365ef3e4019044002660681
@@ -1756,7 +1756,7 @@ function app.jevs_mark(p_kind text, p_key_hash text, p_token text, p_agent uuid)
 function app.jevs_mark_claim(p_token text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=fb7a6a6ddde13343f112b8068ad0aa45
 function app.jevs_post_reasons(p_post uuid) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=d6d3f4ca28dd3d878de7b5d4129c0712
 function app.jevs_settings_audit() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=83fc7690033583fcd946c853553f6ba2
-function app.jevs_settings_check() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=4f113a63318a0d99676f2c3b9913183f
+function app.jevs_settings_check() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c0c4e19c1f11b8d6dbc8000c6350ef21
 function app.jevs_signals(p_action text, p_subject uuid, p_net text, p_domains text[], p_simhash bigint) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=498361afa2c39e3f0b8bc3545c6125b2
 function app.jevs_sweep() owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=fcf45a36dd33160bf4095eafa579a5bb
 function app.keyfile_unpause(p_member uuid) owner=dog_signin execute=dog_signin,dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=d65a70c54a78e468476f7472e824def3

@@ -68,7 +68,10 @@ test('GAP-68, shadow mode: JEVs flags every misbehaving test agent, passes every
   for (const a of agents.filter((x) => x.kind === 'links' || x.kind === 'contacts')) assert.strictEqual(a.worst, 'high');
 });
 
-test('GAP-68, enforce mode: the same misbehaviour never goes live, while good agents post as usual', async () => {
+// 080 (Aaron, Nov 25, "everyone"; GAP-68 updated as Claude read his "build it"): high risk that isn't a clear breach goes
+// ahead, flagged for the reviewers, instead of waiting. So the misbehaviour is caught and in the reviewers' queue, never
+// unseen; posts that clearly breach a published rule are refused.
+test('GAP-68, enforce mode: the same misbehaviour is always caught (flagged for review, or refused when it clearly breaks a rule), while good agents post as usual', async () => {
   await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`update app.jevs_settings set value = 'enforce' where key = 'mode'`); });
   try {
     const agents = await fleet({ run, su, cfg: CFG, good: 2, bad: 1, round: 1 });
@@ -79,15 +82,15 @@ test('GAP-68, enforce mode: the same misbehaviour never goes live, while good ag
         assert.strictEqual(await liveCount(a.agent), 3, a.name + ': its draft and both posts are live');
         assert.ok(a.statuses.every((s) => s === 201), a.name + ' ' + a.statuses.join(','));
       } else {
-        assert.ok(a.decisions.some((d) => d.applied && ['hold', 'challenge'].includes(d.effect)), a.name + ' was held or challenged\n' + out);
-        assert.ok(a.statuses.includes(202), a.name + ' was told its post is held');
+        assert.ok(a.decisions.some((d) => d.applied && ['flag', 'block', 'challenge'].includes(d.effect)), a.name + ' was flagged, refused or challenged\n' + out);
       }
     }
-    // The posts JEVs held are waiting, not public: links and contact details for Aaron (high), the rest for their owners.
+    // High-risk posts (links, contact details) are flagged for the reviewers: live, with JEVs's open flag beside them.
     for (const a of agents.filter((x) => x.kind === 'links' || x.kind === 'contacts')) {
-      const [p] = await su`select p.status, f.classifier from app.posts p left join app.review_flags f on f.post_id = p.id and f.source = 'classifier'
+      const [p] = await su`select p.status, f.classifier, f.resolved_at from app.posts p left join app.review_flags f on f.post_id = p.id and f.source = 'classifier'
                            where p.agent_id = ${a.agent} order by p.created_at desc limit 1`;
-      assert.deepStrictEqual(p, { status: 'waiting', classifier: 'jevs' }, a.name);
+      assert.deepStrictEqual([p.classifier, p.resolved_at], ['jevs', null], a.name + ': in the reviewers\u2019 queue');
+      assert.ok(['live', 'removed'].includes(p.status), a.name + ' ' + p.status);
     }
     const burst = agents.find((a) => a.kind === 'burst');
     assert.ok((await allCount(burst.agent)) - (await liveCount(burst.agent)) >= 5, 'most of the burst waits for its owner');

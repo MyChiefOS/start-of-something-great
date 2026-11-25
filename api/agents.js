@@ -119,6 +119,10 @@ function held(res, d) {
     return reply(res, 403, { error: 'Please sign in again to confirm this. Our automatic checks (JEVs) ask the owner to confirm it, then it goes ahead.',
       reauth: REAUTH, challenge: d.challenge });
   }
+  if (d.effect === 'block' && d.error) {
+    res.setHeader('Retry-After', '60');
+    return reply(res, 503, { error: 'Our automatic checks (JEVs) couldn\u2019t finish just now, so this wasn\u2019t done. Please try again shortly.', refused: 'try_again' });
+  }
   if (d.effect === 'block') {
     return reply(res, 403, { error: 'Refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks).', refused: 'blocked' });
   }

@@ -142,7 +142,7 @@ test('a person\'s post follows the same rule: high risk that isn\'t a clear brea
 
 test('an account deletion JEVs finds high risk still opens a deletion review (deleting can\'t be undone)', async () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '../db/migrations/080_no_blockers.sql'), 'utf8');
-  assert.match(src, /if eff = 'hold' and p_action <> 'account\.delete' then/);
+  assert.match(src, /if eff = 'hold' and p_action <> 'account\.delete'\n/);
 });
 
 test('the level figures are settings: lowering them moves an agent up on its next pass', async () => {
@@ -183,4 +183,16 @@ test('asking for sub-agents: the hourly limit rises with level; past it, a retry
   // At level 2 the same agent has 200.
   await q(`update app.agent_standing set level = 2 where member_id = (select owner_id from app.agents where id = '${r.json.agent_id}')`);
   assert.strictEqual((await api(req('POST', 'subagents', { key: r.json.key, json: { name: 'Allowed now', ttl_hours: 24 } }))).status, 201);
+});
+
+test('scoring that fails on a sensitive step refuses it for now ("try again shortly"); nothing waits for a person', async () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../db/migrations/080_no_blockers.sql'), 'utf8');
+  assert.match(src, /if p_error then\n\s+-- Scoring failed on a step that matters: refused for now/);
+  assert.match(require('fs').readFileSync(require('path').join(__dirname, '../api/agents.js'), 'utf8'), /refused: 'try_again'/);
+});
+
+test('high risk is a setting: flag (the default) or hold (the earlier behavior, a one-step rollback); nothing else', async () => {
+  const [{ value }] = await q("select value from app.jevs_settings where key = 'high_risk'");
+  assert.strictEqual(value, 'flag');
+  await assert.rejects(q("update app.jevs_settings set value = 'ignore' where key = 'high_risk'"), /flag or hold/);
 });
