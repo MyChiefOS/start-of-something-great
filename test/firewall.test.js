@@ -91,3 +91,19 @@ test('FWL7: middleware.js lets everything through if the firewall fails, writes 
   assert.match(s, /console\.log\(JSON\.stringify\(\{ wall: d\.rule, kind: d\.kind, action: d\.action, enforced: d\.enforced \}\)\)/);
   assert.ok(!/console\.log\([^)]*(ip|path|url)\b/.test(s.replace(/console\.log\(JSON\.stringify\(\{ wall[^\n]*/, '')));
 });
+
+test('FWL8 (CWE-1333, Aaron Nov 25 "Rewrite without regex"): no regular expression reads request input; the worst inputs stay fast', () => {
+  for (const f of ['wall/firewall.js', 'wall/match.js', 'middleware.js']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    assert.ok(!/new RegExp|\.test\(|\.exec\(|\.match\(|\.replace\(\//.test(src), f + ' uses no regular expressions');
+  }
+  const worst = ['union ' + ' '.repeat(4000) + 'select', '<script ' + 'a'.repeat(4000), '<img ' + 'x'.repeat(4000) + ' on', "' or " + '('.repeat(4000),
+    '%2525'.repeat(1300), 'javascript: ' + 'a'.repeat(4000), '<'.repeat(4000), '${'.repeat(2000), ';'.repeat(4000), "'".repeat(4000), 'on'.repeat(2000)];
+  for (const q of worst) {
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 20; i++) fw.decide(req({ query: 'id=' + q }), { now: LATER, since: SINCE });
+    assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 500, q.slice(0, 20) + ': 20 checks in under 500 ms');
+  }
+  const long = d({ query: 'id=' + 'a'.repeat(9000) });
+  assert.deepStrictEqual([long.rule, long.status], ['W35', 414]);
+});

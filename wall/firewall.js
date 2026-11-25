@@ -20,48 +20,32 @@ const BLOCKED_COUNTRIES = ['KP'];
 const RATE_PER_MINUTE = 300;
 const ENFORCE_NOW = new Set(['W34']);
 
-// What an attack looks like in a path or query, after decoding. Each pattern is anchored to attack syntax, not to
-// words people write (a search for "select a union" isn't an attack; "union select" with SQL around it is).
-// Strong: unmistakable attack syntax, refused (after the log week). Weak: attack-like words a person might search for,
-// only flagged (083 review: on a security site people search for "<script>" and "union select").
-const ATTACKS = [
-  ['sql', /\bunion\b[\s/*+]+(all[\s/*+]+)?select\b[\s\S]*\bfrom\b/i],
-  ['sql', /'[\s)]*(or|and)[\s(]+'?\d+'?\s*=\s*'?\d+/i],
-  ['sql', /;\s*(drop|truncate|shutdown|exec(ute)?)\s/i],
-  ['sql', /\b(sleep|benchmark|pg_sleep)\s*\(\s*\d|\bwaitfor\s+delay\s+'/i],
-  ['sql', /\binformation_schema\b|\bxp_cmdshell\b/i],
-  ['xss', /<\s*(script|iframe|object|embed|svg|img)\b[^>]*>[\s\S]*(<\s*\/\s*script|\bon[a-z]+\s*=|\bsrc\s*=)/i],
-  ['xss', /<\s*(img|svg|body|iframe)\b[^>]*\bon[a-z]+\s*=\s*[^\s>]/i],
-  ['xss', /\bjavascript\s*:\s*[a-z_$][\w$.]*\s*\(/i],
-  ['traversal', /(^|[/\\])\.\.([/\\]|$)/],
-  ['traversal', /\/etc\/(passwd|shadow|hosts)\b|\bwin\.ini\b|\bboot\.ini\b/i],
-  ['command', /[;|`]\s*(cat|curl|wget|bash|sh|nc|ncat|python|perl|powershell)\s+[-/.\w]/i],
-  ['command', /\$\(\s*(cat|curl|wget|id|whoami|uname|bash|sh)\b/i],
-  ['inclusion', /\b(php|expect|phar):\/\/|\bfile:\/\/\/(etc|proc|windows)\b/i],
-  ['lookup', /\$\{\s*(jndi|env|sys|java|lower|upper)\s*:/i],
-  ['nullbyte', /\u0000/]
-];
-
-// Attack-like words in free text (a search box): flagged only, never refused.
-const WEAK = [/\bunion\b\s+select\b/i, /<\s*script/i, /\bjavascript\s*:/i, /\bon(error|load)\s*=/i, /\b(sleep|benchmark)\s*\(/i, /\bfile:\/\//i, /\|\s*(sh|bash)\b/i];
+// The attack checks are wall/match.js: plain text scans, no regular expressions (Aaron, Nov 25, after the scanner's
+// ReDoS finding). Free-text values (a search box) are only flagged if they look like an attack.
+const match = require('./match');
+const MAX_TARGET = 8192;
 const FREE_TEXT = new Set(['q', 'query', 'search', 's', 'text', 'term']);
-
-const SCANNERS = /\b(sqlmap|nikto|nmap|masscan|zgrab|nuclei|acunetix|wpscan|dirbuster|gobuster|ffuf|wfuzz|hydra|netsparker|w3af|openvas|nessus|havij|jaeles|whatweb|feroxbuster|commix|xsstrike)\b/i;
 
 function decode(s) {
   let out = String(s || '');
   for (let i = 0; i < 2; i++) {
-    try { const d = decodeURIComponent(out.replace(/\+/g, ' ')); if (d === out) break; out = d; } catch { break; }
+    try { const d = decodeURIComponent(out.split('+').join(' ')); if (d === out) break; out = d; } catch { break; }
   }
   return out;
 }
 
 // IPv4 in a CIDR range (Spamhaus DROP is ranges; Feodo is single addresses).
 function ipv4(s) {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(s || ''));
-  if (!m) return null;
-  const p = m.slice(1).map(Number);
-  if (p.some((x) => x > 255)) return null;
+  const parts = String(s || '').split('.');
+  if (parts.length !== 4) return null;
+  const p = [];
+  for (const x of parts) {
+    if (x.length < 1 || x.length > 3) return null;
+    for (const c of x) if (c < '0' || c > '9') return null;
+    const n = Number(x);
+    if (n > 255) return null;
+    p.push(n);
+  }
   return ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
 }
 function inRange(ip, cidr) {
@@ -142,20 +126,22 @@ function decide(req, { badAddresses = [], now = Date.now(), since = null } = {})
   const ip = String(req.ip || '');
   if (ip && listed(ip, badAddresses)) return hit('W38', 'threat-list address', 'block', 403);
   const ua = String(req.ua || '');
-  if (SCANNERS.test(ua)) return hit('W37', 'attack scanner', 'block', 403);
-  // Free-text values (a search box) are left out of the strong check and only flagged if they look like an attack.
+  if (match.scanner(ua)) return hit('W37', 'attack scanner', 'block', 403);
+  // What is read is capped, and a request too long to read in full is refused outright.
+  if (String(req.path || '').length + String(req.query || '').length > MAX_TARGET) return hit('W35', 'oversized request', 'block', 414);
   let free = '';
   const rest = String(req.query || '').split('&').filter((pair) => {
     const name = decode(pair.split('=')[0]).toLowerCase();
     if (FREE_TEXT.has(name)) { free += ' ' + decode(pair.slice(pair.indexOf('=') + 1)); return false; }
     return true;
   }).join('&');
-  const target = decode(req.path) + '?' + decode(rest);
-  for (const [kind, re] of ATTACKS) if (re.test(target)) return hit('W35', kind, 'block', 403);
-  if (WEAK.some((re) => re.test(free) || re.test(target))) return hit('W35', 'attack-like words', 'flag', 200);
+  const target = match.fold(decode(req.path) + '?' + decode(rest), MAX_TARGET * 2);
+  const kind = match.attack(target);
+  if (kind) return hit('W35', kind, 'block', 403);
+  if (match.weak(target) || match.weak(match.fold(free, MAX_TARGET * 2))) return hit('W35', 'attack-like words', 'flag', 200);
   if (overRate(ip, now)) return hit('W36', 'rate', 'block', 429);
   if (!ua.trim()) return hit('W37', 'no user agent', 'flag', 200);
   return { rule: null, kind: null, action: 'allow', status: 200, enforced: false };
 }
 
-module.exports = { decide, inRange, ipv4, decode, mode, listed, rateKey, ATTACKS, WEAK, SCANNERS, BLOCKED_COUNTRIES, RATE_PER_MINUTE, LOG_DAYS, MAX_TRACKED };
+module.exports = { decide, inRange, ipv4, decode, mode, listed, rateKey, BLOCKED_COUNTRIES, RATE_PER_MINUTE, LOG_DAYS, MAX_TRACKED, MAX_TARGET };
