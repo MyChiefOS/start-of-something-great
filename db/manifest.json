@@ -319,6 +319,10 @@
     {
       "version": "080_no_blockers",
       "sha256": "26361c2344ea348824e983c6595f5d7f12257abd0ec67d28f968ca8882ef2ea9"
+    },
+    {
+      "version": "081_full_wall",
+      "sha256": "3a1edb04a205a0a8c36082c91546b258267604e6cd316d690febec08fe0e2710"
     }
   ]
 }
