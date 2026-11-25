@@ -64,9 +64,9 @@ function packagesOf(item) {
 function indicatorOf(kind, value, source, ref) {
   let v = String(value == null ? '' : value).trim();
   if (kind !== 'url') v = v.toLowerCase();
-  if (kind === 'injection') v = v.replace(/\s+/g, ' ');
-  const ok = { ip: IP, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION }[kind];
-  if (!ok || v.length < 6 || v.length > (kind === 'injection' ? 120 : kind === 'domain' ? 253 : 500) || !ok.test(v)) return null;
+  if (kind === 'injection' || kind === 'injection_flag') v = v.replace(/\s+/g, ' ');
+  const ok = { ip: IP, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION, injection_flag: INJECTION }[kind];
+  if (!ok || v.length < 6 || v.length > (kind.startsWith('injection') ? 120 : kind === 'domain' ? 253 : 500) || !ok.test(v)) return null;
   const r = String(ref == null ? '' : ref).replace(/[^A-Za-z0-9 ._:/-]/g, '').slice(0, 60);
   return { kind, value: v, source, ref: REF.test(r) ? r : '' };
 }
@@ -75,15 +75,19 @@ function indicatorOf(kind, value, source, ref) {
 async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } = {}) {
   const out = [];
   const counts = { feodo: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
+  // 082 review: each feed's answer is capped at 8 MB before it is parsed, and each feed at a fixed count, so the whole
+  // run stays well under the database's 16 MB limit (an oversized feed is skipped; the CVEs still record).
   const get = async (url, init) => {
     const r = await fetchImpl(url, Object.assign({ signal: AbortSignal.timeout(20000) }, init));
     if (r.status !== 200) throw new Error(url + ' ' + r.status);
-    return r.json();
+    const body = typeof r.text === 'function' ? await r.text() : JSON.stringify(await r.json());
+    if (body.length > 8000000) throw new Error(url + ' too large');
+    return JSON.parse(body);
   };
   const add = (name, x) => { if (x) { out.push(x); counts[name]++; } };
   try {
     const list = await get(FEODO, { headers: { accept: 'application/json' } });
-    for (const it of (Array.isArray(list) ? list : []).slice(0, 20000)) add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
+    for (const it of (Array.isArray(list) ? list : []).slice(0, 5000)) add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
   } catch { /* skipped this run */ }
   if (key) {
     const headers = { 'Auth-Key': key, accept: 'application/json' };
@@ -93,7 +97,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
     } catch { /* skipped */ }
     try {
       const b = await get(THREATFOX, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, headers), body: JSON.stringify({ query: 'get_iocs', days: 3 }) });
-      for (const i of (b && Array.isArray(b.data) ? b.data : []).slice(0, 50000)) {
+      for (const i of (b && Array.isArray(b.data) ? b.data : []).slice(0, 30000)) {
         const t = String(i && i.ioc_type);
         const kind = t === 'domain' ? 'domain' : t === 'url' ? 'url' : t === 'ip:port' ? 'ip' : t === 'sha256_hash' ? 'sha256' : null;
         const v = kind === 'ip' ? String(i.ioc).split(':')[0] : i && i.ioc;
@@ -102,7 +106,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
     } catch { /* skipped */ }
     try {
       const b = await get(MALWAREBAZAAR, { method: 'POST', headers: Object.assign({ 'content-type': 'application/x-www-form-urlencoded' }, headers), body: 'query=get_recent&selector=time' });
-      for (const m of (b && Array.isArray(b.data) ? b.data : []).slice(0, 20000)) add('malwarebazaar', indicatorOf('sha256', m && m.sha256_hash, 'malwarebazaar', m && m.signature));
+      for (const m of (b && Array.isArray(b.data) ? b.data : []).slice(0, 10000)) add('malwarebazaar', indicatorOf('sha256', m && m.sha256_hash, 'malwarebazaar', m && m.signature));
     } catch { /* skipped */ }
   }
   return { indicators: out, counts };
@@ -131,7 +135,8 @@ async function gather({ fetchImpl = fetch, now = Date.now, key } = {}) {
   const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key });
   const indicators = f.indicators;
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
-  Object.assign(sources, f.counts, { injection: (REFERENCE.injection || []).length });
+  for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
+  Object.assign(sources, f.counts, { injection: (REFERENCE.injection || []).length, injection_flag: (REFERENCE.injection_flag || []).length });
   return { entries, packages, indicators, sources };
 }
 

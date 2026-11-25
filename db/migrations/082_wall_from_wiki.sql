@@ -23,7 +23,7 @@ alter table app.wiki_versions add column indicators integer not null default 0 c
 create table app.wiki_indicators (
   id uuid primary key default app.uuid_v7(),
   version_id uuid not null references app.wiki_versions (id) on delete cascade,
-  kind text not null check (kind = any (array['ip', 'domain', 'url', 'sha256', 'injection'])),
+  kind text not null check (kind = any (array['ip', 'domain', 'url', 'sha256', 'injection', 'injection_flag'])),
   value text not null check (char_length(value) between 6 and 500),
   source text not null check (source = any (array['feodo', 'urlhaus', 'threatfox', 'malwarebazaar', 'reference'])),
   ref text check (char_length(ref) <= 60 and ref ~ '^[A-Za-z0-9 ._:/-]*$'),
@@ -33,10 +33,11 @@ create table app.wiki_indicators (
     when 'url' then value ~ '^https?://[^[:space:]"''<>]+$'
     when 'sha256' then value ~ '^[0-9a-f]{64}$'
     when 'injection' then char_length(value) <= 120 and value ~ '^[!-~]([ -~]*[!-~])?$' and value !~ '  ' and value = lower(value)
+    when 'injection_flag' then char_length(value) <= 120 and value ~ '^[!-~]([ -~]*[!-~])?$' and value !~ '  ' and value = lower(value)
   end),
   unique (version_id, kind, value)
 );
-create index wiki_indicators_lookup on app.wiki_indicators (kind, value);
+create index wiki_indicators_lookup on app.wiki_indicators (version_id, kind, value);
 alter table app.wiki_indicators enable row level security;
 alter table app.wiki_indicators force row level security;
 create policy wiki_indicators_work on app.wiki_indicators for all to dog_work using (true) with check (true);
@@ -48,7 +49,9 @@ reset role;
 alter table app.wall_rules disable row level security;
 insert into app.wall_rules (rule, effect, what) values
   ('W28', 'block', 'A known-bad IP address, domain or URL from the security wiki''s threat feeds'),
-  ('W29', 'block', 'A prompt-injection pattern from the security wiki'),
+  ('W29', 'block', 'A prompt-injection phrase aimed at a checker or a model, from the security wiki'),
+  ('W29b', 'flag', 'A broader injection phrase from the security wiki, or any injection phrase inside a test or fixture'),
+  ('W07c', 'flag', 'An instruction aimed at a checker, inside a test or fixture file'),
   ('W30', 'flag', 'An archive the Wall can''t open'),
   ('W31', 'block', 'An executable or installer file the task didn''t name'),
   ('W32', 'block', 'A disguised file name (a double extension or a reversed-text character)'),
@@ -63,17 +66,43 @@ language sql immutable set search_path = pg_catalog as $$
   select coalesce(lower(p_domain), '') ~ '(^|\.)(dayonegreat\.(com|ai)|github\.com|githubusercontent\.com|github\.io|npmjs\.(com|org)|vercel\.(app|com)|supabase\.(co|com)|google\.com|googleapis\.com|microsoft\.com|apple\.com|amazon\.com|amazonaws\.com|cloudflare\.com|anthropic\.com|claude\.ai|wikipedia\.org|example\.(com|org|net))$'
 $$;
 revoke execute on function app.wiki_never_block(text) from public;
+
+-- 082 review: addresses a feed may never block: private, loopback, link-local, shared, multicast and reserved ranges, and
+-- the public DNS resolvers; and public suffixes (a domain indicator like com.au would block a whole country's sites).
+create function app.wiki_never_block_ip(p_ip text) returns boolean
+language sql immutable set search_path = pg_catalog as $$
+  select coalesce(p_ip, '') ~ '^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|22[4-9]\.|2[3-5][0-9]\.)'
+      or coalesce(p_ip, '') = any (array['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9', '149.112.112.112', '208.67.222.222', '208.67.220.220', '4.2.2.1', '4.2.2.2'])
+$$;
+create function app.wiki_public_suffix(p_domain text) returns boolean
+language sql immutable set search_path = pg_catalog as $$
+  select coalesce(lower(p_domain), '') ~ '^((com|net|org|co|gov|edu|ac|or|ne|go|mil|nic|ltd|plc|sch|nhs|gob|gouv|biz|info|blogspot|github|herokuapp|appspot|azurewebsites|cloudfront|pages|netlify|workers|web)\.[a-z]{2,}|[a-z]{2,3})$'
+$$;
+revoke execute on function app.wiki_never_block_ip(text), app.wiki_public_suffix(text) from public;
+grant execute on function app.wiki_never_block_ip(text), app.wiki_public_suffix(text) to dog_work;
 grant execute on function app.wiki_never_block(text) to dog_work;
 
+-- A URL compared without case, fragment, query or a trailing slash (a feed's URL and the one in work alike).
+create function app.wall_url_norm(p_url text) returns text
+language sql immutable set search_path = pg_catalog as $$
+  select rtrim(split_part(split_part(lower(coalesce(p_url, '')), '#', 1), '?', 1), '/')
+$$;
+revoke execute on function app.wall_url_norm(text) from public;
+grant execute on function app.wall_url_norm(text) to dog_work;
+
 -- The Wall's lookups against the active wiki version: what a text names that the feeds or the wiki's patterns flag.
-create function app.wall_intel_flags(p_text text) returns jsonb
+-- Each lookup is an equality on the index (version, kind, value): a host is matched by its own suffixes (a.b.evil.test
+-- tries a.b.evil.test, b.evil.test, evil.test), never by a scan. p_path: an injection phrase in a test or fixture file
+-- is flagged, not blocked (the project's own red-team tests quote them).
+create function app.wall_intel_flags(p_text text, p_path text default null) returns jsonb
 language plpgsql stable security definer set search_path = pg_catalog as $$
 declare
-  t text := coalesce(p_text, '');
+  t text := left(coalesce(p_text, ''), 2000000);
   n text;
   vid uuid;
   f jsonb := '[]'::jsonb;
   hit record;
+  test_path boolean := coalesce(p_path, '') ~* '(^|/)(test|tests|__tests__|spec|fixtures?|redteam|__fixtures__)/|\.(test|spec)\.[a-z]+$';
 begin
   select v.id into vid from app.wiki_versions v where v.status = 'active';
   if vid is null or t = '' then return f; end if;
@@ -82,28 +111,37 @@ begin
   -- Defanged indicators (hxxp, [.]) read as the real thing.
   n := replace(replace(replace(replace(n, 'hxxp', 'http'), '[.]', '.'), '(.)', '.'), '[:]', ':');
   for hit in
-    with urls as (select distinct rtrim(m[1], '.,;:)]''"') as u from regexp_matches(n, '(https?://[^[:space:]"''<>`]+)', 'g') m),
+    with urls as (select distinct app.wall_url_norm(rtrim(m[1], '.,;:)]''"')) as u from regexp_matches(n, '(https?://[^[:space:]"''<>`]+)', 'g') m),
          hosts as (select distinct h from (select substring(u from '^https?://(?:[^@/]*@)?([^/:?#]+)') as h from urls
-                    union select (regexp_matches(n, '\m([a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,24})\M', 'g'))[1]) x where h is not null),
-         ips as (select distinct (regexp_matches(n, '\m((?:[0-9]{1,3}\.){3}[0-9]{1,3})\M', 'g'))[1] as ip),
+                    union select (regexp_matches(n, '\m([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z][a-z0-9-]{1,23})\M', 'g'))[1]) x where h is not null),
+         suffixes as (select distinct array_to_string(p[k:], '.') as d
+                        from (select string_to_array(h, '.') as p from hosts) y, generate_subscripts(y.p, 1) k where cardinality(p) - k >= 1),
+         -- Dotted (leading zeros read as decimal) and a bare 32-bit number, both as a.b.c.d.
+         ips as (select distinct ip from (
+                   select m[1]::int || '.' || m[2]::int || '.' || m[3]::int || '.' || m[4]::int as ip
+                     from regexp_matches(n, '\m([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\M', 'g') m
+                   union all
+                   select (x >> 24) || '.' || ((x >> 16) & 255) || '.' || ((x >> 8) & 255) || '.' || (x & 255)
+                     from (select (regexp_matches(n, '(?:^|[^0-9.])([0-9]{8,10})(?:$|[^0-9.])', 'g'))[1]::bigint as x) z where x between 16777216 and 4294967295) w),
          shas as (select distinct (regexp_matches(n, '\m([0-9a-f]{64})\M', 'g'))[1] as s)
-    select 'W28' as rule, i.kind, i.value, i.source, i.ref from app.wiki_indicators i join urls on i.kind = 'url' and urls.u = i.value where i.version_id = vid
+    select 'W28' as rule, i.kind, i.value, i.source, i.ref from urls join app.wiki_indicators i on i.version_id = vid and i.kind = 'url' and i.value = urls.u
     union all
-    select 'W28', i.kind, i.value, i.source, i.ref from app.wiki_indicators i join hosts on i.kind = 'domain' and (hosts.h = i.value or hosts.h like '%.' || i.value) where i.version_id = vid
+    select 'W28', i.kind, i.value, i.source, i.ref from suffixes join app.wiki_indicators i on i.version_id = vid and i.kind = 'domain' and i.value = suffixes.d
     union all
-    select 'W28', i.kind, i.value, i.source, i.ref from app.wiki_indicators i join ips on i.kind = 'ip' and ips.ip = i.value where i.version_id = vid
+    select 'W28', i.kind, i.value, i.source, i.ref from ips join app.wiki_indicators i on i.version_id = vid and i.kind = 'ip' and i.value = ips.ip
     union all
-    select 'W33', i.kind, i.value, i.source, i.ref from app.wiki_indicators i join shas on i.kind = 'sha256' and shas.s = i.value where i.version_id = vid
+    select 'W33', i.kind, i.value, i.source, i.ref from shas join app.wiki_indicators i on i.version_id = vid and i.kind = 'sha256' and i.value = shas.s
     union all
-    select 'W29', i.kind, i.value, i.source, i.ref from app.wiki_indicators i where i.version_id = vid and i.kind = 'injection' and strpos(n, i.value) > 0
+    select case when i.kind = 'injection' and not test_path then 'W29' else 'W29b' end, i.kind, i.value, i.source, i.ref
+      from app.wiki_indicators i where i.version_id = vid and i.kind in ('injection', 'injection_flag') and strpos(n, i.value) > 0
     limit 20
   loop
-    f := f || jsonb_build_array(hit.rule || case hit.rule when 'W33' then ' known-bad file fingerprint' when 'W29' then ' injection pattern' else ' known-bad ' || hit.kind end
+    f := f || jsonb_build_array(hit.rule || case hit.rule when 'W33' then ' known-bad file fingerprint' when 'W29' then ' injection pattern' when 'W29b' then ' injection phrase' else ' known-bad ' || hit.kind end
            || ' (security wiki, ' || hit.source || coalesce(' ' || hit.ref, '') || '): ' || left(hit.value, 100));
   end loop;
   return f;
 end $$;
-revoke execute on function app.wall_intel_flags(text) from public;
+revoke execute on function app.wall_intel_flags(text, text) from public;
 reset role;
 
 -- The wiki records indicators beside its entries and packages (074's record, with the indicators and their cap).
@@ -148,9 +186,11 @@ begin
     select vid, k ->> 'ecosystem', lower(k ->> 'name'), k ->> 'version', k ->> 'advisory' from jsonb_array_elements(p -> 'packages') k
     on conflict do nothing;
   insert into app.wiki_indicators (version_id, kind, value, source, ref)
-    select vid, i ->> 'kind', case when i ->> 'kind' = 'url' then i ->> 'value' else lower(i ->> 'value') end, i ->> 'source', left(i ->> 'ref', 60)
+    select vid, i ->> 'kind', case when i ->> 'kind' = 'url' then app.wall_url_norm(i ->> 'value') else lower(i ->> 'value') end, i ->> 'source', left(i ->> 'ref', 60)
       from jsonb_array_elements(coalesce(p -> 'indicators', '[]'::jsonb)) i
-     where not (i ->> 'kind' = 'domain' and app.wiki_never_block(i ->> 'value'))
+     where not (i ->> 'kind' = 'domain' and (app.wiki_never_block(i ->> 'value') or app.wiki_public_suffix(i ->> 'value')))
+       and not (i ->> 'kind' = 'ip' and app.wiki_never_block_ip(i ->> 'value'))
+       and not (i ->> 'kind' = 'url' and app.wiki_never_block(substring(lower(i ->> 'value') from '^https?://(?:[^@/]*@)?([^/:?#]+)')) and substring(lower(i ->> 'value') from '^https?://[^/]+(/[^?#]*)?') in ('', '/'))
     on conflict do nothing;
   update app.wiki_versions v set indicators = (select count(*) from app.wiki_indicators x where x.version_id = vid) where v.id = vid;
   -- The change caps: rows added plus rows dropped, against the active version (packages, then indicators).
@@ -248,7 +288,14 @@ begin
         end if;
       end loop;
     end if;
-    f := f || app.wall_code_flags(fname, added, task) || app.wall_intel_flags(added);
+    -- 082 review: inside a test or fixture file, a phrase aimed at a checker is flagged (W07c), not blocked: the
+    -- project's red-team tests quote them. Reviewers still see it.
+    if fname ~* '(^|/)(test|tests|__tests__|spec|fixtures?|redteam|__fixtures__)/|\.(test|spec)\.[a-z]+$' then
+      f := f || coalesce((select jsonb_agg(case when x like 'W07b %' then 'W07c' || substr(x, 5) || ' (in a test or fixture)' else x end)
+                            from jsonb_array_elements_text(app.wall_code_flags(fname, added, task)) x), '[]'::jsonb) || app.wall_intel_flags(added, fname);
+    else
+      f := f || app.wall_code_flags(fname, added, task) || app.wall_intel_flags(added, fname);
+    end if;
     -- 082, as an email filter treats attachments: by the file's name (GitHub sends no bytes for a binary file).
     ext := lower(substring(fname from '\.([A-Za-z0-9]{1,8})$'));
     if lower(fname) ~ '\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|gif|txt|zip|rtf)\.(exe|scr|pif|com|bat|cmd|vbs|vbe|js|jse|wsf|wsh|hta|lnk|msi|ps1|jar)$'
