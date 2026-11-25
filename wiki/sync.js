@@ -15,6 +15,11 @@ const DAY = 86400000;
 // abuse.ch key and may need a paid license for commercial use, so they run only when the site has ABUSECH_AUTH_KEY
 // (Aaron's call; the key is set in Vercel by him, never seen here).
 const FEODO = 'https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.json';
+// 083: Spamhaus DROP, hijacked and criminal ranges. Free for any use with credit to The Spamhaus Project (shown on
+// /checks); its terms ask for at most one download a day, so it is read on the run before noon UTC and carried over
+// from the active version on the other.
+const SPAMHAUS = 'https://www.spamhaus.org/drop/drop_v4.json';
+const CIDR = /^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\/([89]|[12][0-9]|3[0-2])$/;
 const URLHAUS = 'https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/';
 const THREATFOX = 'https://threatfox-api.abuse.ch/api/v1/';
 const MALWAREBAZAAR = 'https://mb-api.abuse.ch/api/v1/';
@@ -61,21 +66,32 @@ function packagesOf(item) {
   return out;
 }
 
+function isNetwork(cidr) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(String(cidr));
+  if (!m) return false;
+  const n = Number(m[5]);
+  if (n > 32 || m.slice(1, 5).some((x) => Number(x) > 255)) return false;
+  const a = ((Number(m[1]) << 24) >>> 0) + (Number(m[2]) << 16) + (Number(m[3]) << 8) + Number(m[4]);
+  const mask = n === 0 ? 0 : (~0 << (32 - n)) >>> 0;
+  return ((a & mask) >>> 0) === a;
+}
+
 // One indicator to the wiki's fields, or null if it doesn't fit (a feed is data: anything odd is dropped).
 function indicatorOf(kind, value, source, ref) {
   let v = String(value == null ? '' : value).trim();
   if (kind !== 'url') v = v.toLowerCase();
   if (kind === 'injection' || kind === 'injection_flag') v = v.replace(/\s+/g, ' ');
-  const ok = { ip: IP, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION, injection_flag: INJECTION }[kind];
+  const ok = { ip: IP, cidr: CIDR, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION, injection_flag: INJECTION }[kind];
   if (!ok || v.length < 6 || v.length > (kind.startsWith('injection') ? 120 : kind === 'domain' ? 253 : 500) || !ok.test(v)) return null;
   const r = String(ref == null ? '' : ref).replace(/[^A-Za-z0-9 ._:/-]/g, '').slice(0, 60);
   return { kind, value: v, source, ref: REF.test(r) ? r : '' };
 }
 
 // The threat feeds. Each one that fails is skipped (and counted as 0); the others still record.
-async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } = {}) {
+async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now } = {}) {
   const out = [];
-  const counts = { feodo: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
+  const counts = { feodo: 0, spamhaus: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
+  const carry = [];
   // 082 review: each feed's answer is capped at 8 MB before it is parsed, and each feed at a fixed count, so the whole
   // run stays well under the database's 16 MB limit (an oversized feed is skipped; the CVEs still record).
   const get = async (url, init) => {
@@ -90,6 +106,19 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
     const list = await get(FEODO, { headers: { accept: 'application/json' } });
     for (const it of (Array.isArray(list) ? list : []).slice(0, 5000)) add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
   } catch { /* skipped this run */ }
+  if (new Date(now()).getUTCHours() < 12) {
+    try {
+      const r = await fetchImpl(SPAMHAUS, { headers: { accept: 'application/x-ndjson' }, signal: AbortSignal.timeout(20000) });
+      if (r.status !== 200) throw new Error('spamhaus ' + r.status);
+      const text = await r.text();
+      if (text.length > 2000000) throw new Error('spamhaus too large');
+      for (const line of text.split('\n').slice(0, 5000)) {
+        let o; try { o = JSON.parse(line); } catch { continue; }
+        // Only a true network (no host bits set): 1.2.3.4/8 would be refused by the database and lose the whole run.
+        if (o && o.cidr && isNetwork(o.cidr)) add('spamhaus', indicatorOf('cidr', o.cidr, 'spamhaus', o.sblid));
+      }
+    } catch { carry.push('spamhaus'); }
+  } else carry.push('spamhaus');
   if (key) {
     const headers = { 'Auth-Key': key, accept: 'application/json' };
     try {
@@ -110,7 +139,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
       for (const m of (b && Array.isArray(b.data) ? b.data : []).slice(0, 10000)) add('malwarebazaar', indicatorOf('sha256', m && m.sha256_hash, 'malwarebazaar', m && m.signature));
     } catch { /* skipped */ }
   }
-  return { indicators: out, counts };
+  return { indicators: out, counts, carry };
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
@@ -166,12 +195,12 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   const sources = { nvd: entries.filter((e) => e.source === 'nvd').length, kev: entries.filter((e) => e.kev).length, cwe: 0, owasp_api: 0, asvs: 0, npm_packages: packages.length };
   for (const e of REFERENCE.entries) sources[e.source]++;
   // 082: the threat feeds and the wiki's own injection patterns, for the Wall.
-  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key });
+  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key, now });
   const indicators = f.indicators;
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   Object.assign(sources, f.counts, { injection: (REFERENCE.injection || []).length, injection_flag: (REFERENCE.injection_flag || []).length });
-  return { entries, packages, indicators, sources };
+  return { entries, packages, indicators, sources, carry: f.carry };
 }
 
 // The timer's step: at most one run each 12 hours; any failure records nothing and the next run is in 12 hours.

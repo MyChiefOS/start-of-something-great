@@ -280,6 +280,10 @@
     "kind": "public read",
     "why": "076: a submission's final score from facts the site already shows (Second and Third Look's outcomes, an open dispute, a Wall flag), as a number and short reasons; never the flagged text, never who flagged it. Writes nothing."
   },
+  "wall_edge_addresses": {
+    "kind": "public read",
+    "why": "083: the firewall's threat addresses and ranges and when it went live, from public feeds (Spamhaus DROP, Feodo Tracker); read anonymously by middleware.js through /api/work/wall_edge. No person, and it changes nothing."
+  },
   "wiki_summary": {
     "kind": "public read",
     "why": "074: the security wiki's versions, when it last ran and the newest 50 advisories, all from public feeds (NVD, CISA KEV, MITRE CWE, OWASP); no person."

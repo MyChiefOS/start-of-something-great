@@ -73,8 +73,14 @@ module.exports = [
   // Node: the API, the database layer, sign-in, the scripts, the tests, the tools and the research code (CommonJS).
   {
     files: ['eslint.config.cjs', 'launch.js', 'api/**/*.js', 'db/**/*.js', 'signin/**/*.js', 'notify/**/*.js', 'scripts/**/*.js',
-      'test/**/*.js', 'tools/**/*.js', 'harness/**/*.js', 'redteam/**/*.js', 'secondlook/**/*.js', 'thirdlook/**/*.js', 'research/**/*.js'],
+      'test/**/*.js', 'tools/**/*.js', 'harness/**/*.js', 'redteam/**/*.js', 'secondlook/**/*.js', 'thirdlook/**/*.js', 'research/**/*.js', 'wall/**/*.js'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'commonjs', globals: node },
+    rules: bugs,
+  },
+  // 083: the Agentic Wall's firewall, Vercel Routing Middleware (an ES module run by Node before every request).
+  {
+    files: ['middleware.js'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: node },
     rules: bugs,
   },
   // The browser checks run in Node and hand functions to Playwright's page.evaluate, which runs them in the page, so
