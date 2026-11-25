@@ -26,6 +26,14 @@ constraint app.agent_keys agent_keys_agent_id_fkey FOREIGN KEY (agent_id) REFERE
 constraint app.agent_keys agent_keys_key_hash_check CHECK (((char_length(key_hash) = 64) AND (key_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.agent_keys agent_keys_key_hash_key UNIQUE (key_hash)
 constraint app.agent_keys agent_keys_pkey PRIMARY KEY (id)
+constraint app.agent_level_settings agent_level_settings_check CHECK (((to_level2 < to_level3) AND (to_level3 < to_level4)))
+constraint app.agent_level_settings agent_level_settings_level4_clean_hours_check CHECK (((level4_clean_hours >= 0) AND (level4_clean_hours <= 8760)))
+constraint app.agent_level_settings agent_level_settings_one_row_check CHECK (one_row)
+constraint app.agent_level_settings agent_level_settings_one_row_key UNIQUE (one_row)
+constraint app.agent_level_settings agent_level_settings_pkey PRIMARY KEY (id)
+constraint app.agent_level_settings agent_level_settings_to_level2_check CHECK (((to_level2 >= 1) AND (to_level2 <= 1000)))
+constraint app.agent_level_settings agent_level_settings_to_level3_check CHECK (((to_level3 >= 1) AND (to_level3 <= 1000)))
+constraint app.agent_level_settings agent_level_settings_to_level4_check CHECK (((to_level4 >= 1) AND (to_level4 <= 1000)))
 constraint app.agent_recovery_keys agent_recovery_keys_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE CASCADE
 constraint app.agent_recovery_keys agent_recovery_keys_agent_id_key UNIQUE (agent_id)
 constraint app.agent_recovery_keys agent_recovery_keys_pkey PRIMARY KEY (id)
@@ -306,8 +314,13 @@ constraint app.jevs_challenges jevs_challenges_owner_id_fkey FOREIGN KEY (owner_
 constraint app.jevs_challenges jevs_challenges_pkey PRIMARY KEY (id)
 constraint app.jevs_challenges jevs_challenges_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'declined'::text])))
 constraint app.jevs_challenges jevs_challenges_subject_kind_check CHECK ((subject_kind = ANY (ARRAY['member'::text, 'post'::text, 'agent'::text])))
+constraint app.jevs_clear_rules jevs_clear_rules_min_score_check CHECK (((min_score >= 1) AND (min_score <= 100)))
+constraint app.jevs_clear_rules jevs_clear_rules_pkey PRIMARY KEY (id)
+constraint app.jevs_clear_rules jevs_clear_rules_question_check CHECK ((question ~ '^J[0-9]{2}$'::text))
+constraint app.jevs_clear_rules jevs_clear_rules_question_key UNIQUE (question)
+constraint app.jevs_clear_rules jevs_clear_rules_why_check CHECK (((char_length(why) >= 1) AND (char_length(why) <= 300)))
 constraint app.jevs_decisions jevs_decisions_action_check CHECK ((action = ANY (ARRAY['account.check'::text, 'account.delete'::text, 'agent.claim'::text, 'agent.create'::text, 'agent.key'::text, 'agent.recover'::text, 'agent.recovery_issue'::text, 'agent.register'::text, 'agent.rules'::text, 'agent.subagent'::text, 'draft.create'::text, 'post.approved'::text, 'post.create'::text, 'post.reported'::text, 'signup'::text])))
-constraint app.jevs_decisions jevs_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'challenge'::text, 'hold'::text, 'hide'::text, 'promote'::text, 'queue'::text, 'draft'::text])))
+constraint app.jevs_decisions jevs_decisions_effect_check CHECK ((effect = ANY (ARRAY['none'::text, 'challenge'::text, 'hold'::text, 'hide'::text, 'promote'::text, 'queue'::text, 'draft'::text, 'block'::text, 'flag'::text])))
 constraint app.jevs_decisions jevs_decisions_level_check CHECK ((level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
 constraint app.jevs_decisions jevs_decisions_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
 constraint app.jevs_decisions jevs_decisions_pkey PRIMARY KEY (id)
@@ -1105,6 +1118,12 @@ default app.agent_drafts.id = app.uuid_v7()
 default app.agent_drafts.status = 'pending'::text
 default app.agent_keys.created_at = now()
 default app.agent_keys.id = app.uuid_v7()
+default app.agent_level_settings.id = app.uuid_v7()
+default app.agent_level_settings.level4_clean_hours = 72
+default app.agent_level_settings.one_row = true
+default app.agent_level_settings.to_level2 = 3
+default app.agent_level_settings.to_level3 = 10
+default app.agent_level_settings.to_level4 = 25
 default app.agent_recovery_keys.created_at = now()
 default app.agent_recovery_keys.id = app.uuid_v7()
 default app.agent_rules.created_at = now()
@@ -1213,6 +1232,7 @@ default app.invariant_slot.singleton = true
 default app.jevs_challenges.created_at = now()
 default app.jevs_challenges.id = app.uuid_v7()
 default app.jevs_challenges.status = 'pending'::text
+default app.jevs_clear_rules.id = app.uuid_v7()
 default app.jevs_decisions.created_at = now()
 default app.jevs_decisions.id = app.uuid_v7()
 default app.jevs_marks.created_at = now()
@@ -1596,12 +1616,13 @@ function app.agent_recovery_status(p_agents uuid[]) owner=dog_signin execute=dog
 function app.agent_recovery_subject(p_recovery_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=uuid body_md5=b8ed7c5860db062264686ca14cbd80b3
 function app.agent_register(p_name text, p_description text, p_key_hash text, p_claim_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=488027d668b8b56f4c2e7af5eba9c690
 function app.agent_resolve(p_key_hash text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(agent_id uuid, owner_id uuid) body_md5=5b4b87499931a9eea350b132605100c2
+function app.agent_retire_self() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=797b3951c3f0a05a7ca169f7e644462f
 function app.agent_rules_audit() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=b8046815cb85df3ac268e969accdef70
 function app.agent_rules_cascade() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=0d3bd76ef276691e09228c38953b4da4
 function app.agent_rules_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=cb4aeed33b3fb3cf3fa602be41db4f39
 function app.agent_rules_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=6b0ca9d68ad47818373b4d018aaf02e6
 function app.agent_rules_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7bd380507307027625489f7b05df4c5c
-function app.agent_standing_event(p_member uuid, p_event text) owner=dog_signin execute=dog_signin,dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=smallint body_md5=84bcb2f42bb54e0cd53004aac22be93a
+function app.agent_standing_event(p_member uuid, p_event text) owner=dog_signin execute=dog_signin,dog_owner,dog_jevs language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=smallint body_md5=6e1179f323a6e54f15ef92906a98d514
 function app.agent_standing_from_wall() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=9f896ce361df6cd64dfaaa51ca34b069
 function app.agent_standing_from_work() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=998881128409486e6e192faa6d0f2bd8
 function app.agent_tree_cap() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=8ac56a91029a55f017e8c567cfe732b7
@@ -1610,7 +1631,7 @@ function app.agents_by() owner=dog_owner execute=dog_owner language=plpgsql vola
 function app.agents_cascade() owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=7f233441931899c0e84c9271ceea8d08
 function app.agents_fill() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=3112f794fcbff84b977967ce7f37385c
 function app.agents_first_rules() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=3ccc40d32ea4d79f2cc5852c08d81234
-function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=45dec5d952cffdb8eb90903b3f654d4d
+function app.agents_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=47912e526221d6f4ac1fe1d352e25a14
 function app.agents_limit() owner=dog_limits execute=dog_limits,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=3c5a924f387ba14132ce4221197b9a4f
 function app.agents_owner_active() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c5dd087de8df28ca0356ff2667dcf059
 function app.approve_draft(p_draft uuid, p_hash text) owner=dog_delegate execute=dog_delegate,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, status text) body_md5=1c3cfe272f190424762969fe9332e2e7
@@ -1727,7 +1748,7 @@ function app.jevs_answer(p_challenge uuid, p_answer text) owner=dog_jevs execute
 function app.jevs_appealable(p_post uuid) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=11d8f3e3e22b547c00ac25ab72dfec6c
 function app.jevs_challenges_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=0a4982bbee462fa8f73e8c620e47953e
 function app.jevs_challenges_notify() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=639694e6a9015139d80bfb3a58b7d883
-function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=96bdfca8b4c227fcafd8edc9b1685d08
+function app.jevs_decide(p_action text, p_subject uuid, p_scores jsonb, p_impact text, p_error boolean, p_domains text[], p_simhash bigint, p_net text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(decision_id uuid, level text, effect text, applied boolean, mode text, challenge_id uuid, challenge_status text) body_md5=c2ce244ab222b25c175cde85c945cb50
 function app.jevs_decisions_alert() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=275ad52bf6873a0733fc05daa6a1cc70
 function app.jevs_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=55cdb93da3b2681196ca0311b3f15c77
 function app.jevs_enforcing() owner=dog_owner execute=dog_owner,dog_jevs,dog_app,dog_delegate language=sql volatile=s definer=false config= returns=boolean body_md5=307b7b21a365ef3e4019044002660681
@@ -2084,6 +2105,8 @@ grant app.agent_keys.key_hash dog_signin INSERT
 grant app.agent_keys.revoked_at dog_app SELECT
 grant app.agent_keys.revoked_at dog_app UPDATE
 grant app.agent_keys.revoked_at dog_signin UPDATE
+grant app.agent_level_settings dog_public SELECT
+grant app.agent_level_settings dog_signin SELECT
 grant app.agent_recovery_keys dog_signin DELETE
 grant app.agent_recovery_keys dog_signin SELECT
 grant app.agent_recovery_keys.agent_id dog_signin INSERT
@@ -2454,6 +2477,8 @@ grant app.jevs_challenges.status dog_app SELECT
 grant app.jevs_challenges.status dog_jevs UPDATE
 grant app.jevs_challenges.subject_id dog_app SELECT
 grant app.jevs_challenges.subject_kind dog_app SELECT
+grant app.jevs_clear_rules dog_jevs SELECT
+grant app.jevs_clear_rules dog_public SELECT
 grant app.jevs_decisions dog_app SELECT
 grant app.jevs_decisions dog_erase DELETE
 grant app.jevs_decisions dog_jevs INSERT
@@ -3206,6 +3231,7 @@ policy app.agent_keys agent_keys_signin_insert cmd=a permissive=true to=dog_sign
 policy app.agent_keys agent_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
 policy app.agent_keys agent_keys_signin_update cmd=w permissive=true to=dog_signin using=true check=true
 policy app.agent_keys agent_keys_update cmd=w permissive=true to=dog_app using=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member)))))) check=((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (EXISTS ( SELECT 1 FROM app.agents a WHERE ((a.id = agent_keys.agent_id) AND (a.owner_id = ( SELECT app.current_member() AS current_member))))))
+policy app.agent_level_settings agent_level_settings_read cmd=r permissive=true to=dog_signin,dog_public using=true check=
 policy app.agent_recovery_keys agent_recovery_keys_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.agent_recovery_keys agent_recovery_keys_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.agent_recovery_keys agent_recovery_keys_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -3340,6 +3366,7 @@ policy app.jevs_challenges jevs_challenges_jevs_insert cmd=a permissive=true to=
 policy app.jevs_challenges jevs_challenges_jevs_select cmd=r permissive=true to=dog_jevs using=true check=
 policy app.jevs_challenges jevs_challenges_jevs_update cmd=w permissive=true to=dog_jevs using=true check=true
 policy app.jevs_challenges jevs_challenges_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text)) check=
+policy app.jevs_clear_rules jevs_clear_rules_read cmd=r permissive=true to=dog_jevs,dog_public using=true check=
 policy app.jevs_decisions jevs_decisions_erase_delete cmd=d permissive=true to=dog_erase using=true check=
 policy app.jevs_decisions jevs_decisions_erase_select cmd=r permissive=true to=dog_erase using=true check=
 policy app.jevs_decisions jevs_decisions_jevs_insert cmd=a permissive=true to=dog_jevs using= check=true

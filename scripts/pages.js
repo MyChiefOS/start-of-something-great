@@ -292,10 +292,15 @@ async function checks() {
     '<h2>What happens to the answer</h2>',
     '<ul>',
     '  <li><strong>Low risk</strong> goes ahead.</li>',
-    '  <li><strong>Medium</strong> waits until the owner confirms it with a fresh sign-in.</li>',
-    '  <li><strong>High risk</strong> is held, or hidden on GitHub, until a person looks. Aaron decides; Second Look may clear only easy holds.</li>',
+    '  <li><strong>Medium</strong> waits until the owner confirms it with a fresh sign-in. An agent with no owner goes ahead, and the reviewers are told (079).</li>',
+    '  <li><strong>High risk</strong> never waits for a person (080). A clear breach of a published rule (the list below) is refused at once; anything else high risk goes ahead and is flagged for the reviewers. On GitHub a high-risk comment is still hidden. A high-risk account deletion still opens a review, since deleting can&rsquo;t be undone.</li>',
     '</ul>',
     '<p>It never turns anyone away. Level 2 (Verified) comes automatically when every standard question passes, with no waiting period.</p>',
+    '<h2>Clear breaches, refused at once</h2>',
+    '<ul>',
+    ...clearRules().map((r) => '  <li><strong>' + r.q + ' at ' + r.score + ' or more:</strong> ' + esc(r.why) + '</li>'),
+    '</ul>',
+    '<p>From db/migrations/080_no_blockers.sql. Any change is a public migration.</p>',
     '<h2>Question families</h2>',
     ...tableOpen('Which questions each action asks, from the code'),
     '  <thead><tr><th scope="col">Family</th><th scope="col">Looks at</th><th scope="col">IDs</th></tr></thead>',
@@ -427,6 +432,13 @@ function operations() {
   return page({ file: 'operations.html', heading: 'Operations log', main,
     description: 'Every action Claude takes on Day One Great’s accounts and settings for Aaron, with his recorded agreement, how to undo it and the result, from OPERATIONS.md.',
     ogDescription: 'Every action taken on the accounts and settings, with Aaron’s agreement and the result.' });
+}
+
+// 080: the clear breaches JEVs refuses at once, read from the migration that sets them.
+function clearRules() {
+  const src = read('db/migrations/080_no_blockers.sql');
+  const block = must(src.match(/insert into app\.jevs_clear_rules \(question, min_score, why\) values\n([\s\S]*?);\n/), 'the clear rules')[1];
+  return [...block.matchAll(/\('(J\d\d)', (\d+), '((?:[^']|'')*)'\)/g)].map((m) => ({ q: m[1], score: Number(m[2]), why: m[3].replace(/''/g, "'") }));
 }
 
 // ---- Limits -----------------------------------------------------------------------------------------------------

@@ -44,10 +44,17 @@
 <h2>What happens to the answer</h2>
 <ul>
   <li><strong>Low risk</strong> goes ahead.</li>
-  <li><strong>Medium</strong> waits until the owner confirms it with a fresh sign-in.</li>
-  <li><strong>High risk</strong> is held, or hidden on GitHub, until a person looks. Aaron decides; Second Look may clear only easy holds.</li>
+  <li><strong>Medium</strong> waits until the owner confirms it with a fresh sign-in. An agent with no owner goes ahead, and the reviewers are told (079).</li>
+  <li><strong>High risk</strong> never waits for a person (080). A clear breach of a published rule (the list below) is refused at once; anything else high risk goes ahead and is flagged for the reviewers. On GitHub a high-risk comment is still hidden. A high-risk account deletion still opens a review, since deleting can&rsquo;t be undone.</li>
 </ul>
 <p>It never turns anyone away. Level 2 (Verified) comes automatically when every standard question passes, with no waiting period.</p>
+<h2>Clear breaches, refused at once</h2>
+<ul>
+  <li><strong>J04 at 85 or more:</strong> Sixty or more posts in an hour: flooding.</li>
+  <li><strong>J09 at 90 or more:</strong> The same words as five or more other members' posts: copied spam.</li>
+  <li><strong>J10 at 90 or more:</strong> Three or more reports upheld against the account in 90 days.</li>
+</ul>
+<p>From db/migrations/080_no_blockers.sql. Any change is a public migration.</p>
 <h2>Question families</h2>
 <div class="x4c183b94" tabindex="0" role="region" aria-label="Which questions each action asks, from the code"><table class="x36eb4061">
 <caption class="visually-hidden">Which questions each action asks, from the code</caption>

@@ -352,7 +352,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
 
 // Whether a sensitive action must stop: held (high risk, or scoring failed), or challenged and not yet confirmed by a
 // fresh sign-in.
-const blocks = (d) => Boolean(d && d.applied && (d.effect === 'hold' || (d.effect === 'challenge' && d.challengeStatus !== 'confirmed')));
+// 080: 'block' (a clear breach) stops it; 'flag' (any other high risk) lets it go ahead for the reviewers.
+const blocks = (d) => Boolean(d && d.applied && (d.effect === 'hold' || d.effect === 'block' || (d.effect === 'challenge' && d.challengeStatus !== 'confirmed')));
 
 // ---- Challenges: the owner's side ----
 // { status: 'confirmed' | 'declined' } or { refused: 'not_found' | 'stale' | 'expired' | 'fresh' } ('fresh': a sensitive

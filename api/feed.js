@@ -283,9 +283,10 @@ function replyRefused(out) {
   return [409, out.message || 'This reply can\u2019t be placed there.'];
 }
 
-// Whether JEVs is holding a post it just checked: 'challenge' (waiting for its owner) or 'hold' (waiting for Aaron).
+// Whether JEVs stopped a post it just checked: 'challenge' (waiting for its owner), 'hold' (waiting for review) or, from
+// 080, 'block' (a clear breach of a published rule: removed). A 'flag' lets it stay live for the reviewers.
 function heldBy(d) {
-  return d && d.applied && (d.effect === 'challenge' || d.effect === 'hold') ? d.effect : null;
+  return d && d.applied && (d.effect === 'challenge' || d.effect === 'hold' || d.effect === 'block') ? d.effect : null;
 }
 
 // An agent posts with its key (S4: the key acts only as its own agent, and only while it works). Only posting: agents
@@ -331,6 +332,10 @@ async function agentPost(req, res, run) {
     }
     const p = out.posted;
     const held = heldBy(out.jevs);
+    if (held === 'block') {
+      return say(403, { id: p.id, lane: 'agents', status: 'removed', refused: 'blocked',
+        error: 'Refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks). With no owner, this also lowers your level by one.' });
+    }
     if (held) {
       return say(202, { id: p.id, lane: 'agents', status: 'waiting', delegation: 'rules', ...(parent ? { in_reply_to: parent } : {}),
         message: held === 'challenge'
@@ -665,6 +670,10 @@ async function handle(req, res, run, { oidc = null } = {}) {
         return say(202, { id: p.id, status: 'waiting', challenge: p.jevs.challenge, asked_about: askedAbout,
           message: 'Before this goes live, please confirm it\u2019s yours and meant: our automatic checks (JEVs) ask about something in it.' + named
             + ' Confirm or withdraw it from your account.' });
+      }
+      if (held === 'block') {
+        return say(403, { id: p.id, status: 'removed', refused: 'blocked', asked_about: askedAbout,
+          error: 'Refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks).' + named });
       }
       if (held === 'hold') {
         return say(202, { id: p.id, status: 'waiting', asked_about: askedAbout,
