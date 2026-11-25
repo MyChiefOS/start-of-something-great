@@ -2,31 +2,34 @@
 // or API code. The decisions are wall/firewall.js (tested there); this file only reads the request, keeps the threat
 // list fresh, and answers. Anything that fails here lets the request through: a broken firewall never takes the site
 // down (Aaron, Oct 23: "A denial of service against our selves is not the goal").
-import { next, ipAddress, geolocation } from '@vercel/functions';
+import { next, ipAddress, geolocation, waitUntil } from '@vercel/functions';
 import firewall from './wall/firewall.js';
 
-export const config = { runtime: 'nodejs' };
+// Pages and the API; not static files (083 review: assets would count toward the rate limit and cost time each).
+export const config = { runtime: 'nodejs', matcher: ['/((?!.*\\.(?:css|js|mjs|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|map|txt|xml|webmanifest)$).*)'] };
 
 // The wiki's threat addresses, from the site's own API, kept for 10 minutes per instance.
 const LIST = '/api/work/wall_edge';
-let list = { at: 0, addresses: [] };
-async function addresses(origin) {
-  if (Date.now() - list.at < 600000) return list.addresses;
+// Refreshed in the background (083 review): a request never waits for it; until the first answer the list is empty
+// and every rule but the country only logs.
+let list = { at: 0, addresses: [], since: null };
+function refresh(origin) {
+  if (Date.now() - list.at < 600000) return;
   list.at = Date.now();
-  try {
-    const r = await fetch(origin + LIST, { headers: { 'x-wall-internal': '1' }, signal: AbortSignal.timeout(1500) });
-    if (r.status === 200) { const b = await r.json(); if (Array.isArray(b.addresses)) list.addresses = b.addresses.slice(0, 100000).map(String); }
-  } catch { /* keep the last list */ }
-  return list.addresses;
+  waitUntil(fetch(origin + LIST, { headers: { 'x-wall-internal': '1' }, signal: AbortSignal.timeout(3000) })
+    .then((r) => (r.status === 200 ? r.json() : null))
+    .then((b) => { if (b && Array.isArray(b.addresses)) list = { at: list.at, addresses: b.addresses.slice(0, 100000).map(String), since: b.firewall_since || null }; })
+    .catch(() => { /* keep the last list */ }));
 }
 
-export default async function middleware(request) {
+export default function middleware(request) {
   try {
     const url = new URL(request.url);
     if (url.pathname === LIST) return next();
     const req = { method: request.method, path: url.pathname, query: url.search.slice(1), ua: request.headers.get('user-agent') || '',
       ip: ipAddress(request) || '', country: (geolocation(request) || {}).country || '' };
-    const d = firewall.decide(req, { badAddresses: await addresses(url.origin) });
+    refresh(url.origin);
+    const d = firewall.decide(req, { badAddresses: list.addresses, since: list.since });
     if (d.action === 'allow') return next();
     // One line per hit for the runtime log and the digest: the rule, what kind, and whether it was enforced. No address
     // or path is written out (people's data stays out of logs).

@@ -66,6 +66,16 @@ function packagesOf(item) {
   return out;
 }
 
+function isNetwork(cidr) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(String(cidr));
+  if (!m) return false;
+  const n = Number(m[5]);
+  if (n > 32 || m.slice(1, 5).some((x) => Number(x) > 255)) return false;
+  const a = ((Number(m[1]) << 24) >>> 0) + (Number(m[2]) << 16) + (Number(m[3]) << 8) + Number(m[4]);
+  const mask = n === 0 ? 0 : (~0 << (32 - n)) >>> 0;
+  return ((a & mask) >>> 0) === a;
+}
+
 // One indicator to the wiki's fields, or null if it doesn't fit (a feed is data: anything odd is dropped).
 function indicatorOf(kind, value, source, ref) {
   let v = String(value == null ? '' : value).trim();
@@ -104,7 +114,8 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       if (text.length > 2000000) throw new Error('spamhaus too large');
       for (const line of text.split('\n').slice(0, 5000)) {
         let o; try { o = JSON.parse(line); } catch { continue; }
-        if (o && o.cidr) add('spamhaus', indicatorOf('cidr', o.cidr, 'spamhaus', o.sblid));
+        // Only a true network (no host bits set): 1.2.3.4/8 would be refused by the database and lose the whole run.
+        if (o && o.cidr && isNetwork(o.cidr)) add('spamhaus', indicatorOf('cidr', o.cidr, 'spamhaus', o.sblid));
       }
     } catch { carry.push('spamhaus'); }
   } else carry.push('spamhaus');

@@ -36,11 +36,11 @@ const RULES = [
   ["W31", "An executable or installer file the task didn't name", "Blocked: refused at once (a person can mark it a mistake).", "block"],
   ["W32", "A disguised file name (a double extension or a reversed-text character)", "Blocked: refused at once (a person can mark it a mistake).", "block"],
   ["W33", "A file fingerprint on the security wiki's known-bad list", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W34", "A request from a blocked country (North Korea)", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W35", "A web attack in a request: SQL injection, cross-site scripting, path traversal, command injection, file inclusion, a lookup string", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W36", "Too many requests a minute from one address (answered 429, try again in a minute; never a lockout)", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W37", "A known attack scanner (a request with no user agent is only flagged)", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W38", "A request from an address or range on the security wiki's threat lists (Spamhaus DROP, Feodo Tracker)", "Blocked: refused at once (a person can mark it a mistake).", "block"]
+  ["W34", "A request from a blocked country (North Korea)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
+  ["W35", "A web attack in a request: SQL injection, cross-site scripting, path traversal, command injection, file inclusion, a lookup string", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
+  ["W36", "Too many requests a minute from one address (answered 429, try again in a minute; never a lockout)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
+  ["W37", "A known attack scanner (a request with no user agent is only flagged)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
+  ["W38", "A request from an address or range on the security wiki's threat lists (Spamhaus DROP, Feodo Tracker)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"]
 ];
 
 // The work's checks in order, as the diagram of Nov 24 draws them, with what each does today.

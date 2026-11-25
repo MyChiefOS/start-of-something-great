@@ -31,13 +31,19 @@ alter table app.wiki_indicators add constraint wiki_indicators_check check (case
 create function app.wiki_never_block_cidr(p_cidr text) returns boolean
 language sql immutable set search_path = pg_catalog as $$
   select case when coalesce(p_cidr, '') !~ '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])/([89]|[12][0-9]|3[0-2])$' then true
+      -- A range with host bits set (1.2.3.4/8) isn't a network: dropped, never an error that would lose the whole run.
+      when network(p_cidr::inet)::text <> p_cidr then true
       else exists (select 1 from unnest(array['0.0.0.0/8', '10.0.0.0/8', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16',
                   '100.64.0.0/10', '224.0.0.0/3', '1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32', '149.112.112.112/32',
-                  '208.67.222.222/32', '208.67.220.220/32']::cidr[]) r where r && p_cidr::cidr) end
+                  '208.67.222.222/32', '208.67.220.220/32']::cidr[]) r where r && p_cidr::inet) end
 $$;
 revoke execute on function app.wiki_never_block_cidr(text) from public;
 grant execute on function app.wiki_never_block_cidr(text) to dog_work;
 reset role;
+
+-- When the firewall's rules went live: each but the country logs for a week from here (083 review), never from a date
+-- written in the code.
+alter table app.wall_settings add column firewall_since timestamptz not null default now();
 
 -- The firewall's rules, published beside the Wall's others.
 alter table app.wall_rules disable row level security;
@@ -88,7 +94,7 @@ begin
     select 'W28', i.kind, i.value, i.source, i.ref from ips join app.wiki_indicators i on i.version_id = vid and i.kind = 'ip' and i.value = ips.ip
     union all
     -- 083: a range from Spamhaus DROP (about 1,700 ranges; a containment test per address).
-    select 'W28', i.kind, i.value, i.source, i.ref from ips join app.wiki_indicators i on i.version_id = vid and i.kind = 'cidr' and ips.ip::inet <<= i.value::cidr
+    select 'W28', i.kind, i.value, i.source, i.ref from ips join app.wiki_indicators i on i.version_id = vid and i.kind = 'cidr' and ips.ip::inet <<= i.value::inet
     union all
     select 'W33', i.kind, i.value, i.source, i.ref from shas join app.wiki_indicators i on i.version_id = vid and i.kind = 'sha256' and i.value = shas.s
     union all
@@ -173,7 +179,9 @@ begin
     end if;
   end if;
   if why is null and cur.id is not null and cur.indicators >= 20 then
+    -- 083 review: a source the active version doesn't have yet (a new feed's first run) isn't counted as change.
     select (select count(*) from (select kind, value from app.wiki_indicators where version_id = vid
+                                    and source in (select distinct y.source from app.wiki_indicators y where y.version_id = cur.id)
                                    except select kind, value from app.wiki_indicators where version_id = cur.id) a)
          + (select count(*) from (select kind, value from app.wiki_indicators where version_id = cur.id
                                    except select kind, value from app.wiki_indicators where version_id = vid) b)
@@ -204,6 +212,7 @@ grant execute on function app.wiki_record(text, jsonb) to dog_app;
 create function app.wall_edge_addresses() returns jsonb
 language sql stable security definer set search_path = pg_catalog as $$
   select jsonb_build_object('version', (select v.id from app.wiki_versions v where v.status = 'active'),
+    'firewall_since', (select w.firewall_since from app.wall_settings w where w.singleton),
     'addresses', coalesce((select jsonb_agg(i.value order by i.value) from app.wiki_indicators i join app.wiki_versions v on v.id = i.version_id and v.status = 'active'
                             where i.kind in ('ip', 'cidr')), '[]'::jsonb))
 $$;

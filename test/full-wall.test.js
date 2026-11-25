@@ -349,14 +349,15 @@ test('FW19 (083): Spamhaus ranges match addresses in work; a range covering priv
   await q(`delete from app.wiki_versions`);
   await q(`update app.wiki_settings set last_run_at = now() - interval '13 hours', claim_hash = null, claim_until = null`);
   const [{ c: claim }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
-  const ind = ['192.0.2.0/24', '10.0.0.0/8', '8.8.8.0/24', '0.0.0.0/0', '1.0.0.0/7', '203.0.113.0/25'].map((value) => ({ kind: 'cidr', value, source: 'spamhaus', ref: 'SBL1' }));
+  const ind = ['192.0.2.0/24', '10.0.0.0/8', '8.8.8.0/24', '0.0.0.0/0', '1.0.0.0/7', '203.0.113.0/25', '198.51.100.7/24'].map((value) => ({ kind: 'cidr', value, source: 'spamhaus', ref: 'SBL1' }));
   const bad = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify({ entries: [], packages: [], indicators: [{ kind: 'cidr', value: 'not a range', source: 'spamhaus' }], sources: {} })}::text::jsonb) as r`).then(() => 'ok', () => 'refused');
   assert.strictEqual(bad, 'ok', 'a malformed range is dropped by the never-block check before the table sees it');
   await q(`update app.wiki_settings set last_run_at = now() - interval '13 hours', claim_hash = null, claim_until = null`);
   const [{ c: claim2 }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
   await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_record(${claim2}, ${JSON.stringify({ entries: [], packages: [], indicators: ind, sources: {} })}::text::jsonb)`);
   const [{ d }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wall_edge_addresses() as d`);
-  assert.deepStrictEqual(d.addresses, ['192.0.2.0/24', '203.0.113.0/25'], 'the firewall\'s list: only the safe ranges');
+  assert.deepStrictEqual(d.addresses, ['192.0.2.0/24', '203.0.113.0/25'], 'the firewall\'s list: only the safe ranges (a range with host bits is dropped, not an error)');
+  assert.ok(d.firewall_since, 'when the firewall went live, for its log week');
   const intel = async (t) => (await q(`select app.wall_intel_flags($$${t}$$) as f`))[0].f.map((x) => x.split(' ')[0]);
   assert.deepStrictEqual(await intel('connect to 192.0.2.77'), ['W28']);
   assert.deepStrictEqual(await intel('connect to 203.0.113.200'), [], 'outside the /25');
@@ -387,4 +388,19 @@ test('FW21 (083): the sync reads Spamhaus only before noon UTC, and asks to carr
   const evening = await sync.gather({ fetchImpl, key: '', nvdKey: '', now: () => Date.parse('2026-11-26T12:38:00Z'), pause: async () => {} });
   assert.ok(!seen.some((u) => u.includes('spamhaus')), 'not read twice in a day');
   assert.deepStrictEqual(evening.carry, ['spamhaus']);
+});
+
+test('FW22 (083 review): a new source\'s first run isn\'t refused by the change cap', async () => {
+  await q(`delete from app.wiki_versions`);
+  const rec = async (indicators) => {
+    await q(`update app.wiki_settings set last_run_at = now() - interval '13 hours', claim_hash = null, claim_until = null`);
+    const [{ c: claim }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
+    const [{ r }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify({ entries: [], packages: [], indicators, sources: {} })}::text::jsonb) as r`);
+    return r;
+  };
+  const feodo = Array.from({ length: 30 }, (_, i) => ({ kind: 'ip', value: '198.51.100.' + i, source: 'feodo' }));
+  assert.strictEqual(await rec(feodo), 'active');
+  const spam = Array.from({ length: 200 }, (_, i) => ({ kind: 'cidr', value: '44.' + i + '.0.0/16', source: 'spamhaus' }));
+  assert.strictEqual(await rec([...feodo, ...spam]), 'active', '200 new Spamhaus ranges beside 30 Feodo addresses');
+  assert.strictEqual(await rec([...feodo]), 'refused', 'but dropping every Spamhaus range at once is still too much change');
 });
