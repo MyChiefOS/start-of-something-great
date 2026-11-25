@@ -116,7 +116,10 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY } =
 async function gather({ fetchImpl = fetch, now = Date.now, key } = {}) {
   const end = new Date(now());
   const start = new Date(end.getTime() - 3 * DAY);
-  const url = NVD + '?lastModStartDate=' + start.toISOString().replace('Z', '+00:00') + '&lastModEndDate=' + end.toISOString().replace('Z', '+00:00') + '&resultsPerPage=2000';
+  // The offset's plus sign must be encoded: a bare + in a query reads as a space, and NVD answers 404 (found Nov 25: the
+  // live wiki had never recorded a version because of it).
+  const iso = (d) => encodeURIComponent(d.toISOString().replace('Z', '+00:00'));
+  const url = NVD + '?lastModStartDate=' + iso(start) + '&lastModEndDate=' + iso(end) + '&resultsPerPage=2000';
   const r = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
   if (r.status !== 200) throw new Error('nvd ' + r.status);
   const body = await r.json();

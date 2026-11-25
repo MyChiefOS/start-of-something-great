@@ -28,7 +28,7 @@ const npm = (name, version, sw = 'node.js') => `cpe:2.3:a:${name}_project:${name
 test('the sync keeps structured fields and exact npm versions only', async () => {
   const f = nvd([cve('CVE-2026-1000', { kev: true, cpe: [npm('left-pad', '1.3.0'), npm('left-pad', '*'), npm('nginx', '1.2.3', '*')] }), { cve: { id: 'not a cve' } }]);
   const p = await sync.gather({ fetchImpl: f.fetchImpl, now: () => Date.parse('2026-11-24T00:00:00Z') });
-  assert.match(f.seen[0], /^https:\/\/services\.nvd\.nist\.gov\/rest\/json\/cves\/2\.0\?lastModStartDate=2026-11-21T00:00:00\.000\+00:00&lastModEndDate=2026-11-24T00:00:00\.000\+00:00&resultsPerPage=2000$/);
+  assert.match(f.seen[0], /^https:\/\/services\.nvd\.nist\.gov\/rest\/json\/cves\/2\.0\?lastModStartDate=2026-11-21T00%3A00%3A00\.000%2B00%3A00&lastModEndDate=2026-11-24T00%3A00%3A00\.000%2B00%3A00&resultsPerPage=2000$/);
   const e = p.entries.find((x) => x.ident === 'CVE-2026-1000');
   assert.deepStrictEqual([e.severity, e.cwe, e.kev, e.published], ['high', 'CWE-79', true, '2026-11-23']);
   assert.deepStrictEqual(p.packages, [{ ecosystem: 'npm', name: 'left-pad', version: '1.3.0', advisory: 'CVE-2026-1000' }]);
