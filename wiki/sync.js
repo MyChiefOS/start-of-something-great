@@ -9,7 +9,7 @@
 
 const REFERENCE = require('./reference.json');
 const NVD = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
-const KEV = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+const { KEV_URL: KEV } = require('../scripts/kev'); // pinned in one place (the KEV check's own test)
 const DAY = 86400000;
 // 082: threat feeds for the Wall. Feodo Tracker needs no account (CC0). URLhaus, ThreatFox and MalwareBazaar need an
 // abuse.ch key and may need a paid license for commercial use, so they run only when the site has ABUSECH_AUTH_KEY
