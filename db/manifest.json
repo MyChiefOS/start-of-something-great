@@ -323,6 +323,10 @@
     {
       "version": "081_full_wall",
       "sha256": "ea5e25e5b755efd29e3bd26469819666700aa6f566824f901d0af210c4cde18b"
+    },
+    {
+      "version": "082_wall_from_wiki",
+      "sha256": "83b1af777ae760ea56f4d9cd4cafa4562ff8fa7240b91b687a6fad5b7079946c"
     }
   ]
 }

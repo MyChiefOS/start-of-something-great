@@ -187,6 +187,8 @@ const DEFINERS = {
   'app.wall_files_flags(uuid, jsonb)': { owner: 'dog_owner', callers: '' },
   // 081: reads app.wall_rules (each rule's published effect: block or flag); dog_work's gates call it.
   'app.wall_decide(jsonb)': { owner: 'dog_owner', callers: 'dog_work' },
+  // 082: the Wall's lookups against the security wiki's active indicators (feeds and injection patterns); the gate calls it.
+  'app.wall_intel_flags(text, text)': { owner: 'dog_owner', callers: '' },
   'app.work_task_scope_put(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.work_task_scope_get(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_log(integer)': { owner: 'dog_work', callers: 'dog_app' },
