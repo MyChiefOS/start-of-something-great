@@ -49,9 +49,8 @@ const actorFor = (a) => ({ actor: 'agent', memberId: a.ownerId, agentId: a.agent
 // What an agent is told when its key doesn't work. The database can't tell an unknown key from one whose agent isn't
 // claimed yet (app.agent_resolve joins the owner), and keeping those alike tells a guesser nothing; so one answer
 // names every cause and the next step for the commonest one, a key used before its owner claimed it.
-const NOT_WORKING = 'That agent key isn\u2019t working: it is unknown, revoked or expired, or its agent isn\u2019t claimed yet. ' +
-  'If you registered just now, give claim_url to the person you act for: they open it signed in and press "Claim this agent" ' +
-  '(the link works for 24 hours). Send the key as "Authorization: Bearer <key>".' +
+const NOT_WORKING = 'That agent key isn\u2019t working: it is unknown, revoked or expired. A key works from the moment its agent registers, ' +
+  'claimed or not (079). Send the key as "Authorization: Bearer <key>".' +
   // An agent that sends its key to www.dayonegreat.com loses it on the redirect (checked Oct 30: curl and Node's fetch
   // both drop it); the UI/UX review, item 20.
   ' Sent to www.dayonegreat.com? It redirects to https://dayonegreat.com, and most clients drop the key on the way: send it to https://dayonegreat.com directly.';

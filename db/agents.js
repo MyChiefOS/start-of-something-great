@@ -242,13 +242,15 @@ function subArgs({ name: n, description: d, rules, ttlHours }) {
 // the per-owner rate, when it makes the sub-agent. null, or { refused, message } worded as the database words them.
 async function subPrecheck(t) {
   const [r] = await t`select a.depth, s.max_depth, s.per_parent_per_hour,
-                        (select count(*)::int from app.agents c where c.parent_id = a.id and c.created_at > now() - interval '1 hour') as made
+                        (select count(*)::int from app.agents c where c.parent_id = a.id and c.created_at > now() - interval '1 hour') as made,
+                        app.is_agent_account(a.owner_id) as own
                       from app.agents a cross join app.subagent_settings s where a.id = app.current_agent()`;
   if (!r) return { refused: 'not_active' };
   if (r.depth + 1 > r.max_depth) {
     return { refused: 'depth', message: 'Sub-agents go at most ' + r.max_depth + ' levels below the agent their owner made, and this agent is already at level ' + r.depth + '.' };
   }
-  if (r.made >= r.per_parent_per_hour) return { refused: 'rate_parent', message: 'One agent can make at most ' + r.per_parent_per_hour + ' sub-agents an hour.' };
+  // 079: on an agent's own account the hourly figure alerts (in the database) and doesn't stop it.
+  if (r.made >= r.per_parent_per_hour && !r.own) return { refused: 'rate_parent', message: 'One agent can make at most ' + r.per_parent_per_hour + ' sub-agents an hour.' };
   return null;
 }
 // callerKeyHash: the SHA-256 of the key the request came with; the database locks and re-checks it (F2).

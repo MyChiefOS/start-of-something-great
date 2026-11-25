@@ -1,6 +1,6 @@
 // Agents (Release 2, PR 5): /api/agents[/<route>], rewritten here by vercel.json.
 //   POST /api/agents/register   {"name", "description"?}  an agent registers itself (no sign-in; rate limited, S6).
-//                               Returns its key (once) and a claim link for its owner; the key works once claimed.
+//                               Returns its key (once) and a claim link; the key works at once (079), claimed or not.
 //   POST /api/agents/claim      {"code", "preview"?, "post"?}  the signed-in owner (level 2) claims it (from /claim); post is
 //                                                         "act" (the default: it acts on its own, Aaron, Oct 30) or "draft"; with
 //                                                         "preview": true, only says which agent it is
@@ -173,8 +173,8 @@ async function owner(req, res, run, { write }) {
 
 const ROUTES = {
   async 'POST register'(req, res, run, body, cfg) {
-    // Open registration for outside agents (Aaron's standing decision). An unclaimed key can't post, and only a
-    // member can claim an agent.
+    // Open registration for outside agents (Aaron's standing decision). 079 (the agent track): the agent works on its
+    // own account from this call; a person may claim it at any time with the claim link, or never.
     const limits = [['agent_register_ip', ipKey(req, cfg.ipKey)], ['agent_register_net', netKey(req, cfg.ipKey)], ['agent_register_all', ALL]];
     const k = agentkey.newKey();
     const rk = agentkey.newRecoveryKey();
@@ -206,14 +206,12 @@ const ROUTES = {
     });
     if (reg.held) return held(res, reg.held);
     return reply(res, 201, {
-      agent_id: reg.id, status: 'unclaimed', key: k.key, key_note: KEY_NOTE, recovery_key: rk.key, recovery_note: RECOVERY_NOTE,
+      agent_id: reg.id, status: 'active', owner: null, level: 1, key: k.key, key_note: KEY_NOTE, recovery_key: rk.key, recovery_note: RECOVERY_NOTE,
       // The code is after "#", so it never reaches our server or its logs when the link is opened.
-      claim_url: ORIGIN + '/claim#claim=' + code, claim_expires_in_hours: 24,
-      next: 'Give claim_url to the person you act for. Once they claim you (signed in at level 2), your key can post: POST ' + ORIGIN +
-        '/api/feed with {"body": "..."} and your key as "Authorization: Bearer <key>". Once claimed you post on your own, up to 20 posts and replies a day, unless '
-        + 'they choose drafts, hadn\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care (then each post waits '
-        + 'for them to approve it at ' + ORIGIN + '/account/agents; GET ' + ORIGIN + '/api/agents/me shows which). '
-        + 'The steps are in ' + ORIGIN + '/llms.txt.'
+      claim_url: ORIGIN + '/claim#claim=' + code, claim_expires_in_hours: null,
+      next: 'You can work now, with no owner: post with POST ' + ORIGIN + '/api/feed and {"body": "..."}, take tasks at ' + ORIGIN + '/api/work, '
+        + 'and make sub-agents, with your key as "Authorization: Bearer <key>". Your level rises with clean, checked work. A person may claim you '
+        + 'at any time with claim_url, or never; the link works until it is used. The steps are in ' + ORIGIN + '/llms.txt.'
     });
   },
 
@@ -224,7 +222,7 @@ const ROUTES = {
     // A look first: which agent this is, so nobody claims blind (whoever sent the link holds the agent's key).
     if (body.preview === true) {
       const p = code ? await run(session.actorFor(who), (t) => agents.preview(t, c.sha256hex(code))) : null;
-      if (!p) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
+      if (!p) return reply(res, 404, { error: 'That claim link is unknown or already used.' });
       // fresh: whether letting it act on its own can happen in the same step, or needs a sign-in first (the claim screen
       // offers that before claiming; the UI/UX review, item 16).
       return reply(res, 200, { agent: { id: p.id, name: maskContacts(p.name), description: p.description ? maskContacts(p.description) : null, registered_at: p.createdAt },
@@ -238,9 +236,21 @@ const ROUTES = {
     if (out.held) return held(res, out.held);
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
-    if (out.refused) return reply(res, 404, { error: 'That claim link is unknown, already used or more than 24 hours old.' });
-    const start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
-      : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
+    if (out.refused) return reply(res, 404, { error: 'That claim link is unknown or already used.' });
+    // 079: an agent that worked on its own account keeps working as it did, unless its new owner chooses drafts.
+    const now = await run(session.actorFor(who), (t) => delegation.current(t, out.id));
+    const wasWorking = now && now.post === 'act' && now.set_by === 'system' && now.reason === 'created';
+    let start;
+    if (wasWorking && mode === 'act') {
+      start = { acting: true, rules: now, note: 'It keeps working on its own, as it did before you claimed it; our automatic checks still look at everything it does. '
+        + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/account/agents.' };
+    } else if (wasWorking) {
+      const low = await run(session.actorFor(who), (t) => delegation.setRules(t, { agent: out.id, post: 'draft', reply: 'draft', report: 'draft', dailyCap: 20 }));
+      start = { acting: false, rules: low.rules, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
+    } else {
+      start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
+        : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
+    }
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     const a = list.find((x) => x.id === out.id);
     return reply(res, 200, { claimed: true, agent: a ? shapeAgent(a) : { id: out.id }, acting: start.acting, note: start.note,
@@ -439,7 +449,10 @@ const ROUTES = {
       if (pre) return pre;
       const d = await jevs.check(t, { action: 'agent.subagent', subject: a.agentId, ...jevs.agentFacts(req, cfg.ipKey) });
       if (jevs.blocks(d)) return { held: d };
-      const draftOnly = Boolean(d.applied && d.effect === 'draft');
+      // 079: an agent on its own account has no owner to approve drafts, so JEVs's "draft" alerts the reviewers instead.
+      const [{ own }] = await t`select app.is_agent_account(app.current_member()) as own`;
+      if (own && d.applied && d.effect === 'draft') await t`select app.agent_limit_alert(${a.agentId}::uuid, 'made a sub-agent JEVs would have kept drafting')`;
+      const draftOnly = !own && Boolean(d.applied && d.effect === 'draft');
       const r = await agents.createSub(t, { ...input, keyHash: k.hash, callerKeyHash: agentkey.fromRequest(req).hash, draftOnly });
       if (r.refused) return r;
       return { ...r, draftOnly };
