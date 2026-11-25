@@ -88,7 +88,7 @@ test('WK1: a run is due twice a day, needs the timer\'s claim, and records one v
   const f = nvd(pkgs(40));
   assert.deepStrictEqual(await sync.run(run, { fetchImpl: f.fetchImpl }), { ran: true, recorded: 'active' });
   assert.deepStrictEqual(await sync.run(run, { fetchImpl: f.fetchImpl }), { ran: false }); // not due for 12 hours
-  assert.strictEqual(f.seen.length, 1);
+  assert.strictEqual(f.seen.filter((u) => u.includes('nvd')).length, 1); // 082: the threat feeds are read in the same run
   assert.strictEqual((await active()).packages, 40);
   await assert.rejects(run({ actor: 'anon' }, (t) => t`select app.wiki_record(${'f'.repeat(64)}, '{"entries":[],"packages":[]}'::jsonb)`), /no wiki claim/);
   await assert.rejects(run({ actor: 'member', memberId: poster.id, session: poster.session, fresh: true }, (t) => t`select app.wiki_claim()`), /only the site's timer/);

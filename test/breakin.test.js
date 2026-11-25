@@ -241,6 +241,7 @@ test.before(async () => {
     // 074: a security wiki version (public feeds; the tables name no one).
     await t.unsafe(`insert into app.wiki_versions (id, status, entries, packages, sources) values ('0190f000-0000-7000-8000-000000000074', 'active', 1, 1, '{}')`);
     await t.unsafe(`insert into app.wiki_entries (version_id, source, ident, title) values ('0190f000-0000-7000-8000-000000000074', 'cwe', 'CWE-79', 'A weakness')`);
+    await t.unsafe(`insert into app.wiki_indicators (version_id, kind, value, source, ref) values ('0190f000-0000-7000-8000-000000000074', 'ip', '203.0.113.1', 'feodo', 'x')`);
     await t.unsafe(`insert into app.wiki_packages (version_id, ecosystem, name, version, advisory) values ('0190f000-0000-7000-8000-000000000074', 'npm', 'left-pad', '1.3.0', 'CVE-2026-0001')`);
     // 071: an answer kept under one of member A's idempotency keys (the table names no one; its scope is a hash).
     await t.unsafe(`insert into app.idem_keys (scope_hash, route, request_hash, status, sealed) values ('${'a1'.repeat(32)}', 'claim', '${'b2'.repeat(32)}', 201, '\\x${'0'.repeat(80)}')`);
