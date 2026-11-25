@@ -315,10 +315,11 @@ test('recovery: registration gives a recovery key; it gets a new key for the sam
   assert.notStrictEqual(reg.json.recovery_key, reg.json.key);
   // A recovery key is never a key.
   assert.strictEqual((await api(req('GET', 'me', { key: reg.json.recovery_key }))).status, 401);
-  // Before the claim, a recovery gives a new key that works once claimed.
+  // Before any claim, a recovery gives a new key; it works at once, as the agent does (079).
   const r1 = await api(req('POST', 'recover', { json: { recovery_key: reg.json.recovery_key } }));
   assert.strictEqual(r1.status, 200, JSON.stringify(r1.json));
-  assert.deepStrictEqual([r1.json.agent_id, r1.json.status], [reg.json.agent_id, 'unclaimed']);
+  assert.deepStrictEqual([r1.json.agent_id, r1.json.status], [reg.json.agent_id, 'active']);
+  assert.strictEqual((await api(req('GET', 'me', { key: r1.json.key }))).status, 200, 'the new key works before any claim');
   assert.strictEqual((await api(req('POST', 'recover', { json: { recovery_key: reg.json.recovery_key } }))).status, 404, 'each recovery key works once');
   const gi = await member('Gi');
   const code = reg.json.claim_url.split('#claim=')[1];

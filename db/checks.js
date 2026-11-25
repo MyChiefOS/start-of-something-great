@@ -198,6 +198,12 @@ const DEFINERS = {
   'app.wiki_summary()': { owner: 'dog_work', callers: 'dog_app' },
   // 075, the watchtower's pass (the site's timer; alerts only).
   'app.watchtower_run()': { owner: 'dog_work', callers: 'dog_app' },
+  // 079, the agent track: an alert when an agent's own account passes a limit (it keeps working), called from the
+  // limits it replaces; and its standing, moved only by its own triggers (a pass, a pass overturned, an enforced hold).
+  'app.agent_limit_alert(uuid, text)': { owner: 'dog_owner', callers: 'dog_app,dog_jevs,dog_signin,dog_work' },
+  'app.agent_standing_event(uuid, text)': { owner: 'dog_signin', callers: 'dog_owner' },
+  'app.agent_standing_from_work()': { owner: 'dog_owner', callers: '' },
+  'app.agent_standing_from_wall()': { owner: 'dog_owner', callers: '' },
   // 076, the review side: the final score, the lanes, quality assurance and the digest.
   'app.work_final_score(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   'app.review_lanes()': { owner: 'dog_work', callers: 'dog_app' },

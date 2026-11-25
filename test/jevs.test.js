@@ -1065,11 +1065,12 @@ test('regional gate, new sign-ups: declined politely after the provider confirms
   assert.strictEqual((await run({ ...aaron.ctx, actor: 'member' }, (t) => t`select * from app.region_declines`)).length, 0, 'only Aaron reads the counts');
   // An agent registering itself from the EU is not declined (Aaron, Nov 4: "Agent should be judged by owners actions for
   // now and their actions", not by where its server is): it registers, nothing is added to the regional count, and the
-  // region question (J13) is not asked of it. Its key still does nothing until a signed-in member claims it.
+  // region question (J13) is not asked of it. It works at once on its own account (079); only a person who claims it
+  // passes the regional gate, at sign-in.
   const italyBefore = await declinesFor('IT');
   const ag = await agentsApi('POST', 'register', { json: { name: 'Euro_agent' }, country: 'IT' });
   assert.strictEqual(ag.status, 201);
-  assert.strictEqual(ag.json.status, 'unclaimed');
+  assert.strictEqual(ag.json.status, 'active');
   assert.strictEqual(await declinesFor('IT'), italyBefore, 'an agent registering is not a regional decline');
   const [agDecision] = await q(`select scores from app.jevs_decisions where action = 'agent.register' order by created_at desc limit 1`);
   assert.ok(agDecision && !Object.hasOwn(agDecision.scores, 'J13'), 'the region question is not asked of an agent registering itself');

@@ -173,15 +173,11 @@ test('F2, F3: an agent registers, its owner claims it, and it posts in the agent
   assert.match(reg.json.key, /^dogk_/);
   const code = /#claim=([A-Za-z0-9_-]{43})$/.exec(reg.json.claim_url)[1];
   assert.strictEqual(reg.r.getHeader('Cache-Control'), 'no-store');
-  // Unclaimed: the key does nothing yet, and says so with the next step (the Oct 29 simulation): every agent there
-  // read the old "Send a working agent key" as a broken key, and one registered again.
-  const early = await feedPost(reg.json.key, { body: 'too early' });
-  assert.strictEqual(early.status, 401);
-  assert.match(early.json.error, /isn\u2019t claimed yet\. If you registered just now, give claim_url to the person you act for/);
+  // 079, the agent track: the key works from registering, with no owner: it posts on its own at once.
+  const early = await feedPost(reg.json.key, { body: 'working before any claim' });
+  assert.strictEqual(early.status, 201);
   const earlyMe = await api(req('GET', 'me', { key: reg.json.key }));
-  assert.strictEqual(earlyMe.status, 401);
-  assert.strictEqual(earlyMe.json.error, early.json.error, 'GET /api/agents/me gives the same answer as posting');
-  assert.strictEqual(earlyMe.r.getHeader('WWW-Authenticate'), 'Bearer');
+  assert.strictEqual(earlyMe.status, 200);
   const claimed = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code, post: 'draft' } }), { drafting: true });
   assert.strictEqual(claimed.status, 200);
   assert.strictEqual(claimed.json.agent.name, 'Ada\'s helper');
@@ -231,7 +227,7 @@ test('owning an agent needs level 2: level 0 and 1 members can neither create no
   assert.strictEqual((await api(req('POST', 'claim', { cookie: high.cookie, origin: ORIGIN, json: { code } }))).status, 200);
 });
 
-test('claim codes: single use, 24 hours, from our own pages while signed in; unknown, used and expired look the same', async () => {
+test('claim codes: single use, with no time limit (079), from our own pages while signed in; unknown and used look the same', async () => {
   const owner = await member(2);
   const other = await member(2);
   const reg = await api(req('POST', 'register', { json: { name: 'Claimable' }, ip: '203.0.113.21' }));
@@ -241,14 +237,10 @@ test('claim codes: single use, 24 hours, from our own pages while signed in; unk
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32) } }))).status, 404);
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code } }))).status, 200);
   assert.strictEqual((await api(req('POST', 'claim', { cookie: other.cookie, origin: ORIGIN, json: { code } }))).status, 404, 'used');
+  // 079: a working agent's link has no time limit; a week later it still claims, once.
   const late = await api(req('POST', 'register', { json: { name: 'Late' }, ip: '203.0.113.22' }));
-  // Backdating needs the guard switched off by the table's owner, inside one transaction: nothing else can.
-  await su.begin(async (t) => {
-    await t.unsafe('alter table app.agents disable trigger agents_guard');
-    await t.unsafe(`update app.agents set claim_expires_at = now() - interval '1 minute' where id = '${late.json.agent_id}'`);
-    await t.unsafe('alter table app.agents enable always trigger agents_guard');
-  });
-  assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: late.json.claim_url.split('#claim=')[1] } }))).status, 404, 'expired');
+  assert.strictEqual((await q(`select claim_expires_at from app.agents where id = '${late.json.agent_id}'`))[0].claim_expires_at, null);
+  assert.strictEqual((await api(req('POST', 'claim', { cookie: other.cookie, origin: ORIGIN, json: { code: late.json.claim_url.split('#claim=')[1] } }))).status, 200, 'no expiry');
 });
 
 test('S4: a key acts only as its own agent, and stops at once when rotated, revoked, or its owner is banned or loses level 2', async () => {
@@ -357,7 +349,9 @@ test('claiming shows which agent the link is for first, and changes nothing by l
   assert.deepStrictEqual([look.json.agent.description, look.json.can_own], ['Reads threads', true]);
   assert.ok(!look.json.agent.name.includes('@example.com'), 'masked (P4)');
   assert.deepStrictEqual(look.json.untrusted_fields, ['agent.name', 'agent.description']);
-  assert.strictEqual((await feedPost(reg.json.key, { body: 'still unclaimed' })).status, 401, 'looking claims nothing');
+  // Looking claims nothing: the agent is still on its own account, with no owner (079).
+  const [still] = await q(`select a.self_owned, m.kind from app.agents a join app.members m on m.id = a.owner_id where a.id = '${reg.json.agent_id}'`);
+  assert.deepStrictEqual([still.self_owned, still.kind], [true, 'agent'], 'looking claims nothing');
   assert.strictEqual((await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: c.token(32), preview: true } }))).status, 404);
   const html = fs.readFileSync(path.join(root, 'claim.html'), 'utf8');
   assert.match(html, /Whoever gave you this link holds this agent's key/);

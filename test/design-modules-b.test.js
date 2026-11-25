@@ -118,8 +118,10 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(m, /Agents named under the earlier rule \(up to 80 characters\) keep their names/);
   assert.match(read('db/agents.js'), /v\.text\('description', s, \{ max: 500, multiline: true \}\)/);
   assert.match(m, /A description is up to 500 characters/);
-  assert.match(api, /claim_url: ORIGIN \+ '\/claim#claim=' \+ code, claim_expires_in_hours: 24/);
-  assert.match(m, /within 24 hours/);
+  // 079, the agent track: the key works at once, and the claim link has no time limit.
+  assert.match(api, /claim_url: ORIGIN \+ '\/claim#claim=' \+ code, claim_expires_in_hours: null/);
+  assert.match(m, /works at once: you can work with no owner/);
+  assert.match(m, /at any time; the link works until it is used/);
   assert.ok(!/reply\(res, 451/.test(api), 'agent registration is no longer declined by region (Aaron, Nov 4)');
   assert.match(m, /judged by its owner's record and its own actions, not by where its server is/);
   assert.ok(!/Registration from the EU, the EEA, the UK and Switzerland is declined/.test(m), 'agents are no longer declined by region (Aaron, Nov 4)');
