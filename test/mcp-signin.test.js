@@ -463,9 +463,9 @@ test('end to end: sign up with one call, claim, work over MCP and the API, and t
   assert.ok(sub.status === 201 || sub.status === 200, JSON.stringify(sub.json));
   const [s] = await q(`select id, status, route, coalesce(held_reason, '') as held from app.work_submissions where task_id = '${data(tk).id}'`);
   const [d] = await q(`select decision, mode, flags from app.wall_decisions where ref = '${s.id}' order by created_at desc, id desc limit 1`);
-  assert.deepStrictEqual([d.decision, d.mode], ['hold', 'shadow']);
+  assert.deepStrictEqual([d.decision, d.mode], ['hold', 'enforce']); // 081: enforce; W24 is a flag, so the work goes ahead
   assert.match(JSON.stringify(d.flags), /W24 link outside the task's declared hosts: other\.test/);
-  assert.deepStrictEqual([s.status, s.route, s.held], ['review', 'poster', ''], 'shadow holds nothing: the link goes to its poster, as without the Wall');
+  assert.deepStrictEqual([s.status, s.route, s.held], ['review', 'poster', ''], 'a flag holds nothing: the link goes to its poster, as without the Wall');
   const score = await api('work', 'GET', 'score', { search: '?submission=' + s.id });
   assert.strictEqual(score.status, 200, JSON.stringify(score.json));
   assert.deepStrictEqual([score.json.score, score.json.passes], [69, false]);

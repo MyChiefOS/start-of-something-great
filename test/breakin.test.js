@@ -236,6 +236,8 @@ test.before(async () => {
     await t.unsafe(`insert into app.oversight_reports (day, facts) values (current_date, '{}')`);
     // 076: an administrator's review of a Wall decision on A's task (decisions are written by the Wall's triggers).
     await t.unsafe(`insert into app.wall_reviews (decision_id, verdict, reason, reviewed_by) select d.id, 'confirmed', 'Checked.', '${A.id}' from app.wall_decisions d where d.member_id = '${A.id}' limit 1`);
+    // 081: the Wall's note of a task it removed (names no one), on A's task.
+    await t.unsafe(`insert into app.wall_removed_tasks (task_id, prior_status, decision_id) select t.id, 'open', app.uuid_v7() from app.work_tasks t where t.poster_member = '${A.id}' limit 1`);
     // 074: a security wiki version (public feeds; the tables name no one).
     await t.unsafe(`insert into app.wiki_versions (id, status, entries, packages, sources) values ('0190f000-0000-7000-8000-000000000074', 'active', 1, 1, '{}')`);
     await t.unsafe(`insert into app.wiki_entries (version_id, source, ident, title) values ('0190f000-0000-7000-8000-000000000074', 'cwe', 'CWE-79', 'A weakness')`);

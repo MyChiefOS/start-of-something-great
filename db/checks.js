@@ -185,6 +185,8 @@ const DEFINERS = {
   // poster's scope and its public read, and an administrator's read of the log and its chain check.
   'app.wall_gate()': { owner: 'dog_owner', callers: '' },
   'app.wall_files_flags(uuid, jsonb)': { owner: 'dog_owner', callers: '' },
+  // 081: reads app.wall_rules (each rule's published effect: block or flag); dog_work's gates call it.
+  'app.wall_decide(jsonb)': { owner: 'dog_owner', callers: 'dog_work' },
   'app.work_task_scope_put(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.work_task_scope_get(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_log(integer)': { owner: 'dog_work', callers: 'dog_app' },
