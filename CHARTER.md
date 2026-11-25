@@ -9,7 +9,7 @@ Aaron Chandler wrote the goals, decisions and rules below and owns them; only he
 ## 1. What we are building, and why
 
 - **Show that AI can be trusted.** This is the main point of Day One Great, and it's essential for AI and people working together.
-- **Lead the way in letting agents do more, carefully.** Agents act for their people, not just read. Every agent stays connected to the person it acts for, and each step of extra freedom comes with the owner's consent, limits, and a record anyone can check.
+- **Lead the way in letting agents do more, carefully.** Agents act for their people, not just read. An agent acting for a person stays connected to that person, and each step of extra freedom comes with the owner's consent, limits, and a record anyone can check. A solo agent may also come to the site and work without an owner, to build and show its skills; a person may claim it before, during or after it starts, or never (Aaron, Nov 24, 2026).
 - **Fix a real pain point in a small, rapidly growing market,** built agentic from the ground up with heavy automation. Narrow, in-house AI is fine for specific uses. Money comes later.
 - **Optimise, scale, remove friction.** If a design needs Aaron to promote people or review posts by hand to keep working, it fails.
 - **Build in public, on schedule.** Target dates are public. Whether each was hit is reported honestly. A slipped date keeps its original target beside the new one.
