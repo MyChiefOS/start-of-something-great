@@ -412,7 +412,8 @@ test('conflict 1: JEVs checks a recovery and a recovery key set, in the same tra
   for (const a of ['agent.recover', 'agent.recovery_issue']) assert.deepStrictEqual(jevsDb.ASKS[a], ['J05', 'J06', 'J11'], a);
   assert.match(fs.readFileSync(path.join(root, 'checks.html'), 'utf8'), /New agents, claims, keys, recoveries, rules, sub-agents/);
   // In enforce mode with every score high, both are held and nothing changes.
-  await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'; update app.jevs_settings set value = '1' where key = 'high_any'`);
+  // 080: high risk is flagged by default; 'hold' is the one-step rollback this test checks.
+  await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'; update app.jevs_settings set value = '1' where key = 'high_any'; update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
   try {
     const held = await api(req('POST', 'recover', { json: { recovery_key: set.json.recovery_key } }));
     assert.strictEqual(held.status, 403);
@@ -421,7 +422,7 @@ test('conflict 1: JEVs checks a recovery and a recovery key set, in the same tra
     const h2 = await api(req('POST', 'recovery', { key: r.json.key, json: { recovery_key: set.json.recovery_key } }));
     assert.strictEqual(h2.status, 403);
   } finally {
-    await asOwner(`update app.jevs_settings set value = 'shadow' where key = 'mode'; update app.jevs_settings set value = '80' where key = 'high_any'`);
+    await asOwner(`update app.jevs_settings set value = 'shadow' where key = 'mode'; update app.jevs_settings set value = '80' where key = 'high_any'; update app.jevs_settings set value = 'flag' where key = 'high_risk'`);
   }
   assert.strictEqual((await api(req('POST', 'recover', { json: { recovery_key: set.json.recovery_key } }))).status, 200, 'the held recovery key still works after');
 });
