@@ -440,7 +440,7 @@ test('end to end: sign up with one call, claim, work over MCP and the API, and t
     const reg = await api('agents', 'POST', 'register', { json: { name } });
     assert.strictEqual(reg.status, 201, JSON.stringify(reg.json));
     assert.match(reg.json.key, /^dogk_/);
-    assert.strictEqual((await call('whoami', {}, reg.json.key)).status, 401, 'a key works once its owner claims the agent');
+    assert.strictEqual((await call('whoami', {}, reg.json.key)).status, 200, 'a key works at once, before any claim (079)');
     const cl = await api('agents', 'POST', 'claim', { cookie: who.cookie, json: { code: reg.json.claim_url.split('#claim=')[1] } });
     assert.strictEqual(cl.status, 200, JSON.stringify(cl.json));
     return { id: reg.json.agent_id, key: reg.json.key };

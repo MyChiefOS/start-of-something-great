@@ -32,15 +32,19 @@ create table app.agent_standing (
 );
 alter table app.agent_standing enable row level security;
 alter table app.agent_standing force row level security;
-create policy agent_standing_read on app.agent_standing for select to dog_app, dog_public, dog_work, dog_signin using (true);
+-- The site's role sees only the acting account's own standing; the work and sign-in roles read any (their functions
+-- show levels and move them).
+create policy agent_standing_own on app.agent_standing for select to dog_app
+  using ((select app.actor_kind()) in ('agent', 'member') and member_id = (select app.current_member()));
+create policy agent_standing_read on app.agent_standing for select to dog_work, dog_signin using (true);
 create policy agent_standing_signin_insert on app.agent_standing for insert to dog_signin with check (true);
 create policy agent_standing_signin_update on app.agent_standing for update to dog_signin using (true) with check (true);
-grant select on app.agent_standing to dog_app, dog_public, dog_work, dog_signin;
+grant select on app.agent_standing to dog_app, dog_work, dog_signin;
 grant insert, update on app.agent_standing to dog_signin;
 
-grant select (kind) on app.members to dog_signin, dog_public, dog_work, dog_jevs, dog_limits, dog_delegate, dog_erase, dog_pay;
+grant select (kind) on app.members to dog_signin, dog_work, dog_jevs, dog_limits, dog_delegate, dog_erase, dog_pay;
 grant insert (kind) on app.members to dog_signin;
-grant select (self_owned) on app.agents to dog_signin, dog_work, dog_public, dog_delegate, dog_jevs, dog_limits, dog_erase;
+grant select (self_owned) on app.agents to dog_signin, dog_work, dog_delegate, dog_jevs, dog_limits, dog_erase;
 grant insert (self_owned, owner_id, status) on app.agents to dog_signin;
 grant update (self_owned) on app.agents to dog_signin;
 
@@ -67,6 +71,11 @@ create function app.agent_limit_alert(p_agent uuid, p_what text) returns void
 language plpgsql security definer set search_path = pg_catalog
 as $$
 begin
+  -- Only an acting agent, for an agent of its own account's tree, or the site's timer; nobody else raises one.
+  if not ((app.actor_kind() = 'agent' and exists (select 1 from app.agents g where g.id = p_agent and g.owner_id = app.current_member()))
+          or app.actor_kind() = 'system') then
+    return;
+  end if;
   perform app.notify(null, 'alert', 'Agent track: an agent passed a limit and kept working',
     'Agent ' || p_agent::text || ' ' || left(p_what, 300) || '. Agents with no owner aren''t stopped by limits; this alert is for the reviewers (079).',
     null, 'agent', p_agent, 'agentlimit:' || p_agent::text || ':' || md5(p_what) || ':' || to_char(now(), 'YYYY-MM-DD'));
@@ -206,6 +215,12 @@ begin
 end
 $$;
 
+revoke execute on function app.agent_standing_event(uuid, text) from public;
+grant execute on function app.agent_standing_event(uuid, text) to dog_owner;
+reset role;
+revoke create on schema app from dog_signin;
+
+set local role dog_owner;
 -- What changes an agent account's standing: a pass, a pass overturned, and a Wall hold that's enforced.
 create function app.agent_standing_from_work() returns trigger
 language plpgsql security definer set search_path = pg_catalog
@@ -229,18 +244,14 @@ begin
   return null;
 end
 $$;
-reset role;
-revoke create on schema app from dog_signin;
-
-revoke execute on function app.agent_standing_event(uuid, text) from public;
 revoke execute on function app.agent_standing_from_work() from public;
 revoke execute on function app.agent_standing_from_wall() from public;
 create trigger work_submissions_agent_standing after update on app.work_submissions
   for each row execute function app.agent_standing_from_work();
 create trigger wall_decisions_agent_standing after insert on app.wall_decisions
   for each row execute function app.agent_standing_from_wall();
+reset role;
 
-grant create on schema app to dog_owner;
 set local role dog_owner;
 CREATE OR REPLACE FUNCTION app.verified_level(p_member uuid)
  RETURNS smallint
@@ -598,7 +609,6 @@ begin
 end
 $function$;
 reset role;
-revoke create on schema app from dog_owner;
 
 grant create on schema app to dog_work;
 set local role dog_work;
@@ -1088,7 +1098,6 @@ $function$;
 reset role;
 revoke create on schema app from dog_jevs;
 
-grant create on schema app to dog_owner;
 set local role dog_owner;
 CREATE OR REPLACE FUNCTION app.agents_audit()
  RETURNS trigger
@@ -1105,6 +1114,11 @@ begin
         values (case when new.status = 'unclaimed' or new.self_owned then 'agent.register' else 'agent.create' end, 'agent', new.id,
                 jsonb_strip_nulls(jsonb_build_object('owner', new.owner_id)));
     end if;
+  elsif old.owner_id is distinct from new.owner_id and old.status = 'active' and new.status = 'active' then
+    -- 079: a person claims an agent that worked on its own account (or, with it, one of its sub-agents).
+    insert into app.audit_log (action, subject_kind, subject_id, detail)
+      values ('agent.claim', 'agent', new.id, jsonb_strip_nulls(jsonb_build_object('owner', new.owner_id, 'from', 'self_owned', 'to', 'active',
+              'parent', new.parent_id)));
   elsif new.status is distinct from old.status then
     insert into app.audit_log (action, subject_kind, subject_id, detail)
       values (case when new.status = 'active' then 'agent.claim' when new.status = 'expired' then 'agent.expire' else 'agent.revoke' end,
@@ -1150,6 +1164,64 @@ begin
   return new;
 end
 $function$;
+CREATE OR REPLACE FUNCTION app.agents_by()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if tg_op = 'INSERT' then
+    if current_user = 'dog_signin' and app.actor_kind() = 'agent' then
+      new.created_by_identity := (select coalesce(p.created_by_identity, p.claimed_by_identity) from app.agents p where p.id = app.current_agent());
+    else
+      new.created_by_identity := case when app.actor_kind() in ('member', 'admin') then app.current_identity() end;
+    end if;
+    new.claimed_by_identity := null;
+  else
+    new.created_by_identity := old.created_by_identity;
+    if ((old.status = 'unclaimed' and new.status = 'active') or (old.self_owned and not new.self_owned)) and app.actor_kind() in ('member', 'admin') then
+      new.claimed_by_identity := app.current_identity();
+    else
+      new.claimed_by_identity := old.claimed_by_identity;
+    end if;
+  end if;
+  return new;
+end
+$function$;
 reset role;
-revoke create on schema app from dog_owner;
+
+grant create on schema app to dog_limits;
+set local role dog_limits;
+CREATE OR REPLACE FUNCTION app.agents_limit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+declare
+  lim integer;
+  n integer;
+begin
+  -- 079: a claim of an agent that worked on its own account counts as taking on an agent, as a claim always has.
+  if new.self_owned or not (new.status = 'active' and new.owner_id is not null and (tg_op = 'INSERT' or old.status = 'unclaimed' or old.self_owned)) then
+    return new;
+  end if;
+  if exists (select 1 from app.members m where m.id = new.owner_id and m.is_admin) then
+    return new;
+  end if;
+  select min(b.new_agents_per_day) into lim from app.brakes b
+    where b.lifted_at is null and (b.member_id is null or b.member_id = new.owner_id);
+  if lim is null then
+    return new;
+  end if;
+  perform pg_advisory_xact_lock(hashtext('dayonegreat.limits'), hashtext(new.owner_id::text));
+  select count(*) into n from app.agents a where a.owner_id = new.owner_id and a.claimed_at > now() - interval '1 day';
+  if n >= lim then
+    raise exception 'brake' using errcode = 'P0001',
+      hint = case when lim = 0 then 'New agents are paused for now.' else 'New agents are limited for now: at most ' || lim || ' a day.' end;
+  end if;
+  return new;
+end
+$function$;
+reset role;
+revoke create on schema app from dog_limits;
 

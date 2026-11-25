@@ -435,7 +435,7 @@ test('an agent sees what became of each of its drafts: waiting, approved with it
   assert.strictEqual((await drafts(a.key, { limit: '500' })).status, 400);
 });
 
-test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its own from the claim or the add, through the same checks; drafts if chosen, or if the sign-in isn\'t fresh', async () => {
+test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its own from the claim or the add, through the same checks; drafts if chosen, or if the sign-in isn\'t fresh (an added one; a registered one already works, 079)', async () => {
   const add = (owner, json) => api(req('POST', '', { cookie: owner.cookie, origin: ORIGIN, json }));
   const meOf = async (key) => (await api(req('GET', 'me', { key }))).json.rules;
   // Added by a freshly signed-in owner: acting on its own, posting and replies; reports keep drafting; the daily limit as before.
@@ -474,9 +474,12 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   const code2 = await reg('Claimed to draft');
   const drafting = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: code2, post: 'draft' } }));
   assert.deepStrictEqual([drafting.json.claimed, drafting.json.acting], [true, false]);
+  // 079, the agent track: a registered agent already works on its own account before anyone claims it, so a claim
+  // raises nothing and needs no fresh sign-in; it keeps working, unless the new owner chooses drafts.
   const code3 = await reg('Claimed long after signing in');
   const staleClaim = await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code: code3 } }));
-  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, false, '/join?return_to=%2Faccount%2Fagents']);
+  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, true, undefined]);
+  assert.match(staleClaim.json.note, /^It keeps working on its own, as it did before you claimed it/);
 });
 
 test('item 19 with JEVs enforcing, as at go-live: a stale owner meets the challenge and gets the sign-in link; a paused owner\'s agent drafts', async () => {

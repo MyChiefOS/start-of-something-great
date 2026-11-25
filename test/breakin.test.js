@@ -299,6 +299,9 @@ test.before(async () => {
   const [bAgent] = await run(B.ctx, (t) => t`insert into app.agents (name) values ('B agent') returning id`);
   await run(B.ctx, (t) => t`insert into app.agent_keys (agent_id, key_hash) values (${bAgent.id}, ${c.sha256hex('b-key')})`);
   BAgent = { actor: 'agent', memberId: B.id, agentId: bAgent.id, keyHash: c.sha256hex('b-key') };
+  // 079: an agent working on its own account, with its standing (neither A's nor B's: no one else may see it).
+  await q(`with m as (insert into app.members (display_name, trust_level, kind) values ('Solo fixture', 1, 'agent') returning id)
+           insert into app.agent_standing (member_id) select id from m`);
   // 053, audit logging: a failed sign-in, an expired lock and an audit row's request record, all A's.
   await q(`insert into app.signin_failures (member_id) values ('${A.id}')`);
   await q(`insert into app.signin_locks (member_id, until) values ('${A.id}', now() - interval '1 hour')`);

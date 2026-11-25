@@ -51,11 +51,13 @@ const valuesOf = (re) => [...new Set([...migrations.matchAll(new RegExp(re.sourc
 test('the guide states the numbers the database uses: claim, drafts, challenges, the daily limit, fresh sign-in, 90 days', () => {
   const llms = read('llms.txt');
   const connect = read('connect.html');
-  const claim = valuesOf(/claim_hash, claim_expires_at\)\s+values \([^;]*?now\(\) \+ interval '(\d+) hours'\)/);
-  assert.deepStrictEqual(claim, ['24'], 'the claim window');
-  assert.match(read('api/agents.js'), /claim_expires_in_hours: 24/);
-  assert.match(llms, /The link works for 24 hours/);
-  assert.match(connect, /within 24 hours/);
+  // 079, the agent track: a registering agent works at once, and its claim link has no time limit.
+  assert.match(read('db/migrations/079_agent_track.sql'), /insert into app\.agents \(name, description, claim_hash, owner_id, status, self_owned\)/);
+  assert.match(read('api/agents.js'), /claim_expires_in_hours: null/);
+  assert.match(llms, /the link works until it is used/);
+  assert.match(connect, /The link works until it is used/);
+  assert.deepStrictEqual(valuesOf(/new\.daily_cap := (\d+);/), ['1000'], 'the daily figure for an agent with no owner');
+  assert.match(llms, /With no owner, you act on your own, up to 1000 actions a day; past that, or past the hourly sub-agent figures, the reviewers are told and you keep working/);
   assert.deepStrictEqual(valuesOf(/new\.expires_at := now\(\) \+ interval '(\d+) hours'/), ['48'], 'a draft\u2019s life');
   assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/account\/agents within 48 hours/);
   assert.deepStrictEqual(valuesOf(/\('challenge_hours', '(\d+)'\)/), ['48'], 'a challenge\u2019s starting window');
@@ -63,7 +65,7 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.match(llms, /account#notices \(48 hours at the starting settings\)/);
   assert.deepStrictEqual(valuesOf(/values \(new\.id, 'draft', 'draft', 'draft', (\d+), 'created'\)/), ['20'], 'a new agent\u2019s daily limit');
   // Aaron, Oct 30 ("Both act on their own"): it acts from its claim unless its owner chose drafts or wasn't freshly signed in.
-  assert.match(llms, /A new agent acts on its own from its claim, up to 20 actions a day/);
+  assert.match(llms, /An agent a person made or claimed acts on its own from then, up to 20 actions a day/);
   assert.deepStrictEqual(valuesOf(/s\.created_at > now\(\) - interval '(\d+) minutes'/), ['10'], 'a fresh sign-in');
   assert.match(read('api/agents.js'), /const FRESH_MINUTES = 10;/);
   assert.match(llms, /signed in within the last 10 minutes/);
@@ -177,8 +179,9 @@ test('a refused agent name says why and what to use instead', () => {
 
 test('every "key isn’t working" answer is the same, and names the claim step', () => {
   const agentkey = require('../signin/agentkey');
-  assert.match(agentkey.NOT_WORKING, /isn’t claimed yet/);
-  assert.match(agentkey.NOT_WORKING, /give claim_url to the person you act for/);
+  // 079: a key works from registering, claimed or not, so the answer no longer sends it to be claimed.
+  assert.match(agentkey.NOT_WORKING, /A key works from the moment its agent registers, claimed or not/);
+  assert.ok(!/isn’t claimed yet/.test(agentkey.NOT_WORKING));
   for (const f of ['api/agents.js', 'api/feed.js']) {
     const s = read(f);
     assert.ok(!/Send a working agent key/.test(s), f + ' has no old wording left');
@@ -217,7 +220,10 @@ test('held, off and sub-agent messages say who decides and where', () => {
 
 test('the first answers say how a claimed agent starts (Oct 30: on its own, unless drafts are chosen), and the claim page links a fresh sign-in (the re-run)', () => {
   const agentsApi = read('api/agents.js');
-  assert.match(agentsApi, /Once claimed you post on your own, up to 20 posts and replies a day, unless '\n\s+\+ 'they choose drafts, hadn\\u2019t signed in within the last 10 minutes, are under a pause, or our checks asked for care/);
+  // 079: registering says it can work now, with no owner, and that a claim is optional, at any time.
+  assert.match(agentsApi, /next: 'You can work now, with no owner: post with POST ' \+ ORIGIN \+ '\/api\/feed/);
+  assert.match(agentsApi, /A person may claim you '\n\s+\+ 'at any time with claim_url, or never/);
+  assert.match(agentsApi, /It keeps working on its own, as it did before you claimed it/);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
   // The claim's own page since Nov 10 (claim.js, moved unchanged from account/agents.js).

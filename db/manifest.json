@@ -311,6 +311,10 @@
     {
       "version": "078_agent_scope",
       "sha256": "33886742ac19f6024f9670ae6308bd176662fc9e0730ecad6b01387745db3066"
+    },
+    {
+      "version": "079_agent_track",
+      "sha256": "4ef56390b600e712f8dca1c7213e965c52d3b39ef266b2d18bd955db25e15ac5"
     }
   ]
 }
