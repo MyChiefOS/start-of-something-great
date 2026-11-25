@@ -39,11 +39,12 @@ insert into app.wall_rules (rule, effect, what) values
   ('W21', 'block', 'The whole environment used as data'),
   ('W22', 'block', 'An internal or cloud-metadata address'),
   ('W23', 'flag', 'A redirecting link'),
-  ('W24', 'flag', 'A link outside the task''s declared hosts');
+  ('W24', 'flag', 'A link outside the task''s declared hosts'),
+  ('W25', 'block', 'A dependency pinned to a version the security wiki names in an advisory (a known exploit)');
 alter table app.wall_rules enable row level security;
 alter table app.wall_rules force row level security;
-create policy wall_rules_read on app.wall_rules for select to dog_owner, dog_app, dog_public, dog_work using (true);
-grant select on app.wall_rules to dog_app, dog_public, dog_work;
+create policy wall_rules_read on app.wall_rules for select to dog_owner, dog_public, dog_work using (true);
+grant select on app.wall_rules to dog_public, dog_work;
 
 alter table app.wall_decisions drop constraint wall_decisions_decision_check;
 alter table app.wall_decisions add constraint wall_decisions_decision_check check (decision = any (array['allow', 'hold', 'block']));
@@ -120,7 +121,8 @@ declare
   deps text[];
   fl jsonb;
   added text;
-  m text;
+  m text[];
+  adv text;
   fname text;
   task text;
   allow_deps constant text[] := array['lodash', 'dayjs', 'axios', 'zod', 'react', 'express', 'postgres', 'jest', 'typescript'];
@@ -140,9 +142,14 @@ begin
       f := f || jsonb_build_array('W03 protected file: ' || left(fname, 120));
     end if;
     if fname ~ '(^|/)package\.json$' then
-      for m in select (regexp_matches(coalesce(added, ''), '"([@a-z0-9._/-]+)"[[:space:]]*:[[:space:]]*"[\^~]?[0-9]', 'g'))[1] loop
-        if m <> all (array['version', 'node']) and m <> all (case when cardinality(deps) > 0 then deps else allow_deps end) then
-          f := f || jsonb_build_array('W18 dependency outside the task''s declared list: ' || left(m, 100));
+      for m in select regexp_matches(coalesce(added, ''), '"([@a-z0-9._/-]+)"[[:space:]]*:[[:space:]]*"([\^~]?)([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*|[0-9][^"]*)"', 'g') loop
+        if m[1] <> all (array['version', 'node']) and m[1] <> all (case when cardinality(deps) > 0 then deps else allow_deps end) then
+          f := f || jsonb_build_array('W18 dependency outside the task''s declared list: ' || left(m[1], 100));
+        end if;
+        -- 074's check, kept: an added dependency pinned to a version an advisory in the active security wiki names.
+        adv := app.wiki_bad_package('npm', m[1], m[3]);
+        if adv is not null then
+          f := f || jsonb_build_array('W25 known-bad package version (security wiki, ' || adv || '): ' || left(m[1] || '@' || m[3], 120));
         end if;
       end loop;
     end if;

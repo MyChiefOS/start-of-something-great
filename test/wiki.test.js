@@ -116,7 +116,7 @@ test('WK3: the Wall flags a dependency pinned to a version the active wiki names
   const [{ id: room }] = await q(`select id from app.work_rooms where code = '15-0000'`);
   const [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('P', '${room}', 'member', '${poster.id}') returning id`);
   const [{ id: task }] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member) values ('${project}', '${room}', 'Deps', 'either', 1, 'member', '${poster.id}') returning id`);
-  const flags = async (patch) => (await q(`select app.wall_files_flags('${task}', '${JSON.stringify([{ filename: 'package.json', patch }])}'::jsonb) as f`))[0].f;
+  const flags = async (patch) => (await q(`select app.wall_files_flags('${task}', '${JSON.stringify([{ filename: 'package.json', patch }])}'::jsonb) as f`))[0].f.filter((x) => x.startsWith('W25')); // 081 also flags W18 (outside the allowlist); this test is about W25
   assert.deepStrictEqual(await flags('+    "pkg44": "1.0.0",'), ['W25 known-bad package version (security wiki, CVE-2026-2044): pkg44@1.0.0']);
   assert.deepStrictEqual(await flags('+    "pkg44": "1.0.1",'), []);
   assert.deepStrictEqual(await flags('-    "pkg44": "1.0.0",'), []); // removed, not added
