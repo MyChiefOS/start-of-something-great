@@ -689,7 +689,10 @@ test('F8: deleting an account deletes its notices and its pauses; Aaron\'s alert
 // ---- JEVs (PR 12) speaks through the inbox (PR 13 on top of PR 12) ----
 const jevs = require('../db/jevs');
 const posts = require('../db/posts');
-const setMode = (m) => asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+// 080: high risk now flags and goes ahead (test/no-blockers.test.js); these tests cover the hold path, kept as the
+// one-step rollback, so enforce here means enforce with high_risk = 'hold'.
+const setMode = async (m) => { await asOwner(`update app.jevs_settings set value = '${m}' where key = 'mode'`);
+  await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`); };
 const throwaway = (who) => run(who.ctx, (t) => jevs.mark(t, { kind: 'disposable', keyHash: c.sha256hex('jevs disposable') }));
 const owner2Cookie = (who) => who.cookie;
 async function feedApi(method, cookie, query = {}, json) {

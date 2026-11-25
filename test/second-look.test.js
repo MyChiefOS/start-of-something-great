@@ -103,6 +103,8 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
   await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'`);
+  // 080: high risk now flags and goes ahead; these tests cover the hold path, kept as the one-step rollback.
+  await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
 });
 test.after(async () => {
   for (const x of [web, su]) if (x) await x.end({ timeout: 5 });

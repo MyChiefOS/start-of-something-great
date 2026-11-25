@@ -80,6 +80,8 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
   await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'`);
+  // 080: high risk now flags and goes ahead; these tests cover the hold path, kept as the one-step rollback.
+  await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
   // No canary at random: the canary test plants its own (the default is a 2% chance with each held post).
   await q('update app.review_settings set canary_rate = 0');
 });

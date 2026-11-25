@@ -189,7 +189,7 @@ test('every "key isn’t working" answer is the same, and names the claim step',
   }
   // me, subagents (get, post and revoke), drafts (the UI/UX review, item 15), and asking for a recovery key with a key
   // that doesn't work: malformed, not a claimed agent's, and refused by the database (039).
-  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 8);
+  assert.strictEqual((read('api/agents.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 9); // 080: retire is the ninth
   assert.strictEqual((read('api/feed.js').match(/error: agentkey\.NOT_WORKING/g) || []).length, 1);
 });
 

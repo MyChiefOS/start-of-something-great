@@ -34,7 +34,8 @@
         "/api/agents/recover": "an agent recovers with its own recovery key, not a session; an empty body is refused with 400",
         "/api/agents/recovery": "an agent's own key authenticates it, not a session cookie, so a cross-site page gains nothing",
         "/api/agents/subagents": "an agent's own key authenticates it, not a session cookie",
-        "/api/agents/subagents/revoke": "an agent's own key authenticates it, not a session cookie"
+        "/api/agents/subagents/revoke": "an agent's own key authenticates it, not a session cookie",
+        "/api/agents/retire": "an agent's own key authenticates it, not a session cookie (080)"
       }
     },
     {

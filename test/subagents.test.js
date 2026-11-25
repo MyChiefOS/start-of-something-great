@@ -487,6 +487,7 @@ test('SA11: JEVs scores every sub-agent made: shadow mode records; enforce holds
   assert.strictEqual(s.s.owner_agents_24h, 1);
   const asOwnerJevs = (k, val) => asOwner(`update app.jevs_settings set value = '${val}' where key = '${k}'`);
   await asOwnerJevs('mode', 'enforce');
+  await asOwnerJevs('high_risk', 'hold'); // 080: the hold path, kept as the rollback; flags are tested in no-blockers
   try {
     // Medium (tuned low here so the test is certain): made, with every "act" turned to "draft"; no human step.
     await asOwnerJevs('medium_any', '5');
@@ -508,6 +509,7 @@ test('SA11: JEVs scores every sub-agent made: shadow mode records; enforce holds
     await asOwnerJevs('medium_any', '40');
     await asOwnerJevs('high_any', '80');
     await asOwnerJevs('mode', 'shadow');
+    await asOwnerJevs('high_risk', 'flag');
   }
   // A sub-agent that would sit at the deepest level scores 20 on J15.
   const d2 = await spawn(w, { name: 'Level 2' });
@@ -730,8 +732,9 @@ test('review F6: refusals that need no scoring don\'t reach JEVs, and each agent
   }
   // A request limit per agent, like registration's: past it, nothing reaches the database's checks or JEVs.
   const noisy = await newAgent(owner, 'Noisy');
-  const { SUBAGENT_LIMITS } = require('../api/agents.js');
-  const max = SUBAGENT_LIMITS.subagent_agent.max;
+  // 080: the limit rises with level; this owner is a person at level 2.
+  const { SUBAGENT_BY_LEVEL } = require('../api/agents.js');
+  const max = SUBAGENT_BY_LEVEL[2];
   await asOwner('update app.subagent_settings set per_parent_per_hour = 100000, per_owner_per_hour = 1000000');
   try {
     // A malformed request doesn't use up the allowance (as registration's), so only well-formed ones are counted.

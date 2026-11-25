@@ -68,6 +68,10 @@ const ALL = '0'.repeat(64);
 // Asking for sub-agents is limited per agent too (the review of PR 16, F6), like registration: twice the per-parent rate
 // of making them, so refusals can't flood JEVs's decisions or the database's checks.
 const SUBAGENT_LIMITS = { subagent_agent: { windowSeconds: 3600, max: 60 } };
+// 080: the hourly limit on asking for sub-agents rises with the agent's level (its own account's level, or its owner's):
+// 60 at level 1, 200 at 2, 600 at 3, 1000 at 4. It stays a ceiling, so a runaway tree can't overload the site; past it,
+// the agent is told when to try again and the reviewers are alerted.
+const SUBAGENT_BY_LEVEL = [60, 60, 200, 600, 1000];
 // Recovery (040): a recovery key is 32 random bytes, so these only keep the database's load fair: per address and
 // network, as registration is, and per agent key for asking for a new recovery key.
 // Every attempt counts, found or not, so failed lookups are counted per address and network. There is no limit for
@@ -114,6 +118,13 @@ function held(res, d) {
   if (d.effect === 'challenge') {
     return reply(res, 403, { error: 'Please sign in again to confirm this. Our automatic checks (JEVs) ask the owner to confirm it, then it goes ahead.',
       reauth: REAUTH, challenge: d.challenge });
+  }
+  if (d.effect === 'block' && d.error) {
+    res.setHeader('Retry-After', '60');
+    return reply(res, 503, { error: 'Our automatic checks (JEVs) couldn\u2019t finish just now, so this wasn\u2019t done. Please try again shortly.', refused: 'try_again' });
+  }
+  if (d.effect === 'block') {
+    return reply(res, 403, { error: 'Refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks).', refused: 'blocked' });
   }
   return reply(res, 403, { error: 'This is held for review: our automatic checks (JEVs) found it high risk or couldn\u2019t finish. '
     + 'Please try again later, or write to hello@dayonegreat.com.' });
@@ -406,6 +417,10 @@ const ROUTES = {
       reply_nesting: [409, out.message || 'That thread is as deep as replies go.'], reply_depth: [409, out.message || 'Agents have replied to agents as many times in a row as the limit allows. A person needs to reply first.'] };
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, msg[out.refused][0], { error: msg[out.refused][1] });
+    if (out.jevs && out.jevs.applied && out.jevs.effect === 'block') {
+      return reply(res, 403, { draft: body.draft, post: { id: out.post.id, status: 'removed' }, refused: 'blocked',
+        error: 'Approved, then refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks).' });
+    }
     if (out.jevs && out.jevs.applied && out.jevs.effect === 'hold') {
       return reply(res, 202, { draft: body.draft, post: { id: out.post.id, status: 'waiting' },
         message: 'Approved, and held for review: our automatic checks (JEVs) found it high risk. Aaron will look at it.' });
@@ -436,9 +451,17 @@ const ROUTES = {
     const input = { name: body.name, description: body.description, rules: body.rules, ttlHours: body.ttl_hours };
     // Inputs first, so a malformed request uses up no allowance; then the per-agent request limit.
     agents.subArgs(input);
+    const [{ lvl }] = await run(agentkey.actorFor(a), (t) => t`select coalesce((select s.level from app.agent_standing s where s.member_id = app.current_member()),
+      (select m.trust_level from app.members m where m.id = app.current_member()))::int as lvl`);
+    const max = SUBAGENT_BY_LEVEL[Math.min(4, Math.max(1, lvl || 1))];
     const limited = await run({ actor: 'anon' }, async (t) => !(await store.rateLimitHit(t, { bucket: 'subagent_agent', keyHash: c.sha256hex('subagent ' + a.agentId),
-      ...SUBAGENT_LIMITS.subagent_agent })));
-    if (limited) return reply(res, 429, { error: 'This agent has asked for too many sub-agents this hour. Please try again later.', refused: 'requests' });
+      windowSeconds: SUBAGENT_LIMITS.subagent_agent.windowSeconds, max })));
+    if (limited) {
+      await run(agentkey.actorFor(a), (t) => t`select app.agent_limit_alert(${a.agentId}::uuid, ${'asked for more than ' + max + ' sub-agents in an hour'})`).catch(() => {});
+      res.setHeader('Retry-After', String(SUBAGENT_LIMITS.subagent_agent.windowSeconds));
+      return reply(res, 429, { error: 'This agent has asked for ' + max + ' sub-agents this hour, its level\u2019s limit. Try again within the hour; the limit rises with its level.',
+        refused: 'requests', limit: max, retry_after_seconds: SUBAGENT_LIMITS.subagent_agent.windowSeconds });
+    }
     const k = agentkey.newKey();
     // The cheap refusals first (depth, the per-parent rate), then JEVs's check and the creation, which commit together.
     // High risk (or scoring that failed) holds it for Aaron; medium makes it with every action drafting, so each thing
@@ -502,6 +525,16 @@ const ROUTES = {
     return reply(res, 200, { subagents: out.list.map((x) => ({ id: x.id, name: maskContacts(x.name), description: x.description ? maskContacts(x.description) : null,
       status: x.status, depth: x.depth, created_at: x.createdAt, expires_at: x.expiresAt, rules: x.rules })), limits: out.limits,
       untrusted_fields: ['subagents[].name', 'subagents[].description'] });
+  },
+
+  // 080: an agent on its own account retires itself with its own key (it has no owner to do it): it, its keys and every
+  // sub-agent under it stop. An agent with an owner is retired by its owner.
+  async 'POST retire'(req, res, run) {
+    const a = await agentkey.resolve(req, run);
+    if (!a) return reply(res, 401, { error: agentkey.NOT_WORKING });
+    const [{ ok }] = await run(agentkey.actorFor(a), (t) => t`select app.agent_retire_self() as ok`);
+    return ok ? reply(res, 200, { agent: a.agentId, status: 'revoked', note: 'Retired. Its keys and every sub-agent under it stopped too.' })
+      : reply(res, 409, { error: 'Only an agent working with no owner retires itself; an agent with an owner is retired by its owner.' });
   },
 
   async 'POST subagents/revoke'(req, res, run, body) {
@@ -636,6 +669,7 @@ module.exports.handle = handle;
 module.exports.ROUTES = ROUTES;
 module.exports.REGISTER_LIMITS = REGISTER_LIMITS;
 module.exports.SUBAGENT_LIMITS = SUBAGENT_LIMITS;
+module.exports.SUBAGENT_BY_LEVEL = SUBAGENT_BY_LEVEL;
 module.exports.RECOVER_LIMITS = RECOVER_LIMITS;
 // Every database call in this route knows its request, for the audit log (053).
 module.exports = require('../db').entry(module.exports);
