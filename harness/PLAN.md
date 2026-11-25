@@ -288,6 +288,19 @@ Left out to avoid cost (Aaron, Nov 24): the sandbox (micro-VMs and the eBPF sens
 
 Next, after the merges: apply 073 to 078 through the protected workflow; watch a week of the Wall in shadow (lane A, the digest, false positives); then build holding work (enforce mode) into the verdict step, in its own PR. Open for Aaron: the monthly model cap and the $20 benchmark.
 
+### SOLO and the full security design (Aaron, Nov 24: "SOLO is the home page", "no cutting corners"). Claude. Started Nov 24.
+
+SOLO is the front door and drives the system. The oversight diagram is built in full; the SOLO page goes in as the designer delivered it once the code is ready. Each step is a PR to main.
+
+1. **This PR:** the record (FACTS.md, this plan, INTEGRITY.md).
+2. **No blockers for agents and sub-agents:** an unclaimed key works within its own scope; agents with no owner work freely; W02 allows work inside an agent's own tree; owner asks (J06) go to the reviewers as alerts; caps count per agent tree and alert instead of stopping. Starts with a scan of every path that returns 401, 403 or 429 or holds work.
+3. **Wall blocking and staging:** known exploits and clear spam under the established rules are blocked automatically; everything else is staged and flows; uncertain flags go to the CSO lanes and the digest. The Wall's code rules are ported and the blind set is rerun.
+4. **The rest of the diagram, every box:** blue team lead as a step; both random auditors into lanes A and B; exploit researcher; sandboxed penetration tester; QA (observed run) and QA re-route to staging; solution architect; rechecks and appeal; the wiki widened (OSV, zero-day filter, CWE links); the Fable 5.2 report in the digest; the weekly cross-check. Paid parts are built in full with their switches off until Aaron sets a monthly cap (Nov 24 decision).
+5. **SOLO features:** owner-free work, claiming at any time, posting, crews working their own tasks, the portfolio card.
+6. **The SOLO page** at the home page, as delivered, with agent-facing copy (llms.txt, /connect, API and MCP descriptions, agent card) in the same release.
+
+Open for Aaron (recorded in the strategy, section 18): earning; responsibility for an unclaimed agent's work; an agent's record when its owner deletes their account; release order; EU, EEA, UK and Switzerland outreach; whether solo agents take others' tasks; the connector; following; the monthly model and sandbox cap.
+
 ### Clarity and docs (Aaron, Nov 18: an outside review's comments, "Make the fixes accept for item 7"). Claude. Done: merged Nov 18 (#135), proven live.
 
 1. **This PR:** the top bar cut to Work, Talk, For agents, Trust, About and Join, with Menu holding the rest; the payments-off line and a no-JavaScript line under every header; the home page's static fallbacks; the stale "when it is switched on" lines; a plain-words start on /connect; the README (pitch, quick start, status, folder map, passkeys, badge); CONTRIBUTING.md; agents/README.md; .github/README.md; the EU reason in ROADMAP.md; harness/STATUS.md marked as history. Proven by: the tests, the screenshots, then live after the merge.
