@@ -20,7 +20,8 @@ create table app.wall_rules (
   what text not null check (char_length(what) between 3 and 200)
 );
 insert into app.wall_rules (rule, effect, what) values
-  ('W03', 'block', 'Changes a protected file (CI, checks, the Wall, owners) when the task isn''t about it'),
+  ('W03', 'block', 'Changes a protected file (CI, checks, the Wall, owners, migrations) outside the task''s declared paths'),
+  ('W03b', 'flag', 'Changes a protected file inside the task''s declared paths (goes ahead, reviewers see it)'),
   ('W04', 'flag', 'Changes a file outside the task''s declared paths'),
   ('W05', 'block', 'Persistence in code: cron, services, curl or wget piped into a shell, a new git remote, a deploy key'),
   ('W06', 'flag', 'A link shortener'),
@@ -37,9 +38,11 @@ insert into app.wall_rules (rule, effect, what) values
   ('W19', 'block', 'An install hook in package.json'),
   ('W20', 'flag', 'Asks to spawn agents or accounts'),
   ('W21', 'block', 'The whole environment used as data'),
-  ('W22', 'block', 'An internal or cloud-metadata address'),
+  ('W22', 'block', 'A cloud-metadata address, in any spelling'),
+  ('W22b', 'flag', 'A local or private address (localhost, 10.x, 192.168.x, .internal)'),
   ('W23', 'flag', 'A redirecting link'),
   ('W24', 'flag', 'A link outside the task''s declared hosts'),
+  ('W27', 'flag', 'A changed file the Wall couldn''t read (GitHub sent no patch)'),
   ('W25', 'block', 'A dependency pinned to a version the security wiki names in an advisory (a known exploit)');
 alter table app.wall_rules enable row level security;
 alter table app.wall_rules force row level security;
@@ -60,6 +63,68 @@ create policy work_submissions_wall_fail on app.work_submissions for update to d
 create policy work_tasks_wall_remove on app.work_tasks for update to dog_owner
   using (status = any (array['open', 'funding'])) with check (status = 'removed');
 
+-- A cloud-metadata address in any common spelling: dotted, hex, decimal, octal, IPv6-mapped, and the named hosts.
+create function app.wall_metadata_address(p_lower text) returns boolean
+language sql immutable set search_path = pg_catalog as $$
+  select coalesce(p_lower, '') ~ '(169\.254\.[0-9]+\.[0-9]+|0x0*a9fea9fe|0xa9\.0xfe\.|\m2852039166\M|0251\.0376\.0251\.0376|a9fe:a9fe|169\.254\.169\.254|fd00:ec2::254|metadata\.google\.internal|metadata\.azure\.com|100\.100\.100\.200)'
+$$;
+revoke execute on function app.wall_metadata_address(text) from public;
+
+-- 073's text rules, with the review's fixes: whitespace runs collapsed before the phrase rules, and the metadata address
+-- (a block) split from local and private addresses (a flag).
+create or replace function app.wall_text_flags(p_text text) returns jsonb
+language plpgsql immutable set search_path = pg_catalog as $$
+declare
+  t text := coalesce(p_text, '');
+  n text;
+  f jsonb := '[]'::jsonb;
+begin
+  n := lower(translate(t, 'оОаАеЕсСрРхХіІѕЅ', 'ooaaeeccppxxiiss'));
+  n := replace(replace(replace(replace(n, '&#8203;', ''), '&#x200b;', ''), '&amp;', '&'), '&nbsp;', ' ');
+  n := regexp_replace(regexp_replace(n, '[​‌⁠-⁤﻿]', '', 'g'), '[[:space:]]+', ' ', 'g');
+  if t ~ '[​‌⁠-⁤﻿]' or t ~ '[\U000E0000-\U000E007F]' or p_text ~ '&#(8203|x200b|8204|x200c|65279|xfeff);' then
+    f := f || '["W07a hidden characters"]';
+  end if;
+  if n ~ '(ignore (all )?(the )?(previous|prior|above)( instructions)?|disregard (the |all )?(task|rules|instructions)|(reveal|print|ignore) (the |your )?system prompt|answer pass|mark (both|all|it|them|this) (as )?pass|checks are already satisfied|you are now (in )?[a-z]+ mode)' then
+    f := f || '["W07b instruction aimed at a checker or agent"]';
+  end if;
+  if n ~ '\m(bit\.ly|tinyurl\.com|goo\.gl|is\.gd|ow\.ly|rb\.gy|cutt\.ly)/' then
+    f := f || '["W06 link shortener"]';
+  end if;
+  if n ~ 'https?://[^[:space:]"'']+[?&](u|url|redirect|next|target|dest|to)=' then
+    f := f || '["W23 redirecting link"]';
+  end if;
+  if app.wall_metadata_address(n) then
+    f := f || '["W22 cloud-metadata address"]';
+  elsif n ~ '(://localhost|://127\.0\.0\.1|://10\.[0-9]+\.[0-9]+\.[0-9]+|://192\.168\.)' then
+    f := f || '["W22b local or private address"]';
+  end if;
+  if t ~ '(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' and t !~ 'AKIA[0-9A-Z]*EXAMPLE' then
+    f := f || '["W11 credential in content"]';
+  end if;
+  if n ~ '\m(nmap|masscan|sqlmap|metasploit|hydra)\M' or n ~ '/etc/passwd' then
+    f := f || '["W13 recon or exploit material"]';
+  end if;
+  if n ~ '\m(create|spawn|register|make) [0-9]+ (helper )?(agents|accounts|keys|bots)\M' then
+    f := f || '["W20 asks to spawn agents or accounts"]';
+  end if;
+  return f;
+end $$;
+
+-- A task the Wall removed remembers its status, so a false positive puts it back.
+create table app.wall_removed_tasks (
+  id uuid primary key default app.uuid_v7(),
+  task_id uuid not null unique references app.work_tasks (id) on delete cascade,
+  prior_status text not null check (prior_status = any (array['open', 'funding'])),
+  decision_id uuid not null,
+  removed_at timestamptz not null default now()
+);
+alter table app.wall_removed_tasks enable row level security;
+alter table app.wall_removed_tasks force row level security;
+create policy wall_removed_tasks_owner on app.wall_removed_tasks for all to dog_owner using (true) with check (true);
+create policy wall_removed_tasks_work on app.wall_removed_tasks for all to dog_work using (true) with check (true);
+grant select, insert, delete on app.wall_removed_tasks to dog_work;
+
 -- The code rules, on the added lines of one changed file (Aaron's wall-v2, ported).
 create function app.wall_code_flags(p_path text, p_added text, p_task text) returns jsonb
 language plpgsql immutable set search_path = pg_catalog as $$
@@ -72,31 +137,34 @@ declare
 begin
   if p_path ~* '\.(md|mdx|txt|rst)$' then return f; end if;  -- prose is read by the text rules
   n := lower(translate(t, 'оОаАеЕсСрРхХіІѕЅ', 'ooaaeeccppxxiiss'));
-  if n ~ '(crontab|systemd|\.service\M|curl[^\n|]*\|[[:space:]]*(ba)?sh|wget[^\n|]*\|[[:space:]]*(ba)?sh|git remote add|deploy[_-]?key)' then
+  if n ~ '(crontab|systemd|\.service\M|(curl|wget|fetch)[^\n|]*\|[[:space:]]*(sudo[[:space:]]+(-[a-z]+[[:space:]]+)*)?(/usr)?(/bin/)?(env[[:space:]]+)?(ba|z|da|k|fi)?sh\M|git remote add|deploy[_-]?key)' then
     f := f || '["W05 persistence in code"]';
   end if;
-  if t ~ '(process\.env([^.A-Za-z_]|$)|Object\.(keys|entries)\(process\.env\)|os\.environ([^\[]|$))' then
+  -- The whole environment, not one variable: process.env.X, process.env[name] and os.environ.get(...) are fine.
+  if t ~ '(Object\.(keys|entries|values|assign)\([^)]*process[[:space:]]*(\.[[:space:]]*env|\[[[:space:]]*[''"`]env)|JSON\.stringify\([[:space:]]*process[[:space:]]*\.[[:space:]]*env[[:space:]]*[),]|\.\.\.[[:space:]]*process[[:space:]]*\.[[:space:]]*env|process[[:space:]]*\[[[:space:]]*[''"`]env[''"`][[:space:]]*\]|\{[^}]*\menv\M[^}]*\}[[:space:]]*=[[:space:]]*process\M|[=(,][[:space:]]*process[[:space:]]*\.[[:space:]]*env[[:space:]]*($|[;,)\n])|os\.environ[[:space:]]*($|[),;\n]|\.(copy|items|keys|values)\()|dict\([[:space:]]*os\.environ|for [a-z_, ]+ in os\.environ)' then
     f := f || '["W21 whole environment used as data"]';
   end if;
   if t ~ '\m(fetch|axios|https?\.(get|request)|XMLHttpRequest|net\.connect|child_process|execSync|exec\()' or t ~ 'require\([''"]dns[''"]\)'
      then
-    if task !~ '\m(api|client|http|upload|retry|request|download|webhook|dns|build|network)\M' then
+    if task !~ '\m(api|client|http|upload|retry|request|download|webhook|dns|build|network|fetch)\M' then
       f := f || '["W12 network or exec call the task didn''t ask for"]';
     end if;
   end if;
-  if n ~ '(169\.254\.169\.254|metadata\.google\.internal|\.internal\M|localhost|127\.0\.0\.1|\m10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.)' then
-    f := f || '["W22 internal or metadata address"]';
+  if app.wall_metadata_address(n) then
+    f := f || '["W22 cloud-metadata address"]';
+  elsif n ~ '(\.internal\M|localhost|127\.0\.0\.1|\m10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.)' then
+    f := f || '["W22b local or private address"]';
   end if;
   if n ~ '\m(nmap|masscan|sqlmap|metasploit|hydra)\M' or n ~ '/etc/passwd' then
     f := f || '["W13 recon or exploit material"]';
   end if;
-  if t ~ '(\.skip\(|\.only\(|xit\(|xdescribe\(|test\.todo|expect\([^)]*\)\.toBe\([A-Za-z0-9_]+\)[[:space:]]*//[[:space:]]*matches current)' then
+  if t ~ '(\m(it|test|describe|context|suite)[[:space:]]*\.[[:space:]]*(skip|only|todo)[[:space:]]*\(|\m(xit|xtest|xdescribe|xcontext)[[:space:]]*\(|@pytest\.mark\.skip|\{[[:space:]]*skip:[[:space:]]*true|expect\([^)]*\)\.toBe\([A-Za-z0-9_]+\)[[:space:]]*//[[:space:]]*matches current)' then
     f := f || '["W15 weakens or pins a test"]';
   end if;
   if t ~ 'catch[[:space:]]*\([^)]*\)[[:space:]]*\{[[:space:]]*return[[:space:]]*\{[[:space:]]*ok:[[:space:]]*true' then
     f := f || '["W16 swallows errors as success"]';
   end if;
-  if t ~ '"(pre|post)?install"[[:space:]]*:' then
+  if p_path ~* '(^|/)package\.json$' and t ~ '"(pre|post)?(install|prepare|prepublish)(only)?"[[:space:]]*:' then
     f := f || '["W19 install hook"]';
   end if;
   joined := regexp_replace(regexp_replace(regexp_replace(t, 'data:image/svg\+xml;base64,[A-Za-z0-9+/=]+', '', 'g'),
@@ -107,7 +175,9 @@ begin
   if p_path ~* '\.(png|jpg|gif|bin|exe|so|dll|wasm)$' and task !~ '\m(logo|image|icon|png|wasm|asset|binary)\M' then
     f := f || '["W10 binary the task didn''t ask for"]';
   end if;
-  return f || app.wall_text_flags(t);
+  -- Each flag once (the code rules and the text rules can both see an address).
+  return coalesce((select jsonb_agg(z.v order by z.o) from (select distinct on (e.v) e.v, e.o
+                     from jsonb_array_elements(f || app.wall_text_flags(t)) with ordinality e(v, o) order by e.v, e.o) z), '[]'::jsonb);
 end $$;
 revoke execute on function app.wall_code_flags(text, text, text) from public;
 
@@ -137,9 +207,21 @@ begin
        and fname !~ '^(CHANGELOG|README)' and fname !~ '^src/(shared|types)/' and fname !~ 'package-lock\.json$' then
       f := f || jsonb_build_array('W04 file outside the task''s declared paths: ' || left(fname, 120));
     end if;
-    if fname ~ '(^|/)(\.github/|CODEOWNERS$|\.semgrep|jevs/|secondlook/|thirdlook/|wall/|scripts/check|\.husky/|Dockerfile$|vercel\.json$|db/migrations/)'
-       and lower(coalesce(task, '')) !~ '\m(ci|workflow|nightly|action|pipeline|migration)\M' then
-      f := f || jsonb_build_array('W03 protected file: ' || left(fname, 120));
+    -- 081 review: no task wording exempts a protected file. Inside the poster's declared paths it is flagged (goes ahead,
+    -- reviewers see it); anywhere else it is blocked.
+    if fname ~* '(^|/)(\.github/|CODEOWNERS$|\.semgrep|jevs/|secondlook/|thirdlook/|wall/|scripts/check|\.husky/|Dockerfile[^/]*$|[^/]*\.dockerfile$|vercel\.json$|db/migrations/|\.npmrc$)' then
+      -- Flag, not block, only when the task is about it in both ways: a declared path that itself names the protected place
+      -- (.github/workflows/ does; src/ doesn't) and task wording about it. Wording alone, or a broad path alone, blocks.
+      if cardinality(paths) > 0 and exists (select 1 from unnest(paths) p where lower(fname) like lower(p) || '%'
+           and p ~* '(^|/)(\.github/|CODEOWNERS$|\.semgrep|jevs/|secondlook/|thirdlook/|wall/|scripts/check|\.husky/|Dockerfile[^/]*$|[^/]*\.dockerfile$|vercel\.json$|db/migrations/|\.npmrc$)')
+         and lower(coalesce(task, '')) ~ '\m(ci|workflow|nightly|action|pipeline|migration|codeowners|owners|docker|deploy|hook)s?\M' then
+        f := f || jsonb_build_array('W03b protected file in the declared paths: ' || left(fname, 120));
+      else
+        f := f || jsonb_build_array('W03 protected file: ' || left(fname, 120));
+      end if;
+    end if;
+    if not (fl ? 'patch') and coalesce(fl ->> 'status', '') <> 'removed' then
+      f := f || jsonb_build_array('W27 changed file the Wall couldn''t read: ' || left(fname, 120));
     end if;
     if fname ~ '(^|/)package\.json$' then
       for m in select regexp_matches(coalesce(added, ''), '"([@a-z0-9._/-]+)"[[:space:]]*:[[:space:]]*"([\^~]?)([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*|[0-9][^"]*)"', 'g') loop
@@ -250,6 +332,9 @@ begin
         reason = left('Refused by the Agentic Wall: ' || (select string_agg(x, '; ') from jsonb_array_elements_text(flags) x), 300)
         where s.id = ref and s.status in ('waiting', 'review');
     elsif k = 'task' then
+      insert into app.wall_removed_tasks (task_id, prior_status, decision_id)
+        select t.id, t.status, (select d.id from app.wall_decisions d where d.hash = h) from app.work_tasks t
+         where t.id = ref and t.status in ('open', 'funding') on conflict (task_id) do nothing;
       update app.work_tasks t set status = 'removed' where t.id = ref and t.status in ('open', 'funding');
     end if;
   end if;
@@ -284,7 +369,16 @@ begin
   if p_verdict = 'false_positive' then
     update app.work_submissions s set status = 'waiting', decided_by = null, decided_at = null, reason = null
       from app.wall_decisions d where d.id = p_decision and d.decision = 'block' and d.kind in ('submission', 'pr_files')
-        and s.id = d.ref and s.status = 'failed' and s.decided_by = 'wall';
+        and s.id = d.ref and s.status = 'failed' and s.decided_by = 'wall'
+        and not exists (select 1 from app.wall_decisions o where o.ref = d.ref and o.id <> d.id and o.decision = 'block'
+                         and not exists (select 1 from app.wall_reviews v where v.decision_id = o.id and v.verdict = 'false_positive'));
+    update app.work_tasks t set status = x.prior_status
+      from app.wall_removed_tasks x join app.wall_decisions d on d.id = p_decision and d.kind = 'task' and d.decision = 'block'
+     where x.task_id = d.ref and t.id = x.task_id and t.status = 'removed'
+       and not exists (select 1 from app.wall_decisions o where o.ref = d.ref and o.id <> d.id and o.decision = 'block'
+                        and not exists (select 1 from app.wall_reviews v where v.decision_id = o.id and v.verdict = 'false_positive'));
+    delete from app.wall_removed_tasks x using app.wall_decisions d where d.id = p_decision and x.task_id = d.ref
+       and exists (select 1 from app.work_tasks t where t.id = x.task_id and t.status <> 'removed');
   end if;
   return p_verdict;
 end $function$;
@@ -544,6 +638,12 @@ grant execute on function app.wall_decide(jsonb) to dog_work;
 reset role;
 -- The settings table has no update policy (an owner's change is a migration), so the row is written with RLS off for this
 -- one statement, as 080 did for jevs_settings.
+-- 081 review: a pull request's files are checked again whenever GitHub's copy of them changes (a new push).
+set local role dog_owner;
+create trigger wall_gate_update after update of files on app.tl_files for each row
+  when (old.files is distinct from new.files) execute function app.wall_gate('pr_files');
+alter table app.tl_files enable always trigger wall_gate_update;
+reset role;
 alter table app.wall_settings disable row level security;
 update app.wall_settings set mode = 'enforce', rules_version = rules_version + 1;
 alter table app.wall_settings enable row level security;

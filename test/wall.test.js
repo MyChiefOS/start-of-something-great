@@ -108,7 +108,7 @@ test('WA2: every place work enters is checked, whichever route wrote it, and sha
   assert.strictEqual((await decision(s.id)).decision, 'hold');
   assert.strictEqual((await q(`select status from app.work_submissions where id = '${s.id}'`))[0].status, s.status); // untouched
   const [dp] = await q(`insert into app.work_disputes (submission_id, member_id, reason) values ('${s.id}', '${poster.id}', 'see http://127.0.0.1:8080/admin') returning id`);
-  assert.strictEqual((await decision(dp.id)).decision, 'block'); // 081: an internal address is a clear breach
+  assert.strictEqual((await decision(dp.id)).decision, 'hold'); // 081 review: a local address is flagged (W22b); only metadata blocks
   const [ev] = await q(`insert into app.work_dispute_evidence (dispute_id, member_id, role, note) values ('${dp.id}', '${worker.id}', 'worker', 'It does what the task asked.') returning id`);
   assert.strictEqual((await decision(ev.id)).decision, 'allow');
   } finally { await setMode('enforce'); }
