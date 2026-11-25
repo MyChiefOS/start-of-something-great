@@ -1,5 +1,5 @@
-// The Agentic Wall's rules in words (db/wall.js) match the rules in the database (073, 074): every rule ID the
-// migrations flag is described, nothing described is missing there, and the checks page and llms.txt list them all.
+// The Agentic Wall's rules in words (db/wall.js) match the rules the database publishes (app.wall_rules, seeded by
+// 081 on), with the same words and effect, and the checks page and llms.txt list them all.
 'use strict';
 
 const test = require('node:test');
@@ -12,10 +12,12 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('every Wall rule in the database is described, and every description is a rule in the database', () => {
-  const sql = read('db/migrations/073_agentic_wall.sql') + read('db/migrations/074_security_wiki.sql');
-  const inSql = [...new Set([...sql.matchAll(/['"](W[0-9]{2}[a-z]?) /g)].map((m) => m[1]))].sort();
-  const described = wall.RULES.map((r) => r[0]).sort();
-  assert.deepStrictEqual(described, inSql);
+  // 081 on: every rule and its effect is seeded into app.wall_rules by a migration.
+  const sql = fs.readdirSync(path.join(root, 'db/migrations')).filter((f) => /^08\d_/.test(f)).map((f) => read('db/migrations/' + f)).join('\n');
+  const seeded = {};
+  for (const m of sql.matchAll(/\('(W[0-9]{2}[a-z]?)', '(block|flag)', '((?:[^']|'')*)'\)/g)) seeded[m[1]] = [m[3].replace(/''/g, "'"), m[2]];
+  assert.deepStrictEqual(wall.RULES.map((r) => r[0]).sort(), Object.keys(seeded).sort());
+  for (const [id, name, , effect] of wall.RULES) assert.deepStrictEqual([name, effect], seeded[id], id);
   for (const [id, name, what] of wall.RULES) assert.ok(name.length > 3 && what.length > 20, id);
 });
 
@@ -27,5 +29,6 @@ test('the checks page and llms.txt list every rule and every check, and say what
     assert.ok(page.includes(id + ' ' + name.replace(/'/g, '&#39;')) || page.includes(id + ' ' + name), 'checks.html: ' + id);
   }
   for (const [name, , today] of wall.DESIGN) assert.ok(llms.includes('- ' + name + ' (' + today + '): '), 'llms.txt: ' + name);
-  assert.match(llms, /the Wall runs in shadow/);
+  assert.ok(!/the Wall runs in shadow/.test(llms), 'the Wall enforces (081): nothing may say it runs in shadow');
+  assert.match(llms, /Only a clear breach of a published rule is refused/);
 });

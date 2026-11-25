@@ -327,6 +327,10 @@
     {
       "version": "082_wall_from_wiki",
       "sha256": "83b1af777ae760ea56f4d9cd4cafa4562ff8fa7240b91b687a6fad5b7079946c"
+    },
+    {
+      "version": "083_wall_firewall",
+      "sha256": "e4587c5f248a54487a74d7548d6ab8182ad017b6398f4439550e94eb53fe7b62"
     }
   ]
 }

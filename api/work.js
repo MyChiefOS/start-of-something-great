@@ -172,6 +172,8 @@ const PUBLIC = {
   market: { keys: [], fn: (t) => work.market(t) },
   // 074: the security wiki: its versions, when it last ran, and the newest 50 advisories (public feeds, public here).
   wiki: { keys: [], fn: (t) => work.wiki(t) },
+  // 083: the firewall's threat addresses and ranges (public feeds), read by middleware.js every 10 minutes.
+  wall_edge: { keys: [], fn: (t) => work.wallEdge(t) },
   // 076: a submission's final score, from facts only (public, like the work's audit).
   score: { keys: ['submission'], fn: (t, q) => work.score(t, q.submission), one: 'No submission has that ID.' }
 };

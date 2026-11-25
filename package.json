@@ -11,6 +11,7 @@
     "harness": "node harness/check.js"
   },
   "dependencies": {
+    "@vercel/functions": "3.11.1",
     "postgres": "3.4.9"
   },
   "devDependencies": {

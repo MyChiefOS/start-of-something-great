@@ -201,6 +201,7 @@ async function caseAppeal(t, { case: id, reason }) {
 }
 async function market(t) { const [r] = await call(t, (s) => s`select app.work_market() as d`); return r.d; }
 async function wiki(t) { const [r] = await call(t, (s) => s`select app.wiki_summary() as d`); return r.d; }
+async function wallEdge(t) { const [r] = await call(t, (s) => s`select app.wall_edge_addresses() as d`); return r.d; }
 async function wikiRollback(t) { const [r] = await call(t, (s) => s`select app.wiki_rollback() as id`); return { active: r.id }; }
 async function bountyOf(t, taskId) { const [r] = await call(t, (s) => s`select app.work_bounty_of(${v.uuid('task', taskId)}::uuid) as d`); return r.d; }
 
@@ -356,5 +357,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { auditClose, wallReview, score, wiki, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { auditClose, wallReview, score, wiki, wallEdge, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };
