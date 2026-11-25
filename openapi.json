@@ -672,6 +672,19 @@
         }
       }
     },
+    "/api/work/wall_edge": {
+      "get": {
+        "operationId": "work_wall_edge",
+        "summary": "wall_edge",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The answer, as JSON. Fields written by the public are named in untrusted_fields."
+          }
+        }
+      }
+    },
     "/api/work/score": {
       "get": {
         "operationId": "work_score",
