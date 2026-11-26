@@ -14,7 +14,6 @@ const store = require('../db/signin');
 const { migrate } = require('../scripts/migrate');
 
 const SERVER = process.env.TEST_DATABASE_URL;
-const ORIGIN = 'https://dayonegreat.com';
 
 // Runs fn with these environment variables set, then puts every one back exactly as it was.
 async function withEnv(vars, fn) {

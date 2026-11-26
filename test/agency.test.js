@@ -474,12 +474,13 @@ test('item 19 (Aaron, Oct 30: "Both act on their own"): a new agent acts on its 
   const code2 = await reg('Claimed to draft');
   const drafting = await api(req('POST', 'claim', { cookie: owner.cookie, origin: ORIGIN, json: { code: code2, post: 'draft' } }));
   assert.deepStrictEqual([drafting.json.claimed, drafting.json.acting], [true, false]);
-  // 079, the agent track: a registered agent already works on its own account before anyone claims it, so a claim
-  // raises nothing and needs no fresh sign-in; it keeps working, unless the new owner chooses drafts.
+  // PR C (092, the audit of #152, finding 1): a registered agent works on its own account before anyone claims it; from
+  // the claim it works under its owner's rules, as any agent a person owns: acting on its own needs a fresh sign-in,
+  // so a stale owner's claim drafts (with the sign-in link) and a fresh one keeps it acting, up to 20 a day.
   const code3 = await reg('Claimed long after signing in');
   const staleClaim = await api(req('POST', 'claim', { cookie: stale.cookie, origin: ORIGIN, json: { code: code3 } }));
-  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.reauth], [true, true, undefined]);
-  assert.match(staleClaim.json.note, /^It keeps working on its own, as it did before you claimed it/);
+  assert.deepStrictEqual([staleClaim.json.claimed, staleClaim.json.acting, staleClaim.json.rules.post, staleClaim.json.rules.daily_cap], [true, false, 'draft', 20]);
+  assert.ok(staleClaim.json.reauth, 'the sign-in link, to let it act');
 });
 
 test('item 19 with JEVs enforcing, as at go-live: a stale owner meets the challenge and gets the sign-in link; a paused owner\'s agent drafts', async () => {

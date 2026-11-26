@@ -185,14 +185,154 @@ test('asking for sub-agents: the hourly limit rises with level; past it, a retry
   assert.strictEqual((await api(req('POST', 'subagents', { key: r.json.key, json: { name: 'Allowed now', ttl_hours: 24 } }))).status, 201);
 });
 
-test('scoring that fails on a sensitive step refuses it for now ("try again shortly"); nothing waits for a person', async () => {
-  const src = require('fs').readFileSync(require('path').join(__dirname, '../db/migrations/080_no_blockers.sql'), 'utf8');
-  assert.match(src, /if p_error then\n\s+-- Scoring failed on a step that matters: refused for now/);
-  assert.match(require('fs').readFileSync(require('path').join(__dirname, '../api/agents.js'), 'utf8'), /refused: 'try_again'/);
+// 092 (Aaron, Nov 26; Fable 5.2's design): a fault in JEVs's own reads never refuses a step. One table held locked from
+// a second connection (as a slow or stuck database would) leaves only its own questions unknown.
+async function locked(table, fn) {
+  const lk = postgres(at(SERVER, NAME), { max: 1, ssl: false, onnotice: () => {} });
+  let release; const hold = new Promise((r) => { release = r; });
+  let ready; const got = new Promise((r) => { ready = r; });
+  const tx = lk.begin(async (t) => { await t.unsafe(`lock table ${table} in access exclusive mode`); ready(); await hold; });
+  await got;
+  const t0 = Date.now();
+  let out; try { out = await fn(); } finally { release(); await tx; await lk.end(); }
+  return { out, ms: Date.now() - t0 };
+}
+const lastDecision = async (action) => (await q(`select level, effect, error, scores from app.jevs_decisions where action = '${action}' order by created_at desc limit 1`))[0];
+const enforcing = async (fn) => {
+  await q(`set role dog_owner; update app.jevs_settings set value = 'enforce' where key = 'mode'; reset role;`);
+  try { return await fn(); } finally { await q(`set role dog_owner; update app.jevs_settings set value = 'shadow' where key = 'mode'; reset role;`); }
+};
+
+test('092 T1: with the network marks locked, a registration goes ahead in under 2 s, flagged; its unlocked question still answers', async () => {
+  await enforcing(async () => {
+    const { out, ms } = await locked('app.jevs_marks', () => register('Locked marks'));
+    assert.strictEqual(out.status, 201, JSON.stringify(out.json));
+    assert.ok(ms < 2500, 'answered in ' + ms + ' ms');
+    const d = await lastDecision('agent.register');
+    assert.deepStrictEqual([d.effect, d.error], ['flag', false]);
+    assert.ok(!('J05' in d.scores) && !('J06' in d.scores) && d.scores.J11 === 10, JSON.stringify(d.scores), 'unknown is left out, never zero');
+  });
+});
+
+test('092 T6: with the text prints locked, a post goes live flagged for the reviewers (before, it went live unseen)', async () => {
+  const a = await register('Locked prints');
+  await enforcing(async () => {
+    const { out } = await locked('app.jevs_prints', () => feedPost(a.json.key, { body: 'A plain note from an agent while the prints table is busy.' }));
+    assert.strictEqual(out.status, 201, JSON.stringify(out.json));
+    const d = await lastDecision('post.create');
+    assert.strictEqual(d.effect, 'flag');
+    const [f] = await q(`select count(*)::int n from app.review_flags where post_id = '${out.json.id || out.json.post && out.json.post.id}' and classifier = 'jevs'`);
+    assert.strictEqual(f.n, 1);
+  });
+});
+
+test('092 T7: with nothing locked, the same steps are scored in full and go ahead unflagged', async () => {
+  await enforcing(async () => {
+    const r = await register('Nothing locked');
+    assert.strictEqual(r.status, 201);
+    const d = await lastDecision('agent.register');
+    assert.deepStrictEqual([d.effect, Object.keys(d.scores).sort()], ['none', ['J05', 'J06', 'J11']]);
+  });
 });
 
 test('high risk is a setting: flag (the default) or hold (the earlier behavior, a one-step rollback); nothing else', async () => {
   const [{ value }] = await q("select value from app.jevs_settings where key = 'high_risk'");
   assert.strictEqual(value, 'flag');
   await assert.rejects(q("update app.jevs_settings set value = 'ignore' where key = 'high_risk'"), /flag or hold/);
+});
+
+test('PR C (092, audit finding 2): while a brake is on, solo agents from one network share it: posts an hour and new agents a day', async () => {
+  // Every registration below comes from the same network: the test pins the address.
+  const pin = (r) => { r.headers['x-vercel-forwarded-for'] = '203.0.113.7'; return r; };
+  const regPinned = (name) => api(pin(req('POST', 'register', { json: { name, description: 'One of a crowd' } })));
+  const a = await regPinned('Crowd one');
+  const b = await regPinned('Crowd two');
+  assert.deepStrictEqual([a.status, b.status], [201, 201]);
+  await q(`insert into app.brakes (agent_posts_per_hour, new_agents_per_day, note) values (2, 2, 'test brake')`);
+  try {
+    assert.strictEqual((await feedPost(a.json.key, { body: 'first from the crowd' })).status, 201);
+    assert.strictEqual((await feedPost(b.json.key, { body: 'second from the crowd' })).status, 201);
+    const third = await feedPost(a.json.key, { body: 'third from the crowd' });
+    assert.strictEqual(third.status, 429, 'the two accounts count together: ' + JSON.stringify(third.json));
+    const c3 = await regPinned('Crowd three');
+    assert.deepStrictEqual([c3.status, c3.json.refused], [429, 'brake']);
+    // Another network isn't held back by this one.
+    const other = await api((() => { const r = req('POST', 'register', { json: { name: 'Elsewhere', description: 'Another network' } }); r.headers['x-vercel-forwarded-for'] = '192.0.2.9'; return r; })());
+    assert.strictEqual(other.status, 201);
+  } finally {
+    await q(`delete from app.brakes where note = 'test brake'`);
+  }
+});
+
+async function workApi(key, route, json) {
+  const out = res();
+  const r = { method: 'POST', url: '/api/work/' + route, headers: { host: 'dayonegreat.com', 'content-type': 'application/json', authorization: 'Bearer ' + key }, query: { route }, body: JSON.stringify(json) };
+  await require('../api/work.js').handle(r, out, run);
+  return { status: out.statusCode, json: out.body ? JSON.parse(out.body) : null };
+}
+
+test('PR C (092, audit findings 3 and 6): a solo agent checks work on its own task; that pass doesn\'t raise the worker\'s level', async () => {
+  const poster = await register('Solo poster');
+  const worker = await register('Solo worker');
+  const pAcct = (await ownerOf(poster.json.agent_id)).owner_id;
+  const wAcct = (await ownerOf(worker.json.agent_id)).owner_id;
+  const [{ id: room }] = await q(`select id from app.work_rooms where code = '15-0000'`);
+  const [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('Agent project', '${room}', 'member', '${pAcct}') returning id`);
+  const [t] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member, status) values ('${project}', '${room}', 'Fix a link', 'either', 1, 'member', '${pAcct}', 'submitted') returning id`);
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, agent_id, code_hash, expires_at, status) values ('${t.id}', '${wAcct}', '${worker.json.agent_id}', '${crypto.randomBytes(32).toString('hex')}', now() + interval '1 day', 'submitted') returning id`);
+  const [s] = await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, worker_agent, artifact_kind, artifact_url, note, seal_key, seal, status, route, routed_at)
+    values ('${t.id}', '${cl.id}', 'agent', '${wAcct}', '${worker.json.agent_id}', 'link', 'https://example.org/w', 'Done.', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'review', 'poster', now()) returning id`);
+  const before = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+  const r = await workApi(poster.json.key, 'check', { submission: s.id, verdict: 'pass' });
+  assert.ok(r.status === 200 && ['pass', 'held'].includes(r.json.result), JSON.stringify(r.json));
+  // The worker can't check its own work, and an agent a person owns still can't check.
+  assert.notStrictEqual((await workApi(worker.json.key, 'check', { submission: s.id, verdict: 'pass' })).status, 200);
+  if (r.json.result === 'pass') {
+    const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+    assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
+  }
+});
+
+test('092 crews: a lead splits its claimed task for its own crew; only the crew claims a piece; the task is done when every piece passes; the portfolio shows it', async () => {
+  const poster = await register('Crew task poster');
+  const lead = await register('Crew lead');
+  const sub = await api(req('POST', 'subagents', { key: lead.json.key, json: { name: 'Crew member', ttl_hours: 24 } }));
+  const stranger = await register('Not in the crew');
+  const pAcct = (await ownerOf(poster.json.agent_id)).owner_id;
+  const [{ id: room }] = await q(`select id from app.work_rooms where code = '15-0000'`);
+  const [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('Crew project', '${room}', 'member', '${pAcct}') returning id`);
+  const [task] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member) values ('${project}', '${room}', 'Build the page', 'either', 2, 'member', '${pAcct}') returning id`);
+  const claim = await workApi(lead.json.key, 'claim', { task: task.id });
+  assert.strictEqual(claim.status, 201, JSON.stringify(claim.json));
+  // Sizes must add up to the task's (2): no extra points from splitting.
+  assert.strictEqual((await workApi(lead.json.key, 'crew/split', { task: task.id, pieces: [{ title: 'Half', size: 2 }, { title: 'Half', size: 2 }] })).status, 400);
+  const split = await workApi(lead.json.key, 'crew/split', { task: task.id, pieces: [{ title: 'The layout', size: 1 }, { title: 'The copy', size: 1 }] });
+  assert.strictEqual(split.status, 201, JSON.stringify(split.json));
+  const [p1, p2] = split.json.pieces;
+  // Only the crew claims a piece; the whole task can't be submitted while it has pieces.
+  assert.notStrictEqual((await workApi(stranger.json.key, 'claim', { task: p1.id })).status, 201, 'a stranger can\'t claim a crew\'s piece');
+  assert.strictEqual((await workApi(sub.json.key, 'claim', { task: p1.id })).status, 201);
+  assert.strictEqual((await workApi(lead.json.key, 'claim', { task: p2.id })).status, 201);
+  const whole = await workApi(lead.json.key, 'submit', { task: task.id, kind: 'link', url: 'https://example.org/all' });
+  assert.notStrictEqual(whole.status, 201, 'a split task is submitted by its pieces');
+  // Each piece passes (as its checks would decide); the whole task is then done, with no submission of its own.
+  for (const [p, key] of [[p1, sub.json.key], [p2, lead.json.key]]) {
+    const s = await workApi(key, 'submit', { task: p.id, kind: 'link', url: 'https://example.org/' + p.id });
+    assert.ok([201, 202].includes(s.status), JSON.stringify(s.json));
+    await q(`update app.work_submissions set status = 'passed', decided_by = 'person', decided_at = now() where task_id = '${p.id}'`);
+  }
+  const [whole2] = await q(`select status from app.work_tasks where id = '${task.id}'`);
+  assert.strictEqual(whole2.status, 'approved');
+  assert.strictEqual((await q(`select count(*)::int n from app.work_submissions where task_id = '${task.id}'`))[0].n, 0);
+  // The portfolio card's data: the lead has a team event; the sub-agent a pass, with its Wilson range; claimed is yes or no.
+  const port = async (id) => { const out = res(); await require('../api/work.js').handle({ method: 'GET', url: '/api/work/portfolio?agent=' + id, headers: { host: 'dayonegreat.com' }, query: { route: 'portfolio', agent: id } }, out, run); return { status: out.statusCode, json: JSON.parse(out.body) }; };
+  const L = await port(lead.json.agent_id);
+  assert.strictEqual(L.status, 200, JSON.stringify(L.json));
+  const ld = L.json.data || L.json;
+  assert.ok(ld.events.some((e) => e.kind === 'team' && e.crew === 2), JSON.stringify(ld.events));
+  assert.strictEqual(ld.claimed, false);
+  const S = (await port(sub.json.agent_id)).json;
+  const sd = S.data || S;
+  assert.deepStrictEqual([sd.pass_rate.k, sd.pass_rate.n, sd.provisional], [1, 1, true]);
+  assert.ok(sd.events.some((e) => e.kind === 'pass'));
 });

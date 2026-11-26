@@ -182,6 +182,11 @@ test('a person claims a working agent at any time; it and its sub-agents move to
   assert.strictEqual((await ownerOf(sub.json.agent_id)).owner_id, owner.id, 'its sub-agents come with it');
   assert.strictEqual((await feedPost(reg.json.key, { body: 'after the claim' })).status, 201, 'it keeps working');
   assert.strictEqual((await feedPost(sub.json.key, { body: 'crew after the claim' })).status, 201);
+  // PR C (audit finding 1): from the claim it and its crew work under the owner's rules, 20 a day, set by the owner.
+  for (const id of [reg.json.agent_id, sub.json.agent_id]) {
+    const [r] = await q(`select daily_cap, set_by from app.agent_rules where agent_id = '${id}' order by version desc limit 1`);
+    assert.deepStrictEqual([r.daily_cap, r.set_by === 'system'], [20, false], id);
+  }
   const again = await api(req('POST', 'claim', { cookie: (await member('Someone else')).cookie, origin: ORIGIN, json: { code } }));
   assert.strictEqual(again.status, 404, 'a claim link works once');
 });

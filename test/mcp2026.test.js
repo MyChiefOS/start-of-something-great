@@ -3,7 +3,7 @@
 // basic/transports/streamable-http, server/utilities/caching).
 const test = require('node:test');
 const assert = require('node:assert');
-const { fakeIssue, mockGitHub, fresh, call } = require('./helpers');
+const { fakeIssue, fresh, call } = require('./helpers');
 
 const V = '2026-07-28';
 const meta = (extra) => Object.assign({ _meta: { 'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {} } }, extra || {});

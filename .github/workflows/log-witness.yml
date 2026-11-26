@@ -121,7 +121,8 @@ jobs:
         run: |
           set -euo pipefail
           cd witness
-          git add state.json README.md $( [ -f checkpoint ] && echo checkpoint )
+          files=(state.json README.md); [ -f checkpoint ] && files+=(checkpoint)
+          git add "${files[@]}"
           if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
           git -c user.name='log-witness' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Witnessed"
           git push -q origin log-witness

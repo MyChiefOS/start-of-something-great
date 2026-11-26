@@ -56,7 +56,7 @@
     if (!P || !plan) return;
     P.chart($('plan-chart'), plan);
     P.pills($('plan-pills'), plan);
-    var f = P.figures({ scope: 'f-scope', verified: 'f-verified', share: 'f-share', done: 'f-done', text: 'plan-text' }, plan);
+    P.figures({ scope: 'f-scope', verified: 'f-verified', share: 'f-share', done: 'f-done', text: 'plan-text' }, plan);
     var pr = plan.project || {};
     // "See the plan": the featured project's page, where its chart, schedule index and forecast are (the Nov 7 canvas).
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(pr.id || ''))) $('plan-link').href = '/projects/' + pr.id;

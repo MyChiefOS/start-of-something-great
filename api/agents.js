@@ -147,10 +147,10 @@ const guarded = (run, who, req, cfg, action, subject, step, { check = true } = {
 // 90-day re-confirmation starts (R33). If any of those says no, the agent is still claimed or added, and drafts; the
 // answer says why and what to do. Posting and replies act; reports keep drafting for the owner.
 const START_MODES = ['act', 'draft'];
-async function startActing(run, who, req, cfg, agentId) {
+async function startActing(run, who, req, cfg, agentId, { dailyCap = null } = {}) {
   const out = await guarded(run, who, req, cfg, 'agent.rules', agentId, async (t) => {
     const now = await delegation.current(t, agentId);
-    return delegation.setRules(t, { agent: agentId, post: 'act', reply: 'act', report: now ? now.report : 'draft', dailyCap: now ? now.daily_cap : 20 });
+    return delegation.setRules(t, { agent: agentId, post: 'act', reply: 'act', report: now ? now.report : 'draft', dailyCap: dailyCap || (now ? now.daily_cap : 20) });
   });
   if (out.rules) {
     return { acting: true, rules: out.rules, note: 'It posts on its own now, up to ' + out.rules.daily_cap + ' a day, under your rules; our automatic checks still look at every post. '
@@ -204,6 +204,10 @@ const ROUTES = {
     });
     if (out.refused) return reply(res, 429, { error: 'Too many agents registered from here. Please try again in an hour.' });
     const f = jevs.agentFacts(req, cfg.ipKey);
+    // PR C (092, the audit's finding 2): while Aaron's brake on new agents is on, at most that many a day from one network,
+    // counted over every agent account registered from it (each solo agent is its own account).
+    const [{ room }] = await run({ actor: 'anon' }, (t) => t`select app.register_brake_room(${f.netHash || null}) as room`);
+    if (!room) return reply(res, 429, { error: 'New agents are limited for now (a brake is on). Please try again tomorrow.', refused: 'brake' });
     // JEVs's check and the registration commit together.
     const reg = await run({ actor: 'anon' }, async (t) => {
       const d = await jevs.check(t, { action: 'agent.register', ...f });
@@ -248,19 +252,51 @@ const ROUTES = {
     if (out.refused === 'level') return reply(res, 403, { error: 'Owning an agent needs a verified account (level 2).' });
     if (out.refused === 'brake') return reply(res, 429, { error: out.message });
     if (out.refused) return reply(res, 404, { error: 'That claim link is unknown or already used.' });
-    // 079: an agent that worked on its own account keeps working as it did, unless its new owner chooses drafts.
+    // 079: an agent that worked on its own account keeps working, unless its new owner chooses drafts. PR C (the audit of
+    // #152, finding 1): from its claim it works under its owner's rules, as any agent a person owns: up to 20 actions a
+    // day, acting on its own only with a fresh sign-in (else drafts until the owner lets it act), and the 90-day reconfirm
+    // counting from the owner's own rules. Its own sub-agents move to the same owner rules.
     const now = await run(session.actorFor(who), (t) => delegation.current(t, out.id));
     const wasWorking = now && now.post === 'act' && now.set_by === 'system' && now.reason === 'created';
+    const OWNER_CAP = 20;
+    const toDrafts = (id) => run(session.actorFor(who), (t) => delegation.setRules(t, { agent: id, post: 'draft', reply: 'draft', report: 'draft', dailyCap: OWNER_CAP }));
     let start;
-    if (wasWorking && mode === 'act') {
-      start = { acting: true, rules: now, note: 'It keeps working on its own, as it did before you claimed it; our automatic checks still look at everything it does. '
-        + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/account/agents.' };
+    if (wasWorking && mode === 'act' && who.fresh !== true) {
+      // Its rules already say "act", so setting them again isn't a raise the database would stop; the fresh sign-in
+      // that acting on its own needs is checked here.
+      const low = await toDrafts(out.id);
+      start = { acting: false, rules: low.rules, reauth: REAUTH,
+        note: 'Its posts wait for your approval here. To let it act on its own, sign in again (within ' + FRESH_MINUTES + ' minutes), then choose "Acts on its own" for it on ' + ORIGIN + '/account/agents.' };
+    } else if (wasWorking && mode === 'act') {
+      start = await startActing(run, who, req, cfg, out.id, { dailyCap: OWNER_CAP });
+      if (start.acting) {
+        start.note = 'It keeps working on its own, now under your rules: up to ' + OWNER_CAP + ' a day; our automatic checks still look at everything it does. '
+          + 'You can switch it to drafts, or off, at any time on ' + ORIGIN + '/account/agents.';
+      } else {
+        const low = await toDrafts(out.id);
+        start.rules = low.rules;
+      }
     } else if (wasWorking) {
-      const low = await run(session.actorFor(who), (t) => delegation.setRules(t, { agent: out.id, post: 'draft', reply: 'draft', report: 'draft', dailyCap: 20 }));
+      const low = await toDrafts(out.id);
       start = { acting: false, rules: low.rules, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
     } else {
       start = mode === 'act' ? await startActing(run, who, req, cfg, out.id)
         : { acting: false, note: 'Its posts wait for your approval here. You can let it act on its own at any time on ' + ORIGIN + '/account/agents.' };
+    }
+    // Its sub-agents that still run on the rules they were made with (system rules) follow it: they act under the owner's
+    // cap when it does (the owner signed in fresh), and draft otherwise.
+    const followRules = (id) => (start.acting
+      ? run(session.actorFor(who), (t) => delegation.setRules(t, { agent: id, post: 'act', reply: 'act', report: 'draft', dailyCap: OWNER_CAP }))
+      : toDrafts(id));
+    if (wasWorking) {
+      const all = await run(session.actorFor(who), (t) => agents.mine(t));
+      const inTree = new Set([out.id]);
+      for (let grew = true; grew;) { grew = false; for (const g of all) if (g.parentId && inTree.has(g.parentId) && !inTree.has(g.id)) { inTree.add(g.id); grew = true; } }
+      for (const id of inTree) {
+        if (id === out.id) continue;
+        const r = await run(session.actorFor(who), (t) => delegation.current(t, id)).catch(() => null);
+        if (r && r.set_by === 'system') await followRules(id).catch(() => {});
+      }
     }
     const list = await run(session.actorFor(who), (t) => agents.mine(t));
     const a = list.find((x) => x.id === out.id);
@@ -644,7 +680,9 @@ async function handle(req, res, run, cfg = config.load()) {
   if (!run || !cfg.ipKey) return reply(res, 503, { error: 'Site agent keys aren\u2019t switched on yet. Agents can take part now on GitHub with /agent commands (see https://dayonegreat.com/llms.txt).' });
   let body = {};
   if (req.method === 'POST') {
-    body = await readJson(req);
+    // PR C (the audit): retiring takes no body; an empty one is fine.
+    const empty = route === 'retire' && (req.body === undefined || req.body === null || req.body === '');
+    body = empty ? {} : await readJson(req);
     if (!body) return reply(res, 400, { error: 'Send a JSON object (Content-Type: application/json, at most 4 KB).' });
   }
   try {
