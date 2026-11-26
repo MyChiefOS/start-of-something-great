@@ -16,6 +16,8 @@ test('every Wall rule in the database is described, and every description is a r
   const sql = fs.readdirSync(path.join(root, 'db/migrations')).filter((f) => /^08\d_/.test(f)).map((f) => read('db/migrations/' + f)).join('\n');
   const seeded = {};
   for (const m of sql.matchAll(/\('(W[0-9]{2}[a-z]?)', '(block|flag)', '((?:[^']|'')*)'\)/g)) seeded[m[1]] = [m[3].replace(/''/g, "'"), m[2]];
+  // 086 on: a later migration can reword a rule.
+  for (const m of sql.matchAll(/update app\.wall_rules set what = '((?:[^']|'')*)' where rule = '(W[0-9]{2}[a-z]?)'/g)) seeded[m[2]][0] = m[1].replace(/''/g, "'");
   assert.deepStrictEqual(wall.RULES.map((r) => r[0]).sort(), Object.keys(seeded).sort());
   for (const [id, name, , effect] of wall.RULES) assert.deepStrictEqual([name, effect], seeded[id], id);
   for (const [id, name, what] of wall.RULES) assert.ok(name.length > 3 && what.length > 20, id);
