@@ -147,4 +147,35 @@ async function crosscheck(runTx, token, fetchImpl) {
   return 1;
 }
 
-module.exports = { review, run, parse, system, ask, report, crosscheck, ROLES, CLASSIFIER, REPORT, CROSSCHECK };
+// 090: the AI Gateway check (Aaron, Nov 26: "Try the openai model ... to see if a call works"). Once a UTC day, one tiny
+// request to each model the reviewers use plus OpenAI's, from the site's own identity; the administrators get one alert
+// with each status and the gateway's own error message (200 characters at most, anything token-like removed).
+async function gatewayCheck(runTx, token, fetchImpl = fetch) {
+  if (typeof token !== 'string' || token.length < 20) return { checked: 0 };
+  let models;
+  try { [{ m: models }] = await runTx({ actor: 'anon' }, (t) => t`select app.gateway_check_claim() as m`); } catch { return { checked: 0 }; }
+  if (!Array.isArray(models) || !models.length) return { checked: 0 };
+  const results = await Promise.all(models.slice(0, 20).map(async (model) => {
+    try {
+      const r = await fetchImpl(sl.GATEWAY, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30000),
+        headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+        body: JSON.stringify({ model, max_tokens: 5, messages: [{ role: 'user', content: 'Reply with the word ok.' }] }) });
+      let message = '';
+      if (r.status !== 200) {
+        let text = '';
+        try { text = await r.text(); } catch { text = ''; }
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch { parsed = null; }
+        const m = parsed && parsed.error ? (parsed.error.message || parsed.error.type || '') : text;
+        message = String(m || '').replace(/Bearer\s+\S+/gi, 'Bearer [removed]').replace(/[A-Za-z0-9_-]{40,}/g, '[removed]').replace(/\s+/g, ' ').slice(0, 200);
+      }
+      return { model, status: String(r.status), message };
+    } catch (e) {
+      return { model, status: e && (e.name === 'TimeoutError' || e.name === 'AbortError') ? 'timeout' : 'network', message: '' };
+    }
+  }));
+  try { await runTx({ actor: 'anon' }, (t) => t`select app.gateway_check_record(${JSON.stringify(results)}::text::jsonb)`); } catch { /* the next day tries again */ }
+  return { checked: results.length, results };
+}
+
+module.exports = { gatewayCheck, review, run, parse, system, ask, report, crosscheck, ROLES, CLASSIFIER, REPORT, CROSSCHECK };
