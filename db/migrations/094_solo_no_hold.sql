@@ -153,6 +153,8 @@ begin
     end if;
     -- Every reviewer that is on has had its turn (an answer or an error, never still pending), at least two answered
     -- ok, and none raised a concern: a reviewer's outage (a gateway 429) can't leave honest work waiting forever.
+    -- 095's link sandbox has its turn too (it opens each link once; after 6 hours an outage no longer holds the work).
+    if to_regprocedure('app.wall_link_waiting(uuid)') is not null and app.wall_link_waiting(x.id) then continue; end if;
     select count(distinct c.role) filter (where c.verdict = 'ok'), count(distinct c.role) filter (where c.error is distinct from 'pending')
       into ok, tried from app.oversight_calls c where c.submission_id = x.id
        and c.role <> all (array['fable_report', 'fable_crosscheck', 'classifier']);

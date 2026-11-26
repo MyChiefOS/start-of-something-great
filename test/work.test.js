@@ -343,7 +343,8 @@ test('a poster’s fail needs a reason and lets the worker try again; legitimate
   assert.deepStrictEqual([note.result, note.route, note.note], ['held', 'admin', 'Mail me at [email hidden]']);
   assert.match(note.held_reason, /contact details/);
   assert.match(note.message, /second look/);
-  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key = 'work:held:${note.sid}'`))[0].n, 1);
+  // 094 (Aaron, Nov 26): he isn't told at the hold; the model reviewers read it first, and only a concern reaches him.
+  assert.strictEqual((await q(`select count(*)::int as n from app.notices where member_id is null and dedupe_key = 'work:held:${note.sid}'`))[0].n, 0);
   assert.ok((await work('GET', 'admin', { cookie: aaron.cookie })).json.waiting.some((x) => x.submission === note.sid));
   // The largest size.
   const big = await risky(ada, bo, pj, { size: 8 });

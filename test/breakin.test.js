@@ -256,6 +256,8 @@ test.before(async () => {
     await t.unsafe(`insert into app.peer_cases (kind, check_id, submission_id, reviewer_member, expires_at)
       select 'check', k.id, k.submission_id, '${A.id}', now() + interval '1 day' from app.work_checks k limit 1`);
   });
+  // 095: the link sandbox's note that it opened A's work (names no one); the sandbox's records are dog_owner's.
+  await su.begin(async (t) => { await t.unsafe('set local role dog_owner'); await t.unsafe(`insert into app.wall_link_runs (submission_id) select s.id from app.work_submissions s where s.worker_member = '${A.id}' limit 1`); });
   await run({ actor: 'anon' }, (t) => store.challengeIssue(t, 'https://dayonegreat.com'));
   // 026: a country the behaviour watch saw A sign in from (a keyed hash).
   await su.begin(async (t) => { await t.unsafe('set local role dog_signin'); await t.unsafe(`insert into app.watch_seen (member_id, kind, key_hash)

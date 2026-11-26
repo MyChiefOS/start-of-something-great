@@ -17,8 +17,9 @@
 // the witness.
 //
 //   github-facts.yml: POST {"mode": "wanted"}  -> {ok, wanted: [numbers], files: [numbers]}
-//                     POST {"mode": "sync", "facts": {prs, issues, details, refused, files, proposals}}
-//                                              -> {ok, prs, tasks, closed, files, proposals}
+//                     POST {"mode": "links"}   -> {ok, links: [{id, url}]}  (095: the links the link sandbox opens)
+//                     POST {"mode": "sync", "facts": {prs, issues, details, refused, files, proposals, links}}
+//                                              -> {ok, prs, tasks, closed, files, proposals, links}
 //   log-witness.yml:  POST {"mode": "witness", "report": {size, root, at, alarm}} -> {ok, status}
 
 export const AUDIENCE = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github';
@@ -32,15 +33,15 @@ export const WITNESS_WORKFLOW = '.github/workflows/log-witness.yml';
 export const WITNESS_EVENTS = ['schedule', 'workflow_dispatch'];
 // Each workflow this function accepts, the events it runs on, and the modes it may ask for.
 export const WORKFLOWS = {
-  [WORKFLOW]: { events: EVENTS, modes: ['wanted', 'sync'] },
+  [WORKFLOW]: { events: EVENTS, modes: ['wanted', 'links', 'sync'] },
   [WITNESS_WORKFLOW]: { events: WITNESS_EVENTS, modes: ['witness'] }
 };
 export const REPOSITORY = 'MyChiefOS/start-of-something-great';
 // 100 pull requests with up to 20 claim codes each, 100 issues, 20 details, 100 proposals and the changed files of up
 // to 5 pull requests (at most 100,000 bytes each, the database's limit) fit inside this.
 export const MAX_REQUEST = 1_000_000;
-const LISTS = ['prs', 'issues', 'details', 'files', 'proposals'];
-const LIMITS = { prs: 100, issues: 100, details: 100, files: 10, proposals: 100 };
+const LISTS = ['prs', 'issues', 'details', 'files', 'proposals', 'links'];
+const LIMITS = { prs: 100, issues: 100, details: 100, files: 10, proposals: 100, links: 10 };
 
 export class BadRequest extends Error {}
 
@@ -74,8 +75,9 @@ export function parse(text) {
   try { body = JSON.parse(text); } catch { throw new BadRequest('body must be JSON'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequest('body must be an object');
   if (body.mode === 'wanted') return { mode: 'wanted' };
+  if (body.mode === 'links') return { mode: 'links' };
   if (body.mode === 'witness') return { mode: 'witness', report: witnessReport(body.report) };
-  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, sync or witness');
+  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, links, sync or witness');
   const f = body.facts;
   if (!f || typeof f !== 'object' || Array.isArray(f)) throw new BadRequest('facts must be an object');
   if (Object.keys(f).some((k) => !LISTS.includes(k) && k !== 'refused')) throw new BadRequest('facts has an unknown field');
@@ -87,7 +89,7 @@ export function parse(text) {
   }
   if (f.refused !== undefined && !(Number.isSafeInteger(f.refused) && f.refused >= 0 && f.refused <= 999)) throw new BadRequest('refused must be a count');
   return { mode: 'sync', facts: { prs: f.prs || [], issues: f.issues || [], details: f.details || [], refused: f.refused || 0 },
-    files: f.files || [], proposals: f.proposals || [] };
+    files: f.files || [], proposals: f.proposals || [], links: f.links || [] };
 }
 
 // The witness's result (tools/verify/witness.mjs's state.json, as the log-witness workflow just recorded it): its last
@@ -116,14 +118,25 @@ export async function wanted(sql) {
     return { wanted: rows.map((r) => r.number), files: files.map((r) => r.number) };
   });
 }
-export async function sync(sql, facts, { files = [], proposals = [] } = {}) {
+// 095: the link submissions the link sandbox should open.
+export async function links(sql) {
+  return sql.begin(async (t) => {
+    await t`set local role dog_ghsync`;
+    await t`set local statement_timeout = '30s'`;
+    const rows = await t`select id, url from app.wall_links_wanted(5)`;
+    return rows.map((r) => ({ id: String(r.id), url: r.url }));
+  });
+}
+export async function sync(sql, facts, { files = [], proposals = [], links: found = [] } = {}) {
   return sql.begin(async (t) => {
     await t`set local role dog_ghsync`;
     await t`set local statement_timeout = '60s'`;
     const [r] = await t`select app.work_github_sync(${t.json(facts)}::jsonb) as r`;
     const [f] = await t`select app.tl_files_record(${t.json(files)}::jsonb) as n`;
     const [p] = await t`select app.log_proposals_record(${t.json(proposals)}::jsonb) as n`;
-    return { ...r.r, files: f.n, proposals: p.n };
+    // 095: the link sandbox's findings, only when there are any (an older database without 095 is never asked).
+    const l = found.length ? (await t`select app.wall_links_record(${t.json(found)}::jsonb) as n`)[0].n : 0;
+    return { ...r.r, files: f.n, proposals: p.n, links: l };
   });
 }
 // As dog_witness: the witness's own result. Returns the log's witness status.
@@ -159,10 +172,11 @@ export async function handle(req, { verify, Refused, seen, db, keys, now }) {
   // Each workflow only for its own modes.
   if (!WORKFLOWS[claims.checked_workflow].modes.includes(ask.mode)) return { status: 403, body: { ok: false, error: 'not for this workflow' } };
   if (ask.mode === 'wanted') return { status: 200, body: { ok: true, ...(await wanted(db())) } };
+  if (ask.mode === 'links') return { status: 200, body: { ok: true, links: await links(db()) } };
   try {
     if (ask.mode === 'witness') return { status: 200, body: { ok: true, status: await witness(db(), ask.report) } };
-    const r = await sync(db(), ask.facts, { files: ask.files, proposals: ask.proposals });
-    return { status: 200, body: { ok: true, prs: r.prs, tasks: r.tasks, closed: r.closed, files: r.files, proposals: r.proposals } };
+    const r = await sync(db(), ask.facts, { files: ask.files, proposals: ask.proposals, links: ask.links });
+    return { status: 200, body: { ok: true, prs: r.prs, tasks: r.tasks, closed: r.closed, files: r.files, proposals: r.proposals, links: r.links } };
   } catch (e) {
     // The database's own check of the facts (22023) or of a field's type (22P02, 22007, 22008): the request was wrong.
     if (e && ['22023', '22P02', '22007', '22008'].includes(e.code)) return { status: 400, body: { ok: false, error: 'bad facts (' + e.code + ')' } };
