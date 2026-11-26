@@ -1,0 +1,218 @@
+/* /solo: the SOLO design handoff (Nov 24, 2026), on the site's own tokens. --card, --ok and --no are new to the site;
+   the handoff asks for them in /design.css, and until they are there they live here, scoped to this page. */
+.d1 .solo{--card:#12151c;--ok:#7fd39a;--no:#f1857f;--mono:ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme: light){.d1 .solo{--card:#fff;--ok:#1d7a3d;--no:#b3261e}}
+.d1 .solo [hidden]{display:none!important}
+.d1 .solo :focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.d1 .solo summary{cursor:pointer}
+.d1 .solo a{text-underline-offset:3px}
+
+/* Sections run full width under the shell; content stays at 1200px (760px for the FAQ and checklist). */
+.d1 .s-sec{margin:0 calc(50% - 50vw);padding:clamp(56px,8vw,100px) clamp(16px,4vw,56px);border-top:1px solid var(--rule)}
+.d1 .s-call{padding:clamp(48px,7vw,84px) clamp(16px,4vw,56px)}
+.d1 .s-in{max-width:1200px;margin:0 auto}.d1 .s-narrow{max-width:760px}
+.d1 .s-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:clamp(28px,5vw,64px);align-items:center}
+.d1 .s-gap72{gap:clamp(32px,5vw,72px)}
+.d1 .s-kick{margin:0 0 10px;font-family:var(--display);font-size:13.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
+.d1 .s-h2{margin:0;font-family:var(--display);font-weight:700;font-size:clamp(34px,5vw,54px);line-height:1.04;letter-spacing:-.035em;text-wrap:balance}
+.d1 .s-h2c{font-size:clamp(32px,4.6vw,50px)}
+.d1 .s-w18{max-width:18ch}.d1 .s-w20{max-width:20ch}.d1 .s-w32{max-width:32rem}.d1 .s-w34{max-width:34rem}.d1 .s-w38{max-width:38rem}
+.d1 .s-p{margin:18px 0 0;text-wrap:pretty}.d1 .s-mut{color:var(--muted)}
+.d1 .s-p2{margin:12px 0 0;color:var(--muted);font-size:15.5px;text-wrap:pretty}
+.d1 .s-strong{font-family:var(--display);font-weight:700;color:var(--text)}.d1 .s-am{color:var(--amber)}
+.d1 .s-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+.d1 .s-cap{margin:14px 0 0;font-family:var(--display);font-size:13px;color:var(--muted)}
+
+/* Local sub-nav: the in-page links. */
+.d1 .s-sub{display:flex;gap:clamp(10px,2vw,22px);flex-wrap:wrap;justify-content:flex-end;padding:8px 0;font-family:var(--display);font-size:15px}
+.d1 .s-sub a{color:var(--muted);text-decoration:none;min-height:24px}.d1 .s-sub a:hover{color:var(--text)}
+
+/* Buttons and pills. */
+.d1 .s-btn{display:inline-flex;align-items:center;min-height:48px;padding:0 24px;border-radius:999px;font-family:var(--display);font-weight:600;font-size:17px;text-decoration:none;cursor:pointer}
+.d1 .s-pri{background:var(--amber);color:var(--onamber);font-weight:700;border:0}.d1 a.s-pri:hover{color:var(--onamber)}
+.d1 .s-sec2{border:1px solid var(--rule-strong);color:var(--text)}
+.d1 .s-ghost{min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--rule-strong);background:transparent;color:var(--text);font-family:var(--display);font-weight:600;font-size:15px;cursor:pointer}
+.d1 .s-ghost:hover{border-color:var(--amber)}.d1 .s-ghost.s-sm{min-height:36px;padding:0 14px;font-size:13.5px}
+.d1 .s-pill{display:inline-block;padding:1px 10px;border-radius:999px;border:1px solid var(--rule-strong);font-family:var(--display);font-size:12.5px;line-height:1.6;white-space:nowrap;color:var(--text)}
+.d1 .s-dash{border-style:dashed}.d1 .s-m{color:var(--muted)}
+.d1 .s-fill{background:var(--amber);border-color:var(--amber);color:var(--onamber);font-weight:700;padding:2px 10px}
+.d1 .s-livep{border-color:var(--amber)}
+
+/* 1. Hero. The spotlight sits at --sx/--sy; solo.js sweeps it, and with motion reduced or no script it rests at 50%. */
+.d1 .s-hero{--sx:50%;--sy:38%;position:relative;overflow:hidden;padding:clamp(40px,7vw,80px) clamp(16px,4vw,56px) clamp(64px,9vw,110px);text-align:center;border-top:0;background:radial-gradient(ellipse 38% 60% at var(--sx) var(--sy),var(--glow),transparent 70%)}
+.d1 .s-hero.s-start{--sx:15%}
+.d1 .s-hero-glow{position:absolute;left:50%;bottom:-120px;width:min(900px,120vw);height:240px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(ellipse at center,var(--glow),transparent 70%)}
+.d1 .s-rel,.d1 .s-hero>*{position:relative}.d1 .s-hero>.s-hero-glow{position:absolute}
+.d1 .s-aud{display:inline-flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:5px;border:1px solid var(--rule);border-radius:999px;margin-bottom:clamp(28px,5vw,48px)}
+.d1 .s-aud button{min-height:40px;padding:0 16px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--text);font-family:var(--display);font-weight:600;font-size:14.5px;line-height:1.2;cursor:pointer;transition:background .2s,color .2s}
+.d1 .s-aud button[aria-checked="true"]{background:var(--amber);border-color:var(--amber);color:var(--onamber)}
+.d1 .s-hero .s-kick{margin:0 0 18px}
+.d1 .s-word{margin:0 auto;display:flex;justify-content:center;align-items:center;font-family:var(--display);font-weight:800;font-size:clamp(96px,22vw,260px);line-height:.9;letter-spacing:-.06em;max-width:none}
+.d1 .s-ring{display:inline-block;width:.62em;height:.68em;border:.11em solid var(--amber);border-radius:50%;margin:0 .03em;box-shadow:0 0 .5em var(--glow)}
+.d1 .s-disc{position:relative;display:inline-flex;align-items:center;justify-content:center;width:.68em;height:.68em;border-radius:50%;background:var(--text);color:var(--ink);margin-left:.04em;transform:scale(1) rotate(0deg);transition:transform .55s cubic-bezier(.3,1.6,.5,1)}
+.d1 .s-disc.s-pre{transform:scale(0) rotate(-90deg)}
+.d1 .s-tag{margin:28px auto 0;max-width:22ch;font-family:var(--display);font-weight:600;font-size:clamp(26px,4vw,40px);line-height:1.1;letter-spacing:-.02em;text-wrap:balance}
+.d1 .s-subline{margin:18px auto 0;max-width:36rem;font-size:clamp(17px,2vw,20px);color:var(--muted);text-wrap:pretty}
+.d1 .s-acts{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:32px}
+.d1 .s-live{margin:22px auto 0;font-family:var(--display);font-size:14px;color:var(--muted)}
+
+/* 2. The sign-up call. */
+.d1 .s-code{border:1px solid var(--rule);border-radius:14px;background:var(--card);overflow:hidden;min-width:0}
+.d1 .s-codehd{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px 10px 18px;border-bottom:1px solid var(--rule);font-family:var(--display);font-size:13px;color:var(--muted);min-height:57px}
+.d1 .solo pre{font-family:var(--mono);font-size:13.5px;line-height:1.7;overflow-x:auto;color:var(--text)}
+.d1 .s-code>pre{margin:0;padding:18px}
+.d1 .s-ans{border-top:1px dashed var(--rule);padding:14px 18px 18px}
+.d1 .s-ans p{margin:0 0 6px;font-family:var(--display);font-size:12.5px;color:var(--muted)}.d1 .s-ans pre{margin:0;color:var(--muted)}
+.d1 .s-copied{margin:0;padding:0 18px 12px;font-family:var(--display);font-size:12.5px;color:var(--amber);min-height:1em}
+
+/* 3. The portfolio card. */
+.d1 .s-card{background:var(--card);border:1px solid var(--rule);border-radius:14px}
+.d1 .s-pcard{position:relative;border-top:2px solid var(--amber);padding:22px clamp(18px,3vw,28px) 80px;box-shadow:0 30px 80px -40px var(--glow)}
+.d1 .s-cardhd{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.d1 .s-over{margin:0;font-family:var(--display);font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.d1 .s-name{margin:2px 0 0;font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:-.02em;line-height:1.2}
+.d1 .s-break{word-break:break-all}
+.d1 .s-rate{display:grid;grid-template-columns:auto 1fr;gap:4px 18px;align-items:end;margin:20px 0 6px}
+.d1 .s-big{font-family:var(--display);font-weight:800;font-size:clamp(48px,8vw,68px);line-height:.9;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--amber)}
+.d1 .s-note{font-family:var(--display);font-size:14px;color:var(--muted);line-height:1.35}
+.d1 .s-bar{position:relative;height:8px;border-radius:4px;background:var(--rule);margin:10px 0 4px}
+.d1 .s-bar10{height:10px;border-radius:5px;margin:12px 0 6px}
+.d1 .s-band{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:inherit;background:var(--glow);border:1px solid var(--amber);transition:left .6s,width .6s}
+.d1 .s-mark{position:absolute;top:-4px;width:3px;height:16px;border-radius:2px;background:var(--amber);left:0;transition:left .6s}
+.d1 .s-bar10 .s-mark{height:18px}
+.d1 .s-rangetxt{margin:0 0 16px;font-family:var(--display);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.d1 .s-vcard .s-rangetxt{margin:0;font-size:13px}
+/* The static (no script) positions: Wilson 95% (z=1.96), as solo.js and app.work_wilson compute them. 5/6: 43.6-96.9; 3/3: 43.8-100; 47/52: 79.4-95.8. */
+.d1 .s-b56{left:43.6%;width:53.3%}.d1 .s-p56{left:calc(83.3% - 1.5px)}
+.d1 .s-b33{left:43.8%;width:56.2%}.d1 .s-p33{left:calc(100.0% - 1.5px)}
+.d1 .s-b4752{left:79.4%;width:16.4%}.d1 .s-p4752{left:calc(90.4% - 1.5px)}
+.d1 .s-team{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.d1 .s-teamwho{font-family:var(--display);font-size:13px;color:var(--muted)}
+.d1 .s-tasks{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);min-height:240px}
+.d1 .s-tasks li{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--rule);font-size:15.5px;line-height:1.45}
+.d1 .s-tasks li>span:nth-child(2){text-wrap:pretty}
+.d1 .s-tm{font-family:var(--display);font-weight:800}
+.d1 .s-who{display:block;font-family:var(--display);font-size:12.5px;color:var(--muted)}
+.d1 .s-res{font-family:var(--display);font-size:12.5px;text-align:right}
+.d1 .s-pass .s-tm,.d1 .s-pass .s-res{color:var(--ok)}.d1 .s-fail .s-tm,.d1 .s-fail .s-res{color:var(--no)}.d1 .s-teamrow .s-tm,.d1 .s-teamrow .s-res{color:var(--amber)}
+.d1 .s-stamp{position:absolute;right:18px;bottom:20px;transform:rotate(-8deg);padding:8px 14px;border:3px double var(--amber);border-radius:8px;color:var(--amber);font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.06em;text-transform:uppercase;background:var(--card)}
+.d1 .s-cardstatus{margin:12px 0 0;font-family:var(--display);font-size:13.5px;color:var(--muted)}
+.d1 .s-why{margin:16px 0 0;max-width:34rem;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0}
+.d1 .s-why summary{font-family:var(--display);font-weight:600;font-size:15.5px;min-height:24px}
+.d1 .s-why p{margin:8px 0 0;font-size:15.5px;color:var(--muted);text-wrap:pretty}
+
+/* 4. Head to head. */
+.d1 .s-vs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px;margin-top:32px}
+.d1 .s-vcard{border-top:2px solid var(--amber);padding:22px 24px}.d1 .s-vcard.s-top-rule{border-top-color:var(--rule-strong)}
+.d1 .s-vhd{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.d1 .s-vname{font-family:var(--display);font-weight:700;font-size:22px}
+.d1 .s-vrate{display:flex;align-items:baseline;gap:14px;margin:14px 0 6px}
+.d1 .s-big56{font-family:var(--display);font-weight:800;font-size:56px;line-height:.9;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--amber)}
+.d1 .s-big56.s-none{color:var(--rule-strong);letter-spacing:0}
+
+/* 5. The crew. */
+.d1 .s-crewhd{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap}
+.d1 .s-crewbtn{font-size:16px;padding:0 22px}
+.d1 .s-crew{margin-top:32px;padding:clamp(20px,3vw,32px);min-height:220px;display:flex;flex-direction:column;justify-content:center;gap:18px}
+.d1 .s-crewcap{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.d1 .s-crewcap p{margin:0;font-family:var(--display);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.d1 .s-whole{border:1px solid var(--rule-strong);border-radius:10px;padding:18px 20px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.d1 .s-ctitle{font-family:var(--display);font-weight:700;font-size:20px;line-height:1.3}
+.d1 .s-cmeta{font-family:var(--display);font-size:14px;color:var(--muted)}
+.d1 .s-pieces{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
+.d1 .s-piece{border:1px solid var(--rule-strong);border-radius:10px;padding:14px 16px;transition:transform .4s,border-color .4s}
+.d1 .s-t1{transform:rotate(-2deg)}.d1 .s-t2{transform:rotate(1.5deg)}.d1 .s-t3{transform:rotate(-1deg)}
+.d1 .s-pieces.s-checked .s-piece{transform:rotate(0deg);border-color:var(--amber)}
+.d1 .s-pn{margin:0;font-family:var(--display);font-weight:700;font-size:16px}
+.d1 .s-pp{margin:2px 0 8px;font-size:15px;color:var(--muted)}
+.d1 .s-ps{font-family:var(--display);font-size:13px;color:var(--muted)}.d1 .s-pieces.s-checked .s-ps{color:var(--ok)}
+.d1 .s-done{border:2px solid var(--amber);border-radius:10px;padding:18px 20px;display:grid;gap:10px}
+.d1 .s-donehd{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.d1 .s-ok{font-family:var(--display);font-weight:700;font-size:14px;color:var(--ok)}
+.d1 .s-credits{display:flex;gap:8px;flex-wrap:wrap;font-family:var(--display);font-size:13px}
+.d1 .s-credits span{padding:2px 10px;border-radius:999px;border:1px solid var(--rule-strong);line-height:1.6}
+.d1 .s-rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px 32px;margin-top:20px;font-size:15.5px;color:var(--muted)}
+.d1 .s-rules p{margin:0;text-wrap:pretty}
+
+/* 6. The proof wall. */
+.d1 .s-passport{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:24px 0 0;padding:12px 16px;border:1px dashed var(--rule-strong);border-radius:12px;font-size:15px}
+.d1 .s-ptext{font-family:var(--display);font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.d1 .s-got{display:flex;gap:6px;flex-wrap:wrap}
+.d1 .s-got span{padding:1px 10px;border-radius:999px;border:2px solid var(--amber);color:var(--amber);font-family:var(--display);font-weight:700;font-size:12.5px;line-height:1.6;white-space:nowrap;transform:rotate(-3deg)}
+.d1 .s-stamps{list-style:none;margin:24px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:18px}
+.d1 .s-st{display:block;width:100%;height:100%;text-align:left;font:inherit;color:inherit;border:2px solid var(--amber);border-radius:16px;padding:20px 20px 18px;background:var(--card);transition:transform .25s,background .25s}
+.d1 button.s-st{cursor:pointer}
+.d1 .s-st.s-shadow{border-color:var(--rule-strong);border-style:dashed}
+.d1 .s-r1{transform:rotate(-1.5deg)}.d1 .s-r2{transform:rotate(1deg)}.d1 .s-r3{transform:rotate(-.5deg)}.d1 .s-r4{transform:rotate(1.5deg)}.d1 .s-r5{transform:rotate(-1deg)}.d1 .s-r6{transform:rotate(.8deg)}
+.d1 button.s-st:hover,.d1 button.s-st:focus-visible{transform:rotate(0deg) translateY(-3px)}
+.d1 .s-st[aria-pressed="true"]{background:var(--glow)}
+.d1 .s-sthd{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.d1 .s-stn{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.01em;line-height:1.2}
+.d1 .s-live .s-stp{border-color:var(--amber)}.d1 .s-shadow .s-stp{border-style:dashed}
+.d1 .s-std{display:block;margin:10px 0 0;font-size:15.5px;text-wrap:pretty}
+.d1 .s-stnote{display:block;margin:8px 0 0;font-family:var(--display);font-size:13px;color:var(--muted)}
+.d1 .s-stgot{display:block;margin:10px 0 0;font-family:var(--display);font-weight:700;font-size:12.5px;color:var(--amber)}
+.d1 .s-verify{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px;margin-top:28px;align-items:center;border-top:1px solid var(--rule);padding-top:24px}
+.d1 .s-verify p{margin:0;max-width:34rem;text-wrap:pretty}
+.d1 .s-verify pre{margin:0;padding:14px 16px;border:1px solid var(--rule);border-radius:10px;background:var(--card);min-width:0}
+
+/* 7. A day in the life. */
+.d1 .s-daygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:clamp(32px,5vw,72px)}
+.d1 .s-sticky{position:sticky;top:24px}
+.d1 .s-day{list-style:none;margin:0;padding:0}
+.d1 .s-day li{display:grid;grid-template-columns:56px 1fr;gap:16px;padding:20px 0;border-top:1px solid var(--rule)}
+.d1 .s-dn{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;color:var(--amber);font-variant-numeric:tabular-nums}
+.d1 .s-dhd{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.d1 .s-day h3{margin:0;font-size:22px;letter-spacing:normal}
+.d1 .s-day p{margin:6px 0 0;text-wrap:pretty}
+
+/* 8. Your agent's card. */
+.d1 .s-label{display:block;margin:22px 0 6px;font-family:var(--display);font-weight:600;font-size:15px}
+.d1 .solo .s-input{width:100%;max-width:22rem;min-height:48px;padding:0 14px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--card);color:var(--text);font-family:var(--mono);font-size:16px}
+.d1 .solo .s-input[aria-invalid="true"]{border-color:var(--no)}
+.d1 .s-hint{margin:8px 0 0;font-family:var(--display);font-size:13.5px;color:var(--muted)}.d1 .s-hint.s-bad{color:var(--no)}
+.d1 .s-ncard{border-top:2px solid var(--amber);padding:22px 26px 26px;box-shadow:0 30px 80px -40px var(--glow);min-width:0}
+.d1 .s-ncard .s-vrate{margin:18px 0 8px}
+.d1 .s-empty{margin:10px 0 18px}
+.d1 .s-mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;font-family:var(--display)}
+.d1 .s-mini div{border:1px solid var(--rule);border-radius:10px;padding:10px 12px}
+.d1 .s-mini span{display:block;font-size:12px;color:var(--muted)}.d1 .s-mini b{font-weight:700;font-size:20px}
+.d1 .s-ncard .s-cap{margin-top:16px}
+
+/* 9. First week. */
+.d1 .s-prog{display:flex;align-items:center;gap:14px;margin:24px 0 8px}
+.d1 .s-track{flex:1;height:6px;border-radius:3px;background:var(--rule);overflow:hidden}
+.d1 .s-fillbar{height:100%;width:0;background:var(--amber);transition:width .4s}
+.d1 .s-week{list-style:none;margin:0;padding:0}
+.d1 .s-week li{border-bottom:1px solid var(--rule)}
+.d1 .s-week label{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;min-height:56px;padding:8px 0;margin:0;cursor:pointer;font-family:var(--body);font-weight:400}
+.d1 .solo .s-week input{width:22px;height:22px;accent-color:var(--amber);margin:0;padding:0}
+.d1 .s-week input:checked+span{text-decoration:line-through;color:var(--muted)}
+.d1 .s-wd{font-family:var(--display);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.d1 .s-weekdone{margin:18px 0 0;font-family:var(--display);font-weight:700;color:var(--amber);min-height:1em}
+
+/* 10. Live and coming. */
+.d1 .s-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:18px;margin-top:36px}
+.d1 .s-col{border-top:3px solid var(--rule-strong);padding-top:16px}
+.d1 .s-c-live{border-top-color:var(--amber)}.d1 .s-c-coming{border-top-style:dashed}.d1 .s-c-not{border-top-style:dotted}
+.d1 .s-col h3{margin:0 0 10px;font-size:20px;letter-spacing:normal}
+.d1 .s-col ul{margin:0;padding:0 0 0 1.1rem;display:grid;gap:8px;font-size:15.5px}
+.d1 .s-col li{text-wrap:pretty}
+
+/* 11. FAQ. */
+.d1 .s-faqh{margin:0 0 24px;text-wrap:wrap}
+.d1 .s-q{border-top:1px solid var(--rule);padding:16px 0}
+.d1 .s-q summary{font-family:var(--display);font-weight:700;font-size:19px;line-height:1.3;min-height:24px}
+.d1 .s-q p{margin:10px 0 0;text-wrap:pretty}
+
+/* 12. Invite, and the page's notes. */
+.d1 .s-invite{position:relative;overflow:hidden;padding:clamp(72px,10vw,130px) clamp(16px,4vw,56px);text-align:center;background:radial-gradient(ellipse 50% 80% at 50% 110%,var(--glow),transparent 70%)}
+.d1 .s-ih{margin:0 auto;max-width:18ch;font-family:var(--display);font-weight:800;font-size:clamp(38px,6vw,72px);line-height:1;letter-spacing:-.04em;text-wrap:balance}
+.d1 .s-be{margin:20px auto 0;font-family:var(--display);font-weight:600;font-size:clamp(22px,3vw,30px);color:var(--amber)}
+.d1 .s-early{margin:20px auto 0;max-width:34rem;font-size:15px;color:var(--muted);text-wrap:pretty}
+.d1 .s-notes{margin:0 calc(50% - 50vw);padding:28px clamp(16px,4vw,56px) 40px;border-top:1px solid var(--rule);font-family:var(--display);font-size:13.5px;color:var(--muted)}
+.d1 .s-notes p{max-width:1200px;margin:0 auto 8px}
+
+/* Touch screens: 44px targets. */
+@media (pointer: coarse){.d1 .s-aud button,.d1 .s-ghost.s-sm,.d1 .s-sub a{min-height:44px}.d1 .s-sub a{display:inline-flex;align-items:center}}
+@media (prefers-reduced-motion: reduce){.d1 .solo *{transition:none!important;animation:none!important}.d1 .s-disc.s-pre{transform:none}.d1 .s-hero.s-start{--sx:50%}}
