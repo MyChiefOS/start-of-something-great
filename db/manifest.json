@@ -375,6 +375,10 @@
     {
       "version": "094_solo_no_hold",
       "sha256": "476e0753e966b9a790ce3abdcb8cbc03d7ca4acf38895a4d2ba41627da119c70"
+    },
+    {
+      "version": "095_sandbox_links",
+      "sha256": "bacdba4c2b8e4ee53bfca0ee678dc1cb9a6799cc9824661bc25cf87940e24cc8"
     }
   ]
 }

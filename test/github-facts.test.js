@@ -105,7 +105,7 @@ test('RK140: dog-github answers POST only, refuses a bad token before reading th
   }
   assert.strictEqual((await bad('x'.repeat(core.MAX_REQUEST + 1))).status, 413);
   assert.deepStrictEqual(core.parse('{"mode":"sync","facts":{"prs":[{"number":1}]}}'), { mode: 'sync', facts: { prs: [{ number: 1 }], issues: [], details: [], refused: 0 },
-    files: [], proposals: [] });
+    files: [], proposals: [], links: [] });
 });
 
 test('RK140: the deployed function is dog-github\'s core behind the shared check, with Supabase\'s own JWT check off', () => {
@@ -117,7 +117,7 @@ test('RK140: the deployed function is dog-github\'s core behind the shared check
   assert.doesNotMatch(ix, /console\.|vault|password/i, 'it logs nothing and reads no secret');
   assert.match(read('supabase/config.toml'), /\[functions\.dog-github\]\nverify_jwt = false/);
   const core = read('supabase/functions/dog-github/core.mjs');
-  assert.strictEqual((core.match(/set local role dog_ghsync/g) || []).length, 2, 'both database calls act as dog_ghsync');
+  assert.strictEqual((core.match(/set local role dog_ghsync/g) || []).length, 3, 'every database call (wanted, links since 095, sync) acts as dog_ghsync');
 });
 
 test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s own events, on main, and nothing from the event reaches a command', async () => {
@@ -141,7 +141,7 @@ test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s o
   assert.match(sbx, /\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {4}timeout-minutes:/);
   assert.doesNotMatch(sbx, /id-token|: write|\$\{\{\s*secrets\.|ACTIONS_ID_TOKEN/);
   assert.match(sbx, /node wall\/sandbox\.js/);
-  assert.match(y, /^ {2}facts:\n {4}needs: sandbox\n/m);
+  assert.match(y, /^ {2}facts:\n {4}needs: \[sandbox, link_sandbox\]\n/m, '095: and the link sandbox');
   assert.strictEqual((y.match(/issues: write/g) || []).length, 1, 'write rights in one place only');
   assert.match(y, /if: (always\(\) && )?github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'/);
   assert.doesNotMatch(y, /\$\{\{\s*(github\.event|github\.head_ref|inputs\.)/, 'no text from the event anywhere');
@@ -252,7 +252,7 @@ test('RK140: only dog_ghsync records GitHub\'s facts: the site\'s role can\'t ca
   assert.strictEqual((await q('select count(*)::int as n from app.work_github_prs where number = 9401'))[0].n, 0, 'nothing was recorded');
   // dog-github's own path (core.mjs, as the deployed function runs it) records them.
   assert.deepStrictEqual(await core.sync(su, { prs: [pr(9401, { merged_at: null, state: 'open' })], issues: [], details: [], refused: 0 }),
-    { prs: 1, tasks: 0, closed: 0, files: 0, proposals: 0 });
+    { prs: 1, tasks: 0, closed: 0, files: 0, proposals: 0, links: 0 });
   assert.deepStrictEqual(await core.wanted(su), { wanted: [], files: [] });
   // And end to end, with a token: wanted, then the same token again (refused).
   const { sign, good, deps } = await setup();
@@ -335,9 +335,10 @@ test('RK140: the coverage check passes with dog_ghsync, which can\'t sign in, be
   assert.deepStrictEqual(r, { rolcanlogin: false, rolinherit: false, rolbypassrls: false, member_of: 0 });
   const fns = await q(`select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'app' and has_function_privilege('dog_ghsync', p.oid, 'execute') order by 1`);
-  // 055's two, and since 057 the changed files Third Look reads and the proposal decisions, from the same facts.
+  // 055's two, and since 057 the changed files Third Look reads and the proposal decisions, from the same facts; since
+  // 095 the link sandbox's list and findings.
   assert.deepStrictEqual(fns.map((x) => x.fn), ['app.log_proposals_record(jsonb)', 'app.tl_files_record(jsonb)', 'app.tl_files_wanted(integer)',
-    'app.work_github_sync(jsonb)', 'app.work_github_wanted(integer)']);
+    'app.wall_links_record(jsonb)', 'app.wall_links_wanted(integer)', 'app.work_github_sync(jsonb)', 'app.work_github_wanted(integer)']);
   const tables = await q(`select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'app' and c.relkind = 'r' and has_table_privilege('dog_ghsync', c.oid, 'select, insert, update, delete')`);
   assert.strictEqual(tables[0].n, 0);
