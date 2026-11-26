@@ -162,6 +162,63 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
+// 086: the npm packages a pull request adds to a package.json (its patch's added lines), for OSV.dev. An exact version
+// ("1.2.3") is checked as that version; anything else (a range, "latest", a git link) is checked by name alone (086
+// review: a range can install any version it allows). Plain string work: no regular expression reads the patch.
+function addedPackages(files) {
+  const out = [];
+  for (const f of files || []) {
+    if (!f || typeof f.patch !== 'string' || !(f.filename === 'package.json' || String(f.filename).endsWith('/package.json'))) continue;
+    for (const line of f.patch.split('\n')) {
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      const t = line.slice(1).trim();
+      if (t[0] !== '"') continue;
+      const a = t.indexOf('"', 1); if (a < 2) continue;
+      const name = t.slice(1, a);
+      const rest = t.slice(a + 1).trim();
+      if (rest[0] !== ':') continue;
+      const v = rest.slice(1).trim();
+      if (v[0] !== '"') continue;
+      const spec = v.slice(1, v.indexOf('"', 1)).trim();
+      if (['version', 'node', 'npm', 'name', 'description', 'main', 'license', 'type'].includes(name) || name.length > 214 || !spec) continue;
+      const parts = spec.split('.');
+      const exact = parts.length === 3 && parts.every((x) => x.length && [...x].every((c) => c >= '0' && c <= '9'));
+      out.push({ name, version: exact ? spec : null, spec: spec.slice(0, 60), file: f.filename });
+    }
+  }
+  return out.slice(0, 100);
+}
+
+// 086: OSV.dev (no key; GitHub advisories CC-BY 4.0, OpenSSF malicious packages Apache-2.0) on the packages a pull
+// request adds. An exact version that is malicious blocks (W25); a range or tag that names a package with any malicious
+// version is flagged (W25b), since the version that installs may be an honest one; a known vulnerability in an exact
+// version is flagged (W25b). If OSV can't be reached, that is flagged too, so a skipped check is never silent.
+async function osvFlags(pkgs, { fetchImpl = globalThis.fetch } = {}) {
+  if (!pkgs.length) return [];
+  try {
+    const r = await fetchImpl('https://api.osv.dev/v1/querybatch', { method: 'POST', signal: AbortSignal.timeout(20_000), headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ queries: pkgs.map((p) => (p.version ? { package: { name: p.name, ecosystem: 'npm' }, version: p.version } : { package: { name: p.name, ecosystem: 'npm' } })) }) });
+    if (!r.ok) return unchecked(pkgs, 'OSV answered ' + r.status);
+    const b = await r.json();
+    const out = [];
+    (Array.isArray(b && b.results) ? b.results : []).forEach((res, i) => {
+      const ids = (Array.isArray(res && res.vulns) ? res.vulns : []).map((v) => String(v && v.id)).filter((x) => x.length < 60);
+      if (!ids.length || !pkgs[i]) return;
+      const mal = ids.find((x) => x.startsWith('MAL-'));
+      const p = pkgs[i];
+      if (p.version) {
+        out.push({ file: p.file, flag: (mal ? 'W25 malicious package (OSV ' + mal + '): ' : 'W25b known vulnerability (OSV ' + ids.slice(0, 3).join(', ') + '): ') + p.name + '@' + p.version });
+      } else if (mal) {
+        out.push({ file: p.file, flag: 'W25b package with a malicious version (OSV ' + mal + '), range ' + p.spec + ': ' + p.name });
+      }
+    });
+    return out;
+  } catch (e) { return unchecked(pkgs, 'OSV not reached'); }
+}
+function unchecked(pkgs, why) {
+  return [{ file: pkgs[0].file, flag: ('W25b package check did not run (' + why + '): ' + pkgs.map((p) => p.name).slice(0, 5).join(', ')).slice(0, 240) }];
+}
+
 // The repository's own files this workflow checked out (db/ and the rest): honest code no rule may match (085 review).
 function repoCanaries() {
   const out = [];
@@ -192,7 +249,7 @@ async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
   } catch { return null; }
 }
 
-async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined }) {
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -224,6 +281,15 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
             if (rules) for (const g of await require('../wall/yara').scan(rules, bytes, f.filename)) if (f.scan.flags.length < 20) f.scan.flags.push(g);
           }
         } catch { /* not scanned: the next run asks again */ }
+      }
+    }
+    // 086: OSV on the packages this pull request adds; the flags go with the package.json that adds them.
+    if (Array.isArray(raw) && getRaw) {
+      for (const { file, flag } of await osvFlags(addedPackages(raw), osvFetch ? { fetchImpl: osvFetch } : {})) {
+        const f = raw.find((x) => x && x.filename === file);
+        if (!f) continue;
+        f.scan = f.scan || { type: 'other', flags: [] };
+        if (f.scan.flags.length < 20) f.scan.flags.push(flag.slice(0, 240));
       }
     }
     const list = shapeFiles(raw);
@@ -309,4 +375,4 @@ async function main(argv, env = process.env) {
 
 if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 
-module.exports = { run, gather, requests, githubGet, githubRaw, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };
+module.exports = { run, gather, requests, githubGet, githubRaw, addedPackages, osvFlags, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };

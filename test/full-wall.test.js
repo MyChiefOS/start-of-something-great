@@ -383,11 +383,11 @@ test('FW21 (083): the sync reads Spamhaus only before noon UTC, and asks to carr
   };
   const morning = await sync.gather({ fetchImpl, key: '', nvdKey: '', now: () => Date.parse('2026-11-26T00:38:00Z'), pause: async () => {} });
   assert.deepStrictEqual(morning.indicators.filter((i) => i.kind === 'cidr').map((i) => i.value), ['192.0.2.0/24', '10.0.0.0/8']);
-  assert.deepStrictEqual(morning.carry, []);
+  assert.ok(!morning.carry.includes('spamhaus'), 'read in the morning'); // 086: feeds this fake doesn't answer are carried over
   seen.length = 0;
   const evening = await sync.gather({ fetchImpl, key: '', nvdKey: '', now: () => Date.parse('2026-11-26T12:38:00Z'), pause: async () => {} });
   assert.ok(!seen.some((u) => u.includes('spamhaus')), 'not read twice in a day');
-  assert.deepStrictEqual(evening.carry, ['spamhaus']);
+  assert.ok(evening.carry.includes('spamhaus'));
 });
 
 test('FW22 (083 review): a new source\'s first run isn\'t refused by the change cap', async () => {
@@ -462,4 +462,44 @@ test('FW26 (085): a file matching a YARA malware signature fails the submission;
     throw Object.assign(new Error('rollback'), { n: r.n });
   }).catch((e) => e.n);
   assert.strictEqual(n1, 1);
+});
+
+// ---- 086: the threat feeds, round two ----
+test('FW27 (086): grouped indicators record; CINS and Emerging Threats only score (W28b) and stay off the firewall\'s list; the rest block', async () => {
+  await q(`delete from app.wiki_versions`);
+  await q(`update app.wiki_settings set last_run_at = now() - interval '13 hours', claim_hash = null, claim_until = null`);
+  const [{ c: claim }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
+  const indicator_groups = [{ kind: 'domain', source: 'certpl', values: ['phish-bank.test', 'github.com', 'co.uk'] }, { kind: 'ip', source: 'cins', values: ['203.0.113.50', '10.0.0.1'] },
+    { kind: 'ip', source: 'et', values: ['203.0.113.60'] }, { kind: 'url', source: 'phishtank', values: ['https://Login-Evil.test/Signin'] }, { kind: 'sha256', source: 'eset', values: ['ef'.repeat(32)] }];
+  const [{ r }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify({ entries: [], packages: [], indicators: [], indicator_groups, sources: {} })}::text::jsonb) as r`);
+  assert.strictEqual(r, 'active');
+  const kept = (await q(`select source || ':' || value as k from app.wiki_indicators i join app.wiki_versions v on v.id = i.version_id and v.status = 'active' order by 1`)).map((x) => x.k);
+  assert.deepStrictEqual(kept, ['certpl:phish-bank.test', 'cins:203.0.113.50', 'eset:' + 'ef'.repeat(32), 'et:203.0.113.60', 'phishtank:https://login-evil.test/signin'], 'never-block domains, public suffixes and private addresses dropped');
+  const intel = async (t) => (await q(`select app.wall_intel_flags($$${t}$$) as f`))[0].f.map((x) => x.split(' ')[0]);
+  assert.deepStrictEqual(await intel('see https://www.phish-bank.test/x'), ['W28']);
+  assert.deepStrictEqual(await intel('from 203.0.113.50'), ['W28b'], 'CINS scores only');
+  assert.deepStrictEqual(await intel('from 203.0.113.60'), ['W28b'], 'Emerging Threats scores only (086 review)');
+  assert.deepStrictEqual(await intel('open https://login-evil.test/signin/'), ['W28']);
+  assert.deepStrictEqual(await intel('hash ' + 'ef'.repeat(32)), ['W33']);
+  const [{ d }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wall_edge_addresses() as d`);
+  assert.deepStrictEqual(d.addresses, [], 'the firewall refuses only blocking sources');
+});
+
+test('FW28 (086): OSV\'s findings on added packages: a malicious package fails the submission, a vulnerable one only flags', async () => {
+  for (const [flag, want] of [['W25 malicious package (OSV MAL-2025-1): evil@1.0.0', 'failed'], ['W25b known vulnerability (OSV GHSA-x): lodash@4.17.15', 'waiting']]) {
+    const t = await task('Fix the date rounding', 'Fix the date rounding');
+    const pr = 86000 + (n++);
+    const s = await submit(t, { kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + pr, pr });
+    await q(`insert into app.tl_files (number, files) values (${pr}, $$${JSON.stringify([{ filename: 'package.json', status: 'modified', changes: 1, scan: { type: 'other', flags: [flag] } }])}$$::jsonb)`);
+    assert.strictEqual((await status(s.id)).status, want, flag);
+  }
+  const workjobs = require('../db/workjobs');
+  const REPO = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
+  const get = async (p) => (p.startsWith('/pulls/5/files') ? [{ filename: 'package.json', status: 'modified', changes: 2, patch: '@@\n+    "flatmap-stream": "0.1.1",\n+    "lodash": "4.17.15"', contents_url: REPO + '/contents/package.json?ref=a' }] : []);
+  const osvFetch = async (url, init) => {
+    const qs = JSON.parse(init.body).queries;
+    return { ok: true, json: async () => ({ results: qs.map((x) => (x.package.name === 'flatmap-stream' ? { vulns: [{ id: 'MAL-2025-20690' }] } : { vulns: [{ id: 'GHSA-29mw-wpgm-hmr9' }] })) }) };
+  };
+  const facts = await workjobs.gather({ get, getRaw: async () => Buffer.from('{}'), wanted: [], files: [5], rules: null, osvFetch });
+  assert.deepStrictEqual(facts.files[0].files[0].scan.flags.map((x) => x.split(' ')[0]).sort(), ['W25', 'W25b']);
 });

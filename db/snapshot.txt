@@ -878,7 +878,7 @@ constraint app.wiki_indicators wiki_indicators_check CHECK ( CASE kind WHEN 'ip'
 constraint app.wiki_indicators wiki_indicators_kind_check CHECK ((kind = ANY (ARRAY['ip'::text, 'cidr'::text, 'domain'::text, 'url'::text, 'sha256'::text, 'injection'::text, 'injection_flag'::text])))
 constraint app.wiki_indicators wiki_indicators_pkey PRIMARY KEY (id)
 constraint app.wiki_indicators wiki_indicators_ref_check CHECK (((char_length(ref) <= 60) AND (ref ~ '^[A-Za-z0-9 ._:/-]*$'::text)))
-constraint app.wiki_indicators wiki_indicators_source_check CHECK ((source = ANY (ARRAY['feodo'::text, 'spamhaus'::text, 'urlhaus'::text, 'threatfox'::text, 'malwarebazaar'::text, 'reference'::text])))
+constraint app.wiki_indicators wiki_indicators_source_check CHECK ((source = ANY (ARRAY['feodo'::text, 'spamhaus'::text, 'certpl'::text, 'phishtank'::text, 'et'::text, 'cins'::text, 'eset'::text, 'urlhaus'::text, 'threatfox'::text, 'malwarebazaar'::text, 'reference'::text])))
 constraint app.wiki_indicators wiki_indicators_value_check CHECK (((char_length(value) >= 6) AND (char_length(value) <= 500)))
 constraint app.wiki_indicators wiki_indicators_version_id_fkey FOREIGN KEY (version_id) REFERENCES app.wiki_versions(id) ON DELETE CASCADE
 constraint app.wiki_indicators wiki_indicators_version_id_kind_value_key UNIQUE (version_id, kind, value)
@@ -898,7 +898,7 @@ constraint app.wiki_settings wiki_settings_pkey PRIMARY KEY (id)
 constraint app.wiki_settings wiki_settings_singleton_check CHECK (singleton)
 constraint app.wiki_settings wiki_settings_singleton_key UNIQUE (singleton)
 constraint app.wiki_versions wiki_versions_entries_check CHECK (((entries >= 0) AND (entries <= 20000)))
-constraint app.wiki_versions wiki_versions_indicators_check CHECK (((indicators >= 0) AND (indicators <= 200000)))
+constraint app.wiki_versions wiki_versions_indicators_check CHECK (((indicators >= 0) AND (indicators <= 400000)))
 constraint app.wiki_versions wiki_versions_packages_check CHECK (((packages >= 0) AND (packages <= 20000)))
 constraint app.wiki_versions wiki_versions_pkey PRIMARY KEY (id)
 constraint app.wiki_versions wiki_versions_reason_check CHECK ((char_length(reason) <= 300))
@@ -1953,7 +1953,7 @@ function app.timers_run(p_from_cron boolean) owner=dog_timers execute=dog_timers
 function app.tl_claim(p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, task_title text, task_description text, note text, pr_number integer, pr_title text, jevs_rules text, model text, files jsonb, artifact_kind text, artifact_url text) body_md5=7194e4bb42929273e450f20aa39f0bbb
 function app.tl_decide(p_sub uuid, p_version text, p_model text, p_suggestion text, p_answers jsonb, p_reason text, p_fail_closed boolean, p_truncated boolean, p_latency_ms integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=f47b520c61dc070b12df6b3a3f2b4247
 function app.tl_figures() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eaba76884241e80d5d9a50162c6ee1f1
-function app.tl_files_record(p jsonb) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=c6c7832e68c0cd6a9e82ae98f32f1a49
+function app.tl_files_record(p jsonb) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=9a6396613cd6ebc99498100a8fe62636
 function app.tl_files_wanted(p_n integer) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(number integer) body_md5=d404ab92b773a1e6b1c91ae8811fa024
 function app.tl_read(p_sub uuid, p_url text, p_sha256 text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=cb81b67cc1db910aa7001ea9a523d73f
 function app.tl_release(p_sub uuid, p_why text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=fae08b304381f375350bbaa0e7149f5e
@@ -1965,10 +1965,10 @@ function app.wall_chain_ok() owner=dog_work execute=dog_work,dog_app language=sq
 function app.wall_code_flags(p_path text, p_added text, p_task text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=a23cb4f8c55da5b4f6a61ecbcbdf7c96
 function app.wall_decide(p_flags jsonb) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9405808c547e78a11a906a2b21bf6800
 function app.wall_decisions_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fa85897676c14290138e725a173530c0
-function app.wall_edge_addresses() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=a6fb5d7490fa8296dd879faf5969a617
+function app.wall_edge_addresses() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=9781e6c6331beda04e52c4b956bedfe7
 function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=842987f4ce094093012408e64fd484c7
 function app.wall_gate() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=b2ca0de6125f60f8f7e99e52db2382a3
-function app.wall_intel_flags(p_text text, p_path text) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=ed3e9721ca2d623927a9df72003b1382
+function app.wall_intel_flags(p_text text, p_path text) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=a812a7488c12e88f6ccd5538c2ab68ff
 function app.wall_log(p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=308eb9dbb31ca741c29a844c477da571
 function app.wall_metadata_address(p_lower text) owner=dog_owner execute=dog_owner language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=d44431450f5444b896ff74cc7c1a0ec9
 function app.wall_review(p_decision uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=534b342d54cda582027ab33d3f19a15d
@@ -1990,7 +1990,7 @@ function app.wiki_never_block(p_domain text) owner=dog_owner execute=dog_owner,d
 function app.wiki_never_block_cidr(p_cidr text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=8469025b8ef2141d0ce8a5da8f088267
 function app.wiki_never_block_ip(p_ip text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=dd0b406de306ca1abb2100b6a50d0083
 function app.wiki_public_suffix(p_domain text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=e159ab3c8658610d10c385fa3b26c2c2
-function app.wiki_record(p_claim text, p jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=429e66be11bb39f95f54916ed846d07e
+function app.wiki_record(p_claim text, p jsonb) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=b82ed2f03d44430ccb3c1329a19dac15
 function app.wiki_rollback() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=ef895019259a01e76c52b4e6a3b21ea4
 function app.wiki_summary() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=be9062cbc4c1c777b8dc66a4f1274d6f
 function app.work_action_rules() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=ebd6567db52fea13ab337b1ae7748ce0

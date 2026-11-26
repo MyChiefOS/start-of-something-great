@@ -19,6 +19,15 @@ const FEODO = 'https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.j
 // /checks); its terms ask for at most one download a day, so it is read on the run before noon UTC and carried over
 // from the active version on the other.
 const SPAMHAUS = 'https://www.spamhaus.org/drop/drop_v4.json';
+// 086 (Aaron, Nov 26: "Lets implement your recommendations"): free sources, no account, commercial use allowed.
+const CERTPL = 'https://hole.cert.pl/domains/v2/domains.txt'; // CERT Polska: "may be used by any user for any purpose"
+const PHISHTANK = 'https://data.phishtank.com/data/online-valid.csv.gz'; // Cisco Talos: commercial use OK (FAQ); once a day
+// Proofpoint ET Open, BSD. Scores only (086 review: many are cloud addresses that get reassigned). Its emerging-Block-IPs
+// file is not used: it carries DShield ranges under CC BY-NC-SA (non-commercial), and the rest is Spamhaus DROP.
+const ET_COMPROMISED = 'https://rules.emergingthreats.net/blockrules/compromised-ips.txt';
+const CINS = 'https://cinsscore.com/list/ci-badguys.txt'; // CINS Army: "use in any way you see fit"; scores only (W28b)
+const ESET_TREE = 'https://api.github.com/repos/eset/malware-ioc/git/trees/master?recursive=1'; // ESET: BSD-2-Clause; once a day
+const ESET_RAW = 'https://raw.githubusercontent.com/eset/malware-ioc/master/';
 const CIDR = /^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\/([89]|[12][0-9]|3[0-2])$/;
 const URLHAUS = 'https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/';
 const THREATFOX = 'https://threatfox-api.abuse.ch/api/v1/';
@@ -66,6 +75,21 @@ function packagesOf(item) {
   return out;
 }
 
+// Hosts many people share: a phishing link there names the platform's page, not the attacker (086 review).
+const SHARED = ['google.com', 'googleusercontent.com', 'goo.gl', 'g.page', 'live.com', 'microsoft.com', 'microsoftonline.com', 'office.com', 'office365.com',
+  'outlook.com', 'sharepoint.com', 'onedrive.com', '1drv.ms', 'bing.com', 'dropbox.com', 'box.com', 'linkedin.com', 'lnkd.in', 'facebook.com', 'fb.me',
+  'instagram.com', 'twitter.com', 'x.com', 't.co', 'apple.com', 'icloud.com', 'amazon.com', 'amazonaws.com', 'yahoo.com', 'booking.com', 'paypal.com',
+  'github.com', 'githubusercontent.com', 'gitlab.com', 'bit.ly', 'tinyurl.com', 'is.gd', 'ow.ly', 'rb.gy', 'cutt.ly', 'wix.com', 'wixsite.com', 'weebly.com',
+  'webflow.io', 'netlify.app', 'vercel.app', 'pages.dev', 'workers.dev', 'firebaseapp.com', 'web.app', 'blogspot.com', 'wordpress.com', 'square.site',
+  'notion.site', 'canva.com', 'forms.gle', 'docs.google.com', 'sites.google.com', 'cloudfront.net', 'azurewebsites.net', 'herokuapp.com', 'glitch.me', 'repl.co'];
+function sharedHost(url) {
+  let h = String(url).toLowerCase();
+  const p = h.indexOf('://'); if (p !== -1) h = h.slice(p + 3);
+  for (const c of ['/', '?', '#', ':']) { const i = h.indexOf(c); if (i !== -1) h = h.slice(0, i); }
+  const at = h.lastIndexOf('@'); if (at !== -1) h = h.slice(at + 1);
+  return SHARED.some((d) => h === d || h.endsWith('.' + d));
+}
+
 function isNetwork(cidr) {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(String(cidr));
   if (!m) return false;
@@ -90,8 +114,9 @@ function indicatorOf(kind, value, source, ref) {
 // The threat feeds. Each one that fails is skipped (and counted as 0); the others still record.
 async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now } = {}) {
   const out = [];
-  const counts = { feodo: 0, spamhaus: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
+  const counts = { feodo: 0, spamhaus: 0, certpl: 0, phishtank: 0, et: 0, cins: 0, eset: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
   const carry = [];
+  const groups = {};
   // 082 review: each feed's answer is capped at 8 MB before it is parsed, and each feed at a fixed count, so the whole
   // run stays well under the database's 16 MB limit (an oversized feed is skipped; the CVEs still record).
   const get = async (url, init) => {
@@ -102,6 +127,56 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
     return JSON.parse(body);
   };
   const add = (name, x) => { if (x) { out.push(x); counts[name]++; } };
+  // 086: large lists go in groups (kind, source, values), which keeps the run small.
+  const group = (name, kind, value) => {
+    const x = indicatorOf(kind, value, name, '');
+    if (!x) return;
+    const k = kind + '|' + name;
+    (groups[k] = groups[k] || { kind, source: name, values: [] }).values.push(x.value);
+    counts[name]++;
+  };
+  const text = async (url, max) => {
+    const r = await fetchImpl(url, { signal: AbortSignal.timeout(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
+    if (r.status !== 200) throw new Error(url + ' ' + r.status);
+    const t = await r.text();
+    if (t.length > max) throw new Error(url + ' too large');
+    return t;
+  };
+  const lines = (t, n) => t.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).slice(0, n);
+  const daily = new Date(now()).getUTCHours() < 12;
+  // A list that can't be read this run keeps its last copy (carried over), so an outage never empties it (086 review).
+  try { for (const d of lines(await text(CERTPL, 8000000), 160000)) group('certpl', 'domain', d); } catch { carry.push('certpl'); }
+  try { for (const a of lines(await text(ET_COMPROMISED, 1000000), 10000)) group('et', 'ip', a); } catch { carry.push('et'); }
+  try { for (const a of lines(await text(CINS, 2000000), 20000)) group('cins', 'ip', a); } catch { carry.push('cins'); }
+  if (daily) {
+    try {
+      const r = await fetchImpl(PHISHTANK, { signal: AbortSignal.timeout(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
+      if (r.status !== 200) throw new Error('phishtank ' + r.status);
+      const gz = Buffer.from(await r.arrayBuffer());
+      if (gz.length > 8000000) throw new Error('phishtank too large');
+      const csv = require('zlib').gunzipSync(gz, { maxOutputLength: 40000000 }).toString('utf8');
+      // phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target: the URL is the second
+      // field; a URL with a comma is quoted, and is skipped (rare).
+      for (const line of csv.split('\n').slice(1, 80001)) {
+        const a = line.indexOf(','); const b = line.indexOf(',', a + 1);
+        if (a < 0 || b < 0 || line[a + 1] === '"') continue;
+        const u = line.slice(a + 1, b);
+        // 086 review: a phishing link on a big shared platform (Google's redirect page, Dropbox's login, a link
+        // shortener) would collapse to that platform's ordinary page and block honest links: such links are left out.
+        if (!sharedHost(u)) group('phishtank', 'url', u);
+      }
+    } catch { carry.push('phishtank'); }
+    try {
+      const r = await fetchImpl(ESET_TREE, { signal: AbortSignal.timeout(20000), headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-security-wiki' } });
+      if (r.status !== 200) throw new Error('eset ' + r.status);
+      const tree = await r.json();
+      const paths = (tree && Array.isArray(tree.tree) ? tree.tree : []).map((x) => x && x.path).filter((x) => typeof x === 'string' && x.endsWith('.sha256') && !x.includes('..')).slice(0, 300);
+      for (const pth of paths) {
+        try { for (const l of lines(await text(ESET_RAW + pth.split('/').map(encodeURIComponent).join('/'), 2000000), 20000)) group('eset', 'sha256', l.split(/\s/)[0]); } catch { /* one file skipped */ }
+      }
+      if (!counts.eset) carry.push('eset');
+    } catch { carry.push('eset'); }
+  } else carry.push('phishtank', 'eset');
   try {
     const list = await get(FEODO, { headers: { accept: 'application/json' } });
     for (const it of (Array.isArray(list) ? list : []).slice(0, 5000)) add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
@@ -139,7 +214,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       for (const m of (b && Array.isArray(b.data) ? b.data : []).slice(0, 10000)) add('malwarebazaar', indicatorOf('sha256', m && m.sha256_hash, 'malwarebazaar', m && m.signature));
     } catch { /* skipped */ }
   }
-  return { indicators: out, counts, carry };
+  return { indicators: out, groups: Object.values(groups), counts, carry };
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
@@ -200,7 +275,7 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   Object.assign(sources, f.counts, { injection: (REFERENCE.injection || []).length, injection_flag: (REFERENCE.injection_flag || []).length });
-  return { entries, packages, indicators, sources, carry: f.carry };
+  return { entries, packages, indicators, indicator_groups: f.groups, sources, carry: f.carry };
 }
 
 // The timer's step: at most one run each 12 hours; any failure records nothing and the next run is in 12 hours.
@@ -211,11 +286,12 @@ async function run(runTx, { fetchImpl, now } = {}) {
   let payload;
   try { payload = await gather({ fetchImpl, now }); } catch { return { ran: true, recorded: null }; }
   try {
-    const [{ r }] = await runTx({ actor: 'anon' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify(payload)}::text::jsonb) as r`);
+    // 086 review: a full run (about 200,000 indicators) takes longer than the usual 5 s, so this one statement gets 60 s.
+    const [{ r }] = await runTx({ actor: 'anon', timeout: 'wiki' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify(payload)}::text::jsonb) as r`);
     return { ran: true, recorded: r };
   } catch {
     return { ran: true, recorded: null };
   }
 }
 
-module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds };
+module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED };

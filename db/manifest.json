@@ -339,6 +339,10 @@
     {
       "version": "085_wall_yara",
       "sha256": "1d0830937cff0b58235b0d8bf38594340e136aad0e9f882664caf6972702cce2"
+    },
+    {
+      "version": "086_wall_feeds",
+      "sha256": "e34e9577caf09cffa5b7ad008465b5304eff69cff7d85ab8001e40531fd866fd"
     }
   ]
 }
