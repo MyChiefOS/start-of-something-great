@@ -13,24 +13,26 @@
 'use strict';
 
 // Rule sets in YARA Forge's core pack whose licenses allow commercial use, as their headers say (checked Nov 26, 2026).
+// A set counts only when its name, its repository and its license header all match (085 review): a set that changes
+// its license, or a new set that reuses a name, is left out until a pull request reviews it.
 // The Detection Rule License 1.1 asks for credit: the sources are named on /checks with each match.
 const SOURCES = {
-  'CAPE': 'GPL-3.0 (used, not distributed)',
-  'ESET': 'BSD-2-Clause',
-  'FireEye-RT': 'BSD-2-Clause',
-  'GCTI': 'Apache-2.0',
-  'Trellix ARC': 'Apache-2.0',
-  'Telekom Security': 'MIT',
-  'Volexity': 'BSD-2-Clause',
-  'Dr4k0nia': 'DRL-1.1',
-  'Elceef': 'MIT',
-  'Cod3nym': 'DRL-1.1',
-  'craiu': 'GPL-3.0 (used, not distributed)',
-  'DitekSHen': 'BSD-2-Clause',
-  'WithSecureLabs': 'BSD-2-Clause',
-  'SEKOIA': 'DRL-1.1',
-  'Synacktiv': 'DRL-1.1',
-  'Signature Base': 'DRL-1.1'
+  'CAPE': { license: 'GPL-3.0 (used, not distributed)', repo: 'https://github.com/kevoreilly/CAPEv2', mark: 'GNU General Public License' },
+  'ESET': { license: 'BSD-2-Clause', repo: 'https://github.com/eset/malware-ioc', mark: 'Redistribution and use' },
+  'FireEye-RT': { license: 'BSD-2-Clause', repo: 'https://github.com/mandiant/red_team_tool_countermeasures/', mark: 'BSD 2-Clause' },
+  'GCTI': { license: 'Apache-2.0', repo: 'https://github.com/chronicle/GCTI', mark: 'Apache License' },
+  'Trellix ARC': { license: 'Apache-2.0', repo: 'https://github.com/advanced-threat-research/Yara-Rules/', mark: 'Apache License' },
+  'Telekom Security': { license: 'MIT', repo: 'https://github.com/telekom-security/malware_analysis/', mark: 'MIT License' },
+  'Volexity': { license: 'BSD-2-Clause', repo: 'https://github.com/volexity/threat-intel', mark: 'BSD License' },
+  'Dr4k0nia': { license: 'DRL-1.1', repo: 'https://github.com/dr4k0nia/yara-rules', mark: 'Detection Rule License' },
+  'Elceef': { license: 'MIT', repo: 'https://github.com/elceef/yara-rulz', mark: 'MIT License' },
+  'Cod3nym': { license: 'DRL-1.1', repo: 'https://github.com/cod3nym/detection-rules/', mark: 'Detection Rule License' },
+  'craiu': { license: 'GPL-3.0 (used, not distributed)', repo: 'https://github.com/craiu/yararules', mark: 'GNU GENERAL PUBLIC LICENSE' },
+  'DitekSHen': { license: 'BSD-2-Clause', repo: 'https://github.com/ditekshen/detection', mark: 'BSD License' },
+  'WithSecureLabs': { license: 'BSD-2-Clause', repo: 'https://github.com/WithSecureLabs/iocs', mark: 'BSD 2-Clause' },
+  'SEKOIA': { license: 'DRL-1.1', repo: 'https://github.com/SEKOIA-IO/Community', mark: 'Detection Rule License' },
+  'Synacktiv': { license: 'DRL-1.1', repo: 'https://github.com/synacktiv/synacktiv-rules', mark: 'Detection Rule License' },
+  'Signature Base': { license: 'DRL-1.1', repo: 'https://github.com/Neo23x0/signature-base', mark: 'Detection Rule License' }
 };
 const FORGE_CORE = 'https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-core.zip';
 const MODULES = ['pe.', 'dotnet.', 'elf.', 'math.', 'hash.', 'cuckoo.', 'magic.', 'console.', 'time.', 'string.', 'macho.', 'dex.', 'lnk.'];
@@ -69,12 +71,18 @@ function sections(text) {
   let cur = null;
   for (const line of lines) {
     const at = line.indexOf('Repository Name:');
-    if (at !== -1) { cur = { name: line.slice(at + 16).trim(), rules: [], rule: null }; out.push(cur); continue; }
+    // A set's header is a comment block (" * Repository Name: X"); the same words anywhere else don't start a set.
+    if (at !== -1 && line.trimStart().startsWith('*')) { cur = { name: line.slice(at + 16).trim(), repo: '', header: '', rules: [], rule: null }; out.push(cur); continue; }
     if (!cur) continue;
+    if (!cur.rule) {
+      const ra = line.indexOf('Repository:');
+      if (ra !== -1 && !cur.repo) cur.repo = line.slice(ra + 11).trim();
+      else if (cur.header.length < 4000) cur.header += line + '\n';
+    }
     const t = line.trimStart();
     if (startsRule(t)) { cur.rule = [line]; cur.rules.push(cur.rule); } else if (cur.rule) cur.rule.push(line);
   }
-  return out.map((s) => ({ name: s.name, rules: s.rules.map((r) => r.join('\n')) }));
+  return out.map((s) => ({ name: s.name, repo: s.repo, header: s.header, rules: s.rules.map((r) => r.join('\n')) }));
 }
 const nameOf = (rule) => { let s = rule.trimStart(); while (!s.startsWith('rule ')) s = s.slice(s.indexOf(' ') + 1); s = s.slice(5); let j = 0; while (j < s.length && isWord(s[j])) j++; return s.slice(0, j); };
 
@@ -92,13 +100,16 @@ const CANARIES = [
 const matchedNames = (r) => { const out = []; for (let i = 0; i < r.matchedRules.size(); i++) out.push(r.matchedRules.get(i).ruleName); return out; };
 
 // From the pack's text to the rules the Wall uses. Returns { text, kept, sources: {name: count}, dropped: {...} }.
-async function prepare(packText) {
+// extraCanaries: more honest files (the facts workflow passes the repository files it has checked out), so a rule broad
+// enough to match ordinary code is dropped before it can block anything (085 review).
+async function prepare(packText, { extraCanaries = [] } = {}) {
   const y = await load();
   const dropped = { license: 0, module: 0, compile: 0, canary: 0 };
   const sourceOf = new Map();
   let rules = [];
   for (const s of sections(String(packText || '').slice(0, MAX_RULES_BYTES))) {
-    if (!Object.prototype.hasOwnProperty.call(SOURCES, s.name)) { dropped.license += s.rules.length; continue; }
+    const known = Object.prototype.hasOwnProperty.call(SOURCES, s.name) ? SOURCES[s.name] : null;
+    if (!known || s.repo !== known.repo || !s.header.includes(known.mark) || s.header.includes('NO LICENSE SET')) { dropped.license += s.rules.length; continue; }
     for (const r of s.rules) {
       if (usesModule(r)) { dropped.module++; continue; }
       rules.push(r); sourceOf.set(nameOf(r), s.name);
@@ -122,7 +133,7 @@ async function prepare(packText) {
   }
   // Drop any rule that matches an honest file.
   const noisy = new Set();
-  for (const c of CANARIES) for (const n of matchedNames(y.run(c, rules.join('\n')))) noisy.add(n);
+  for (const c of [...CANARIES, ...extraCanaries.slice(0, 300)]) for (const n of matchedNames(y.run(c, rules.join('\n')))) noisy.add(n);
   if (noisy.size) { dropped.canary = noisy.size; rules = rules.filter((r) => !noisy.has(nameOf(r))); }
   const sources = {};
   for (const r of rules) { const s = sourceOf.get(nameOf(r)); sources[s] = (sources[s] || 0) + 1; }

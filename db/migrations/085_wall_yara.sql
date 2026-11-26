@@ -6,7 +6,8 @@
 reset role;
 alter table app.wall_rules disable row level security;
 insert into app.wall_rules (rule, effect, what) values
-  ('W42', 'block', 'A file matching a malware signature (a YARA rule from YARA Forge''s core pack, from a rule set whose license allows our use)');
+  ('W42', 'block', 'A file matching a malware signature (a YARA rule from YARA Forge''s core pack, from a rule set whose license allows our use)'),
+  ('W42b', 'flag', 'A malware signature that matched files in 3 or more pull requests, or 10 or more files, in one run (more likely a bad rule: flagged, not blocked)');
 alter table app.wall_rules enable row level security;
 
 grant create on schema app to dog_work;
@@ -43,7 +44,7 @@ begin
                        or jsonb_array_length(f -> 'scan' -> 'flags') > 20
                        or exists (select 1 from jsonb_array_elements(f -> 'scan' -> 'flags') g
                                    where jsonb_typeof(g) <> 'string' or char_length(g #>> '{}') > 240
-                                      or split_part(g #>> '{}', ' ', 1) <> all (array['W30', 'W31', 'W39', 'W40', 'W40b', 'W41', 'W42']))))
+                                      or split_part(g #>> '{}', ' ', 1) <> all (array['W30', 'W31', 'W39', 'W40', 'W40b', 'W41', 'W42', 'W42b']))))
                    or exists (select 1 from jsonb_object_keys(f) k where k <> all (array['filename', 'status', 'changes', 'patch', 'scan']))) then
       continue;
     end if;
