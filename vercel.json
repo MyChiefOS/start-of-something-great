@@ -315,5 +315,10 @@
       "path": "/api/cron",
       "schedule": "* * * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/cron.js": {
+      "maxDuration": 300
+    }
+  }
 }
