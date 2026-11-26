@@ -8,18 +8,26 @@
   var shown = document.getElementById('go-url');
   var acts = document.getElementById('go-acts');
   var on = document.getElementById('go-on');
-  var u = new URLSearchParams(location.search).get('u') || '';
-  var ok = /^https?:\/\/[^\s/?#]+/i.test(u) && u.length <= 2000;
-  if (!ok) { status.textContent = 'That isn’t a web link this page can follow.'; return; }
-  shown.textContent = u; shown.hidden = false;
-  fetch('/api/work/link?u=' + encodeURIComponent(u), { headers: { accept: 'application/json' } })
+  var raw = new URLSearchParams(location.search).get('u') || '';
+  // Parsed, not pattern-matched: only an http or https address, rebuilt from its parts, is ever used. A clear link is
+  // still never followed without the person's click, so /go can't be used to bounce someone straight to a phishing page
+  // under this site's name (an open redirect, CWE-601).
+  var url = null;
+  try { url = raw.length <= 2000 ? new URL(raw) : null; } catch (e) { url = null; }
+  if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:') || !url.hostname) {
+    status.textContent = 'That isn’t a web link this page can follow.'; return;
+  }
+  var safe = url.protocol + '//' + url.host + url.pathname + url.search + url.hash;
+  shown.textContent = safe; shown.hidden = false;
+  function offer(text, clear) { status.textContent = text; on.textContent = clear ? 'Open the link' : 'Go on anyway'; on.setAttribute('href', safe); acts.hidden = false; }
+  fetch('/api/work/link?u=' + encodeURIComponent(safe), { headers: { accept: 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (b) {
       var d = b && (b.data || b);
-      if (d && d.verdict === 'ok') { status.textContent = 'This link is clear. Opening it…'; location.replace(u); return; }
+      if (d && d.verdict === 'ok') { offer('This link is clear.', true); return; }
       if (d && d.verdict === 'blocked') { status.textContent = 'Stopped: ' + d.why; acts.hidden = false; on.hidden = true; return; }
-      if (d && d.verdict === 'warn') { status.textContent = 'Careful: ' + d.why; on.href = u; acts.hidden = false; return; }
-      status.textContent = 'The link couldn’t be checked just now. You can still go on, at your own risk.'; on.href = u; acts.hidden = false;
+      if (d && d.verdict === 'warn') { offer('Careful: ' + d.why); return; }
+      offer('The link couldn’t be checked just now. You can still go on, at your own risk.');
     })
-    .catch(function () { status.textContent = 'The link couldn’t be checked just now. You can still go on, at your own risk.'; on.href = u; acts.hidden = false; });
+    .catch(function () { offer('The link couldn’t be checked just now. You can still go on, at your own risk.'); });
 })();
