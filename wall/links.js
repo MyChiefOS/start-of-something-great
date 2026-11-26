@@ -63,7 +63,7 @@ function siteOf(host) {
 // 'metadata', 'private' (local, private, link-local, shared, multicast, reserved) or '' for an ordinary public address.
 function addressKind(addr) {
   const a = String(addr || '').toLowerCase().replace(/^\[|\]$/g, '');
-  if (a === '169.254.169.254' || a === '169.254.170.2' || a === 'fd00:ec2::254' || a === '100.100.100.200') return 'metadata';
+  if (a === '169.254.169.254' || a === '169.254.170.2' || a === 'fd00:ec2::254' || a === '100.100.100.200' || a === '168.63.129.16') return 'metadata';
   if (net.isIPv4(a)) {
     const [x, y] = a.split('.').map(Number);
     if (x === 0 || x === 10 || x === 127 || x >= 224 || (x === 169 && y === 254) || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168)
@@ -71,7 +71,19 @@ function addressKind(addr) {
     return '';
   }
   if (net.isIPv6(a)) {
-    if (a.startsWith('::ffff:')) return addressKind(a.slice(7));
+    // An IPv4 address written as IPv6 (mapped, in dotted or hex form, or NAT64 64:ff9b::/96): judge the IPv4 inside.
+    const v4in = (tail) => {
+      if (net.isIPv4(tail)) return tail;
+      const h = tail.split(':');
+      if (h.length !== 2 || !h.every((x) => /^[0-9a-f]{1,4}$/.test(x))) return '';
+      const n = h.map((x) => parseInt(x, 16));
+      return [n[0] >> 8, n[0] & 255, n[1] >> 8, n[1] & 255].join('.');
+    };
+    for (const p of ['::ffff:', '64:ff9b::', '::']) {
+      if (a.startsWith(p) && a !== '::' && a !== '::1') { const v = v4in(a.slice(p.length)); if (v) return addressKind(v) || (p === '::' ? 'private' : ''); }
+    }
+    // 6to4 (2002::/16) and Teredo (2001:0::/32) carry an IPv4 address the proxy can't judge: refused.
+    if (a.startsWith('2002:') || /^2001:0?:/.test(a)) return 'private';
     if (a === '::' || a === '::1' || a.startsWith('fc') || a.startsWith('fd') || a.startsWith('fe8') || a.startsWith('fe9') || a.startsWith('fea') || a.startsWith('feb') || a.startsWith('ff')) return 'private';
     return '';
   }
@@ -150,6 +162,14 @@ function analyze(log, proxy, url) {
     if (m) looks('W51', 'loads a crypto-miner (' + m + ')');
     const h = HIDDEN.find((x) => t.includes(x));
     if (h) looks('W51b', 'hides code (' + h.slice(0, 30) + ')');
+  }
+  // 094 review: a link that isn't https on port 443, or that the proxy refused to reach, wasn't really opened.
+  let target = null;
+  try { target = new URL(String(url || '')); } catch { target = null; }
+  if (!target || target.protocol !== 'https:' || (target.port && target.port !== '443')) looks('W51b', 'could not be opened (not https on port 443)');
+  else {
+    const refused = (Array.isArray(proxy) ? proxy : []).find((e) => e && e.refused && String(e.host) === target.hostname.toLowerCase().replace(/^\[|\]$/g, ''));
+    if (refused) looks(refused.refused === 'metadata' ? 'W51' : 'W51b', (refused.refused === 'metadata' ? 'reached for a cloud-metadata address' : 'could not be opened (' + String(refused.refused).slice(0, 30) + ')'));
   }
   if (!L.ok) looks('W51b', 'could not be opened (' + String(L.error || 'no answer').slice(0, 40) + ')');
   return { flags, seen: [...seen].slice(0, 50) };

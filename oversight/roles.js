@@ -1,8 +1,8 @@
 // The model reviewers (077; Aaron, Nov 24): the exploit researcher, the penetration tester (reading only, no sandbox),
 // quality assurance and the solution architect. Each reads one finished piece of work as data between fresh markers
-// and answers "ok" or "concern" with one sentence, in strict JSON. They advise only: nothing they say passes, fails,
-// holds or scores work. Every role starts off and the monthly cap starts at $0, so the database hands out nothing and
-// no model is called until Aaron turns a role on and sets a cap. Any failure is recorded as an error, never a verdict.
+// and answers "ok" or "concern" with one sentence, in strict JSON. Since 094 their answers decide held work
+// (app.work_reviewers_settle): all had their turn, two or more "ok" and no "concern", and the poster's pass stands; a
+// concern sends it to Aaron. They never pass, fail or score other work. Any failure is recorded as an error, never a verdict.
 'use strict';
 
 const crypto = require('crypto');

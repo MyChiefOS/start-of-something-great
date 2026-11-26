@@ -402,12 +402,23 @@ test('094 SJ2: held work clears after the reviewers; a concern is the only case 
   assert.ok(roles.length >= 2, roles.join());
   // Not yet: nothing has been read.
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0);
+  // Every reviewer clears the first, but the link sandbox hasn't opened it yet: it still waits (095).
   for (const role of roles) {
-    await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict) values ('${role}', '${sids[0][1]}', 'm', 0, 'ok')`);
-    // A reviewer's outage on one doesn't block the other; a concern does stop it.
+    await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[0][1]}', 'm', 0, ${role === roles[1] ? "null, 'gateway 429'" : "'ok', null"})`);
+  }
+  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0, 'waits for the link sandbox');
+  // The daily alert doesn't count held work the reviewers are still reading.
+  await q(`update app.work_settings set last_alert_day = null`);
+  await run({ actor: 'anon' }, (t) => t`select app.work_tick()`);
+  assert.strictEqual((await q(`select count(*)::int n from app.notices where dedupe_key like 'work:waiting:%'`))[0].n, 0, 'nothing is his yet');
+  for (const [, sid] of sids) await q(`insert into app.wall_link_runs (submission_id) values ('${sid}')`);
+  for (const role of roles) {
+    // A concern on the second stops it; one reviewer's outage (a 429) on the first doesn't block it.
     await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[1][1]}', 'm', 0, ${role === roles[0] ? "'concern', null" : "'ok', null"})`);
   }
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 1);
+  // The pass is recorded as the poster's, with the readings named, and the task approved.
+  assert.match((await q(`select reason from app.work_person_votes where submission_id = '${sids[0][1]}'`))[0].reason, /cleared by \d model reviewers/);
   assert.strictEqual((await q(`select status from app.work_tasks where id = '${sids[0][0]}'`))[0].status, 'approved');
   assert.strictEqual((await q(`select status from app.work_submissions where id = '${sids[1][1]}'`))[0].status, 'review');
   assert.strictEqual((await q(`select count(*)::int n from app.notices where title = 'High-risk work waits for you' and subject_id = '${sids[1][1]}'`))[0].n, 1);

@@ -140,9 +140,16 @@ begin
   end if;
   select count(*) into need from app.oversight_roles r
    where r.mode <> 'off' and r.role <> all (array['fable_report', 'fable_crosscheck', 'classifier']);
+  -- 094 review: only what work_poster_decide held after the poster's pass and Third Look can't read (not a poster's
+  -- timeout, not a pull request), with no open dispute, and not already sent to Aaron; filtered here so 20 held pieces
+  -- with a concern can't stall everyone else's.
   for x in select s.* from app.work_submissions s
-            where s.status = 'review' and s.route = 'admin' and s.held_reason is not null
+            where s.status = 'review' and s.route = 'admin' and s.artifact_kind <> 'pr'
+              and s.held_reason like 'The poster passed it, and it waits for a second look because %'
+              and not exists (select 1 from app.work_disputes d where d.submission_id = s.id and d.status = 'open')
+              and not exists (select 1 from app.notices n where n.dedupe_key = 'work:highrisk:' || s.id)
             order by s.routed_at limit 20 for update skip locked loop
+    begin
     bad := exists (select 1 from app.oversight_calls c where c.submission_id = x.id and c.verdict = 'concern')
         or exists (select 1 from app.wall_decisions d where d.kind = 'submission' and d.ref = x.id
                     and (d.decision <> 'allow' or jsonb_array_length(d.flags) > 0));
@@ -158,7 +165,15 @@ begin
     select count(distinct c.role) filter (where c.verdict = 'ok'), count(distinct c.role) filter (where c.error is distinct from 'pending')
       into ok, tried from app.oversight_calls c where c.submission_id = x.id
        and c.role <> all (array['fable_report', 'fable_crosscheck', 'classifier']);
-    if ok < 2 or tried < need then continue; end if;
+    if ok < 2 or tried < need then
+      -- Two days without enough readings (reviewers off, at their limits, or failing): Aaron hears of it once, so it
+      -- never fails unseen at 72 hours.
+      if x.routed_at < now() - interval '48 hours' then
+        perform app.notify(null, 'alert', 'High-risk work waits for you', left('The reviewers couldn''t finish reading this work in two days: ' || x.held_reason, 200),
+          '/admin/review#work', 'submission', x.id, 'work:highrisk:' || x.id);
+      end if;
+      continue;
+    end if;
     select * into t from app.work_tasks w where w.id = x.task_id for update;
     poster := coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent));
     insert into app.work_person_votes (submission_id, member_id, verdict, size, reason)
@@ -174,12 +189,156 @@ begin
       insert into app.work_checks (submission_id, why) values (x.id, 'random');
     end if;
     n := n + 1;
+    exception when others then
+      -- One bad row never stops the rest: it is skipped, and Aaron hears of it once.
+      perform app.notify(null, 'alert', 'High-risk work waits for you', left('The reviewers'' settle couldn''t finish this work: ' || sqlerrm, 200),
+        '/admin/review#work', 'submission', x.id, 'work:highrisk:' || x.id);
+    end;
   end loop;
   return n;
 end $$;
 revoke execute on function app.work_reviewers_settle() from public;
 grant execute on function app.work_reviewers_settle() to dog_app;
 
+
+-- 094 review: the reviewers read held work first.
+create or replace function app.oversight_claim(p_role text, p_n integer) returns table (submission_id uuid, model text)
+language plpgsql security definer set search_path = pg_catalog as $$
+declare
+  s record;
+  r record;
+  spent bigint;
+  today integer;
+  k integer;
+begin
+  if app.actor_kind() <> all (array['anon', 'system']) then
+    raise exception 'only the site''s timer runs the model reviewers' using errcode = '42501';
+  end if;
+  if p_n is null or p_n < 1 or p_n > 3 then raise exception 'bad claim' using errcode = '22023'; end if;
+  select * into s from app.oversight_settings x where x.singleton;
+  select * into r from app.oversight_roles x where x.role = p_role for update;
+  if r.id is null or r.mode = 'off' or s.monthly_cap_cents = 0 or r.role in ('fable_report', 'fable_crosscheck', 'classifier') then return; end if;
+  select count(*) into today from app.oversight_calls c where c.role = p_role and c.created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC';
+  k := least(p_n, r.daily_call_cap - today);
+  if s.monthly_cap_cents is not null then
+    select coalesce(sum(c.centi_cents), 0) into spent from app.oversight_calls c where c.created_at >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC';
+    k := least(k, ((s.monthly_cap_cents::bigint * 100 - spent) / r.call_price_centi_cents)::integer);
+  end if;
+  if k < 1 then return; end if;
+  return query
+    with picked as (
+      select x.id from app.work_submissions x
+       where x.status in ('waiting', 'review', 'passed') and (x.created_at > now() - interval '2 days' or (x.status = 'review' and x.route = 'admin'))
+         and not exists (select 1 from app.oversight_calls c where c.submission_id = x.id and c.role = p_role)
+       -- 094 review: held work waits on these readings, so it is read first, and while it waits, however old.
+       order by (x.status = 'review' and x.route = 'admin') desc, x.created_at limit k),
+    booked as (insert into app.oversight_calls (role, submission_id, model, centi_cents, error)
+               select p_role, picked.id, r.model, r.call_price_centi_cents, 'pending' from picked returning oversight_calls.submission_id)
+    select b.submission_id, r.model from booked b;
+end $$;
+
+-- 094 review: the daily alert counts only what is his.
+create or replace function app.work_tick()
+returns jsonb
+language plpgsql security definer set search_path = pg_catalog
+as $$
+declare
+  st record;
+  n_exp integer := 0;
+  n_final integer := 0;
+  n_fixed integer := 0;
+  x record;
+  waiting integer;
+  party boolean;
+  readable boolean;
+begin
+  select * into st from app.work_settings where singleton for update skip locked;
+  if not found or (st.last_tick_at is not null and st.last_tick_at > now() - interval '50 seconds') then return null; end if;
+  update app.work_settings set last_tick_at = now() where singleton;
+  for x in select c.id, c.task_id from app.work_claims c where c.status = 'active' and c.expires_at <= now() order by c.expires_at limit 500 for update skip locked loop
+    update app.work_claims c set status = 'expired', ended_at = now() where c.id = x.id;
+    update app.work_tasks t set status = 'open', updated_at = now() where t.id = x.task_id and t.status = 'claimed';
+    n_exp := n_exp + 1;
+  end loop;
+  -- Work the worker could fix (W07, W08) that wasn't fixed while the claim held: the rules decide it again, and it fails.
+  for x in select s.id from app.work_submissions s join app.work_claims c on c.id = s.claim_id
+           where s.status = 'waiting' and s.jevs_verdict = 'waiting' and c.expires_at <= now()
+             and (s.jevs_rules like '%W07%' or s.jevs_rules like '%W08%' or c.expires_at + make_interval(hours => st.audit_hours) <= now())
+           order by s.created_at limit 100 loop
+    perform app.work_jevs_run(x.id);
+    n_fixed := n_fixed + 1;
+  end loop;
+  -- Nothing waits for a person forever (the fresh review of #110, M1). A poster who hasn't checked within audit_hours
+  -- is passed over (052): to Third Look when it can read the work (held, if an administrator is a party), otherwise to an
+  -- administrator who isn't a party, and Aaron is told only then. Whatever no one decides within audit_hours of reaching
+  -- them fails: it isn't passed to clear a backlog; the task reopens and the worker may try again.
+  for x in select s.id, s.route, s.worker_member, s.artifact_kind, s.pr_number, t.poster_member, t.poster_agent from app.work_submissions s join app.work_tasks t on t.id = s.task_id
+           where s.status = 'review' and coalesce(s.routed_at, s.created_at) + make_interval(hours => st.audit_hours) <= now() order by s.created_at limit 100 loop
+    party := exists (select 1 from app.members m where m.is_admin
+               and m.id in (x.worker_member, coalesce(x.poster_member, (select g.owner_id from app.agents g where g.id = x.poster_agent))));
+    readable := (select y.mode from app.tl_settings y where y.singleton) = 'on' and x.artifact_kind = 'pr'
+                and exists (select 1 from app.work_github_prs g where g.number = x.pr_number and g.merged_at is not null and g.base = 'main');
+    if x.route = 'poster' and (readable or not party) then
+      update app.work_submissions y set route = case when party then 'held' else 'admin' end, routed_at = now(),
+        held_reason = 'The task''s poster didn''t check it within ' || st.audit_hours || ' hours.' where y.id = x.id;
+      if not readable then
+        perform app.notify(null, 'alert', 'Work a poster didn''t check waits for you', 'A poster didn''t check work on their task in time. Decide it on Review.', '/admin/review#work',
+          'submission', x.id, 'work:escalated:' || x.id);
+      end if;
+    else
+      perform app.work_finish(x.id, 'fail', 'timeout', 100, 'No one could decide it within ' || st.audit_hours || ' hours, so it isn''t passed. You may claim the task again.');
+    end if;
+    n_fixed := n_fixed + 1;
+  end loop;
+  -- Work sent to Third Look for an administrator that it hasn't answered halfway through its wait (Third Look off,
+  -- at its daily limit, or failing): Aaron is told once, so it never fails unseen.
+  for x in select s.id from app.work_submissions s join app.work_github_prs g on g.number = s.pr_number
+           where s.status = 'review' and s.route = 'admin' and s.artifact_kind = 'pr' and g.merged_at is not null and g.base = 'main'
+             and s.routed_at + make_interval(hours => st.audit_hours) / 2 <= now()
+             and s.routed_at + make_interval(hours => st.audit_hours) / 2 > now() - interval '6 hours'
+             and not exists (select 1 from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)
+           order by s.routed_at limit 100 loop
+    perform app.notify(null, 'alert', 'Work waits for you', 'Third Look hasn''t looked at this work, and half its wait has passed. Decide it on Review.',
+      '/admin/review#work', 'submission', x.id, 'work:held:' || x.id);
+  end loop;
+  -- Tasks left without their work by an account's deletion (the review, M2): a claimed or submitted task with no live
+  -- claim and nothing waiting reopens (a pull request of the repository's history closes); an open task whose poster
+  -- deleted their account closes, since no one is left to approve it.
+  update app.work_tasks t set status = case when t.source = 'github' and t.github_kind = 'pr' then 'closed' else 'open' end, updated_at = now()
+   where t.status in ('claimed', 'submitted')
+     and not exists (select 1 from app.work_claims c where c.task_id = t.id and c.status in ('active', 'submitted'))
+     and not exists (select 1 from app.work_submissions s where s.task_id = t.id and s.status in ('waiting', 'review'));
+  update app.work_tasks t set status = 'closed', updated_at = now()
+   where t.status = 'open' and t.source = 'member' and t.poster_member is null and t.poster_agent is null;
+  -- Points become final after the dispute window, unless a dispute or the check after is still open on them.
+  update app.work_points p set status = 'final' where p.status = 'pending' and p.final_at <= now()
+    and not exists (select 1 from app.work_disputes d where d.submission_id = p.submission_id and d.status = 'open')
+    and not exists (select 1 from app.work_checks k where k.submission_id = p.submission_id and k.status = 'open');
+  get diagnostics n_final = row_count;
+  -- Aaron's daily alert while anything waits for him (in-app, once a day).
+  -- Only what an administrator can decide now (052): work Third Look still has to look at waits for it; a check of work
+  -- every administrator is a party to, or a dispute none may decide, doesn't bring him back each day.
+  -- 094: held link work the model reviewers are still reading isn't his yet; only what they sent him (a high-risk
+  -- notice) counts.
+  select (select count(*) from app.work_submissions s where s.status = 'review' and s.route = 'admin'
+            and not (s.artifact_kind <> 'pr' and s.held_reason like 'The poster passed it, and it waits for a second look because %'
+                     and not exists (select 1 from app.notices n where n.dedupe_key = 'work:highrisk:' || s.id))
+            and (exists (select 1 from app.tl_reviews r where r.submission_id = s.id and r.decided_at is not null)
+                 or s.artifact_kind <> 'pr' or (select y.mode from app.tl_settings y where y.singleton) <> 'on'
+                 or not exists (select 1 from app.work_github_prs g where g.number = s.pr_number and g.merged_at is not null and g.base = 'main')))
+       + (select count(*) from app.work_checks k where k.status = 'open'
+            and exists (select 1 from app.members m where m.is_admin and not app.work_party(k.submission_id, m.id)))
+       + (select count(*) from app.work_disputes d where d.status = 'open'
+            and exists (select 1 from app.members m where m.is_admin and app.work_may_settle(d.id, m.id) is not null)) into waiting;
+  if waiting > 0 and st.last_alert_day is distinct from (now() at time zone 'UTC')::date then
+    update app.work_settings set last_alert_day = (now() at time zone 'UTC')::date where singleton;
+    perform app.notify(null, 'alert', 'Work waits for you', waiting || case when waiting = 1 then ' item of work waits' else ' items of work wait' end
+      || ' for you on Review: risky work, work a poster didn''t check, checks after a pass, or disputes. Points under a check or a dispute stay pending; nothing else stops.', '/admin/review#work', null, null,
+      'work:waiting:' || to_char(now() at time zone 'UTC', 'YYYYMMDD'));
+  end if;
+  return jsonb_build_object('expired', n_exp, 'finalised', n_final, 'unfixed', n_fixed);
+end
+$$;
 
 -- 094: the SOLO card shows the agent's own name (public already: posts and the directory show it).
 create or replace function app.work_portfolio(p_agent uuid) returns jsonb

@@ -374,11 +374,11 @@
     },
     {
       "version": "094_solo_no_hold",
-      "sha256": "a94436d2cff458e7cc6eda93411a69ed5d3f2d51703d351e5b162dad54e50988"
+      "sha256": "823814e99195455fccc2f9e95da70e0a4b0c0d2e5177fb650d44b8df28fa198f"
     },
     {
       "version": "095_sandbox_links",
-      "sha256": "43abd224786941f029d0cd71108094d4ae21e627d8ca67a7c3c4e4469d91a7d1"
+      "sha256": "02e714b20ea2f1968cd5a4dc7c6c293eaf257f710208a3d5e10200e103bb6103"
     }
   ]
 }

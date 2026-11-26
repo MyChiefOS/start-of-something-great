@@ -115,7 +115,8 @@ jobs:
           printf '%s' "$out" | head -c 400000 > findings.json
           jq -e 'type == "object"' findings.json > /dev/null 2>&1 || echo '{}' > findings.json
           echo "findings=$(jq -c . findings.json)" >> "$GITHUB_OUTPUT"
-          jq -r 'to_entries[] | select(.value.flags | length > 0) | .key + ": " + (.value.flags | join(" | "))' findings.json || true
+          # Counts only in the public log: the flags quote submitted links (094 review).
+          jq -r '"links with findings: " + ([to_entries[] | select(.value.flags | length > 0)] | length | tostring)' findings.json || true
 
   # 088: the Wall's sandbox (wall/sandbox.js). Runs the recently pushed pull requests' runnable files in bubblewrap with
   # no network, a read-only disk and no environment, and hands its findings to the facts job as JSON. This job can read

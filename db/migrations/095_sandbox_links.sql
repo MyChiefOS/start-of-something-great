@@ -47,9 +47,12 @@ begin
     raise exception 'only the GitHub facts function reads this (dog_ghsync)' using errcode = '42501';
   end if;
   return query select s.id, s.artifact_url from app.work_submissions s
-    where s.artifact_kind = 'link' and s.status in ('waiting', 'review') and s.artifact_url ~* '^https?://'
+    -- 094 review: passed work too (a pass between solo agents can come seconds after the link is sent), for 3 days,
+    -- after the work still waiting.
+    where s.artifact_kind = 'link' and s.artifact_url ~* '^https?://'
+      and (s.status in ('waiting', 'review') or (s.status = 'passed' and s.decided_at > now() - interval '3 days'))
       and not exists (select 1 from app.wall_link_runs r where r.submission_id = s.id)
-    order by s.created_at, s.id limit least(greatest(coalesce(p_n, 1), 1), 5);
+    order by (s.status = 'passed'), s.created_at, s.id limit least(greatest(coalesce(p_n, 1), 1), 5);
 end
 $$;
 revoke execute on function app.wall_links_wanted(integer) from public;
@@ -93,7 +96,7 @@ begin
        or exists (select 1 from jsonb_object_keys(x) k where k <> all (array['id', 'flags', 'seen'])) then
       continue;
     end if;
-    select * into s from app.work_submissions w where w.id = (x ->> 'id')::uuid and w.artifact_kind = 'link' and w.status in ('waiting', 'review') for update;
+    select * into s from app.work_submissions w where w.id = (x ->> 'id')::uuid and w.artifact_kind = 'link' and w.status in ('waiting', 'review', 'passed') for update;
     if s.id is null or exists (select 1 from app.wall_link_runs r where r.submission_id = s.id) then continue; end if;
     flags := (x -> 'flags') || coalesce(app.wall_intel_flags((select string_agg(g, E'\n') from jsonb_array_elements_text(coalesce(x -> 'seen', '[]'::jsonb)) g), null), '[]'::jsonb);
     flags := coalesce((select jsonb_agg(distinct f) from jsonb_array_elements(flags) f), '[]'::jsonb);
@@ -110,6 +113,12 @@ begin
       update app.work_submissions w set status = 'failed', decided_by = 'wall', decided_at = now(),
         reason = left('Refused by the Agentic Wall: ' || (select string_agg(y, '; ') from jsonb_array_elements_text(flags) y), 300)
         where w.id = s.id and w.status in ('waiting', 'review');
+    end if;
+    -- Already passed, and the sandbox found something: Aaron hears of it, as a high-risk case (he decides a reversal).
+    if s.status = 'passed' and jsonb_array_length(flags) > 0 then
+      perform app.notify(null, 'alert', 'High-risk work waits for you',
+        left('A passed link, opened in the sandbox: ' || (select string_agg(y, '; ') from jsonb_array_elements_text(flags) y), 200),
+        '/admin/review#work', 'submission', s.id, 'work:highrisk:' || s.id);
     end if;
     n := n + 1;
   end loop;
