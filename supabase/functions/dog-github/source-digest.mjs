@@ -4,8 +4,8 @@
 // function returns it as x-source-digest (R-3); the daily watch compares it with main's.
 export const SOURCE_FILES = {
   "_shared/github-oidc.mjs": "00cf45c9350dda3b31b92c6f976c21de2db1c79003e924456535344c9b6a0606",
-  "dog-github/core.mjs": "6be78a7e5e260d8cbbb3502b6af3fea9f9ffe52199457e0c9426eb96e6225df3",
+  "dog-github/core.mjs": "11542d31f13953009f286abefe6259bf3fede81f29351e1821b2c86114ba1cb2",
   "dog-github/index.ts": "418be3935bb0e2fd9e264100d10f13446a91d3fe153d92808cb32e7aa1b6446f",
   "dog-migrate/core.mjs": "3603bc10413fe8bc6d9f334256fa8af27b6d2ddb6ae770efe68b2914cadae8ae",
 };
-export const SOURCE_DIGEST = "a5d8fd9e49f08a19acdd0f1bc96c9e05205161d25fa151ee73f0b6ff1408bcbc";
+export const SOURCE_DIGEST = "aba8a2494654c2ed55bea0a2eeb1316ecc08061a56bb997faf95646dc8f5ae1c";
