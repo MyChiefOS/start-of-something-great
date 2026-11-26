@@ -154,7 +154,7 @@ test('WO6 pay-as-you-go (Aaron, Nov 26): no monthly cap, the four reviewers and 
   assert.deepStrictEqual([...await q('select monthly_cap_cents from app.oversight_settings')], [{ monthly_cap_cents: null }]);
   const roles = Object.fromEntries((await q('select role, mode from app.oversight_roles')).map((r) => [r.role, r.mode]));
   for (const r of ['exploit_researcher', 'penetration_tester', 'quality_assurance', 'solution_architect', 'classifier']) assert.strictEqual(roles[r], 'on', r);
-  assert.strictEqual(roles.fable_report, 'off', 'the Fable report is the next PR\'s');
+  assert.strictEqual(roles.fable_report, 'on', 'turned on by 089, the next PR');
   // With no submissions there is nothing to claim, but the claim runs (no cap refusal).
   assert.deepStrictEqual([...await anon((t) => t`select * from app.oversight_claim('exploit_researcher', 3)`)], []);
   // A daily cap of 0 stops the role.

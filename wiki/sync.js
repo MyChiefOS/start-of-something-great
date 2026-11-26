@@ -117,7 +117,12 @@ function indicatorOf(kind, value, source, ref) {
 }
 
 // The threat feeds. Each one that fails is skipped (and counted as 0); the others still record.
-async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now } = {}) {
+async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now, deadline: until } = {}) {
+  // Nov 26 (Vercel's limit, checked): the timer's function may run 300 s at most, and the reviewers run after the wiki
+  // in the same call. So the feeds share one deadline: each download's timeout is cut to the time left, and a feed with
+  // no time left is carried over from the last version like any failed feed (never a half-written wiki).
+  const deadline = until || now() + FEEDS_BUDGET_MS;
+  const budget = (ms) => { const left = deadline - now(); if (left < 1000) throw new Error('out of time'); return AbortSignal.timeout(Math.min(ms, left)); };
   const out = [];
   const newest = {};
   const counts = { feodo: 0, spamhaus: 0, certpl: 0, phishtank: 0, et: 0, cins: 0, eset: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
@@ -126,7 +131,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
   // 082 review: each feed's answer is capped at 8 MB before it is parsed, and each feed at a fixed count, so the whole
   // run stays well under the database's 16 MB limit (an oversized feed is skipped; the CVEs still record).
   const get = async (url, init) => {
-    const r = await fetchImpl(url, Object.assign({ signal: AbortSignal.timeout(20000) }, init));
+    const r = await fetchImpl(url, Object.assign({ signal: budget(20000) }, init));
     if (r.status !== 200) throw new Error(url + ' ' + r.status);
     const body = typeof r.text === 'function' ? await r.text() : JSON.stringify(await r.json());
     if (body.length > 8000000) throw new Error(url + ' too large');
@@ -142,7 +147,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
     counts[name]++;
   };
   const text = async (url, max) => {
-    const r = await fetchImpl(url, { signal: AbortSignal.timeout(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
+    const r = await fetchImpl(url, { signal: budget(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
     if (r.status !== 200) throw new Error(url + ' ' + r.status);
     const t = await r.text();
     if (t.length > max) throw new Error(url + ' too large');
@@ -156,7 +161,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
   try { for (const a of lines(await text(CINS, 2000000), 20000)) group('cins', 'ip', a); } catch { carry.push('cins'); }
   if (daily) {
     try {
-      const r = await fetchImpl(PHISHTANK, { signal: AbortSignal.timeout(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
+      const r = await fetchImpl(PHISHTANK, { signal: budget(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
       if (r.status !== 200) throw new Error('phishtank ' + r.status);
       const gz = Buffer.from(await r.arrayBuffer());
       if (gz.length > 8000000) throw new Error('phishtank too large');
@@ -173,12 +178,14 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       }
     } catch { carry.push('phishtank'); }
     try {
-      const r = await fetchImpl(ESET_TREE, { signal: AbortSignal.timeout(20000), headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-security-wiki' } });
+      const r = await fetchImpl(ESET_TREE, { signal: budget(20000), headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-security-wiki' } });
       if (r.status !== 200) throw new Error('eset ' + r.status);
       const tree = await r.json();
       const paths = (tree && Array.isArray(tree.tree) ? tree.tree : []).map((x) => x && x.path).filter((x) => typeof x === 'string' && x.endsWith('.sha256') && !x.includes('..')).slice(0, 300);
-      for (const pth of paths) {
-        try { for (const l of lines(await text(ESET_RAW + pth.split('/').map(encodeURIComponent).join('/'), 2000000), 20000)) group('eset', 'sha256', l.split(/\s/)[0]); } catch { /* one file skipped */ }
+      // Ten at a time (Nov 26): up to 300 small files, one after another, could take most of the function's 300 s.
+      for (let i = 0; i < paths.length; i += 10) {
+        const got = await Promise.all(paths.slice(i, i + 10).map((pth) => text(ESET_RAW + pth.split('/').map(encodeURIComponent).join('/'), 2000000).catch(() => null)));
+        for (const t of got) if (t) for (const l of lines(t, 20000)) group('eset', 'sha256', l.split(/\s/)[0]);
       }
       if (!counts.eset) carry.push('eset');
     } catch { carry.push('eset'); }
@@ -195,7 +202,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
   } catch { /* skipped this run */ }
   if (new Date(now()).getUTCHours() < 12) {
     try {
-      const r = await fetchImpl(SPAMHAUS, { headers: { accept: 'application/x-ndjson' }, signal: AbortSignal.timeout(20000) });
+      const r = await fetchImpl(SPAMHAUS, { headers: { accept: 'application/x-ndjson' }, signal: budget(20000) });
       if (r.status !== 200) throw new Error('spamhaus ' + r.status);
       const text = await r.text();
       if (text.length > 2000000) throw new Error('spamhaus too large');
@@ -204,7 +211,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
         // Only a true network (no host bits set): 1.2.3.4/8 would be refused by the database and lose the whole run.
         if (o && o.cidr && isNetwork(o.cidr)) add('spamhaus', indicatorOf('cidr', o.cidr, 'spamhaus', o.sblid));
       }
-      const r6 = await fetchImpl(SPAMHAUS6, { headers: { accept: 'application/x-ndjson' }, signal: AbortSignal.timeout(20000) });
+      const r6 = await fetchImpl(SPAMHAUS6, { headers: { accept: 'application/x-ndjson' }, signal: budget(20000) });
       if (r6.status !== 200) throw new Error('spamhaus v6 ' + r6.status);
       const text6 = await r6.text();
       if (text6.length > 2000000) throw new Error('spamhaus v6 too large');
@@ -238,7 +245,8 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
-async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOpt, pause = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = {}) {
+async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOpt, pause = (ms) => new Promise((ok) => setTimeout(ok, ms)), deadline = now() + GATHER_BUDGET_MS } = {}) {
+  const budget = (ms) => { const left = deadline - now(); if (left < 1000) throw new Error('out of time'); return AbortSignal.timeout(Math.min(ms, left)); };
   const end = new Date(now());
   const start = new Date(end.getTime() - 3 * DAY);
   // The offset's plus sign must be encoded: a bare + in a query reads as a space, and NVD answers 404 (found Nov 25: the
@@ -253,7 +261,7 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   for (let page = 0, startIndex = 0; page < 4; page++) {
     if (page > 0) await pause(nvdKey ? 1000 : 6500);
     const url = NVD + '?lastModStartDate=' + iso(start) + '&lastModEndDate=' + iso(end) + '&resultsPerPage=2000&startIndex=' + startIndex;
-    const r = await fetchImpl(url, { headers, signal: AbortSignal.timeout(20000) });
+    const r = await fetchImpl(url, { headers, signal: budget(20000) });
     if (r.status !== 200) { if (page === 0) throw new Error('nvd ' + r.status); break; }
     const body = await r.json();
     const got = Array.isArray(body && body.vulnerabilities) ? body.vulnerabilities.slice(0, 2000) : [];
@@ -271,7 +279,7 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   // CISA's full Known Exploited Vulnerabilities catalog (public, no key): every listed CVE is kept, not only those NVD
   // changed in the window. One failing read skips it this run.
   try {
-    const r = await fetchImpl(KEV, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+    const r = await fetchImpl(KEV, { headers: { accept: 'application/json' }, signal: budget(20000) });
     if (r.status === 200) {
       const body = await r.json();
       const have = new Map(entries.map((e) => [e.ident, e]));
@@ -290,7 +298,7 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   const sources = { nvd: entries.filter((e) => e.source === 'nvd').length, kev: entries.filter((e) => e.kev).length, cwe: 0, owasp_api: 0, asvs: 0, npm_packages: packages.length };
   for (const e of REFERENCE.entries) sources[e.source]++;
   // 082: the threat feeds and the wiki's own injection patterns, for the Wall.
-  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key, now });
+  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key, now, deadline: Math.min(deadline - 10000, now() + FEEDS_BUDGET_MS) });
   const indicators = f.indicators;
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
@@ -299,15 +307,19 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   // 088 (Aaron's plan, Phase 1 item 1: YARA rules in the wiki sync): the YARA Forge release the Wall's file scanner
   // uses, pinned by its tag and SHA-256 with each wiki version; the facts workflow downloads exactly that release and
   // checks its digest. If GitHub doesn't say (rate limits), the pin is left out and the scanner reads the latest.
-  const pin = await yaraPin(fetchImpl);
+  const pin = deadline - now() > 2000 ? await yaraPin(fetchImpl, Math.min(10000, deadline - now())) : null;
   if (pin) sources.yara = pin;
   return { entries, packages, indicators, indicator_groups: f.groups, sources, carry: f.carry };
 }
 
+// The whole gather (CVEs, KEV, feeds, the YARA pin) has 200 s; the database write after it has 60 s (086): 260 s in
+// all, under Vercel's 300 s. The feeds get what is left after the CVEs, up to 150 s.
+const GATHER_BUDGET_MS = 200000;
+const FEEDS_BUDGET_MS = 150000;
 const YARA_RELEASE = 'https://api.github.com/repos/YARAHQ/yara-forge/releases/latest';
-async function yaraPin(fetchImpl = fetch) {
+async function yaraPin(fetchImpl = fetch, ms = 10000) {
   try {
-    const r = await fetchImpl(YARA_RELEASE, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-wiki' }, signal: AbortSignal.timeout(10000) });
+    const r = await fetchImpl(YARA_RELEASE, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-wiki' }, signal: AbortSignal.timeout(ms) });
     if (r.status !== 200) return null;
     const rel = await r.json();
     const tag = String((rel && rel.tag_name) || '');
@@ -334,4 +346,4 @@ async function run(runTx, { fetchImpl, now } = {}) {
   }
 }
 
-module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED, yaraPin, YARA_RELEASE };
+module.exports = { GATHER_BUDGET_MS, FEEDS_BUDGET_MS, run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED, yaraPin, YARA_RELEASE };

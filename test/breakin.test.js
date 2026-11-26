@@ -234,6 +234,9 @@ test.before(async () => {
     await t.unsafe(`insert into app.oversight_calls (role, submission_id, model, centi_cents) select 'quality_assurance', s.id, 'mistral/ministral-14b', 0 from app.work_submissions s where s.worker_member = '${A.id}' limit 1`);
     await t.unsafe(`insert into app.audit_samples (kind, ref) select 'passed_work', s.id from app.work_submissions s where s.worker_member = '${A.id}' limit 1`);
     await t.unsafe(`insert into app.oversight_reports (day, facts) values (current_date, '{}')`);
+    // 089: a weekly cross-check (names no one) and A's appeal of a Wall decision on A's work.
+    await t.unsafe(`insert into app.oversight_crosschecks (week, model) values (current_date, 'openai/gpt-5.5')`);
+    await t.unsafe(`insert into app.wall_appeals (decision_id, member_id, reason) select d.id, '${A.id}', 'My own work.' from app.wall_decisions d where d.member_id = '${A.id}' limit 1`);
     // 076: an administrator's review of a Wall decision on A's task (decisions are written by the Wall's triggers).
     await t.unsafe(`insert into app.wall_reviews (decision_id, verdict, reason, reviewed_by) select d.id, 'confirmed', 'Checked.', '${A.id}' from app.wall_decisions d where d.member_id = '${A.id}' limit 1`);
     // 081: the Wall's note of a task it removed (names no one), on A's task.

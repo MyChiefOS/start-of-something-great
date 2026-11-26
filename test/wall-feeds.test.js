@@ -96,3 +96,29 @@ test('FD7 OSV unreachable or erroring: flagged that the check did not run, never
   assert.ok(err[0].flag.includes('OSV answered 503'));
   assert.deepStrictEqual(await osvFlags([], { fetchImpl: async () => { throw new Error('never'); } }), []);
 });
+
+test('WT1 (Nov 26, Vercel\'s 300 s limit): every download shares one deadline; when feeds hang, the run stops on time and carries the rest over', async () => {
+  const sync = require('../wiki/sync');
+  let clock = Date.parse('2026-11-26T12:38:00Z');
+  const start = clock;
+  const asked = [];
+  // Every download takes its whole timeout and fails, as if each source hung.
+  const fetchImpl = async (url, init) => {
+    asked.push(String(url));
+    if (/nvd\.nist\.gov|cisa\.gov/.test(String(url))) return { status: 200, json: async () => ({ vulnerabilities: [], totalResults: 0 }), text: async () => '{"vulnerabilities":[]}' };
+    clock += 30000;
+    throw new Error('timed out');
+  };
+  let got;
+  try { got = await sync.gather({ fetchImpl, key: 'k', nvdKey: '', now: () => clock, pause: async (ms) => { clock += ms; } }); } catch (e) { got = { error: e.message }; }
+  assert.ok(clock - start <= sync.GATHER_BUDGET_MS + 30000, 'stopped within the budget: ' + (clock - start) + ' ms');
+  assert.ok(sync.GATHER_BUDGET_MS + 60000 < 300000, 'the gather and the 60 s write fit in 300 s');
+  assert.ok(!got.error, got.error);
+  assert.ok(got.carry.length > 0, 'the feeds that ran out of time carry over');
+  assert.ok(asked.length > 3, 'the feeds were tried: ' + asked.length);
+});
+
+test('WT2 the timer\'s function asks Vercel for 300 s, the most every plan allows with Fluid compute', () => {
+  const v = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'vercel.json'), 'utf8'));
+  assert.strictEqual(v.functions['api/cron.js'].maxDuration, 300);
+});
