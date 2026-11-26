@@ -234,19 +234,21 @@ function repoCanaries() {
   return out;
 }
 
-// 085: YARA Forge's core pack, read once a run (at most 20 MB), its rules prepared by wall/yara.js. Null if it can't be
-// read: the files are still scanned by wall/files.js, and the next run tries again.
+// 085: YARA Forge's core pack, read once a run (at most 20 MB), its rules prepared by wall/yara.js. 087: if it can't be
+// read or doesn't compile, the result says so ({ broken }) and every file scanned that run carries a W42b flag saying
+// the signature check didn't run (never silent); wall/files.js still scans them, and the next run tries again.
 async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
   try {
     const yara = require('../wall/yara');
     const r = await fetchImpl(yara.FORGE_CORE, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
-    if (!r.ok) return null;
+    if (!r.ok) return { broken: 'rules not reachable, ' + r.status };
     const zip = Buffer.from(await r.arrayBuffer());
-    if (zip.length > 20 * 1024 * 1024) return null;
+    if (zip.length > 20 * 1024 * 1024) return { broken: 'rules too large' };
     const entry = (wallFiles.zipEntries(zip) || []).find((e) => e.name.endsWith('.yar'));
-    if (!entry || entry.usize > 40 * 1024 * 1024) return null;
-    return await yara.prepare(wallFiles.zipRead(zip, entry).toString('utf8'), { extraCanaries: repoCanaries() });
-  } catch { return null; }
+    if (!entry || entry.usize > 40 * 1024 * 1024) return { broken: 'rules file missing or too large' };
+    const p = await yara.prepare(wallFiles.zipRead(zip, entry).toString('utf8'), { extraCanaries: repoCanaries() });
+    return p.kept || p.broken ? p : { broken: 'no usable rules' };
+  } catch { return { broken: 'rules could not be read' }; }
 }
 
 async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null }) {
