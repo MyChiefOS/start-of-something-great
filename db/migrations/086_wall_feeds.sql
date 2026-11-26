@@ -3,9 +3,9 @@
 --   security vendors; a source anyone can be listed in by mistake only scores (flags):
 --     CERT Polska's warning list (phishing domains)       block   "may be used by any user for any purpose"
 --     PhishTank verified online URLs (Cisco Talos)        block   commercial use OK (FAQ); read once a day
---     Emerging Threats Open compromised and block IPs     block   BSD (Proofpoint), with credit
 --     ESET malware-ioc file fingerprints                  block   BSD-2-Clause, with credit; read once a day
 --     CINS Army bad IPs                                   flag    "use in any way you see fit"; addresses get reassigned
+--     Emerging Threats Open compromised IPs               flag    BSD (Proofpoint), with credit; many are cloud addresses
 --     OSV.dev npm advisories and malicious packages       block a malicious package (W25), flag a vulnerable one (W25b)
 --   OSV is asked about the packages a pull request adds (in the facts workflow), so version ranges count, not only
 --   exact versions (Claude's own narrowing in 074, undone).
@@ -63,8 +63,8 @@ begin
       from app.wiki_indicators i where i.version_id = vid and i.kind in ('injection', 'injection_flag') and strpos(n, i.value) > 0
     limit 20
   loop
-    -- 086: a score-only source (CINS Army: IP addresses get reassigned and shared) is flagged, never blocked.
-    if hit.rule = 'W28' and hit.source = any (array['cins']) then hit.rule := 'W28b'; end if;
+    -- 086: a score-only source (CINS Army, Emerging Threats: addresses get reassigned and shared) is flagged, never blocked.
+    if hit.rule = 'W28' and hit.source = any (array['cins', 'et']) then hit.rule := 'W28b'; end if;
     f := f || jsonb_build_array(hit.rule || case hit.rule when 'W33' then ' known-bad file fingerprint' when 'W29' then ' injection pattern' when 'W29b' then ' injection phrase' else ' known-bad ' || hit.kind end
            || ' (security wiki, ' || hit.source || coalesce(' ' || hit.ref, '') || '): ' || left(hit.value, 100));
   end loop;
@@ -76,10 +76,10 @@ reset role;
 alter table app.wall_rules disable row level security;
 insert into app.wall_rules (rule, effect, what) values
   ('W25b', 'flag', 'A dependency at a version with a known vulnerability (OSV.dev; a malicious package is W25 and blocks)'),
-  ('W28b', 'flag', 'An address on a score-only threat list (CINS Army): flagged, never blocked, since addresses get reassigned');
+  ('W28b', 'flag', 'An address on a score-only threat list (CINS Army, Emerging Threats): flagged, never blocked, since addresses get reassigned');
 update app.wall_rules set what = 'A dependency that is a known malicious package (OSV.dev, OpenSSF), or pinned to a version the security wiki names in an advisory' where rule = 'W25';
-update app.wall_rules set what = 'A known-bad IP address, domain or URL from the security wiki''s threat feeds (Spamhaus DROP, Feodo Tracker, CERT Polska, PhishTank, Emerging Threats)' where rule = 'W28';
-update app.wall_rules set what = 'A request from an address or range on the security wiki''s blocking threat lists (Spamhaus DROP, Feodo Tracker, Emerging Threats)' where rule = 'W38';
+update app.wall_rules set what = 'A known-bad IP address, domain or URL from the security wiki''s threat feeds (Spamhaus DROP, Feodo Tracker, CERT Polska, PhishTank)' where rule = 'W28';
+update app.wall_rules set what = 'A request from an address or range on the security wiki''s blocking threat lists (Spamhaus DROP, Feodo Tracker)' where rule = 'W38';
 update app.wall_rules set what = 'A file fingerprint on the security wiki''s known-bad list (ESET)' where rule = 'W33';
 alter table app.wall_rules enable row level security;
 
@@ -139,7 +139,7 @@ begin
   if jsonb_typeof(p -> 'carry') = 'array' then
     insert into app.wiki_indicators (version_id, kind, value, source, ref)
       select vid, x.kind, x.value, x.source, x.ref from app.wiki_indicators x join app.wiki_versions v on v.id = x.version_id and v.status = 'active'
-       where x.source in (select jsonb_array_elements_text(p -> 'carry')) and x.source = any (array['spamhaus', 'phishtank', 'eset'])
+       where x.source in (select jsonb_array_elements_text(p -> 'carry')) and x.source = any (array['spamhaus', 'phishtank', 'eset', 'certpl', 'et', 'cins'])
       on conflict do nothing;
   end if;
   insert into app.wiki_indicators (version_id, kind, value, source, ref)
@@ -197,7 +197,7 @@ language sql stable security definer set search_path = pg_catalog as $$
   select jsonb_build_object('version', (select v.id from app.wiki_versions v where v.status = 'active'),
     'firewall_since', (select w.firewall_since from app.wall_settings w where w.singleton),
     'addresses', coalesce((select jsonb_agg(i.value order by i.value) from app.wiki_indicators i join app.wiki_versions v on v.id = i.version_id and v.status = 'active'
-                            where i.kind in ('ip', 'cidr') and i.source <> all (array['cins'])), '[]'::jsonb))
+                            where i.kind in ('ip', 'cidr') and i.source <> all (array['cins', 'et'])), '[]'::jsonb))
 $$;
 revoke execute on function app.wall_edge_addresses() from public;
 grant execute on function app.wall_edge_addresses() to dog_app;

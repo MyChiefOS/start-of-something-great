@@ -22,8 +22,9 @@ const SPAMHAUS = 'https://www.spamhaus.org/drop/drop_v4.json';
 // 086 (Aaron, Nov 26: "Lets implement your recommendations"): free sources, no account, commercial use allowed.
 const CERTPL = 'https://hole.cert.pl/domains/v2/domains.txt'; // CERT Polska: "may be used by any user for any purpose"
 const PHISHTANK = 'https://data.phishtank.com/data/online-valid.csv.gz'; // Cisco Talos: commercial use OK (FAQ); once a day
-const ET_COMPROMISED = 'https://rules.emergingthreats.net/blockrules/compromised-ips.txt'; // Proofpoint ET Open: BSD
-const ET_BLOCK = 'https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt';
+// Proofpoint ET Open, BSD. Scores only (086 review: many are cloud addresses that get reassigned). Its emerging-Block-IPs
+// file is not used: it carries DShield ranges under CC BY-NC-SA (non-commercial), and the rest is Spamhaus DROP.
+const ET_COMPROMISED = 'https://rules.emergingthreats.net/blockrules/compromised-ips.txt';
 const CINS = 'https://cinsscore.com/list/ci-badguys.txt'; // CINS Army: "use in any way you see fit"; scores only (W28b)
 const ESET_TREE = 'https://api.github.com/repos/eset/malware-ioc/git/trees/master?recursive=1'; // ESET: BSD-2-Clause; once a day
 const ESET_RAW = 'https://raw.githubusercontent.com/eset/malware-ioc/master/';
@@ -72,6 +73,21 @@ function packagesOf(item) {
     if (NAME.test(name) && name.length <= 214 && VERSION.test(version)) out.push({ ecosystem: 'npm', name, version, advisory: c.id });
   }
   return out;
+}
+
+// Hosts many people share: a phishing link there names the platform's page, not the attacker (086 review).
+const SHARED = ['google.com', 'googleusercontent.com', 'goo.gl', 'g.page', 'live.com', 'microsoft.com', 'microsoftonline.com', 'office.com', 'office365.com',
+  'outlook.com', 'sharepoint.com', 'onedrive.com', '1drv.ms', 'bing.com', 'dropbox.com', 'box.com', 'linkedin.com', 'lnkd.in', 'facebook.com', 'fb.me',
+  'instagram.com', 'twitter.com', 'x.com', 't.co', 'apple.com', 'icloud.com', 'amazon.com', 'amazonaws.com', 'yahoo.com', 'booking.com', 'paypal.com',
+  'github.com', 'githubusercontent.com', 'gitlab.com', 'bit.ly', 'tinyurl.com', 'is.gd', 'ow.ly', 'rb.gy', 'cutt.ly', 'wix.com', 'wixsite.com', 'weebly.com',
+  'webflow.io', 'netlify.app', 'vercel.app', 'pages.dev', 'workers.dev', 'firebaseapp.com', 'web.app', 'blogspot.com', 'wordpress.com', 'square.site',
+  'notion.site', 'canva.com', 'forms.gle', 'docs.google.com', 'sites.google.com', 'cloudfront.net', 'azurewebsites.net', 'herokuapp.com', 'glitch.me', 'repl.co'];
+function sharedHost(url) {
+  let h = String(url).toLowerCase();
+  const p = h.indexOf('://'); if (p !== -1) h = h.slice(p + 3);
+  for (const c of ['/', '?', '#', ':']) { const i = h.indexOf(c); if (i !== -1) h = h.slice(0, i); }
+  const at = h.lastIndexOf('@'); if (at !== -1) h = h.slice(at + 1);
+  return SHARED.some((d) => h === d || h.endsWith('.' + d));
 }
 
 function isNetwork(cidr) {
@@ -128,11 +144,10 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
   };
   const lines = (t, n) => t.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).slice(0, n);
   const daily = new Date(now()).getUTCHours() < 12;
-  try { for (const d of lines(await text(CERTPL, 8000000), 160000)) group('certpl', 'domain', d); } catch { /* skipped this run */ }
-  for (const u of [ET_COMPROMISED, ET_BLOCK]) {
-    try { for (const a of lines(await text(u, 1000000), 10000)) group('et', a.includes('/') ? (isNetwork(a) ? 'cidr' : '') : 'ip', a); } catch { /* skipped */ }
-  }
-  try { for (const a of lines(await text(CINS, 2000000), 20000)) group('cins', 'ip', a); } catch { /* skipped */ }
+  // A list that can't be read this run keeps its last copy (carried over), so an outage never empties it (086 review).
+  try { for (const d of lines(await text(CERTPL, 8000000), 160000)) group('certpl', 'domain', d); } catch { carry.push('certpl'); }
+  try { for (const a of lines(await text(ET_COMPROMISED, 1000000), 10000)) group('et', 'ip', a); } catch { carry.push('et'); }
+  try { for (const a of lines(await text(CINS, 2000000), 20000)) group('cins', 'ip', a); } catch { carry.push('cins'); }
   if (daily) {
     try {
       const r = await fetchImpl(PHISHTANK, { signal: AbortSignal.timeout(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
@@ -145,7 +160,10 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       for (const line of csv.split('\n').slice(1, 80001)) {
         const a = line.indexOf(','); const b = line.indexOf(',', a + 1);
         if (a < 0 || b < 0 || line[a + 1] === '"') continue;
-        group('phishtank', 'url', line.slice(a + 1, b));
+        const u = line.slice(a + 1, b);
+        // 086 review: a phishing link on a big shared platform (Google's redirect page, Dropbox's login, a link
+        // shortener) would collapse to that platform's ordinary page and block honest links: such links are left out.
+        if (!sharedHost(u)) group('phishtank', 'url', u);
       }
     } catch { carry.push('phishtank'); }
     try {
@@ -268,11 +286,12 @@ async function run(runTx, { fetchImpl, now } = {}) {
   let payload;
   try { payload = await gather({ fetchImpl, now }); } catch { return { ran: true, recorded: null }; }
   try {
-    const [{ r }] = await runTx({ actor: 'anon' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify(payload)}::text::jsonb) as r`);
+    // 086 review: a full run (about 200,000 indicators) takes longer than the usual 5 s, so this one statement gets 60 s.
+    const [{ r }] = await runTx({ actor: 'anon', timeout: 'wiki' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify(payload)}::text::jsonb) as r`);
     return { ran: true, recorded: r };
   } catch {
     return { ran: true, recorded: null };
   }
 }
 
-module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds };
+module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED };

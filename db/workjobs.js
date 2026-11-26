@@ -162,8 +162,9 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
-// 086: the npm packages a pull request adds to a package.json (its patch's added lines), each with the lowest version
-// its range allows, for OSV.dev. Plain string work: no regular expression reads the patch.
+// 086: the npm packages a pull request adds to a package.json (its patch's added lines), for OSV.dev. An exact version
+// ("1.2.3") is checked as that version; anything else (a range, "latest", a git link) is checked by name alone (086
+// review: a range can install any version it allows). Plain string work: no regular expression reads the patch.
 function addedPackages(files) {
   const out = [];
   for (const f of files || []) {
@@ -178,36 +179,44 @@ function addedPackages(files) {
       if (rest[0] !== ':') continue;
       const v = rest.slice(1).trim();
       if (v[0] !== '"') continue;
-      let spec = v.slice(1, v.indexOf('"', 1));
-      while (spec && '^~>=< v'.includes(spec[0])) spec = spec.slice(1);
+      const spec = v.slice(1, v.indexOf('"', 1)).trim();
+      if (['version', 'node', 'npm', 'name', 'description', 'main', 'license', 'type'].includes(name) || name.length > 214 || !spec) continue;
       const parts = spec.split('.');
-      if (parts.length < 3 || !parts.slice(0, 3).every((x) => x.length && [...x].every((c) => c >= '0' && c <= '9'))) continue;
-      if (['version', 'node', 'npm'].includes(name) || name.length > 214) continue;
-      out.push({ name, version: parts.slice(0, 2).join('.') + '.' + parts[2].split('-')[0], file: f.filename });
+      const exact = parts.length === 3 && parts.every((x) => x.length && [...x].every((c) => c >= '0' && c <= '9'));
+      out.push({ name, version: exact ? spec : null, spec: spec.slice(0, 60), file: f.filename });
     }
   }
   return out.slice(0, 100);
 }
 
 // 086: OSV.dev (no key; GitHub advisories CC-BY 4.0, OpenSSF malicious packages Apache-2.0) on the packages a pull
-// request adds: a malicious package blocks (W25), a version with a known vulnerability is flagged (W25b).
+// request adds. An exact version that is malicious blocks (W25); a range or tag that names a package with any malicious
+// version is flagged (W25b), since the version that installs may be an honest one; a known vulnerability in an exact
+// version is flagged (W25b). If OSV can't be reached, that is flagged too, so a skipped check is never silent.
 async function osvFlags(pkgs, { fetchImpl = globalThis.fetch } = {}) {
   if (!pkgs.length) return [];
   try {
     const r = await fetchImpl('https://api.osv.dev/v1/querybatch', { method: 'POST', signal: AbortSignal.timeout(20_000), headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: 'npm' }, version: p.version })) }) });
-    if (!r.ok) return [];
+      body: JSON.stringify({ queries: pkgs.map((p) => (p.version ? { package: { name: p.name, ecosystem: 'npm' }, version: p.version } : { package: { name: p.name, ecosystem: 'npm' } })) }) });
+    if (!r.ok) return unchecked(pkgs, 'OSV answered ' + r.status);
     const b = await r.json();
     const out = [];
     (Array.isArray(b && b.results) ? b.results : []).forEach((res, i) => {
       const ids = (Array.isArray(res && res.vulns) ? res.vulns : []).map((v) => String(v && v.id)).filter((x) => x.length < 60);
       if (!ids.length || !pkgs[i]) return;
       const mal = ids.find((x) => x.startsWith('MAL-'));
-      const label = pkgs[i].name + '@' + pkgs[i].version;
-      out.push({ file: pkgs[i].file, flag: (mal ? 'W25 malicious package (OSV ' + mal + '): ' : 'W25b known vulnerability (OSV ' + ids.slice(0, 3).join(', ') + '): ') + label });
+      const p = pkgs[i];
+      if (p.version) {
+        out.push({ file: p.file, flag: (mal ? 'W25 malicious package (OSV ' + mal + '): ' : 'W25b known vulnerability (OSV ' + ids.slice(0, 3).join(', ') + '): ') + p.name + '@' + p.version });
+      } else if (mal) {
+        out.push({ file: p.file, flag: 'W25b package with a malicious version (OSV ' + mal + '), range ' + p.spec + ': ' + p.name });
+      }
     });
     return out;
-  } catch { return []; }
+  } catch (e) { return unchecked(pkgs, 'OSV not reached'); }
+}
+function unchecked(pkgs, why) {
+  return [{ file: pkgs[0].file, flag: ('W25b package check did not run (' + why + '): ' + pkgs.map((p) => p.name).slice(0, 5).join(', ')).slice(0, 240) }];
 }
 
 // The repository's own files this workflow checked out (db/ and the rest): honest code no rule may match (085 review).

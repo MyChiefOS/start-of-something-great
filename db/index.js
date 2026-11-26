@@ -130,7 +130,10 @@ function context(ctx) {
   const keyHash = ctx.keyHash == null ? null : String(ctx.keyHash);
   if (keyHash !== null && !/^[0-9a-f]{64}$/.test(keyHash)) throw new Error('keyHash must be an agent key hash');
   if ((actor === 'agent') !== (keyHash !== null)) throw new Error(actor + ' calls ' + (actor === 'agent' ? 'need' : 'must not have') + ' the agent key that proves who is acting');
-  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '', keyHash: keyHash || '' };
+  // 086 review: the wiki's big write is the one statement allowed 60 s instead of 5 s; only the site's own anon
+  // timer call can ask for it.
+  const timeout = ctx.timeout === 'wiki' && actor === 'anon' ? 'wiki' : null;
+  return { actor, memberId: memberId || '', agentId: agentId || '', note: note || '', fresh: fresh ? '1' : '', session: session || '', keyHash: keyHash || '', timeout };
 }
 
 // The request behind each database call, for the audit log (053; Aaron, Nov 8: NIST SP 800-53 AU-3 and the DISA
@@ -178,7 +181,7 @@ async function tx(sql, ctx, fn) {
     await t`select set_config('app.note', ${c.note}, true),
                    set_config('app.stamp', '', true),
                    set_config('search_path', 'pg_catalog', true),
-                   set_config('statement_timeout', '5s', true),
+                   set_config('statement_timeout', ${c.timeout === 'wiki' ? '60s' : '5s'}, true),
                    pg_advisory_unlock_all()`;
     await t`select app.act_as(${c.actor}, ${c.memberId || null}::uuid, ${c.agentId || null}::uuid, ${c.fresh === '1'},
                               ${c.session || null}, ${c.keyHash || null}, ${secret || null})`;

@@ -151,3 +151,23 @@ test('WK3: the Wall flags a dependency pinned to a version the active wiki names
   const s = (await run({ actor: 'anon' }, (t) => t`select app.wiki_summary() as s`))[0].s;
   assert.ok(s.versions.length >= 3 && s.newest.length > 0 && s.last_run_at);
 });
+
+test('WK-scale (086 review): a full run of the no-account lists (about 200,000 indicators) records inside its 60 s limit', async () => {
+  await due();
+  const ip = (i) => '45.' + ((i >> 16) & 255) + '.' + ((i >> 8) & 255) + '.' + (i & 255);
+  const groups = [
+    { kind: 'domain', source: 'certpl', values: Array.from({ length: 120000 }, (_, i) => 'scam' + i + '.example.pl') },
+    { kind: 'url', source: 'phishtank', values: Array.from({ length: 60000 }, (_, i) => 'http://phish' + i + '.example/login?x=' + i) },
+    { kind: 'ip', source: 'cins', values: Array.from({ length: 15000 }, (_, i) => ip(i + 1)) }
+  ];
+  // The packages already active go along, so the change caps (WK2) aren't what this measures.
+  const packages = await q(`select p.ecosystem, p.name, p.version, p.advisory from app.wiki_packages p join app.wiki_versions v on v.id = p.version_id and v.status = 'active'`);
+  const indicators = await q(`select i.kind, i.value, i.source, i.ref from app.wiki_indicators i join app.wiki_versions v on v.id = i.version_id and v.status = 'active'`);
+  const [{ c: claim }] = await run({ actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
+  const started = Date.now();
+  const [{ r }] = await run({ actor: 'anon', timeout: 'wiki' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify({ entries: [], packages: [...packages], indicators: [...indicators], indicator_groups: groups })}::text::jsonb) as r`);
+  const ms = Date.now() - started;
+  const [v] = await q(`select v.status, v.reason, count(i.*)::int as n from app.wiki_versions v left join app.wiki_indicators i on i.version_id = v.id group by v.id order by v.created_at desc limit 1`);
+  assert.deepStrictEqual([r, v.status, v.n], ['active', 'active', 195000 + indicators.length], JSON.stringify(v));
+  assert.ok(ms < 30000, 'took ' + ms + ' ms (limit 60,000)');
+});
