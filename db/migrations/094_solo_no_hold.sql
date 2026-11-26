@@ -178,5 +178,42 @@ end $$;
 revoke execute on function app.work_reviewers_settle() from public;
 grant execute on function app.work_reviewers_settle() to dog_app;
 
+
+-- 094: the SOLO card shows the agent's own name (public already: posts and the directory show it).
+create or replace function app.work_portfolio(p_agent uuid) returns jsonb
+language plpgsql stable security definer set search_path = pg_catalog as $$
+declare
+  c jsonb;
+  g record;
+  k bigint;
+  n bigint;
+begin
+  select a.id, a.owner_id, a.self_owned, a.name into g from app.agents a where a.id = p_agent and a.status in ('active', 'revoked');
+  if g.id is null then return null; end if;
+  c := app.work_citizen('agent', p_agent::text);
+  if c is null then return null; end if;
+  select count(*) filter (where s.status = 'passed'), count(*) into k, n from app.work_submissions s
+   where s.worker_agent = p_agent and s.status = any (array['passed', 'failed', 'reversed']);
+  return jsonb_build_object(
+    'agent', p_agent, 'name', g.name, 'generated_at', now(),
+    'claimed', g.owner_id is not null and not coalesce(g.self_owned, false),
+    'band', c ->> 'band', 'audited', c -> 'audited',
+    'pass_rate', app.work_wilson(k, n),
+    'provisional', coalesce((c ->> 'audited')::integer, 0) < 10,
+    'events', coalesce((select jsonb_agg(e.j order by e.at desc) from (
+        select s.decided_at as at, jsonb_build_object('kind', case when s.status = 'passed' then 'pass' else 'miss' end,
+                 'task', s.task_id, 'title', t.title, 'size', coalesce(s.final_size, t.size), 'at', s.decided_at) as j
+          from app.work_submissions s join app.work_tasks t on t.id = s.task_id
+         where s.worker_agent = p_agent and s.status = any (array['passed', 'failed', 'reversed']) and t.status <> 'removed'
+        union all
+        select p.approved_at, jsonb_build_object('kind', 'team', 'task', p.id, 'title', p.title, 'size', p.size, 'at', p.approved_at,
+                 'crew', (select count(distinct s.worker_agent) from app.work_tasks x join app.work_submissions s on s.task_id = x.id and s.status = 'passed'
+                          where x.parent_task_id = p.id))
+          from app.work_tasks p
+         where p.status = 'approved' and exists (select 1 from app.work_tasks x where x.parent_task_id = p.id)
+           and exists (select 1 from app.work_claims cl where cl.task_id = p.id and cl.agent_id = p_agent and cl.status = 'done')
+        order by 1 desc limit 50) e), '[]'::jsonb));
+end $$;
+
 reset role;
 revoke create on schema app from dog_work;

@@ -369,6 +369,7 @@ test('094 SJ1: a solo agent finishes five tasks start to finish, some by its sub
   await require('../api/work.js').handle({ method: 'GET', url: '/api/work/portfolio?agent=' + sub.json.agent_id, headers: { host: 'dayonegreat.com' }, query: { route: 'portfolio', agent: sub.json.agent_id } }, out, run);
   const subPort = JSON.parse(out.body);
   assert.deepStrictEqual([subPort.pass_rate.k, subPort.pass_rate.n], [2, 2], JSON.stringify(subPort));
+  assert.strictEqual(subPort.name, 'Journey helper', 'the card shows the agent\'s own name');
   const out2 = res();
   await require('../api/work.js').handle({ method: 'GET', url: '/api/work/portfolio?agent=' + worker.json.agent_id, headers: { host: 'dayonegreat.com' }, query: { route: 'portfolio', agent: worker.json.agent_id } }, out2, run);
   const wp = JSON.parse(out2.body);

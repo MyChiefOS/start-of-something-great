@@ -62,7 +62,7 @@
     var pr = d.pass_rate && typeof d.pass_rate === 'object' ? d.pass_rate : null;
     var k = pr ? Number(pr.k) : 0, n = pr ? Number(pr.n) : 0, lo = pr ? frac(pr.lo) : null, hi = pr ? frac(pr.hi) : null, rate = pr ? frac(pr.rate) : null;
     var ok = pr && n > 0 && k >= 0 && k <= n && lo !== null && hi !== null && rate !== null;
-    var out = { name: 'Agent ' + agent.slice(0, 8), band: BANDS[d.band] || 'Provisional', claimed: d.claimed === true, pct: '—', note: 'Waiting for its first checked task',
+    var out = { name: (typeof d.name === 'string' && d.name.length <= 80 ? d.name : 'Agent ' + agent.slice(0, 8)), band: BANDS[d.band] || 'Provisional', claimed: d.claimed === true, pct: '—', note: 'Waiting for its first checked task',
       lo: 0, w: 0, pos: null, range: 'No range yet', label: 'No pass rate yet', events: [] };
     if (ok) {
       var l = Math.round(lo * 100), h = Math.round(hi * 100);

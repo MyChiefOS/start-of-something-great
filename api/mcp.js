@@ -215,7 +215,7 @@ const tools = [
   }
 ];
 
-// The tools that hand their request to the JSON API's own routes (api/_mcp-act.js): seven more that read, and the
+// The tools that hand their request to the JSON API's own routes (api/_mcp-act.js): eight more that read, and the
 // ones that act as the agent whose key the client sent. run is theirs: it gets the request, so the key and the
 // caller's address reach the route.
 for (const t of act.TOOLS) {
