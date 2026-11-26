@@ -58,7 +58,7 @@ async function setup() {
 test('RK140: dog-github accepts only the GitHub facts workflow, on main of this repository, for its own events, each token once', async () => {
   const { oidc, core, sign, good, other, deps } = await setup();
   assert.strictEqual(core.AUDIENCE, good.aud, 'the audience is the function\'s own address');
-  for (const ev of ['pull_request_target', 'issues', 'schedule', 'workflow_dispatch']) {
+  for (const ev of ['workflow_run', 'issues', 'schedule', 'workflow_dispatch']) {
     const claims = await core.checkToken(await sign({ ...good, event_name: ev }), deps());
     assert.strictEqual(claims.event_name, ev);
   }
@@ -127,7 +127,8 @@ test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s o
   const events = [...on.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]);
   assert.deepStrictEqual(events.sort(), [...core.EVENTS].sort(), 'its events are exactly the ones dog-github accepts');
   // 088: also when a pull request is opened or pushed to, so its files are scanned at submission.
-  assert.match(on, /pull_request_target:\n {4}types: \[opened, synchronize, reopened, ready_for_review, closed\]/);
+  assert.match(on, /workflow_run:\n {4}workflows: \[PR relay\]\n {4}types: \[completed\]/);
+  assert.doesNotMatch(on, /^ {2}pull_request_target:/m, 'RK163: GitHub blocks it in public repositories from Dec 2, 2026');
   assert.match(on, /schedule:\n {4}- cron: '\d+,\d+ \* \* \* \*'/, 'every half hour, as the backstop');
   // Each job only the rights it needs (review F7): none for the workflow; the reading job can't write to GitHub; only the
   // alert job, which reads no event text, may comment.

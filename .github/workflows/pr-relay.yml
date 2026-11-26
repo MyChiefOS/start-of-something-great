@@ -1,0 +1,22 @@
+# RK163 (GitHub blocks pull_request_target in public repositories from Dec 2, 2026, unless an Actions policy allows it):
+# this relay only marks that a pull request was opened, pushed to, reopened, edited, made ready or closed. Gate guard
+# and GitHub facts run when it completes (workflow_run), which GitHub runs from main's own copy of their files, on
+# main, as pull_request_target did, so a pull request still can't reach them. The relay itself has no permissions,
+# reads nothing and runs nothing from the pull request; a pull request that edits it can only stop its own relay, and
+# GitHub facts' half-hourly run still reads everything afresh.
+name: PR relay
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review, closed]
+
+permissions: {}
+
+jobs:
+  relay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Mark the event
+        run: echo "relayed"

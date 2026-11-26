@@ -3,34 +3,38 @@
 # where the pull request can't reach them: base is main, every commit verified and listed (or Dependabot's own
 # manifest-only update), and every change under .github/ named on a "Workflow change:" line in the description.
 #
-# How it stays out of the pull request's hands (GitHub, "Securely using pull_request_target"):
-#   - pull_request_target runs this file as it is on main, the default branch, never the PR's copy.
-#   - The checkout takes no ref, so it is main's latest commit (GITHUB_SHA on this event), and only the one script.
-#     The pull request's code is never checked out, installed or run; the script only reads GitHub's API.
-#   - The token reads and nothing more, and no secret is used. The only event value used is the PR number, via env:.
+# How it stays out of the pull request's hands:
+#   - RK163: it runs when the PR relay completes (workflow_run), which GitHub runs from this file as it is on main, the
+#     default branch, never the PR's copy (pull_request_target did the same until GitHub's Dec 2, 2026 block).
+#   - The checkout takes no ref, so it is main's latest commit, and only the one script. The pull request's code is
+#     never checked out, installed or run; the script only reads GitHub's API.
+#   - The token reads, and writes only a commit status (gate-guard) on the pull request's head commit; no secret is
+#     used. The only event values used are the head commit's SHA and, from GitHub's API, its pull request's number.
 #
 # What it can't do (RK71): one GitHub account holds every role here, so it alerts and shows the change; it does not
 # stop an administrator. Its check, gate-guard, blocks a merge only once Aaron adds it to main's required checks.
 name: Gate guard
 
 on:
-  pull_request_target:
-    branches: [main]
-    types: [opened, synchronize, reopened, edited]
+  workflow_run:
+    workflows: [PR relay]
+    types: [completed]
 
 permissions: {}
 
 concurrency:
-  group: gate-guard-${{ github.event.pull_request.number }}
+  group: gate-guard-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
 jobs:
   gate-guard:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    if: github.event.workflow_run.event == 'pull_request'
     permissions:
       contents: read
       pull-requests: read
+      statuses: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -42,8 +46,17 @@ jobs:
         with:
           node-version: '22'
 
-      - name: PR guards, main's copy (RK146)
+      - name: PR guards, main's copy (RK146), reported on the pull request's head commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: node scripts/pr-guards.js
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "no head commit"; exit 1; }
+          n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" --jq '[.[] | select(.state == "open" and .base.ref == "main")][0].number // empty')
+          if [ -z "$n" ]; then echo "no open pull request into main for $HEAD_SHA; nothing to check"; exit 0; fi
+          [[ "$n" =~ ^[0-9]+$ ]] || exit 1
+          if PR_NUMBER="$n" node scripts/pr-guards.js; then state=success; desc="PR guards passed (main's copy)"; else state=failure; desc="PR guards failed: see the run"; fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state="$state" -f context=gate-guard -f description="$desc" -f target_url="$RUN_URL" > /dev/null
+          [ "$state" = success ]

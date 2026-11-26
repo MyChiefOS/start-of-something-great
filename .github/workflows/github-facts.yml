@@ -14,12 +14,14 @@ name: GitHub facts
 on:
   # A pull request opened, pushed to, reopened, or closed and merged. 088 (Aaron's plan, Phase 1 item 2: scan at
   # submission): its files are scanned when it arrives and after each push, not only once it closes.
-  # pull_request_target, not pull_request: it runs main's copy of this file, on main, so the identity token names main
+  # RK163: when the PR relay completes (workflow_run), not pull_request_target, which GitHub blocks in public
+  # repositories from Dec 2, 2026. workflow_run runs main's copy of this file, on main, so the identity token names main
   # and this file, which is all dog-github accepts. Nothing from the pull request is checked out here, and no text from
   # the event is read: the run reads GitHub's API afresh. Its runnable files run only in the sandbox job below, which
   # holds no identity token and no write permission.
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, closed]
+  workflow_run:
+    workflows: [PR relay]
+    types: [completed]
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned]
   # The backstop: anything an event missed, every half hour (GitHub runs schedules when it can, not to the minute).
