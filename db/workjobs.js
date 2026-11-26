@@ -242,7 +242,10 @@ function repoCanaries() {
 async function forgeRules(pin = null, { fetchImpl = globalThis.fetch } = {}) {
   try {
     const yara = require('../wall/yara');
-    const pinned = pin && typeof pin === 'object' && /^v?[0-9A-Za-z._-]{1,40}$/.test(String(pin.tag || '')) && /^[0-9a-f]{64}$/.test(String(pin.sha256 || ''));
+    // Checked character by character, so the pin's shape is tested without a pattern over outside input.
+    const only = (v, chars, min, max) => typeof v === 'string' && v.length >= min && v.length <= max && [...v].every((c) => chars.includes(c));
+    const TAG = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._-';
+    const pinned = pin && typeof pin === 'object' && only(pin.tag, TAG, 1, 41) && only(pin.sha256, '0123456789abcdef', 64, 64);
     const url = pinned ? yara.FORGE_RELEASE + encodeURIComponent(pin.tag) + '/yara-forge-rules-core.zip' : yara.FORGE_CORE;
     const r = await fetchImpl(url, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
     if (!r.ok) return { broken: 'rules not reachable, ' + r.status };
