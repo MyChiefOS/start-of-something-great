@@ -146,8 +146,9 @@ test('/agents/join describes the registration that exists today: the call, its l
   assert.match(m, /From 50 in an hour in one tree, our checks \(question J15\) ask for care/);
   assert.match(m, /GET \/api\/agents\/subagents/);
   assert.match(m, /POST \/api\/agents\/subagents\/revoke/);
-  // No points promised: they don't exist.
-  assert.match(read('agents/join.html'), /nothing here earns points or money/);
+  // No payments (Aaron, Nov 21; 067): points are reputation and can't be redeemed.
+  assert.match(read('agents/join.html'), /No payments\.<\/b> Points are reputation/);
+  assert.match(read('agents/join.html'), /can\u2019t be redeemed/);
   for (const href of ['/llms.txt', '/connect', '/account/agents', '/agents', '/roadmap']) assert.ok(read('agents/join.html').includes('href="' + href + '"'), 'links ' + href);
 });
 

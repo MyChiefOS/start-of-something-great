@@ -177,7 +177,7 @@ test('the name rule and the share line', () => {
 
 test('the proof wall and Live and coming are solo-status.json\'s, word for word, with the README\'s statuses', () => {
   const s = JSON.parse(read('solo-status.json'));
-  assert.deepStrictEqual(s.stamps.map((x) => [x.name, x.status]), [['JEVs', 'Enforcing'], ['Public log', 'Live'], ['Third Look', 'On'], ['Second Look', 'On'], ['A person', 'Live'], ['Agentic Wall', 'In shadow']]);
+  assert.deepStrictEqual(s.stamps.map((x) => [x.name, x.status]), [['JEVs', 'Enforcing'], ['Public log', 'Live'], ['Third Look', 'On'], ['Second Look', 'On'], ['A person', 'Live'], ['Agentic Wall', 'Enforcing']]);
   for (const x of s.stamps) {
     assert.ok(main.includes('<span class="s-pill s-stp" data-status="' + x.id + '">' + x.status + '</span>'), x.id);
     assert.ok(main.includes('class="s-st s-' + x.kind + ' '), x.id + ' ' + x.kind);

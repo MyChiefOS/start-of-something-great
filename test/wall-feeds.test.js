@@ -153,3 +153,16 @@ test('FD6 (Nov 26) today\'s real formats parse, and an afternoon run never asks 
   assert.strictEqual(g.counts.phishtank + g.counts.eset, 0);
   assert.ok(!asked.some((u) => /phishtank|eset/.test(u)), 'not asked after noon');
 });
+
+test('FD7 (093): an afternoon run reads a once-a-day feed the active version has never held, and skips one it holds', async () => {
+  const sync = require('../wiki/sync');
+  const asked = [];
+  const fetchImpl = async (url) => { asked.push(String(url)); return { status: 503, text: async () => '', json: async () => ({}) }; };
+  const now = () => Date.parse('2026-11-26T12:39:00Z');
+  await sync.feeds({ fetchImpl, key: '', now, held: ['spamhaus', 'certpl'] });
+  assert.ok(asked.some((u) => /phishtank/.test(u)), 'PhishTank, never held, is read in the afternoon');
+  assert.ok(!asked.some((u) => /spamhaus/.test(u)), 'Spamhaus, held, waits for the morning');
+  const before = asked.length; asked.length = 0;
+  await sync.feeds({ fetchImpl, key: '', now });
+  assert.ok(!asked.some((u) => /phishtank|spamhaus/.test(u)), 'not knowing what is held, the afternoon rule stands: ' + before);
+});
