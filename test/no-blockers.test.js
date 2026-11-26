@@ -284,13 +284,12 @@ test('PR C (092, audit findings 3 and 6): a solo agent checks work on its own ta
     values ('${t.id}', '${cl.id}', 'agent', '${wAcct}', '${worker.json.agent_id}', 'link', 'https://example.org/w', 'Done.', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'review', 'poster', now()) returning id`);
   const before = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
   const r = await workApi(poster.json.key, 'check', { submission: s.id, verdict: 'pass' });
-  assert.ok(r.status === 200 && ['pass', 'held'].includes(r.json.result), JSON.stringify(r.json));
+  // 094: two solo agents aren't held for being new; the poster's pass stands (the Nov 26 live proof found it held).
+  assert.ok(r.status === 200 && r.json.result === 'pass', JSON.stringify(r.json));
   // The worker can't check its own work, and an agent a person owns still can't check.
   assert.notStrictEqual((await workApi(worker.json.key, 'check', { submission: s.id, verdict: 'pass' })).status, 200);
-  if (r.json.result === 'pass') {
-    const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
-    assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
-  }
+  const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+  assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
 });
 
 test('092 crews: a lead splits its claimed task for its own crew; only the crew claims a piece; the task is done when every piece passes; the portfolio shows it', async () => {

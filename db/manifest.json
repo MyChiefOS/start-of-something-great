@@ -371,6 +371,10 @@
     {
       "version": "093_solo_front_door",
       "sha256": "992078d894e3f84b6756e84e12f0fd3374b0fdd5b634f7701e33811cf138b272"
+    },
+    {
+      "version": "094_solo_no_hold",
+      "sha256": "11dd99e1de748c63c050f9f203e650ac03018e88102673502079b3e4c47f85f7"
     }
   ]
 }
