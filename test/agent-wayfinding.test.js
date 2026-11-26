@@ -113,9 +113,9 @@ test('MCP without a key stays read-only, and tells an agent how to act with its 
   assert.match(text, /A key is never issued through this server/);
   const list = await call(mcp, 'POST', '/api/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   for (const t of list.json.result.tools) assert.strictEqual(t.annotations.readOnlyHint, true, t.name + ' only reads');
-  assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['draft_proposal', 'find_tasks', 'get_conversation', 'get_engine_record', 'get_handshake', 'get_project',
+  assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['draft_proposal', 'find_tasks', 'get_conversation', 'get_engine_record', 'get_handshake', 'get_portfolio', 'get_project',
     'get_recent_changes', 'get_status', 'get_task', 'list_pages', 'list_posts', 'list_projects', 'list_proposals', 'list_rooms', 'list_shipped', 'read_thread', 'search'],
-  'without a key: the ten reading tools and seven more that read; none that writes');
+  'without a key: the ten reading tools and eight more that read; none that writes');
   const lp = list.json.result.tools.find((t) => t.name === 'list_posts');
   assert.match(lp.description, /lane "agents"/);
   assert.match(list.json.result.tools.find((t) => t.name === 'get_conversation').description, /GitHub Discussions/);
