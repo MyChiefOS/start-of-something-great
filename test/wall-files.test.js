@@ -29,7 +29,8 @@ function tar(entries) {
   }
   return Buffer.concat([...parts, Buffer.alloc(1024)]);
 }
-const EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200, 1)]);
+// A program's header only ("MZ", and "PE" where the header points): not a working program.
+const EXE = (() => { const b = Buffer.alloc(256, 1); b.write('MZ', 0, 'latin1'); b.writeUInt32LE(0x80, 0x3c); b.write('PE\u0000\u0000', 0x80, 'latin1'); return b; })();
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100)]);
 const PDF = Buffer.from('%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer <<>>\n%%EOF');
 const OLE = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(500)]);
@@ -86,4 +87,26 @@ test('WF7: no regular expression reads a file, and a worst-case file stays fast'
   files.summary(Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from('stream\nxx\nendstream\n'.repeat(2000))]), 'x.pdf');
   files.summary(Buffer.alloc(5 * 1024 * 1024, 0x50), 'big.bin');
   assert.ok(Date.now() - t0 < 3000, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+test('WF8 (084 review): smuggling, old TARs, honest look-alikes, hex-escaped PDF names, high ratios', () => {
+  // An entry that unpacks past its declared size is blocked, and an unreadable entry's name is still checked.
+  const lie = zip([['a.exe', EXE, true]], { claim: 10 });
+  assert.ok(rules(files.summary(lie, 'x.zip')).includes('W40') || rules(files.summary(lie, 'x.zip')).includes('W31'), JSON.stringify(files.summary(lie, 'x.zip').flags));
+  assert.ok(rules(files.summary(lie, 'x.zip')).includes('W31'), 'the name inside is checked even when it can\'t be read');
+  // An old-style TAR (no "ustar") is opened.
+  const old = tar([['evil.exe', EXE]]); old.fill(0, 257, 263);
+  let sum = 0; for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : old[i];
+  old.write(sum.toString(8).padStart(6, '0') + '\u0000 ', 148, 'latin1');
+  assert.ok(rules(files.summary(old, 'bundle.tar')).includes('W31'));
+  // Honest look-alikes pass: an RTF named .doc, text that starts "MZ", a .doc that mentions VBA, a very compressible log.
+  assert.deepStrictEqual(files.summary(Buffer.from('{\\rtf1\\ansi Hello}'), 'letter.doc').flags, []);
+  assert.deepStrictEqual(files.summary(Buffer.from('MZ is a nice name for a README, about the format.\n'), 'README.md').flags, []);
+  assert.deepStrictEqual(files.summary(Buffer.concat([OLE, Buffer.from('Learn VBA basics. Macros are useful.', 'utf16le')]), 'course.doc').flags, []);
+  const log = files.summary(zlib.gzipSync(Buffer.from('INFO ok\n'.repeat(20000))), 'app.log.gz');
+  assert.ok(!rules(log).includes('W40'), 'flagged at most: ' + JSON.stringify(log.flags));
+  // Hex-escaped PDF names, and /JS before a newline.
+  assert.deepStrictEqual(rules(files.summary(Buffer.from('%PDF-1.7\n<< /S /J#61vaScript /JS (x) >>'), 'a.pdf')), ['W41']);
+  assert.deepStrictEqual(rules(files.summary(Buffer.from('%PDF-1.7\n<< /S /Action /JS\n(app.alert(1)) >>'), 'b.pdf')), ['W41']);
+  assert.deepStrictEqual(rules(files.summary(Buffer.from('%PDF-1.7\n<< /#4Caunch >>'), 'c.pdf')), ['W41']);
 });

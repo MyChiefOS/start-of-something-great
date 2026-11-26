@@ -224,8 +224,18 @@ function githubRaw(token, { fetchImpl = globalThis.fetch, timeoutMs = 20_000 } =
     if (!r.ok) throw Object.assign(new Error('GitHub returned ' + r.status), { githubStatus: r.status });
     const len = Number(r.headers && r.headers.get ? r.headers.get('content-length') : 0);
     if (len > SCAN_BYTES) return null;
-    const b = Buffer.from(await r.arrayBuffer());
-    return b.length > SCAN_BYTES ? null : b;
+    // Read as a stream and stop past SCAN_BYTES, whether or not GitHub sent a length (084 review).
+    if (!r.body || typeof r.body.getReader !== 'function') { const b = Buffer.from(await r.arrayBuffer()); return b.length > SCAN_BYTES ? null : b; }
+    const reader = r.body.getReader();
+    const parts = []; let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > SCAN_BYTES) { await reader.cancel().catch(() => {}); return null; }
+      parts.push(Buffer.from(value));
+    }
+    return Buffer.concat(parts);
   };
 }
 

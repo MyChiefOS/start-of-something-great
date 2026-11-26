@@ -42,7 +42,8 @@ const RULES = [
   ["W37", "A known attack scanner (a request with no user agent is only flagged)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
   ["W38", "A request from an address or range on the security wiki's threat lists (Spamhaus DROP, Feodo Tracker)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
   ["W39", "A file whose contents are a program or another kind of file than its name says", "Blocked: refused at once (a person can mark it a mistake).", "block"],
-  ["W40", "An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or over 100 times its size", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W40", "An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or an entry that unpacks past its declared size", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W40b", "An archive that unpacks to over 100 times its size, within the size limit", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
   ["W41", "An Office file with macros, or a PDF with JavaScript or a launch action", "Blocked: refused at once (a person can mark it a mistake).", "block"]
 ];
 

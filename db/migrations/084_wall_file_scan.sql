@@ -9,7 +9,8 @@ reset role;
 alter table app.wall_rules disable row level security;
 insert into app.wall_rules (rule, effect, what) values
   ('W39', 'block', 'A file whose contents are a program or another kind of file than its name says'),
-  ('W40', 'block', 'An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or over 100 times its size'),
+  ('W40', 'block', 'An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or an entry that unpacks past its declared size'),
+  ('W40b', 'flag', 'An archive that unpacks to over 100 times its size, within the size limit'),
   ('W41', 'block', 'An Office file with macros, or a PDF with JavaScript or a launch action');
 alter table app.wall_rules enable row level security;
 
@@ -47,7 +48,7 @@ begin
                        or jsonb_array_length(f -> 'scan' -> 'flags') > 20
                        or exists (select 1 from jsonb_array_elements(f -> 'scan' -> 'flags') g
                                    where jsonb_typeof(g) <> 'string' or char_length(g #>> '{}') > 240
-                                      or split_part(g #>> '{}', ' ', 1) <> all (array['W30', 'W31', 'W39', 'W40', 'W41']))))
+                                      or split_part(g #>> '{}', ' ', 1) <> all (array['W30', 'W31', 'W39', 'W40', 'W40b', 'W41']))))
                    or exists (select 1 from jsonb_object_keys(f) k where k <> all (array['filename', 'status', 'changes', 'patch', 'scan']))) then
       continue;
     end if;

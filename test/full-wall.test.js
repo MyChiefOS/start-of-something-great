@@ -436,7 +436,7 @@ test('FW24 (084): the facts function takes only the scanner\'s own rules in a sc
 
 test('FW25 (084): the facts workflow scans each changed file\'s contents with the Wall\'s scanner', async () => {
   const workjobs = require('../db/workjobs');
-  const EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(100, 1)]);
+  const EXE = (() => { const b = Buffer.alloc(256, 1); b.write('MZ', 0, 'latin1'); b.writeUInt32LE(0x80, 0x3c); b.write('PE\u0000\u0000', 0x80, 'latin1'); return b; })();
   const REPO = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
   const get = async (p) => (p.startsWith('/pulls/7/files') ? [{ filename: 'docs/invoice.pdf', status: 'added', changes: 1, contents_url: REPO + '/contents/docs/invoice.pdf?ref=abc' },
     { filename: 'gone.txt', status: 'removed', changes: 1, contents_url: REPO + '/contents/gone.txt?ref=abc' }] : []);
