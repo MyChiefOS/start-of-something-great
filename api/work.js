@@ -55,6 +55,7 @@
 //   Aaron only:
 //     POST audit/close {sample, status, note?}       an administrator: a random audit sample looked at, or a concern (077)
 //     POST wall/review {decision, verdict, reason}   an administrator: a Wall flag is a false positive or confirmed (076)
+//     POST wall/appeal {decision, reason}            the account a Wall block was about appeals it (089)
 //     POST wiki/rollback                             an administrator: the wiki's previous version becomes active again (074)
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -236,6 +237,8 @@ const WRITES = {
   'wiki/rollback': { keys: [], fn: (t) => work.wikiRollback(t), adminOnly: true },
   // 076: quality assurance on one of the Agentic Wall's flags (a verified false positive leaves lane A).
   'wall/review': { keys: ['decision', 'verdict', 'reason'], fn: (t, b) => work.wallReview(t, b), adminOnly: true },
+  // 089: the account a Wall block was about appeals it; the timer rechecks it, and a person decides what still blocks.
+  'wall/appeal': { keys: ['decision', 'reason'], fn: (t, b) => work.wallAppeal(t, b) },
   // 077: close one of the random auditor's samples.
   'audit/close': { keys: ['sample', 'status', 'note'], fn: (t, b) => work.auditClose(t, b), adminOnly: true },
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps

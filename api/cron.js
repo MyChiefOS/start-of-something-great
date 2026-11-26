@@ -110,6 +110,8 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   // 088: the wiki's health (24 hours without a good run, a feed empty, a feed's own newest entry more than 7 days old):
   // in-app alerts to the administrators, once a day each. Alerts only.
   try { await run({ actor: 'anon' }, (t) => t`select app.wiki_health_check()`); } catch { /* logs nothing (027) */ }
+  // 089: open appeals of the Wall's blocks, rechecked under today's rules and wiki.
+  try { await run({ actor: 'anon' }, (t) => t`select app.wall_recheck_run()`); } catch { /* logs nothing (027) */ }
   // 077: the random auditor and the day's oversight report (free), then the model reviewers and (088) the AI classifier:
   // on, pay-as-you-go (Aaron, Nov 26), each under its role's daily call cap.
   try { await require('../oversight/roles').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }

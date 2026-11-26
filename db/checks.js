@@ -208,6 +208,16 @@ const DEFINERS = {
   'app.oversight_classify_record(uuid, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_link_check(text)': { owner: 'dog_owner', callers: 'dog_app' },
+  // 089: the blue team lead (called by the Wall's gate), the recheck's flags (the timer's recheck), appeals, the
+  // recheck run, and the Fable 5.2 report and weekly cross-check (the timer).
+  'app.blue_team_lead(uuid, uuid)': { owner: 'dog_owner', callers: '' },
+  'app.wall_recheck_flags(uuid)': { owner: 'dog_owner', callers: 'dog_work' },
+  'app.wall_appeal(uuid, text)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wall_recheck_run()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_report_claim()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_report_record(date, text, text)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_crosscheck_claim()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_crosscheck_record(date, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   // 075, the watchtower's pass (the site's timer; alerts only).
   'app.watchtower_run()': { owner: 'dog_work', callers: 'dog_app' },
   // 079, the agent track: an alert when an agent's own account passes a limit (it keeps working), called from the
