@@ -115,6 +115,10 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   // 077: the random auditor and the day's oversight report (free), then the model reviewers and (088) the AI classifier:
   // on, pay-as-you-go (Aaron, Nov 26), each under its role's daily call cap.
   try { await require('../oversight/roles').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }
+  // 090: once a day, one tiny request to each reviewer model and OpenAI's; one alert with each model's answer.
+  if (oidc) {
+    try { await require('../oversight/roles').gatewayCheck(run, oidc, fetchImpl); } catch { /* logs nothing (027) */ }
+  }
   // The public log (038): JEVs's last whole hour, the next signed checkpoint and, since 057, the check that the witness
   // has stopped, each in its own transaction. Aaron's proposal decisions and the witness's report no longer come from
   // here: GitHub's workflows send them to the dog-github function (RK112, RK144). A failure changes nothing here; the

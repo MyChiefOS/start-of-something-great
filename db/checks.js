@@ -207,6 +207,9 @@ const DEFINERS = {
   'app.oversight_classify_claim(integer)': { owner: 'dog_work', callers: 'dog_app' },
   'app.oversight_classify_record(uuid, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
+  // 090: the AI Gateway check, once a day from the timer.
+  'app.gateway_check_claim()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.gateway_check_record(jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_link_check(text)': { owner: 'dog_owner', callers: 'dog_app' },
   // 089: the blue team lead (called by the Wall's gate), the recheck's flags (the timer's recheck), appeals, the
   // recheck run, and the Fable 5.2 report and weekly cross-check (the timer).

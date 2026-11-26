@@ -186,6 +186,8 @@ test('WO7 the AI classifier reads each new post once; a concern goes to the revi
 test('WO8 the wiki\'s health: no good run in 24 hours, an empty feed, and a feed whose newest entry is old (Feodo) each raise one alert a day', async () => {
   const [v] = await q(`insert into app.wiki_versions (status, entries, packages, indicators, sources, created_at) values ('active', 1, 0, 1,
     '{"feodo": 0, "spamhaus": 900, "newest": {"feodo": "2026-03-04"}}', now() - interval '30 hours') returning id`);
+  // 090: a feed counts as held by its entries in the version, not by the run's count.
+  await q(`insert into app.wiki_indicators (version_id, kind, value, source) values ('${v.id}', 'cidr', '192.0.2.0/24', 'spamhaus')`);
   const [{ h }] = await anon((t) => t`select app.wiki_health_check() as h`);
   assert.deepStrictEqual(h.problems.map((p) => p.split(':')[0]).sort(), ['empty', 'old', 'stale']);
   assert.ok(h.problems.includes('old: feodo newest entry 2026-03-04'));
