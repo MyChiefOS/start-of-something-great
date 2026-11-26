@@ -19,6 +19,8 @@ const FEODO = 'https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.j
 // /checks); its terms ask for at most one download a day, so it is read on the run before noon UTC and carried over
 // from the active version on the other.
 const SPAMHAUS = 'https://www.spamhaus.org/drop/drop_v4.json';
+// 087: the IPv6 list, same source and terms (the simulation found IPv6 threat ranges never reached the firewall).
+const SPAMHAUS6 = 'https://www.spamhaus.org/drop/drop_v6.json';
 // 086 (Aaron, Nov 26: "Lets implement your recommendations"): free sources, no account, commercial use allowed.
 const CERTPL = 'https://hole.cert.pl/domains/v2/domains.txt'; // CERT Polska: "may be used by any user for any purpose"
 const PHISHTANK = 'https://data.phishtank.com/data/online-valid.csv.gz'; // Cisco Talos: commercial use OK (FAQ); once a day
@@ -32,6 +34,9 @@ const CIDR = /^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?
 const URLHAUS = 'https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/';
 const THREATFOX = 'https://threatfox-api.abuse.ch/api/v1/';
 const MALWAREBAZAAR = 'https://mb-api.abuse.ch/api/v1/';
+// 087: an IPv6 range's shape (hex, colons, a prefix length); the database checks it's a real network and drops any
+// it may never block.
+const CIDR6 = /^[0-9a-f:]{2,39}\/(19|[2-5][0-9]|6[0-4])$/;
 const IP = /^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$/;
 const DOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
 const URL_RE = /^https?:\/\/[^\s"'<>]+$/;
@@ -105,7 +110,7 @@ function indicatorOf(kind, value, source, ref) {
   let v = String(value == null ? '' : value).trim();
   if (kind !== 'url') v = v.toLowerCase();
   if (kind === 'injection' || kind === 'injection_flag') v = v.replace(/\s+/g, ' ');
-  const ok = { ip: IP, cidr: CIDR, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION, injection_flag: INJECTION }[kind];
+  const ok = { ip: IP, cidr: CIDR, cidr6: CIDR6, domain: DOMAIN, url: URL_RE, sha256: SHA, injection: INJECTION, injection_flag: INJECTION }[kind];
   if (!ok || v.length < 6 || v.length > (kind.startsWith('injection') ? 120 : kind === 'domain' ? 253 : 500) || !ok.test(v)) return null;
   const r = String(ref == null ? '' : ref).replace(/[^A-Za-z0-9 ._:/-]/g, '').slice(0, 60);
   return { kind, value: v, source, ref: REF.test(r) ? r : '' };
@@ -191,6 +196,14 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
         let o; try { o = JSON.parse(line); } catch { continue; }
         // Only a true network (no host bits set): 1.2.3.4/8 would be refused by the database and lose the whole run.
         if (o && o.cidr && isNetwork(o.cidr)) add('spamhaus', indicatorOf('cidr', o.cidr, 'spamhaus', o.sblid));
+      }
+      const r6 = await fetchImpl(SPAMHAUS6, { headers: { accept: 'application/x-ndjson' }, signal: AbortSignal.timeout(20000) });
+      if (r6.status !== 200) throw new Error('spamhaus v6 ' + r6.status);
+      const text6 = await r6.text();
+      if (text6.length > 2000000) throw new Error('spamhaus v6 too large');
+      for (const line of text6.split('\n').slice(0, 5000)) {
+        let o; try { o = JSON.parse(line); } catch { continue; }
+        if (o && o.cidr) add('spamhaus', indicatorOf('cidr6', o.cidr, 'spamhaus', o.sblid));
       }
     } catch { carry.push('spamhaus'); }
   } else carry.push('spamhaus');

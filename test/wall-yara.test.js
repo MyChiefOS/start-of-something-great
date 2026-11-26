@@ -81,3 +81,20 @@ test('WY7 (085 review): a rule that matches widely in one run is flagged (W42b),
   const three = await workjobs.gather({ get, getRaw: async () => Buffer.from('X-EVIL-MARKER-1234'), wanted: [], files: [1, 2, 3], rules });
   for (const pr of three.files) assert.ok(pr.files[0].scan.flags[0].startsWith('W42b '), 'three pull requests: flagged');
 });
+
+test('WY8 (087, found by the Nov 26 simulation): rules in every set match, not only the first; a set that still has compile errors is refused and flagged', async () => {
+  // YARA Forge's layout: each set's header comment starts right after the last rule of the set before it. Before 087
+  // that "/*" stayed on the rule before, never closed, and turned every later rule into a comment.
+  const p = await yara.prepare(pack([
+    ['Signature Base', 'DRL 1.1', [rule('First_Set', 'strings:\n    $a = "FIRST-SET-MARKER-0001"\n  condition:\n    $a')]],
+    ['ESET', 'BSD', [rule('Second_Set', 'strings:\n    $a = "SECOND-SET-MARKER-0002"\n  condition:\n    $a')]],
+    ['GCTI', 'Apache', [rule('Third_Set', 'strings:\n    $a = "THIRD-SET-MARKER-0003"\n  condition:\n    $a')]]
+  ]));
+  assert.strictEqual(p.kept, 3);
+  for (const [m, n] of [['FIRST-SET-MARKER-0001', 'First_Set'], ['SECOND-SET-MARKER-0002', 'Second_Set'], ['THIRD-SET-MARKER-0003', 'Third_Set']]) {
+    const hits = await yara.scan(p, Buffer.from('x ' + m + ' y'), 'f.bin');
+    assert.ok(hits.length === 1 && hits[0].includes(n), m + ' -> ' + hits);
+  }
+  // A prepared set that couldn't be made to compile flags every file it was asked to check, never silently passes.
+  assert.deepStrictEqual(await yara.scan({ broken: '2 compile errors left' }, Buffer.from('x'), 'a.js'), ['W42b malware signature check did not run (2 compile errors left): a.js']);
+});

@@ -4,7 +4,7 @@
 // package; its digest is checked by test/wall-yara.test.js).
 //
 // The rules are YARA Forge's core pack (github.com/YARAHQ/yara-forge: curated, low false positives), read fresh on
-// every run of the GitHub facts workflow (hourly), and kept only from rule sets whose license allows our use:
+// every run of the GitHub facts workflow (its hourly schedule is best effort, as GitHub's are), and kept only from rule sets whose license allows our use:
 // SOURCES below, each with its license. A rule set marked "NO LICENSE SET" is never used. Rules that need a YARA
 // module this build lacks (pe, dotnet and the like) or don't compile are dropped, and a rule that matches any of the
 // honest files in CANARIES is dropped too, so a bad or poisoned rule can't block ordinary work.
@@ -82,7 +82,11 @@ function sections(text) {
     const t = line.trimStart();
     if (startsRule(t)) { cur.rule = [line]; cur.rules.push(cur.rule); } else if (cur.rule) cur.rule.push(line);
   }
-  return out.map((s) => ({ name: s.name, repo: s.repo, header: s.header, rules: s.rules.map((r) => r.join('\n')) }));
+  // 087: a rule ends at its own closing brace. Before, the lines after it (the next set's "/*" header comment, which
+  // closes only after "Repository Name:") stayed on the rule, so the joined set opened a comment that never closed and
+  // every rule after the first set read as a comment: W42 matched nothing (found by the Nov 26 simulation).
+  const cut = (r) => { let e = r.length - 1; while (e > 0 && r[e].trim() !== '}') e--; return r.slice(0, e + 1); };
+  return out.map((s) => ({ name: s.name, repo: s.repo, header: s.header, rules: s.rules.map((r) => cut(r).join('\n')) }));
 }
 const nameOf = (rule) => { let s = rule.trimStart(); while (!s.startsWith('rule ')) s = s.slice(s.indexOf(' ') + 1); s = s.slice(5); let j = 0; while (j < s.length && isWord(s[j])) j++; return s.slice(0, j); };
 
@@ -116,7 +120,7 @@ async function prepare(packText, { extraCanaries = [] } = {}) {
     }
   }
   // Drop what doesn't compile (a rule naming a dropped one, a syntax this build lacks), a few rounds at most.
-  for (let round = 0; round < 6 && rules.length; round++) {
+  for (let round = 0; round < 30 && rules.length; round++) {
     const res = y.run(Buffer.from('x'), rules.join('\n'));
     const starts = []; let line = 1;
     for (const r of rules) { starts.push(line); line += r.split('\n').length; }
@@ -131,6 +135,11 @@ async function prepare(packText, { extraCanaries = [] } = {}) {
     dropped.compile += bad.size;
     rules = rules.filter((_, i) => !bad.has(i));
   }
+  // 087: the set the Wall uses must compile with no errors at all: with one, YARA matches nothing. If it still doesn't,
+  // nothing is kept and `broken` says so, and the scan flags every file it couldn't check (never silent).
+  const left = rules.length ? y.run(Buffer.from('x'), rules.join('\n')).compileErrors : null;
+  let errors = 0; if (left) for (let i = 0; i < left.size(); i++) if (!left.get(i).warning) errors++;
+  if (errors) return { text: '', kept: 0, sources: {}, sourceOf: new Map(), dropped, broken: errors + ' compile errors left' };
   // Drop any rule that matches an honest file.
   const noisy = new Set();
   for (const c of [...CANARIES, ...extraCanaries.slice(0, 300)]) for (const n of matchedNames(y.run(c, rules.join('\n')))) noisy.add(n);
@@ -142,6 +151,7 @@ async function prepare(packText, { extraCanaries = [] } = {}) {
 
 // The rules a file matches, as the Wall's flags (W42 blocks).
 async function scan(prepared, bytes, label) {
+  if (prepared && prepared.broken) return [('W42b malware signature check did not run (' + prepared.broken + '): ' + String(label || '')).slice(0, 240)];
   if (!prepared || !prepared.kept) return [];
   const y = await load();
   const names = matchedNames(y.run(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []), prepared.text));

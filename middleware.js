@@ -22,12 +22,36 @@ function refresh(origin) {
     .catch(() => { /* keep the last list */ }));
 }
 
-export default function middleware(request) {
+// 087: the body's first 64 KB, for text bodies only (JSON, forms, text, XML, GraphQL), read from a copy so the page
+// or API still gets the whole body. A file upload's bytes are the file scanner's job (wall/files.js), not this one's.
+const TEXT_TYPES = ['application/json', 'application/x-www-form-urlencoded', 'text/', 'application/xml', 'application/graphql', 'multipart/form-data', 'application/ld+json'];
+async function bodyOf(request) {
+  if (request.method === 'GET' || request.method === 'HEAD' || !request.body) return '';
+  const type = String(request.headers.get('content-type') || '').toLowerCase();
+  if (type && !TEXT_TYPES.some((t) => type.startsWith(t))) return '';
+  const reader = request.clone().body.getReader();
+  const parts = []; let size = 0;
+  try {
+    while (size < firewall.MAX_BODY) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value); size += value.length;
+    }
+  } finally { reader.cancel().catch(() => {}); }
+  return Buffer.concat(parts.map((x) => Buffer.from(x))).subarray(0, firewall.MAX_BODY).toString('utf8');
+}
+
+export default async function middleware(request) {
   try {
     const url = new URL(request.url);
     if (url.pathname === LIST) return next();
+    const headers = {};
+    for (const [k, v] of request.headers) headers[k] = v;
+    let reqBody = '';
+    // A slow sender can't hold the request: after 1.5 s the body is checked as far as it came (or not at all).
+    try { reqBody = await Promise.race([bodyOf(request), new Promise((ok) => setTimeout(() => ok(''), 1500))]); } catch { reqBody = ''; }
     const req = { method: request.method, path: url.pathname, query: url.search.slice(1), ua: request.headers.get('user-agent') || '',
-      ip: ipAddress(request) || '', country: (geolocation(request) || {}).country || '' };
+      ip: ipAddress(request) || '', country: (geolocation(request) || {}).country || '', headers, body: reqBody };
     refresh(url.origin);
     const d = firewall.decide(req, { badAddresses: list.addresses, since: list.since });
     if (d.action === 'allow') return next();

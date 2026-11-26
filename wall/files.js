@@ -166,6 +166,9 @@ function tarEntries(b) {
   return out;
 }
 
+// Written in two parts so this file itself never carries the signature.
+const EICAR = Buffer.from('EICAR-STANDARD-' + 'ANTIVIRUS-TEST-FILE!');
+
 // Scans one file. Returns { type, flags: ['W.. reason: name'] }. ctx carries the limits across nested archives.
 function scan(bytes, name, ctx = { depth: 0, files: 0, bytes: 0 }) {
   const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
@@ -183,6 +186,10 @@ function scan(bytes, name, ctx = { depth: 0, files: 0, bytes: 0 }) {
   }
   // W31 inside an archive: an executable or installer.
   if (ctx.depth > 0 && (EXECUTABLE.has(type) || ['exe', 'scr', 'msi', 'dll', 'hta', 'lnk', 'apk', 'vbe', 'wsf', 'pif', 'cpl'].includes(ext))) add('W31 executable or installer inside an archive: ' + label);
+
+  // 087: the EICAR antivirus test file (the industry's standard check that a scanner is working), anywhere in a file
+  // or inside an archive, is a malware signature match (W42), as every antivirus engine treats it.
+  if (b.includes(EICAR)) add('W42 malware signature (EICAR test file): ' + label);
 
   // W41: active documents.
   if (type === 'pdf' && pdfActive(b)) add('W41 active document (PDF with JavaScript or a launch action): ' + label);
