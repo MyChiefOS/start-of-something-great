@@ -99,7 +99,7 @@ test('OV1: since 088 (Aaron, Nov 26: pay-as-you-go), the four reviewers are on w
   const g = gateway('{"verdict":"ok","reason":"Fine."}');
   assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl }), { calls: 0 }, 'a $0 cap calls nothing');
   assert.strictEqual(g.sent.length, 0);
-  await q(`update app.oversight_roles set mode = 'off'`);
+  await q(`update app.oversight_roles set mode = case when role = 'quality_assurance' then 'on' else 'off' end`); // OV2 and OV3 test one role
 });
 
 test('OV2: on with a cap, a role advises and changes nothing; the cap stops it; failures are errors', async () => {
@@ -132,7 +132,7 @@ test('OV3: the random auditor samples by hash; the report is facts only, once a 
   assert.strictEqual(reports[0].facts.wall_chain_ok, true);
   assert.strictEqual(reports[0].facts.submissions_last_day.passed, 40);
   const o = (await run({ ...ctxOf(admin), actor: 'admin' }, (t) => t`select app.oversight_admin() as o`))[0].o;
-  assert.ok(o.reports.length === 1 && o.roles.length === 6);
+  assert.ok(o.reports.length === 1 && o.roles.length === 7);
   await assert.rejects(run(ctxOf(poster), (t) => t`select app.oversight_admin()`), /only an administrator/);
   if (o.samples.length) {
     assert.strictEqual((await run({ ...ctxOf(admin), actor: 'admin' }, (t) => t`select app.audit_sample_close(${o.samples[0].id}::uuid, 'looked', null) as r`))[0].r, 'looked');

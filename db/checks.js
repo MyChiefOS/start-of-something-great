@@ -549,8 +549,8 @@ const AUDIT_POLICIES = {
   // and subject_id, never who did it or the detail.
   audit_jevs_select: { cmd: 'r', using: "action='admin.set'::text", check: '', roles: 'dog_jevs' },
   // 051 (the administrator's console): the work module's role records each console read, as the one acting, and reads
-  // only the rows the console's admins tab shows (administrators' actions, console reads, promotions, sign-ins).
-  audit_insert_console: { cmd: 'a', using: '', check: "((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (action = 'console.read'::text) AND (actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))", roles: 'dog_work' },
+  // only the rows the console's admins tab shows (administrators' actions, console reads, promotions, sign-ins). 088: it also records the AI classifier's flags (action review.flag), as the timer.
+  audit_insert_console: { cmd: 'a', using: '', check: "((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))) AND (((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (action = 'console.read'::text)) OR (action = 'review.flag'::text)))", roles: 'dog_work' },
   audit_select_console: { cmd: 'r', using: "((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND ((actor_kind = 'admin'::text) OR (action = ANY (ARRAY['console.read'::text, 'admin.set'::text])) OR ((action = 'member.signed_in'::text) AND (subject_kind = 'member'::text) AND (subject_id IN ( SELECT m.id FROM app.members m WHERE m.is_admin)))))", check: '', roles: 'dog_work' }
 };
 const squash = (s) => (s || '').replace(/[\s()]/g, '');
