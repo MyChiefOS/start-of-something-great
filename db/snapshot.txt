@@ -2031,6 +2031,7 @@ function app.wiki_bad_package(p_eco text, p_name text, p_version text) owner=dog
 function app.wiki_cidr6_ok(p text) owner=dog_owner execute=dog_owner,dog_work language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=25360c9f8eb7f3eae515f6b1a59f497a
 function app.wiki_claim() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=aa9565857dcb6203581225c98aad770a
 function app.wiki_health_check() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=ca0b0feba92295669e7970b4b02e7888
+function app.wiki_held_sources() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=text[] body_md5=bb4281c7c724f5649a09e9850cf21749
 function app.wiki_never_block(p_domain text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=c2a6100214bc7c94fcb68c494454cdda
 function app.wiki_never_block_cidr(p_cidr text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=8469025b8ef2141d0ce8a5da8f088267
 function app.wiki_never_block_cidr6(p text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6641214103011b10754d3689f43a0110
