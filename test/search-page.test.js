@@ -147,6 +147,8 @@ test('/sitemap lists every page that has an address of its own, and the footer r
     '404.html', 'sitemap.html', 'api-docs.html', 'admin/review.html', 'admin/controls.html', 'admin/console.html', 'admin/go-live.html', 'errors/rate-limited.html',
     // /join/pin is a step of Join: /join opens it when the PIN is set, or on a browser that keeps its sign-in key.
     'join/pin.html',
+    // 088: /go opens only from a link in a post (it checks that link when it is clicked).
+    'go.html',
     // 069: /oauth/authorize is reached only from an AI app asking a person to approve it, with the app's request.
     'oauth-authorize.html'];
   // The old /review and /controls only pass a visitor on to /admin/review and /admin/controls (Nov 5, 2026).

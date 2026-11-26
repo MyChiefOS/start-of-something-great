@@ -44,9 +44,12 @@ grant select (id, post_id, source, classifier, resolved_at) on app.review_flags 
 create policy review_flags_work_insert on app.review_flags for insert to dog_work
   with check (source = 'classifier' and classifier = 'ai' and reporter_id is null);
 create policy review_flags_work_select on app.review_flags for select to dog_work using (source = 'classifier' and classifier = 'ai');
--- The flag's own audit record (004's trigger writes it as the inserting role): only that, as the timer.
-create policy audit_insert_classifier on app.audit_log for insert to dog_work
-  with check (action = 'review.flag' and actor_kind = (select app.actor_kind()) and actor_id is not distinct from (select app.current_actor_id()));
+-- The flag's own audit record (004's trigger writes it as the inserting role): dog_work's one audit policy (051's, for
+-- the console) now also allows that, as the timer.
+drop policy audit_insert_console on app.audit_log;
+create policy audit_insert_console on app.audit_log for insert to dog_work
+  with check (actor_kind = (select app.actor_kind()) and actor_id is not distinct from (select app.current_actor_id())
+              and (((select app.actor_kind()) = 'admin' and action = 'console.read') or action = 'review.flag'));
 grant insert (action, subject_kind, subject_id, detail) on app.audit_log to dog_work;
 grant select (id, body, status, created_at) on app.posts to dog_work;
 do $p$ begin
@@ -242,7 +245,12 @@ begin
                    or exists (select 1 from jsonb_object_keys(f) k where k <> all (array['filename', 'status', 'changes', 'patch', 'scan']))) then
       continue;
     end if;
-    if not app.tl_wants((x ->> 'number')::integer) then continue; end if;
+    -- 088: Third Look's merged pull requests (tl_wants), and every pull request submitted for work and not yet decided,
+    -- so the Wall scans it when it arrives. Third Look itself still claims only what tl_wants allows.
+    if not (app.tl_wants((x ->> 'number')::integer)
+            or exists (select 1 from app.work_submissions s where s.pr_number = (x ->> 'number')::integer and s.artifact_kind = 'pr' and s.status in ('waiting', 'review'))) then
+      continue;
+    end if;
     insert into app.tl_files (number, files) values ((x ->> 'number')::integer, x -> 'files')
       on conflict (number) do update set files = excluded.files, read_at = now();
     added := added + 1;
