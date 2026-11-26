@@ -44,7 +44,8 @@ const RULES = [
   ["W39", "A file whose contents are a program or another kind of file than its name says", "Blocked: refused at once (a person can mark it a mistake).", "block"],
   ["W40", "An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or an entry that unpacks past its declared size", "Blocked: refused at once (a person can mark it a mistake).", "block"],
   ["W40b", "An archive that unpacks to over 100 times its size, within the size limit", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
-  ["W41", "An Office file with macros, or a PDF with JavaScript or a launch action", "Blocked: refused at once (a person can mark it a mistake).", "block"]
+  ["W41", "An Office file with macros, or a PDF with JavaScript or a launch action", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W42", "A file matching a malware signature (a YARA rule from YARA Forge's core pack, from a rule set whose license allows our use)", "Blocked: refused at once (a person can mark it a mistake).", "block"]
 ];
 
 // The work's checks in order, as the diagram of Nov 24 draws them, with what each does today.
@@ -59,7 +60,8 @@ const DESIGN = [
   ['The random auditor', '1 in 20 of the Wall’s allows and of passed work, chosen by hash, for a person to look at.', 'On'],
   ['The model reviewers', 'An exploit researcher, a penetration tester (reading only), quality assurance and a solution architect, each answering "ok" or "concern". Advice only.', 'Built, off until a monthly cap is set'],
   ['The oversight report', 'A daily, read-only report of facts (the Wall’s chain, the wiki’s age, counts, lanes, alerts, spending). A Fable 5.2 narrative, cross-checked weekly by a model from another maker, is built and off.', 'Facts on; the model part off'],
-  ['Being built', 'Antivirus signatures and YARA rules for files, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents, for pull requests’ files (084).', 'Being built']
+  ['Malware signatures', 'YARA, inside the Wall’s scanner, on every pull request file it reads: YARA Forge’s core rules (github.com/YARAHQ/yara-forge), read fresh every hour, kept only from rule sets whose license allows our use: CAPE, ESET, FireEye-RT, GCTI, Trellix ARC, Telekom Security, Volexity, Dr4k0nia, Elceef, Cod3nym, craiu, DitekSHen, WithSecureLabs, SEKOIA, Synacktiv and Signature Base (rules under the Detection Rule License 1.1 are used with this credit). A rule that matches an honest test file is dropped.', 'On (085)'],
+  ['Being built', 'Antivirus signatures (ClamAV), scanning every pull request at submission, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents (084), and YARA malware signatures (085), for pull requests’ files.', 'Being built']
 ];
 
 module.exports = { RULES, DESIGN };

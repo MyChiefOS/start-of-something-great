@@ -159,7 +159,22 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
-async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [] }) {
+// 085: YARA Forge's core pack, read once a run (at most 20 MB), its rules prepared by wall/yara.js. Null if it can't be
+// read: the files are still scanned by wall/files.js, and the next run tries again.
+async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
+  try {
+    const yara = require('../wall/yara');
+    const r = await fetchImpl(yara.FORGE_CORE, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
+    if (!r.ok) return null;
+    const zip = Buffer.from(await r.arrayBuffer());
+    if (zip.length > 20 * 1024 * 1024) return null;
+    const entry = (wallFiles.zipEntries(zip) || []).find((e) => e.name.endsWith('.yar'));
+    if (!entry || entry.usize > 40 * 1024 * 1024) return null;
+    return await yara.prepare(wallFiles.zipRead(zip, entry).toString('utf8'));
+  } catch { return null; }
+}
+
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -178,13 +193,18 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
     // SCAN_FILES files of at most SCAN_BYTES each per pull request; a file that can't be read isn't scanned, and the
     // Wall flags a changed file it couldn't read (W27).
     if (Array.isArray(raw) && getRaw) {
+      if (rules === undefined) rules = await forgeRules();
       let scanned = 0;
       for (const f of raw) {
         if (scanned >= SCAN_FILES || !f || f.status === 'removed' || typeof f.contents_url !== 'string' || !f.contents_url.startsWith(REPO_API + '/contents/')) continue;
         scanned++;
         try {
           const bytes = await getRaw(f.contents_url.slice(REPO_API.length));
-          if (bytes && bytes.length <= SCAN_BYTES) f.scan = wallFiles.summary(bytes, f.filename);
+          if (bytes && bytes.length <= SCAN_BYTES) {
+            f.scan = wallFiles.summary(bytes, f.filename);
+            // 085: YARA's malware signatures on the file itself.
+            if (rules) for (const g of await require('../wall/yara').scan(rules, bytes, f.filename)) if (f.scan.flags.length < 20) f.scan.flags.push(g);
+          }
         } catch { /* not scanned: the next run asks again */ }
       }
     }
