@@ -125,7 +125,7 @@ async function report(runTx, token, fetchImpl) {
   if (!item) return 0;
   const w = sl.wrap(JSON.stringify(item.facts), crypto.randomBytes(6).toString('hex').toUpperCase(), 20000);
   const out = await ask({ token, model: item.model, system: REPORT, user: 'The facts for ' + String(item.day).slice(0, 10) + ' are between ' + w.begin + ' and ' + w.end + '.\n\n' + w.block, maxTokens: 900, fetchImpl });
-  try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_report_record(${item.day}, ${out.content ? out.content.slice(0, 4000) : null}, ${out.error || null})`); } catch { /* stays pending */ }
+  try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_report_record(${item.day}::date, ${out.content ? out.content.slice(0, 4000) : null}, ${out.error || null})`); } catch { /* stays pending */ }
   return 1;
 }
 
@@ -143,7 +143,7 @@ async function crosscheck(runTx, token, fetchImpl) {
   const out = await ask({ token, model: item.model, system: CROSSCHECK, user: 'The week\'s reports and facts are between ' + w.begin + ' and ' + w.end + '.\n\n' + w.block, maxTokens: 200, json: true, fetchImpl });
   const v = out.content ? parse(out.content) : null;
   const err = out.error || (v ? null : 'bad answer');
-  try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_crosscheck_record(${item.week}, ${v ? v.verdict : null}, ${v ? v.reason : null}, ${err})`); } catch { /* stays pending */ }
+  try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_crosscheck_record(${item.week}::date, ${v ? v.verdict : null}, ${v ? v.reason : null}, ${err})`); } catch { /* stays pending */ }
   return 1;
 }
 

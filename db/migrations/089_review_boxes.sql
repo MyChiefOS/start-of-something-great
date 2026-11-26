@@ -17,6 +17,10 @@ alter table app.wall_rules enable row level security;
 alter table app.oversight_roles disable row level security;
 update app.oversight_roles set mode = 'on' where role = any (array['fable_report', 'fable_crosscheck']);
 alter table app.oversight_roles enable row level security;
+-- The blue team lead (wall_gate, dog_owner) reads only the watchtower's own alerts, nothing else in notices.
+create policy notices_owner_watchtower on app.notices for select to dog_owner
+  using (member_id is null and kind = 'alert' and dedupe_key like 'watchtower:%');
+grant select (member_id, kind, title, subject_kind, subject_id, dedupe_key, created_at) on app.notices to dog_owner;
 
 set local role dog_owner;
 -- Appeals of the Wall's blocks: one per decision.
@@ -26,7 +30,7 @@ create table app.wall_appeals (
   member_id uuid references app.members (id) on delete set null,
   reason text not null check (char_length(reason) between 3 and 500),
   status text not null default 'open' check (status = any (array['open', 'cleared', 'upheld', 'decided'])),
-  recheck_flags jsonb check (recheck_flags is null or jsonb_typeof(recheck_flags) = 'array'),
+  recheck_flags jsonb check (jsonb_typeof(recheck_flags) = 'array' and octet_length(recheck_flags::text) <= 4000),
   rechecked_at timestamptz,
   created_at timestamptz not null default now()
 );
