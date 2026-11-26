@@ -87,13 +87,17 @@ test('FWL7: middleware.js lets everything through if the firewall fails, writes 
   assert.match(s, /catch \{\n\s+return next\(\);/);
   assert.match(s, /if \(url\.pathname === LIST\) return next\(\);/);
   assert.match(s, /matcher: \[/, 'static files are left out');
-  assert.ok(!/await/.test(s), 'a request never waits for the list');
+  const refresh = s.slice(s.indexOf('function refresh'), s.indexOf('\n}\n', s.indexOf('function refresh')));
+  assert.ok(refresh.length > 20 && !/await/.test(refresh), 'a request never waits for the list');
+  // 087: the body is read from a copy, capped at 64 KB, and for at most 1.5 s.
+  assert.match(s, /request\.clone\(\)/);
+  assert.match(s, /setTimeout\(\(\) => ok\(''\), 1500\)/);
   assert.match(s, /console\.log\(JSON\.stringify\(\{ wall: d\.rule, kind: d\.kind, action: d\.action, enforced: d\.enforced \}\)\)/);
   assert.ok(!/console\.log\([^)]*(ip|path|url)\b/.test(s.replace(/console\.log\(JSON\.stringify\(\{ wall[^\n]*/, '')));
 });
 
 test('FWL8 (CWE-1333, Aaron Nov 25 "Rewrite without regex"): no regular expression reads request input; the worst inputs stay fast', () => {
-  for (const f of ['wall/firewall.js', 'wall/match.js', 'middleware.js']) {
+  for (const f of ['wall/firewall.js', 'wall/match.js', 'wall/normalize.js', 'middleware.js']) {
     const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
     assert.ok(!/new RegExp|\.test\(|\.exec\(|\.match\(|\.replace\(\//.test(src), f + ' uses no regular expressions');
   }
