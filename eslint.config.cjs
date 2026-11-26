@@ -59,7 +59,7 @@ module.exports = [
   {
     // Vendored code (kept byte for byte as published), the design records (not served: .vercelignore) and the
     // Edge Functions' TypeScript entry points, which ESLint can't parse without a plugin.
-    ignores: ['node_modules/**', 'verifier/noble-ed25519-*.js', 'design/**', 'supabase/functions/**/*.ts', '.claude/**'],
+    ignores: ['node_modules/**', 'verifier/noble-ed25519-*.js', 'wall/vendor/**', 'design/**', 'supabase/functions/**/*.ts', '.claude/**'],
   },
   {
     linterOptions: { reportUnusedDisableDirectives: 'warn' },
