@@ -126,15 +126,23 @@ test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s o
   const on = y.split(/^permissions:/m)[0].split(/^on:$/m)[1];
   const events = [...on.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]);
   assert.deepStrictEqual(events.sort(), [...core.EVENTS].sort(), 'its events are exactly the ones dog-github accepts');
-  assert.match(on, /pull_request_target:\n {4}types: \[closed\]/);
-  assert.match(on, /schedule:\n {4}- cron: '\d+ \* \* \* \*'/, 'hourly, as the backstop');
+  // 088: also when a pull request is opened or pushed to, so its files are scanned at submission.
+  assert.match(on, /pull_request_target:\n {4}types: \[opened, synchronize, reopened, ready_for_review, closed\]/);
+  assert.match(on, /schedule:\n {4}- cron: '\d+,\d+ \* \* \* \*'/, 'every half hour, as the backstop');
   // Each job only the rights it needs (review F7): none for the workflow; the reading job can't write to GitHub; only the
   // alert job, which reads no event text, may comment.
   assert.match(y, /^permissions: \{\}$/m);
   assert.match(y, /^ {2}facts:\n[\s\S]*?\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {6}issues: read\n {6}id-token: write[^\n]*\n/m);
-  assert.match(y, /^ {2}alert:\n {4}needs: facts\n {4}if: failure\(\) && github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'\n[\s\S]*?\n {4}permissions:\n {6}issues: write[^\n]*\n {4}steps:/m);
+  assert.match(y, /^ {2}alert:\n {4}needs: \[sandbox, facts\]\n {4}if: always\(\) && needs\.facts\.result == 'failure' && github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'\n[\s\S]*?\n {4}permissions:\n {6}issues: write[^\n]*\n {4}steps:/m);
+  // 088: the sandbox job, which runs pull requests' files, can read the repository and nothing more: no identity token,
+  // no write right, no secret. Its findings reach the facts job only as a job output.
+  const sbx = y.slice(y.indexOf('\n  sandbox:\n'), y.indexOf('\n  facts:\n'));
+  assert.match(sbx, /\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {4}timeout-minutes:/);
+  assert.doesNotMatch(sbx, /id-token|: write|\$\{\{\s*secrets\.|ACTIONS_ID_TOKEN/);
+  assert.match(sbx, /node wall\/sandbox\.js/);
+  assert.match(y, /^ {2}facts:\n {4}needs: sandbox\n/m);
   assert.strictEqual((y.match(/issues: write/g) || []).length, 1, 'write rights in one place only');
-  assert.match(y, /if: github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'/);
+  assert.match(y, /if: (always\(\) && )?github\.repository_id == 1418125608 && github\.ref == 'refs\/heads\/main'/);
   assert.doesNotMatch(y, /\$\{\{\s*(github\.event|github\.head_ref|inputs\.)/, 'no text from the event anywhere');
   assert.doesNotMatch(y, /^\s+ref:/m, 'it checks out main\'s own code, never a pull request\'s');
   assert.match(y, /persist-credentials: false/);
@@ -144,7 +152,7 @@ test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s o
   assert.match(y, /echo "::add-mask::\$t"/);
   assert.match(y, /node db\/workjobs\.js gather wanted\.json requests/);
   assert.doesNotMatch(y, /\$\{\{\s*secrets\.|npm (ci|install)/, 'no secret, no packages installed');
-  assert.match(y, /if: failure\(\)[\s\S]*labels=jevs-alert/, 'a failed run alerts on the JEVs alerts issue');
+  assert.match(y, /needs\.facts\.result == 'failure'[\s\S]*labels=jevs-alert/, 'a failed run alerts on the JEVs alerts issue');
 });
 
 test('RK140: the site\'s timer no longer reads GitHub\'s pull requests for the work module, nor calls the sync', async () => {

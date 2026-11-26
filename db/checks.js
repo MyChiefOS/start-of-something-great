@@ -202,6 +202,12 @@ const DEFINERS = {
   'app.wiki_summary()': { owner: 'dog_work', callers: 'dog_app' },
   // 083: the firewall's threat addresses and ranges (public feeds), for middleware.js through /api/work/wall_edge.
   'app.wall_edge_addresses()': { owner: 'dog_work', callers: 'dog_app' },
+  // 088: the AI classifier's claim and answer (the site's timer), the wiki's health check (the timer; alerts only) and the
+  // click-time link check (public: /go asks it about one link).
+  'app.oversight_classify_claim(integer)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.oversight_classify_record(uuid, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.wall_link_check(text)': { owner: 'dog_owner', callers: 'dog_app' },
   // 075, the watchtower's pass (the site's timer; alerts only).
   'app.watchtower_run()': { owner: 'dog_work', callers: 'dog_app' },
   // 079, the agent track: an alert when an agent's own account passes a limit (it keeps working), called from the

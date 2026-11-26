@@ -237,13 +237,18 @@ function repoCanaries() {
 // 085: YARA Forge's core pack, read once a run (at most 20 MB), its rules prepared by wall/yara.js. 087: if it can't be
 // read or doesn't compile, the result says so ({ broken }) and every file scanned that run carries a W42b flag saying
 // the signature check didn't run (never silent); wall/files.js still scans them, and the next run tries again.
-async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
+// 088: pin { tag, sha256 } from the wiki: that exact release is read and its digest checked; a mismatch is a broken
+// pack (W42b on every file), never a silent switch to whatever is newest. With no pin, the latest release is read.
+async function forgeRules(pin = null, { fetchImpl = globalThis.fetch } = {}) {
   try {
     const yara = require('../wall/yara');
-    const r = await fetchImpl(yara.FORGE_CORE, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
+    const pinned = pin && typeof pin === 'object' && /^v?[0-9A-Za-z._-]{1,40}$/.test(String(pin.tag || '')) && /^[0-9a-f]{64}$/.test(String(pin.sha256 || ''));
+    const url = pinned ? yara.FORGE_RELEASE + encodeURIComponent(pin.tag) + '/yara-forge-rules-core.zip' : yara.FORGE_CORE;
+    const r = await fetchImpl(url, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
     if (!r.ok) return { broken: 'rules not reachable, ' + r.status };
     const zip = Buffer.from(await r.arrayBuffer());
     if (zip.length > 20 * 1024 * 1024) return { broken: 'rules too large' };
+    if (pinned && require('crypto').createHash('sha256').update(zip).digest('hex') !== pin.sha256) return { broken: 'rules digest does not match the wiki\'s pin ' + pin.tag };
     const entry = (wallFiles.zipEntries(zip) || []).find((e) => e.name.endsWith('.yar'));
     if (!entry || entry.usize > 40 * 1024 * 1024) return { broken: 'rules file missing or too large' };
     const p = await yara.prepare(wallFiles.zipRead(zip, entry).toString('utf8'), { extraCanaries: repoCanaries() });
@@ -251,7 +256,9 @@ async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
   } catch { return { broken: 'rules could not be read' }; }
 }
 
-async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null }) {
+// 088: clam: wall/clamav.js's scan (the facts workflow passes it; tests may pass a stand-in). sandbox: the sandbox job's
+// findings, { 'number:filename': [flags] }, each kept only if it is W47 or W47b in the Wall's own words.
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null, clam = null, sandbox = null }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -272,6 +279,7 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
     if (Array.isArray(raw) && getRaw) {
       if (rules === undefined) rules = await forgeRules();
       let scanned = 0;
+      const forClam = [];
       for (const f of raw) {
         if (scanned >= SCAN_FILES || !f || f.status === 'removed' || typeof f.contents_url !== 'string' || !f.contents_url.startsWith(REPO_API + '/contents/')) continue;
         scanned++;
@@ -281,8 +289,27 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
             f.scan = wallFiles.summary(bytes, f.filename);
             // 085: YARA's malware signatures on the file itself.
             if (rules) for (const g of await require('../wall/yara').scan(rules, bytes, f.filename)) if (f.scan.flags.length < 20) f.scan.flags.push(g);
+            forClam.push({ key: f.filename, name: f.filename, bytes, f });
           }
         } catch { /* not scanned: the next run asks again */ }
+      }
+      // 088: ClamAV on every scanned file of this pull request, in one engine run.
+      if (clam && forClam.length) {
+        const found = clam(forClam);
+        for (const x of forClam) for (const g of found.get(x.key) || []) if (x.f.scan.flags.length < 20) x.f.scan.flags.push(String(g).slice(0, 240));
+      }
+      // 088: the sandbox's findings for this pull request's files.
+      if (sandbox && typeof sandbox === 'object') {
+        for (const f of raw) {
+          const got = f && Object.prototype.hasOwnProperty.call(sandbox, n + ':' + f.filename) ? sandbox[n + ':' + f.filename] : null;
+          if (!Array.isArray(got)) continue;
+          for (const g of got.slice(0, 5)) {
+            const t = String(g);
+            if (!(t.startsWith('W47 sandbox: ') || t.startsWith('W47b sandbox: ')) || t.length > 240) continue;
+            f.scan = f.scan || { type: 'other', flags: [] };
+            if (f.scan.flags.length < 20) f.scan.flags.push(t);
+          }
+        }
       }
     }
     // 086: OSV on the packages this pull request adds; the flags go with the package.json that adds them.
@@ -366,7 +393,16 @@ async function main(argv, env = process.env) {
   if (argv[0] !== 'gather' || argv.length !== 3) throw new Error('usage: node db/workjobs.js gather <wanted.json> <folder>');
   const answer = JSON.parse(fs.readFileSync(argv[1], 'utf8'));
   if (!answer || answer.ok !== true || !Array.isArray(answer.wanted)) throw new Error('dog-github\'s wanted answer is not usable');
-  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), getRaw: githubRaw(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [] });
+  // 088: the antivirus runs when the workflow installed it (WALL_CLAMAV=1); the sandbox job's findings arrive in
+  // WALL_SANDBOX as JSON (a broken or missing value means no findings, never a failed run).
+  let sandbox = null;
+  try { sandbox = env.WALL_SANDBOX ? JSON.parse(env.WALL_SANDBOX) : null; } catch { sandbox = null; }
+  const clam = env.WALL_CLAMAV === '1' ? (items) => require('../wall/clamav').scan(items) : null;
+  // 088: the YARA release the wiki pinned (served with the firewall's list), when the site answers.
+  let pin = null;
+  try { const r = await fetch('https://dayonegreat.com/api/work/wall_edge', { signal: AbortSignal.timeout(15000) }); if (r.ok) { const j = await r.json(); pin = (j && (j.data || j).yara) || null; } } catch { pin = null; }
+  const rules = await forgeRules(pin);
+  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), getRaw: githubRaw(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [], clam, sandbox, rules });
   const dir = path.resolve(argv[2]);
   fs.mkdirSync(dir, { recursive: true });
   const reqs = requests(facts);
@@ -377,4 +413,4 @@ async function main(argv, env = process.env) {
 
 if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 
-module.exports = { run, gather, requests, githubGet, githubRaw, addedPackages, osvFlags, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };
+module.exports = { forgeRules, run, gather, requests, githubGet, githubRaw, addedPackages, osvFlags, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };

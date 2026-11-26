@@ -35,6 +35,8 @@ const SOURCES = {
   'Signature Base': { license: 'DRL-1.1', repo: 'https://github.com/Neo23x0/signature-base', mark: 'Detection Rule License' }
 };
 const FORGE_CORE = 'https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-core.zip';
+// 088: a pinned release (the wiki's pin): FORGE_RELEASE + tag + '/yara-forge-rules-core.zip'.
+const FORGE_RELEASE = 'https://github.com/YARAHQ/yara-forge/releases/download/';
 const MODULES = ['pe.', 'dotnet.', 'elf.', 'math.', 'hash.', 'cuckoo.', 'magic.', 'console.', 'time.', 'string.', 'macho.', 'dex.', 'lnk.'];
 const MAX_RULES_BYTES = 30 * 1024 * 1024;
 
@@ -158,4 +160,4 @@ async function scan(prepared, bytes, label) {
   return names.slice(0, 5).map((n) => ('W42 malware signature (YARA rule ' + n + ', ' + (prepared.sourceOf.get(n) || 'YARA Forge') + '): ' + String(label || '')).slice(0, 240));
 }
 
-module.exports = { SOURCES, FORGE_CORE, CANARIES, load, prepare, scan, sections, usesModule };
+module.exports = { SOURCES, FORGE_CORE, FORGE_RELEASE, CANARIES, load, prepare, scan, sections, usesModule };

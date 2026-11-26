@@ -29,6 +29,7 @@ const ENFORCE_NOW = new Set(['W34']);
 // The attack checks are wall/match.js: plain text scans, no regular expressions (Aaron, Nov 25, after the scanner's
 // ReDoS finding). Free-text values (a search box) are only flagged if they look like an attack.
 const match = require('./match');
+const upload = require('./upload');
 const MAX_TARGET = 8192;
 const MAX_BODY = 65536;
 const FREE_TEXT = new Set(['q', 'query', 'search', 's', 'text', 'term']);
@@ -238,8 +239,14 @@ function decide(req, { badAddresses = [], now = Date.now(), since = null } = {})
   // The body (the first 64 KB). The site's own forms and API carry people's writing, which can talk about attacks, so
   // a body that looks like one is flagged for the Wall's reviewers (code people submit can hold templates and shell
   // lines honestly); a Log4Shell lookup in a body is refused, since no honest form sends one.
-  if (req.body) {
-    const k = match.attackRaw(String(req.body).slice(0, MAX_BODY), MAX_BODY);
+  // 088: files sent in the body (a multipart form) go through the Wall's file scanner before any route sees them.
+  if (req.bodyBytes && req.contentType) {
+    const u = upload.check(req.bodyBytes, req.contentType);
+    if (u) return hit(u.rule, u.kind, 'block', 403);
+  }
+  const bodyText = req.bodyBytes && upload.boundaryOf(req.contentType) ? upload.textOnly(req.bodyBytes, req.contentType) : req.body;
+  if (bodyText) {
+    const k = match.attackRaw(String(bodyText).slice(0, MAX_BODY), MAX_BODY);
     if (k === 'lookup') return hit('W35', k + ' in body', 'block', 403);
     if (k) return hit('W35', k + ' in body', 'flag', 200);
   }

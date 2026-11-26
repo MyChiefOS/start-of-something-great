@@ -685,6 +685,29 @@
         }
       }
     },
+    "/api/work/link": {
+      "get": {
+        "operationId": "work_link",
+        "summary": "link",
+        "security": [],
+        "parameters": [
+          {
+            "name": "u",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer, as JSON. Fields written by the public are named in untrusted_fields."
+          }
+        }
+      }
+    },
     "/api/work/score": {
       "get": {
         "operationId": "work_score",

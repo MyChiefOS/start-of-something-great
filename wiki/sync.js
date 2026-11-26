@@ -119,6 +119,7 @@ function indicatorOf(kind, value, source, ref) {
 // The threat feeds. Each one that fails is skipped (and counted as 0); the others still record.
 async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now } = {}) {
   const out = [];
+  const newest = {};
   const counts = { feodo: 0, spamhaus: 0, certpl: 0, phishtank: 0, et: 0, cins: 0, eset: 0, urlhaus: 0, threatfox: 0, malwarebazaar: 0, keyed_sources: key ? 'on' : 'off' };
   const carry = [];
   const groups = {};
@@ -184,7 +185,13 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
   } else carry.push('phishtank', 'eset');
   try {
     const list = await get(FEODO, { headers: { accept: 'application/json' } });
-    for (const it of (Array.isArray(list) ? list : []).slice(0, 5000)) add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
+    for (const it of (Array.isArray(list) ? list : []).slice(0, 5000)) {
+      add('feodo', indicatorOf('ip', it && it.ip_address, 'feodo', it && it.malware));
+      // 088: the feed's own newest date, so the wiki's health check sees a feed that stopped updating (Feodo's
+      // newest entry has been March 4 since then) even when it still answers.
+      const d = String((it && (it.last_online || it.first_seen)) || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && (!newest.feodo || d > newest.feodo)) newest.feodo = d;
+    }
   } catch { /* skipped this run */ }
   if (new Date(now()).getUTCHours() < 12) {
     try {
@@ -227,7 +234,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       for (const m of (b && Array.isArray(b.data) ? b.data : []).slice(0, 10000)) add('malwarebazaar', indicatorOf('sha256', m && m.sha256_hash, 'malwarebazaar', m && m.signature));
     } catch { /* skipped */ }
   }
-  return { indicators: out, groups: Object.values(groups), counts, carry };
+  return { indicators: out, groups: Object.values(groups), counts, carry, newest };
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
@@ -288,7 +295,27 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   Object.assign(sources, f.counts, { injection: (REFERENCE.injection || []).length, injection_flag: (REFERENCE.injection_flag || []).length });
+  if (f.newest && Object.keys(f.newest).length) sources.newest = f.newest;
+  // 088 (Aaron's plan, Phase 1 item 1: YARA rules in the wiki sync): the YARA Forge release the Wall's file scanner
+  // uses, pinned by its tag and SHA-256 with each wiki version; the facts workflow downloads exactly that release and
+  // checks its digest. If GitHub doesn't say (rate limits), the pin is left out and the scanner reads the latest.
+  const pin = await yaraPin(fetchImpl);
+  if (pin) sources.yara = pin;
   return { entries, packages, indicators, indicator_groups: f.groups, sources, carry: f.carry };
+}
+
+const YARA_RELEASE = 'https://api.github.com/repos/YARAHQ/yara-forge/releases/latest';
+async function yaraPin(fetchImpl = fetch) {
+  try {
+    const r = await fetchImpl(YARA_RELEASE, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'dayonegreat-wiki' }, signal: AbortSignal.timeout(10000) });
+    if (r.status !== 200) return null;
+    const rel = await r.json();
+    const tag = String((rel && rel.tag_name) || '');
+    const asset = ((rel && rel.assets) || []).find((a) => a && a.name === 'yara-forge-rules-core.zip');
+    const digest = String((asset && asset.digest) || '');
+    if (!/^v?[0-9A-Za-z._-]{1,40}$/.test(tag) || !/^sha256:[0-9a-f]{64}$/.test(digest)) return null;
+    return { tag, sha256: digest.slice(7) };
+  } catch { return null; }
 }
 
 // The timer's step: at most one run each 12 hours; any failure records nothing and the next run is in 12 hours.
@@ -307,4 +334,4 @@ async function run(runTx, { fetchImpl, now } = {}) {
   }
 }
 
-module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED };
+module.exports = { run, gather, entryOf, packagesOf, indicatorOf, feeds, sharedHost, SHARED, yaraPin, YARA_RELEASE };

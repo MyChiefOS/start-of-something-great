@@ -55,7 +55,13 @@ const RULES = [
   ["W44b", "Hidden or decoded code execution inside a test or fixture file", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
   ["W45", "Clear spam (a spam topic with an offer and a money promise or off-platform contact), however it is spelled", "Blocked: refused at once (a person can mark it a mistake).", "block"],
   ["W45b", "Looks like spam (fewer signs than W45)", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
-  ["W13b", "A request to build or run an attack (an exploit, malware, a reverse shell, attacking a site): flagged for the reviewers", "Flagged: the work goes ahead and the reviewers see it.", "flag"]
+  ["W13b", "A request to build or run an attack (an exploit, malware, a reverse shell, attacking a site): flagged for the reviewers", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
+  ["W46", "A file the ClamAV antivirus engine identifies as malware", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W46b", "The antivirus check could not run on a file", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
+  ["W47", "A file that, run in the sandbox (no network, no lasting disk), tried to reach the network, start a shell or plant itself", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W47b", "A sandbox run that did something unusual, or could not run", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
+  ["W48", "The AI classifier read a post as phishing or prompt injection: it goes to the review queue", "Flagged: the work goes ahead and the reviewers see it.", "flag"],
+  ["W49", "A link that was clean when posted but is on a threat list when someone clicks it: the click is stopped with a warning", "Flagged: the work goes ahead and the reviewers see it.", "flag"]
 ];
 
 // The work's checks in order, as the diagram of Nov 24 draws them, with what each does today.
@@ -68,10 +74,15 @@ const DESIGN = [
   ['The final score', 'Each submission’s score from facts (Second and Third Look, disputes, watchtower alerts), capped below 70 while a Wall flag is unreviewed. 70 is the pass line. It advises; it changes no verdict and no points.', 'On, advisory'],
   ['Lanes A and B, the digest and QA', 'Lane A: the Wall’s unreviewed flags. Lane B: work under 70. One grouped digest a day; incidents (credentials, internal addresses, recon) alert at once. An administrator marks a flag a false positive or confirmed.', 'On'],
   ['The random auditor', '1 in 20 of the Wall’s allows and of passed work, chosen by hash, for a person to look at.', 'On'],
-  ['The model reviewers', 'An exploit researcher, a penetration tester (reading only), quality assurance and a solution architect, each answering "ok" or "concern". Advice only.', 'Built, off until a monthly cap is set'],
+  ['The model reviewers', 'An exploit researcher, a penetration tester (reading only), quality assurance and a solution architect, each answering "ok" or "concern". Advice only. Pay-as-you-go (Aaron, Nov 26): no monthly cap; each role has a daily call cap as the brake.', 'On, pay-as-you-go (088)'],
+  ['The AI classifier', 'Reads each new post for phishing and prompt injection; a concern goes to the review queue (W48). The post stays until a person decides.', 'On, pay-as-you-go (088)'],
+  ['Antivirus and the sandbox', 'ClamAV, with its free daily signatures, on every changed file of a pull request (W46). Runnable files (scripts and Linux programs) run in a sandbox in GitHub’s runner: no network, a read-only disk, no environment, 10 seconds, in a job that holds no token; trying to reach the network, start a shell or a downloader, or plant itself blocks (W47).', 'On (088)'],
+  ['Scanning at submission', 'Every pull request submitted for work is scanned when it arrives and again after each push (at most every 20 minutes), not only once merged.', 'On (088)'],
+  ['Uploads and links', 'Any file sent to the site (a multipart form) is read by the file scanner in the firewall before any route sees it. Links in posts open through /go, which checks them against the threat lists at the moment of the click (W49).', 'On (088)'],
+  ['The wiki’s health', 'An alert to the administrators when the wiki goes 24 hours without a good run, when a feed comes back empty, or when a feed’s own newest entry is more than 7 days old (Feodo Tracker’s is from March 4). The YARA release is pinned by the wiki, by tag and SHA-256.', 'On (088)'],
   ['The oversight report', 'A daily, read-only report of facts (the Wall’s chain, the wiki’s age, counts, lanes, alerts, spending). A Fable 5.2 narrative, cross-checked weekly by a model from another maker, is built and off.', 'Facts on; the model part off'],
   ['Malware signatures', 'YARA, inside the Wall’s scanner, on every pull request file it reads: YARA Forge’s core rules (github.com/YARAHQ/yara-forge), read fresh on each run of the GitHub facts workflow, kept only from rule sets whose license allows our use: CAPE, ESET, FireEye-RT, GCTI, Trellix ARC, Telekom Security, Volexity, Dr4k0nia, Elceef, Cod3nym, craiu, DitekSHen, WithSecureLabs, SEKOIA, Synacktiv and Signature Base (rules under the Detection Rule License 1.1 are used with this credit). A rule that matches an honest test file is dropped.', 'On (085)'],
-  ['Being built', 'Antivirus signatures (ClamAV), scanning every pull request at submission, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents (084), YARA malware signatures (085, every rule set matching since 087), the EICAR test file, reverse shells and hidden code execution (087), for pull requests’ files.', 'Being built']
+  ['Being built', 'The blue team lead as a step, both random auditors feeding lanes A and B, rechecks and appeals, the zero-day filter and CWE links, the Fable 5.2 report in the digest and the weekly cross-check (Aaron’s plan, Nov 26). Done: everything above, including real file types, archives and active documents (084), YARA (085, every rule set since 087), EICAR, reverse shells and hidden code (087), antivirus, the sandbox, scanning at submission, uploads, click-time links and the AI classifier (088).', 'Being built']
 ];
 
 module.exports = { RULES, DESIGN };
