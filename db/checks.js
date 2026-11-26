@@ -213,8 +213,8 @@ const DEFINERS = {
   // 092: crews (a split, the guard on a piece's claim and a split task's submission, the whole task done) and the
   // SOLO portfolio card's data.
   'app.work_crew_split(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
-  'app.work_crew_guard()': { owner: 'dog_work', callers: '' },
-  'app.work_crew_done()': { owner: 'dog_work', callers: '' },
+  'app.work_crew_guard()': { owner: 'dog_work', callers: 'dog_owner' },
+  'app.work_crew_done()': { owner: 'dog_work', callers: 'dog_owner' },
   'app.work_portfolio(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   // 090: the AI Gateway check, once a day from the timer.
   'app.gateway_check_claim()': { owner: 'dog_work', callers: 'dog_app' },
