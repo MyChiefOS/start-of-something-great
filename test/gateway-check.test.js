@@ -43,20 +43,20 @@ test('GC1 once a day: each reviewer model and OpenAI\'s get one tiny request; on
   const fetchImpl = async (url, o) => {
     const b = JSON.parse(o.body);
     sent.push({ model: b.model, auth: o.headers.authorization, max: b.max_tokens });
-    if (b.model.startsWith('anthropic/') || b.model.startsWith('deepseek/')) {
+    if (b.model === 'openai/gpt-5.5') {
       return { status: 403, text: async () => JSON.stringify({ error: { message: 'Model not allowed for this team. Bearer ' + TOKEN + ' ' + 'k'.repeat(50), type: 'forbidden' } }) };
     }
     return { status: 200, text: async () => '{}', json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
   };
   const out = await roles.gatewayCheck(run, TOKEN, fetchImpl);
   const models = sent.map((s) => s.model).sort();
-  assert.ok(models.includes('openai/gpt-5-mini') && models.includes('openai/gpt-5.5') && models.includes('anthropic/claude-haiku-5.5') && models.includes('deepseek/deepseek-v3.2'), JSON.stringify(models));
+  assert.ok(models.includes('openai/gpt-5-mini') && models.includes('openai/gpt-5.5') && models.includes('mistral/ministral-14b') && models.includes('alibaba/qwen3-coder-30b-a3b') && !models.includes('anthropic/claude-haiku-5.5'), JSON.stringify(models));
   assert.ok(sent.every((s) => s.max === 5));
   assert.strictEqual(out.checked, models.length);
   const [n] = await q(`select title, body from app.notices where dedupe_key like 'gateway-check:%'`);
   assert.match(n.title, /^AI Gateway check: \d+ of \d+ models refused$/);
   assert.match(n.body, /openai\/gpt-5-mini: 200/);
-  assert.match(n.body, /anthropic\/claude-haiku-5\.5: 403 \(Model not allowed for this team\. Bearer \[removed\] \[removed\]\)/);
+  assert.match(n.body, /openai\/gpt-5\.5: 403 \(Model not allowed for this team\. Bearer \[removed\] \[removed\]\)/);
   assert.ok(!n.body.includes(TOKEN) && !n.body.includes('k'.repeat(50)), 'nothing token-like in the alert');
   // Once a day: a second run the same day sends nothing.
   const again = [];
@@ -75,4 +75,12 @@ test('GC2 the wiki health check: a feed carried over with its entries is not emp
   const [{ r }] = await run({ actor: 'anon' }, (t) => t`select app.wiki_health_check() as r`);
   assert.ok(!r.problems.includes('empty: spamhaus'), JSON.stringify(r.problems));
   assert.ok(r.problems.includes('empty: phishtank'), JSON.stringify(r.problems));
+});
+
+test('GC3 091: every reviewer is on a model the free tier serves (Qwen3 Coder, Ministral 14B, GPT-5 mini)', async () => {
+  const rows = await q(`select role, model from app.oversight_roles order by role`);
+  const by = Object.fromEntries(rows.map((r) => [r.role, r.model]));
+  assert.deepStrictEqual(by, { classifier: 'mistral/ministral-14b', exploit_researcher: 'mistral/ministral-14b', fable_crosscheck: 'openai/gpt-5-mini',
+    fable_report: 'mistral/ministral-14b', penetration_tester: 'alibaba/qwen3-coder-30b-a3b', quality_assurance: 'mistral/ministral-14b',
+    solution_architect: 'alibaba/qwen3-coder-30b-a3b' });
 });

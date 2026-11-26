@@ -171,7 +171,7 @@ test('WO7 the AI classifier reads each new post once; a concern goes to the revi
   const got = await anon((t) => t`select * from app.oversight_classify_claim(5)`);
   const ids = got.map((x) => x.post_id);
   assert.ok(ids.includes(a.id) && ids.includes(b.id), 'both new posts are read (an earlier test\'s post may be too)');
-  assert.ok(got.every((x) => x.model === 'anthropic/claude-haiku-5.5' && x.body.length > 0));
+  assert.ok(got.every((x) => x.model === 'mistral/ministral-14b' && x.body.length > 0));
   assert.deepStrictEqual([...await anon((t) => t`select * from app.oversight_classify_claim(5)`)], [], 'each post is read once');
   await anon((t) => t`select app.oversight_classify_record(${a.id}::uuid, 'concern', 'Asks for a password on another site.', null)`);
   await anon((t) => t`select app.oversight_classify_record(${b.id}::uuid, 'ok', 'An update.', null)`);
