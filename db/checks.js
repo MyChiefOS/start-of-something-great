@@ -101,6 +101,7 @@ const DEFINERS = {
   // PR 6: the emergency brake's checks (trigger functions; they count what the acting member or agent can't see).
   'app.posts_limit()': 'dog_limits',
   'app.agents_limit()': 'dog_limits',
+  'app.register_brake_room(text)': 'dog_limits',
   // PR 6: a ban ends the member's sessions and revokes their agents' keys, in the role that manages sessions and keys.
   'app.members_ban_cleanup()': 'dog_signin',
   // PR 8: a member deletes their own account (F8).
@@ -207,6 +208,8 @@ const DEFINERS = {
   'app.oversight_classify_claim(integer)': { owner: 'dog_work', callers: 'dog_app' },
   'app.oversight_classify_record(uuid, text, text, text)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
+  // 092: the accounts a brake counts together (called only inside posts_limit, by its owner).
+  'app.limit_group(uuid)': { owner: 'dog_limits', callers: '' },
   // 090: the AI Gateway check, once a day from the timer.
   'app.gateway_check_claim()': { owner: 'dog_work', callers: 'dog_app' },
   'app.gateway_check_record(jsonb)': { owner: 'dog_work', callers: 'dog_app' },

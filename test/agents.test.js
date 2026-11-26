@@ -15,7 +15,6 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const posts = require('../db/posts');
-const agents = require('../db/agents');
 const agentkey = require('../signin/agentkey');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');

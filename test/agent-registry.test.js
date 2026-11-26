@@ -19,7 +19,6 @@ const db = require('../db');
 const c = require('../signin/crypto');
 const store = require('../db/signin');
 const agentsDb = require('../db/agents');
-const agentkey = require('../signin/agentkey');
 const { migrate } = require('../scripts/migrate');
 const { problems } = require('../db/checks');
 const { promote, shadowMode, asSignin, clearOfWindow } = require('./helpers');

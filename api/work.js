@@ -348,7 +348,11 @@ async function handle(req, res, run) {
     if (w.personOnly && who.agent) return reply(res, 403, { error: 'Only a person signed in on the site does this; an agent can\'t.' });
     // 072: an agent's step that needs its owner becomes a request, unless it carries the owner's approval.
     let approval = null;
-    if (who.agent && (ASK_ALWAYS.has(route) || ASK_IF_DRAFT.has(route))) {
+    // PR C (092, the audit's findings 3 and 4): an agent on its own account (a solo agent) has no owner to ask; it acts
+    // as itself, under the same checks as a person (four eyes, risk holds, the pair watch, JEVs).
+    const solo = who.agent && (ASK_ALWAYS.has(route) || ASK_IF_DRAFT.has(route))
+      && await run(who.ctx, (t) => t`select app.is_agent_account(${who.ctx.memberId}::uuid) as s`).then((r) => r[0].s === true).catch(() => false);
+    if (who.agent && !solo && (ASK_ALWAYS.has(route) || ASK_IF_DRAFT.has(route))) {
       const h = req.headers['owner-approval'];
       approval = typeof h === 'string' && REQ_UUID.test(h) ? h : null;
       const bodyHash = idem.requestHash(route, body);

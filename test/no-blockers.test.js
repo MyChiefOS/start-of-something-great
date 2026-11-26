@@ -196,3 +196,55 @@ test('high risk is a setting: flag (the default) or hold (the earlier behavior, 
   assert.strictEqual(value, 'flag');
   await assert.rejects(q("update app.jevs_settings set value = 'ignore' where key = 'high_risk'"), /flag or hold/);
 });
+
+test('PR C (092, audit finding 2): while a brake is on, solo agents from one network share it: posts an hour and new agents a day', async () => {
+  // Every registration below comes from the same network: the test pins the address.
+  const pin = (r) => { r.headers['x-vercel-forwarded-for'] = '203.0.113.7'; return r; };
+  const regPinned = (name) => api(pin(req('POST', 'register', { json: { name, description: 'One of a crowd' } })));
+  const a = await regPinned('Crowd one');
+  const b = await regPinned('Crowd two');
+  assert.deepStrictEqual([a.status, b.status], [201, 201]);
+  await q(`insert into app.brakes (agent_posts_per_hour, new_agents_per_day, note) values (2, 2, 'test brake')`);
+  try {
+    assert.strictEqual((await feedPost(a.json.key, { body: 'first from the crowd' })).status, 201);
+    assert.strictEqual((await feedPost(b.json.key, { body: 'second from the crowd' })).status, 201);
+    const third = await feedPost(a.json.key, { body: 'third from the crowd' });
+    assert.strictEqual(third.status, 429, 'the two accounts count together: ' + JSON.stringify(third.json));
+    const c3 = await regPinned('Crowd three');
+    assert.deepStrictEqual([c3.status, c3.json.refused], [429, 'brake']);
+    // Another network isn't held back by this one.
+    const other = await api((() => { const r = req('POST', 'register', { json: { name: 'Elsewhere', description: 'Another network' } }); r.headers['x-vercel-forwarded-for'] = '192.0.2.9'; return r; })());
+    assert.strictEqual(other.status, 201);
+  } finally {
+    await q(`delete from app.brakes where note = 'test brake'`);
+  }
+});
+
+async function workApi(key, route, json) {
+  const out = res();
+  const r = { method: 'POST', url: '/api/work/' + route, headers: { host: 'dayonegreat.com', 'content-type': 'application/json', authorization: 'Bearer ' + key }, query: { route }, body: JSON.stringify(json) };
+  await require('../api/work.js').handle(r, out, run);
+  return { status: out.statusCode, json: out.body ? JSON.parse(out.body) : null };
+}
+
+test('PR C (092, audit findings 3 and 6): a solo agent checks work on its own task; that pass doesn\'t raise the worker\'s level', async () => {
+  const poster = await register('Solo poster');
+  const worker = await register('Solo worker');
+  const pAcct = (await ownerOf(poster.json.agent_id)).owner_id;
+  const wAcct = (await ownerOf(worker.json.agent_id)).owner_id;
+  const [{ id: room }] = await q(`select id from app.work_rooms where code = '15-0000'`);
+  const [{ id: project }] = await q(`insert into app.work_projects (title, room_id, source, poster_member) values ('Agent project', '${room}', 'member', '${pAcct}') returning id`);
+  const [t] = await q(`insert into app.work_tasks (project_id, room_id, title, class, size, source, poster_member, status) values ('${project}', '${room}', 'Fix a link', 'either', 1, 'member', '${pAcct}', 'submitted') returning id`);
+  const [cl] = await q(`insert into app.work_claims (task_id, member_id, agent_id, code_hash, expires_at, status) values ('${t.id}', '${wAcct}', '${worker.json.agent_id}', '${crypto.randomBytes(32).toString('hex')}', now() + interval '1 day', 'submitted') returning id`);
+  const [s] = await q(`insert into app.work_submissions (task_id, claim_id, worker_kind, worker_member, worker_agent, artifact_kind, artifact_url, note, seal_key, seal, status, route, routed_at)
+    values ('${t.id}', '${cl.id}', 'agent', '${wAcct}', '${worker.json.agent_id}', 'link', 'https://example.org/w', 'Done.', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'review', 'poster', now()) returning id`);
+  const before = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+  const r = await workApi(poster.json.key, 'check', { submission: s.id, verdict: 'pass' });
+  assert.ok(r.status === 200 && ['pass', 'held'].includes(r.json.result), JSON.stringify(r.json));
+  // The worker can't check its own work, and an agent a person owns still can't check.
+  assert.notStrictEqual((await workApi(worker.json.key, 'check', { submission: s.id, verdict: 'pass' })).status, 200);
+  if (r.json.result === 'pass') {
+    const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+    assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
+  }
+});

@@ -363,6 +363,10 @@
     {
       "version": "091_reviewer_models",
       "sha256": "1b5ae5363323793d6690b8e901834921d9c6b7ef79dc0fff2858900d08524825"
+    },
+    {
+      "version": "092_solo_features",
+      "sha256": "5cfdb5f765e0df0b70b498eb869f710ffcf17bd43df094c7ddce31c66ec5cb63"
     }
   ]
 }

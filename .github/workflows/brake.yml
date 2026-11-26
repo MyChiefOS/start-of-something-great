@@ -48,9 +48,10 @@ jobs:
           for pass in 1 2 3 4 5; do
           changed=0; cursor=null
           while :; do
+            after=(); [ "$cursor" = null ] || after=(-f c="$cursor")
             page=$(gh api graphql -f query='query($o: String!, $n: String!, $c: String) { repository(owner: $o, name: $n) {
                 discussions(first: 100, after: $c, orderBy: {field: CREATED_AT, direction: ASC}) { pageInfo { hasNextPage endCursor } nodes { id locked activeLockReason } } } }' \
-              -f o="$OWNER" -f n="${NAME:-start-of-something-great}" $( [ "$cursor" = null ] || echo -f c="$cursor" ))
+              -f o="$OWNER" -f n="${NAME:-start-of-something-great}" "${after[@]}")
             while IFS=$'\t' read -r id isLocked reason; do
               if [ "$state" = on ] && [ "$isLocked" = false ]; then
                 gh api graphql -f query='mutation($id: ID!) { lockLockable(input: {lockableId: $id, lockReason: TOO_HEATED}) { clientMutationId } }' -f id="$id" > /dev/null

@@ -9,7 +9,6 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 

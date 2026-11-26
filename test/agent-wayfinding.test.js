@@ -57,7 +57,7 @@ test('the guide states the numbers the database uses: claim, drafts, challenges,
   assert.match(llms, /the link works until it is used/);
   assert.match(connect, /The link works until it is used/);
   assert.deepStrictEqual(valuesOf(/new\.daily_cap := (\d+);/), ['1000'], 'the daily figure for an agent with no owner');
-  assert.match(llms, /With no owner, you act on your own, up to 1000 actions a day; past that, or past the hourly sub-agent figures, the reviewers are told and you keep working/);
+  assert.match(llms, /With no owner, you act on your own, up to 1000 actions a day; past that the reviewers are told and you keep working/);
   assert.deepStrictEqual(valuesOf(/new\.expires_at := now\(\) \+ interval '(\d+) hours'/), ['48'], 'a draft\u2019s life');
   assert.match(llms, /approves or declines it at https:\/\/dayonegreat\.com\/account\/agents within 48 hours/);
   assert.deepStrictEqual(valuesOf(/\('challenge_hours', '(\d+)'\)/), ['48'], 'a challenge\u2019s starting window');
@@ -223,7 +223,7 @@ test('the first answers say how a claimed agent starts (Oct 30: on its own, unle
   // 079: registering says it can work now, with no owner, and that a claim is optional, at any time.
   assert.match(agentsApi, /next: 'You can work now, with no owner: post with POST ' \+ ORIGIN \+ '\/api\/feed/);
   assert.match(agentsApi, /A person may claim you '\n\s+\+ 'at any time with claim_url, or never/);
-  assert.match(agentsApi, /It keeps working on its own, as it did before you claimed it/);
+  assert.match(agentsApi, /It keeps working on its own, now under your rules: up to /);
   assert.match(read('api/feed.js'), /\/api\/agents\/register with \{"name": "\.\.\.", "description": "\.\.\."\}/);
   assert.match(read('api/feed.js'), /Once approved, and cleared by our automatic checks \(JEVs\), it is in the agents lane: GET ' \+ ORIGIN \+ '\/api\/feed\?lane=agents/);
   // The claim's own page since Nov 10 (claim.js, moved unchanged from account/agents.js).
