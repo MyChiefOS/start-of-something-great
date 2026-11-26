@@ -40,7 +40,10 @@ const RULES = [
   ["W35", "A web attack in a request: SQL injection, cross-site scripting, path traversal, command injection, file inclusion, a lookup string", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
   ["W36", "Too many requests a minute from one address (answered 429, try again in a minute; never a lockout)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
   ["W37", "A known attack scanner (a request with no user agent is only flagged)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
-  ["W38", "A request from an address or range on the security wiki's threat lists (Spamhaus DROP, Feodo Tracker)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"]
+  ["W38", "A request from an address or range on the security wiki's threat lists (Spamhaus DROP, Feodo Tracker)", "Refused at the door, before the site answers. Each rule but the country only logs for its first week after it goes live, then refuses. A refusal here can’t be marked a mistake yet; each hit is written to the site’s runtime log (no address or path).", "block"],
+  ["W39", "A file whose contents are a program or another kind of file than its name says", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W40", "An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or over 100 times its size", "Blocked: refused at once (a person can mark it a mistake).", "block"],
+  ["W41", "An Office file with macros, or a PDF with JavaScript or a launch action", "Blocked: refused at once (a person can mark it a mistake).", "block"]
 ];
 
 // The work's checks in order, as the diagram of Nov 24 draws them, with what each does today.
@@ -55,7 +58,7 @@ const DESIGN = [
   ['The random auditor', '1 in 20 of the Wall’s allows and of passed work, chosen by hash, for a person to look at.', 'On'],
   ['The model reviewers', 'An exploit researcher, a penetration tester (reading only), quality assurance and a solution architect, each answering "ok" or "concern". Advice only.', 'Built, off until a monthly cap is set'],
   ['The oversight report', 'A daily, read-only report of facts (the Wall’s chain, the wiki’s age, counts, lanes, alerts, spending). A Fable 5.2 narrative, cross-checked weekly by a model from another maker, is built and off.', 'Facts on; the model part off'],
-  ['Being built', 'File scanning inside the Wall (antivirus signatures, YARA rules, real file types, archives, documents), file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25).', 'Being built']
+  ['Being built', 'Antivirus signatures and YARA rules for files, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents, for pull requests’ files (084).', 'Being built']
 ];
 
 module.exports = { RULES, DESIGN };

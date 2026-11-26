@@ -404,3 +404,46 @@ test('FW22 (083 review): a new source\'s first run isn\'t refused by the change 
   assert.strictEqual(await rec([...feodo, ...spam]), 'active', '200 new Spamhaus ranges beside 30 Feodo addresses');
   assert.strictEqual(await rec([...feodo]), 'refused', 'but dropping every Spamhaus range at once is still too much change');
 });
+
+// ---- 084: the Wall scans file contents ----
+test('FW23 (084): a pull request file whose scan breaks a rule fails the submission; a clean scan passes', async () => {
+  for (const [flags, want] of [[['W39 disguised type (really exe): docs/invoice.pdf'], 'failed'], [['W41 active document (Office macros): memo.docm'], 'failed'],
+    [['W40 archive bomb (unpacks to 900000000 bytes): b.zip'], 'failed'], [['W30 archive the Wall can’t open (7z): a.7z'], 'waiting'], [[], 'waiting']]) {
+    const t = await task('Fix the date rounding', 'Fix the date rounding');
+    const pr = 80000 + (n++);
+    const s = await submit(t, { kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + pr, pr });
+    await q(`insert into app.tl_files (number, files) values (${pr}, $$${JSON.stringify([{ filename: 'docs/x.bin', status: 'added', changes: 1, scan: { type: 'other', flags } }])}$$::jsonb)`);
+    assert.strictEqual((await status(s.id)).status, want, JSON.stringify(flags));
+  }
+});
+
+test('FW24 (084): the facts function takes only the scanner\'s own rules in a scan', async () => {
+  // Inside one transaction that is rolled back: every pull request counts as wanted, so only the shape check decides.
+  const rec = (files) => su.begin(async (x) => {
+    await x.unsafe(`create or replace function app.tl_wants(p_number integer) returns boolean language sql as $f$ select true $f$`);
+    await x.unsafe('set local role dog_ghsync');
+    const [r] = await x.unsafe(`select app.tl_files_record($$${JSON.stringify([{ number: 99001, files }])}$$::jsonb) as n`);
+    throw Object.assign(new Error('rollback'), { n: r.n });
+  }).catch((e) => e.n);
+  const ok = [{ filename: 'a.zip', status: 'added', scan: { type: 'zip', flags: ['W31 executable or installer inside an archive: a.zip'] } }];
+  assert.strictEqual(await rec(ok), 1, 'a scan in the scanner\'s own words is kept');
+  for (const files of [[{ filename: 'a', scan: { type: 'zip', flags: ['W99 anything at all'] } }], [{ filename: 'a', scan: { type: 'zip', flags: 'W31' } }],
+    [{ filename: 'a', scan: { type: 'x'.repeat(20), flags: [] } }], [{ filename: 'a', scan: { type: 'zip', flags: ['W11 credential in content: fake'] } }],
+    [{ filename: 'a', scan: { type: 'zip', flags: [] }, extra: 1 }]]) {
+    assert.strictEqual(await rec(files), 0, JSON.stringify(files));
+  }
+});
+
+test('FW25 (084): the facts workflow scans each changed file\'s contents with the Wall\'s scanner', async () => {
+  const workjobs = require('../db/workjobs');
+  const EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(100, 1)]);
+  const REPO = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
+  const get = async (p) => (p.startsWith('/pulls/7/files') ? [{ filename: 'docs/invoice.pdf', status: 'added', changes: 1, contents_url: REPO + '/contents/docs/invoice.pdf?ref=abc' },
+    { filename: 'gone.txt', status: 'removed', changes: 1, contents_url: REPO + '/contents/gone.txt?ref=abc' }] : []);
+  const asked = [];
+  const getRaw = async (p) => { asked.push(p); return EXE; };
+  const facts = await workjobs.gather({ get, getRaw, wanted: [], files: [7] });
+  assert.deepStrictEqual(asked, ['/contents/docs/invoice.pdf?ref=abc'], 'removed files aren\'t read');
+  const f = facts.files[0].files[0];
+  assert.deepStrictEqual([f.scan.type, f.scan.flags.map((x) => x.split(' ')[0])], ['exe', ['W39']]);
+});

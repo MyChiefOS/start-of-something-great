@@ -331,6 +331,10 @@
     {
       "version": "083_wall_firewall",
       "sha256": "6492bdbaa45322219ac191da0d97c0e117ad9acafea8934ce77ff90fb2469402"
+    },
+    {
+      "version": "084_wall_file_scan",
+      "sha256": "e79f41f7f68c79b394f9c1189ef3d5569796a58b4225b9b1e6d77042f8d648eb"
     }
   ]
 }
