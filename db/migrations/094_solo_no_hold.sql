@@ -120,7 +120,7 @@ $$;
 
 -- 094: held link work after the reviewers. Every minute, from the timer (oversight/roles.js run). For each piece the
 -- poster passed that waits for a second look and that Third Look can't read: when every model reviewer that is on has
--- read it and none raised a concern, and neither the Wall nor the sandbox found anything, the poster's pass stands;
+-- had its turn, at least two answered ok and none raised a concern, and neither the Wall nor the sandbox found anything, the poster's pass stands;
 -- when any of them did, Aaron hears of it once, as a high-risk case. Nothing is passed with fewer than two reviewers'
 -- readings, and what nobody clears in 72 hours still fails, as before.
 create function app.work_reviewers_settle() returns integer
@@ -130,6 +130,7 @@ declare
   t record;
   need integer;
   ok integer;
+  tried integer;
   bad boolean;
   poster uuid;
   n integer := 0;
@@ -143,15 +144,19 @@ begin
             where s.status = 'review' and s.route = 'admin' and s.held_reason is not null
             order by s.routed_at limit 20 for update skip locked loop
     bad := exists (select 1 from app.oversight_calls c where c.submission_id = x.id and c.verdict = 'concern')
-        or exists (select 1 from app.wall_decisions d where d.kind = 'submission' and d.ref = x.id::text
+        or exists (select 1 from app.wall_decisions d where d.kind = 'submission' and d.ref = x.id
                     and (d.decision <> 'allow' or jsonb_array_length(d.flags) > 0));
     if bad then
       perform app.notify(null, 'alert', 'High-risk work waits for you',
         left('After the reviewers and the Wall: ' || x.held_reason, 200), '/admin/review#work', 'submission', x.id, 'work:highrisk:' || x.id);
       continue;
     end if;
-    select count(distinct c.role) into ok from app.oversight_calls c where c.submission_id = x.id and c.verdict = 'ok';
-    if need < 2 or ok < need then continue; end if;
+    -- Every reviewer that is on has had its turn (an answer or an error, never still pending), at least two answered
+    -- ok, and none raised a concern: a reviewer's outage (a gateway 429) can't leave honest work waiting forever.
+    select count(distinct c.role) filter (where c.verdict = 'ok'), count(distinct c.role) filter (where c.error is distinct from 'pending')
+      into ok, tried from app.oversight_calls c where c.submission_id = x.id
+       and c.role <> all (array['fable_report', 'fable_crosscheck', 'classifier']);
+    if ok < 2 or tried < need then continue; end if;
     select * into t from app.work_tasks w where w.id = x.task_id for update;
     poster := coalesce(t.poster_member, (select g.owner_id from app.agents g where g.id = t.poster_agent));
     insert into app.work_person_votes (submission_id, member_id, verdict, size, reason)
