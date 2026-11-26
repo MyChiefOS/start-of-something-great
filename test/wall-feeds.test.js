@@ -122,3 +122,34 @@ test('WT2 the timer\'s function asks Vercel for 300 s, the most every plan allow
   const v = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'vercel.json'), 'utf8'));
   assert.strictEqual(v.functions['api/cron.js'].maxDuration, 300);
 });
+
+test('FD6 (Nov 26) today\'s real formats parse, and an afternoon run never asks PhishTank or ESET (why the first live runs after 086 held 0)', async () => {
+  // Shapes observed Nov 26, 21:27 UTC: data.phishtank.com answers 302 to a signed cdn.phishtank.com URL serving
+  // application/gzip (1.5 MB, 8.2 MB unpacked, 42,542 rows, this header); ESET's tree (truncated: false) nests lists as
+  // <family>/samples.sha256 or <group>/<family>/samples.sha256 beside .sha1 and .md5 files, one lowercase hash a line.
+  const pt = ['phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target',
+    '9565973,https://shop-login.example,http://www.phishtank.com/phish_detail.php?phish_id=9565973,2026-11-26T21:08:11+00:00,yes,2026-11-26T21:11:47+00:00,yes,Allegro',
+    '9565971,https://allegro.example-pay.sbs/x,http://www.phishtank.com/phish_detail.php?phish_id=9565971,2026-11-26T21:06:14+00:00,yes,2026-11-26T21:11:47+00:00,yes,Other'].join('\n') + '\n';
+  const h1 = 'b'.repeat(64); const h2 = 'c'.repeat(64);
+  const map = {
+    'https://data.phishtank.com/data/online-valid.csv.gz': res(zlib.gzipSync(Buffer.from(pt))),
+    'https://api.github.com/repos/eset/malware-ioc/git/trees/master?recursive=1': res(JSON.stringify({ truncated: false, tree: [
+      { path: 'asyncrat', type: 'tree' }, { path: 'asyncrat/samples.sha256', type: 'blob' }, { path: 'asyncrat/samples.sha1', type: 'blob' },
+      { path: 'UAC-0099/MATCHBOIL/samples.sha256', type: 'blob' }, { path: 'turla/samples.md5', type: 'blob' }] })),
+    'https://raw.githubusercontent.com/eset/malware-ioc/master/asyncrat/samples.sha256': res(h1 + '\n'),
+    'https://raw.githubusercontent.com/eset/malware-ioc/master/UAC-0099/MATCHBOIL/samples.sha256': res(h2 + '\n')
+  };
+  const asked = [];
+  const fetchImpl = async (url) => { asked.push(String(url)); return map[String(url)] || res('', 404); };
+  const f = await sync.feeds({ key: '', now: MORNING, fetchImpl });
+  assert.deepStrictEqual(values(f, 'phishtank').length, 2);
+  assert.deepStrictEqual(values(f, 'eset'), [h1, h2]);
+  assert.ok(!f.carry.includes('phishtank') && !f.carry.includes('eset'));
+  assert.ok(!asked.some((u) => /\.sha1$|\.md5$/.test(u)), 'only the .sha256 lists are read');
+  // After noon UTC (the 12:39 UTC run, Nov 26) both are carried over without a request: with no earlier copy, 0 rows.
+  asked.length = 0;
+  const g = await sync.feeds({ key: '', now: () => Date.parse('2026-11-26T12:39:00Z'), fetchImpl });
+  assert.ok(g.carry.includes('phishtank') && g.carry.includes('eset'));
+  assert.strictEqual(g.counts.phishtank + g.counts.eset, 0);
+  assert.ok(!asked.some((u) => /phishtank|eset/.test(u)), 'not asked after noon');
+});
