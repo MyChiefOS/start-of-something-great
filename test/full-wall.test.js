@@ -442,7 +442,7 @@ test('FW25 (084): the facts workflow scans each changed file\'s contents with th
     { filename: 'gone.txt', status: 'removed', changes: 1, contents_url: REPO + '/contents/gone.txt?ref=abc' }] : []);
   const asked = [];
   const getRaw = async (p) => { asked.push(p); return EXE; };
-  const facts = await workjobs.gather({ get, getRaw, wanted: [], files: [7] });
+  const facts = await workjobs.gather({ get, getRaw, wanted: [], files: [7], rules: null }); // the file scanner alone (YARA is WY1-WY8)
   assert.deepStrictEqual(asked, ['/contents/docs/invoice.pdf?ref=abc'], 'removed files aren\'t read');
   const f = facts.files[0].files[0];
   assert.deepStrictEqual([f.scan.type, f.scan.flags.map((x) => x.split(' ')[0])], ['exe', ['W39']]);
