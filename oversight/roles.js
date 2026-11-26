@@ -90,6 +90,8 @@ async function run(runTx, token, { fetchImpl } = {}) {
     calls++;
     try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_classify_record(${p.post_id}::uuid, ${out.verdict || null}, ${out.reason || null}, ${out.error || null})`); } catch { /* stays pending */ }
   }
+  // 094: held link work the reviewers have cleared stands; what they or the Wall found goes to Aaron as high risk.
+  try { await runTx({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle()`); } catch { /* the next minute tries again */ }
   // 089: the Fable 5.2 report (once a day) and the weekly cross-check by another maker's model.
   calls += await report(runTx, token, fetchImpl);
   calls += await crosscheck(runTx, token, fetchImpl);

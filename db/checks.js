@@ -210,6 +210,7 @@ const DEFINERS = {
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
   // 093: which feeds the active wiki version holds, for the wiki job.
   'app.wiki_held_sources()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.work_reviewers_settle()': { owner: 'dog_work', callers: 'dog_app' },
   // 092: the accounts a brake counts together (called only inside posts_limit, by its owner).
   'app.limit_group(uuid)': { owner: 'dog_limits', callers: '' },
   // 092: crews (a split, the guard on a piece's claim and a split task's submission, the whole task done) and the
