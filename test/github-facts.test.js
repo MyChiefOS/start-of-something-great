@@ -285,17 +285,19 @@ test('RK140: a merged pull request passes by rule only when GitHub\'s read says 
     assert.deepStrictEqual([subs[n].status, subs[n].route, subs[n].jevs_rules], ['review', 'admin', 'W14'], n + ': a person decides');
     assert.strictEqual((await q(`select count(*)::int as n from app.work_points where submission_id = '${subs[n].id}'`))[0].n, 0, n + ': no points');
   }
-  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account (since 057 it reads the
-  // changed files the GitHub facts workflow delivers: it doesn't even ask for the others').
+  // Third Look takes only pull requests whose merge GitHub's read credits to Aaron's account. Since 088 the changed
+  // files of every pull request submitted for work are read anyway, for the Agentic Wall to scan at submission (Aaron's
+  // plan, Nov 26, Phase 1 item 2); Third Look still claims only Aaron's merges.
   await q('update app.tl_settings set mode = \'on\', last_claim_at = null');
   const claim = () => as('dog_app', (t) => t`select * from app.tl_claim(3)`).then((r) => r.map((x) => x.pr_number));
   const mine = (list) => list.filter((n) => n >= 9501 && n <= 9503);
-  assert.deepStrictEqual(mine((await core.wanted(su)).files), [], 'no changed files are asked for: not merged by Aaron\'s account');
+  assert.deepStrictEqual(mine((await core.wanted(su)).files).sort(), [9502, 9503], '088: their changed files are asked for, for the Wall to scan');
   await sync({ files: [9502, 9503].map((n) => ({ number: n, files: [{ filename: 'a.js', status: 'modified', changes: 1, patch: '@@ -1 +1 @@\n-a\n+b' }] })) });
-  assert.strictEqual((await q('select count(*)::int as n from app.tl_files where number in (9502, 9503)'))[0].n, 0, 'nor recorded if sent');
+  assert.strictEqual((await q('select count(*)::int as n from app.tl_files where number in (9502, 9503)'))[0].n, 2, 'and recorded');
   assert.deepStrictEqual(mine(await claim()), [], 'not merged by Aaron\'s account: Third Look leaves it to a person');
+  await q('delete from app.tl_files where number in (9502, 9503)');
   await as('dog_work', (t) => t`update app.work_github_prs set merged_by_id = ${AARON_ID} where number = 9502`);
-  assert.deepStrictEqual(mine((await core.wanted(su)).files), [9502], 'once GitHub credits the merge to Aaron, its changed files are asked for');
+  assert.ok(mine((await core.wanted(su)).files).includes(9502), 'once GitHub credits the merge to Aaron, its changed files are asked for');
   await sync({ files: [{ number: 9502, files: [{ filename: 'a.js', status: 'modified', changes: 1, patch: '@@ -1 +1 @@\n-a\n+b' }] }] });
   await q('update app.tl_settings set last_claim_at = null');
   assert.deepStrictEqual(mine(await claim()), [9502], 'the same work, once GitHub credits the merge to Aaron');

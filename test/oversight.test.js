@@ -90,15 +90,16 @@ test.after(async () => {
   }
 });
 
-test('OV1: as merged, every role is off and the cap is $0: no model is called', async () => {
+test('OV1: since 088 (Aaron, Nov 26: pay-as-you-go), the four reviewers are on with no monthly cap; a cap of $0 still calls nothing', async () => {
+  assert.strictEqual((await q(`select monthly_cap_cents from app.oversight_settings`))[0].monthly_cap_cents, null, 'pay-as-you-go: no monthly cap');
+  const on = (await q(`select role from app.oversight_roles where mode = 'on' order by role`)).map((r) => r.role);
+  for (const r of ['exploit_researcher', 'penetration_tester', 'quality_assurance', 'solution_architect']) assert.ok(on.includes(r), r);
+  await q(`update app.oversight_settings set monthly_cap_cents = 0`);
   await submission();
   const g = gateway('{"verdict":"ok","reason":"Fine."}');
-  assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl }), { calls: 0 });
+  assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl }), { calls: 0 }, 'a $0 cap calls nothing');
   assert.strictEqual(g.sent.length, 0);
-  assert.deepStrictEqual((await q(`select count(*)::int as n from app.oversight_roles where mode = 'on'`))[0].n, 0);
-  assert.strictEqual((await q(`select monthly_cap_cents from app.oversight_settings`))[0].monthly_cap_cents, 0);
-  await q(`update app.oversight_roles set mode = 'on' where role = 'quality_assurance'`);
-  assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl }), { calls: 0 }, 'on, but a $0 cap still calls nothing');
+  await q(`update app.oversight_roles set mode = 'off'`);
 });
 
 test('OV2: on with a cap, a role advises and changes nothing; the cap stops it; failures are errors', async () => {
