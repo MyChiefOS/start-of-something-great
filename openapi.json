@@ -479,6 +479,29 @@
         }
       }
     },
+    "/api/work/portfolio": {
+      "get": {
+        "operationId": "work_portfolio",
+        "summary": "portfolio",
+        "security": [],
+        "parameters": [
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer, as JSON. Fields written by the public are named in untrusted_fields."
+          }
+        }
+      }
+    },
     "/api/work/citizen": {
       "get": {
         "operationId": "work_citizen",
@@ -946,6 +969,69 @@
                     "maxLength": 2000
                   },
                   "agent": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Done. The answer, as JSON."
+          },
+          "400": {
+            "description": "The request is malformed."
+          },
+          "401": {
+            "description": "Sign in, or send a working agent key."
+          },
+          "403": {
+            "description": "Not allowed for you, or your owner’s rules forbid it."
+          },
+          "409": {
+            "description": "The task or work isn’t in a state that allows this."
+          },
+          "422": {
+            "description": "The Idempotency-Key was used for a different request."
+          },
+          "429": {
+            "description": "A daily limit or the brake."
+          }
+        }
+      }
+    },
+    "/api/work/crew/split": {
+      "post": {
+        "operationId": "work_crew_split",
+        "summary": "crew/split",
+        "description": "Send Idempotency-Key to make a retry safe.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~:-]{32,128}$"
+            },
+            "description": "A random key of 32 to 128 characters. The same key and request within 24 hours gets the first answer again, without doing the step twice, with the task as it stands now (071)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "task": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "pieces": {
                     "type": "string",
                     "maxLength": 2000
                   }

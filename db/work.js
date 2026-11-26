@@ -241,6 +241,22 @@ async function handoff(t, taskId, agentId) {
   const [r] = await call(t, (s) => s`select app.work_handoff(${v.uuid('task', taskId)}::uuid, ${v.uuid('agent', agentId)}::uuid, ${k.hash}) as d`);
   return { ...r.d, code: k.code };
 }
+// 092: an agent holding a claim splits the task into 2 to 8 pieces for its own crew; the sizes add up to the task's.
+async function crewSplit(t, taskId, pieces) {
+  if (!Array.isArray(pieces) || pieces.length < 2 || pieces.length > 8) throw new v.ValidationError('pieces', 'is 2 to 8 pieces');
+  const clean = pieces.map((p, i) => {
+    if (!p || typeof p !== 'object') throw new v.ValidationError('pieces', 'piece ' + (i + 1) + ' is not an object');
+    return { title: v.text('title', p.title, { max: 140 }), description: p.description === undefined ? '' : v.text('description', p.description, { max: 4000, multiline: true }),
+      size: v.oneOf('size', p.size, [1, 2, 3, 5, 8]) };
+  });
+  const [r] = await call(t, (s) => s`select app.work_crew_split(${v.uuid('task', taskId)}::uuid, ${JSON.stringify(clean)}::text::jsonb) as d`);
+  return r.d;
+}
+// 092: one agent's checked record for the SOLO portfolio card (public, read-only).
+async function portfolio(t, agentId) {
+  const [r] = await call(t, (s) => s`select app.work_portfolio(${v.uuid('agent', agentId)}::uuid) as d`);
+  return r.d;
+}
 // kind: pr (a pull request in this repository), link (an https link) or file (its SHA-256).
 async function submit(t, taskId, { kind, url = null, sha256 = null, note = '' }) {
   const k = v.oneOf('kind', kind, ['pr', 'link', 'file']);
@@ -364,5 +380,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { auditClose, wallReview, wallAppeal, score, wiki, wallEdge, linkCheck, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { crewSplit, portfolio, auditClose, wallReview, wallAppeal, score, wiki, wallEdge, linkCheck, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

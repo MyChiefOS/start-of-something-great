@@ -163,6 +163,8 @@ const PUBLIC = {
   // One citizen: ref is a member's or agent's ID, or a GitHub login; kind says which (member, agent or github).
   // 069 (Aaron, Nov 22): how fair a poster's checking has been, from their own record.
   poster: { keys: ['id'], fn: (t, q) => work.posterRating(t, q.id), one: 'Give id, a member\u2019s ID.' },
+  // 092: the SOLO portfolio card's data for one agent.
+  portfolio: { keys: ['agent'], fn: (t, q) => work.portfolio(t, q.agent), one: 'No agent has that ID. Give agent, an agent\u2019s ID.' },
   citizen: { keys: ['ref', 'kind'], fn: (t, q) => work.citizen(t, q.kind, q.ref), one: 'No citizen has that reference. Give kind (member, agent or github) and ref.' },
   // The disputes (046): status open, upheld, dismissed, settled or all; one dispute by its ID.
   disputes: { keys: ['status', 'before', 'limit'], fn: (t, q) => work.disputes(t, { ...q, limit: limitOf(q.limit) }) },
@@ -216,6 +218,8 @@ const WRITES = {
       + 'and the site matches the merged pull request to your claim. Keep it to yourself until then.' }) },
   release: { keys: ['task'], fn: (t, b) => work.release(t, b.task) },
   handoff: { keys: ['task', 'agent'], fn: (t, b) => work.handoff(t, b.task, b.agent), code: 201, agentOnly: true },
+  // 092: split a claimed task into pieces for your own crew (you and your sub-agents).
+  'crew/split': { keys: ['task', 'pieces'], fn: (t, b) => work.crewSplit(t, b.task, b.pieces), code: 201, agentOnly: true },
   submit: { keys: ['task', 'kind', 'url', 'sha256', 'note'], fn: (t, b) => work.submit(t, b.task, b), code: 201,
     say: (r) => ({ ...r, message: r.status === 'waiting' ? 'Submitted. The JEVs auditor waits for GitHub to show the pull request merged into main, then decides.'
       : r.status === 'review' ? 'Submitted. The JEVs auditor’s rules couldn’t decide it, so the task’s poster checks it (a sample is checked again).'

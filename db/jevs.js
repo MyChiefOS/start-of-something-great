@@ -164,12 +164,26 @@ ASKS['agent.subagent'] = [...ACCOUNT, 'J11', 'J15'];
 ASKS['agent.recover'] = ['J05', 'J06', 'J11'];
 ASKS['agent.recovery_issue'] = ['J05', 'J06', 'J11'];
 
-// The scores for one action: { J01: 25, ... }, every question it asks, in order.
+// 092: which group of the database's signals each question reads (db/migrations/092, jevs_signals). A question whose
+// group didn't answer is unknown, never zero; questions read from the request itself (J08, J11, J12, J13, J18) are
+// always known. J05 reads the account and the bursts, J06 the account (or the bursts, for a registration).
+const GROUPS = { J01: ['account'], J02: ['account'], J03: ['account'], J04: ['rate'], J05: ['account', 'bursts'], J06: ['account', 'bursts'],
+  J07: ['text'], J09: ['text'], J10: ['account'], J14: ['reports'], J15: ['tree'], J19: ['repeats'] };
+// The questions one action leaves unknown, from the groups the database reports as unknown.
+function unknownOf(action, signals) {
+  const gone = signals && Array.isArray(signals.unknown) ? signals.unknown : [];
+  if (!gone.length || !ASKS[action]) return [];
+  return ASKS[action].filter((id) => (GROUPS[id] || []).some((g) => gone.includes(g)));
+}
+
+// The scores for one action: { J01: 25, ... }, every question it asks, in order (092: but not an unknown one).
 function score(action, signals, ctx = {}) {
   if (!ASKS[action]) throw new Error('JEVs has no questions for ' + action);
   const c = { action, country: ctx.country === undefined ? null : ctx.country, confirmed: ctx.confirmed === true, agent: ctx.agent === true };
   const out = {};
+  const unknown = new Set(unknownOf(action, signals));
   for (const id of ASKS[action]) {
+    if (unknown.has(id)) continue;
     const s = Math.round(BY_ID[id].score(signals || {}, c));
     if (!Number.isInteger(s) || s < 0 || s > 100) throw new Error(id + ' scored outside 0 to 100');
     out[id] = s;
@@ -274,7 +288,14 @@ const HEX64 = /^[0-9a-f]{64}$/;
 async function mark(t, { kind, keyHash, token = null, agent = null }) {
   v.oneOf('kind', kind, ['net', 'email_domain', 'disposable']);
   if (!HEX64.test(keyHash) || (token !== null && !HEX64.test(token))) throw new v.ValidationError('mark', 'is not a hash');
-  await t`select app.jevs_mark(${kind}, ${keyHash}, ${token}, ${agent === null ? null : v.uuid('agent', agent)}::uuid)`;
+  // 092: a mark is one fact for later questions (J05, J06), so a busy table never stops the step: it waits at most
+  // 250 ms, and the mark is skipped (and logged) if it can't be written.
+  try {
+    await t.savepoint((x) => x`select app.jevs_mark_soon(${kind}, ${keyHash}, ${token}, ${agent === null ? null : v.uuid('agent', agent)}::uuid)`);
+  } catch (e) {
+    if (e instanceof v.ValidationError) throw e;
+    logFailure('mark ' + kind, e);
+  }
 }
 async function claimMarks(t, token) {
   if (!HEX64.test(token)) return 0;
@@ -299,10 +320,13 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
   let scores = {};
   let error = false;
   let text = null;
+  let unknown = [];
   try {
     text = body === null || body === undefined ? null : analyze(body);
+    // 092: each group of questions inside waits at most 250 ms for a lock, so a stuck table costs about a second.
     const [r] = await t.savepoint((x) => x`select app.jevs_signals(${action}, ${sub}::uuid, ${netHash},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint) as s`);
+    unknown = unknownOf(action, r.s);
     scores = score(action, { ...r.s, links: text ? text.links : 0, mask_hits: text ? text.maskHits : 0, secret_hits: text ? text.secretHits : 0,
       reply_depth: Number.isInteger(replyDepth) && replyDepth > 0 ? replyDepth : 0 },
       { country, confirmed, agent });
@@ -311,6 +335,8 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
     scores = {};
     logFailure('scoring ' + action, e);
   }
+  // 092: the questions that didn't answer, for the decision (it flags the step for the reviewers; it never refuses).
+  try { await t.savepoint((x) => x`select app.jevs_note_unknown(${unknown.join(',')})`); } catch (e) { logFailure('unknown list', e); }
   try {
     const [d] = await t.savepoint((x) => x`select * from app.jevs_decide(${action}, ${sub}::uuid, ${x.json(scores)}, ${spec.impact}, ${error},
       ${text && text.domainHashes.length ? x.array(text.domainHashes) : null}::text[], ${text ? text.simhash : null}::bigint, ${netHash})`);
@@ -330,7 +356,7 @@ async function check(t, { action, subject = null, body = null, netHash = null, c
       } catch (e) { logFailure('second look', e); }
     }
     return { decision: d.decision_id, level: d.level, effect: d.effect, applied: d.applied, mode: d.mode, challenge: d.challenge_id,
-      challengeStatus: d.challenge_status, scores, error };
+      challengeStatus: d.challenge_status, scores, error, unknown };
   } catch (e) {
     // The subject isn't the actor's own (an agent that isn't theirs, say): nothing to decide, and nothing goes ahead.
     if (e.code === '22023' && e.message === 'bad JEVs request') {
@@ -439,5 +465,5 @@ async function summary(t) {
 // The public list: what each question looks at, without any threshold.
 const publicQuestions = () => QUESTIONS.map((q) => ({ id: q.id, title: q.title, description: q.description }));
 
-module.exports = { ASK_ONLY, RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, agentFacts, emailDomain, emailMarks,
+module.exports = { GROUPS, unknownOf, ASK_ONLY, RESIDENT, residentTag, logFailure, NEAR_BITS, QUESTIONS, ACCOUNT, ASKS, ACTIONS, score, analyze, links, maskHits, simhash, hamming, sweep, MIN_WORDS, MIN_CHARS, facts, agentFacts, emailDomain, emailMarks,
   onList, DISPOSABLE, COMMON, mark, claimMarks, check, blocks, answer, pending, appeal, postReasons, regionDecline, summary, publicQuestions };

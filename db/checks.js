@@ -210,6 +210,12 @@ const DEFINERS = {
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
   // 092: the accounts a brake counts together (called only inside posts_limit, by its owner).
   'app.limit_group(uuid)': { owner: 'dog_limits', callers: '' },
+  // 092: crews (a split, the guard on a piece's claim and a split task's submission, the whole task done) and the
+  // SOLO portfolio card's data.
+  'app.work_crew_split(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
+  'app.work_crew_guard()': { owner: 'dog_work', callers: '' },
+  'app.work_crew_done()': { owner: 'dog_work', callers: '' },
+  'app.work_portfolio(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   // 090: the AI Gateway check, once a day from the timer.
   'app.gateway_check_claim()': { owner: 'dog_work', callers: 'dog_app' },
   'app.gateway_check_record(jsonb)': { owner: 'dog_work', callers: 'dog_app' },
@@ -279,6 +285,8 @@ const DEFINERS = {
   'app.jevs_decide(text, uuid, jsonb, text, boolean, text[], bigint, text)': 'dog_jevs',
   'app.jevs_answer(uuid, text)': 'dog_jevs',
   'app.jevs_mark(text, text, text, uuid)': 'dog_jevs',
+  'app.jevs_note_unknown(text)': 'dog_jevs',
+  'app.jevs_mark_soon(text, text, text, uuid)': 'dog_jevs',
   'app.jevs_mark_claim(text)': 'dog_jevs',
   'app.jevs_appealable(uuid)': 'dog_jevs',
   // 031 (the UI/UX review, item 9): which public questions asked about the author's own held or hidden post, by ID,
