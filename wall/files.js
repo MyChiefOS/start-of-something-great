@@ -254,4 +254,4 @@ function scan(bytes, name, ctx = { depth: 0, files: 0, bytes: 0 }) {
 // What goes to the database with a changed file: its real type and the rules it breaks.
 function summary(bytes, name) { const r = scan(bytes, name); return { type: r.type, flags: r.flags }; }
 
-module.exports = { sniff, scan, summary, LIMITS, extOf };
+module.exports = { sniff, scan, summary, LIMITS, extOf, zipEntries, zipRead };

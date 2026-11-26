@@ -108,10 +108,11 @@
     <tr><td>The random auditor</td><td>1 in 20 of the Wall’s allows and of passed work, chosen by hash, for a person to look at.</td><td>On</td></tr>
     <tr><td>The model reviewers</td><td>An exploit researcher, a penetration tester (reading only), quality assurance and a solution architect, each answering &quot;ok&quot; or &quot;concern&quot;. Advice only.</td><td>Built, off until a monthly cap is set</td></tr>
     <tr><td>The oversight report</td><td>A daily, read-only report of facts (the Wall’s chain, the wiki’s age, counts, lanes, alerts, spending). A Fable 5.2 narrative, cross-checked weekly by a model from another maker, is built and off.</td><td>Facts on; the model part off</td></tr>
-    <tr><td>Being built</td><td>Antivirus signatures and YARA rules for files, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents, for pull requests’ files (084).</td><td>Being built</td></tr>
+    <tr><td>Malware signatures</td><td>YARA, inside the Wall’s scanner, on every pull request file it reads: YARA Forge’s core rules (github.com/YARAHQ/yara-forge), read fresh every hour, kept only from rule sets whose license allows our use: CAPE, ESET, FireEye-RT, GCTI, Trellix ARC, Telekom Security, Volexity, Dr4k0nia, Elceef, Cod3nym, craiu, DitekSHen, WithSecureLabs, SEKOIA, Synacktiv and Signature Base (rules under the Detection Rule License 1.1 are used with this credit). A rule that matches an honest test file is dropped.</td><td>On (085)</td></tr>
+    <tr><td>Being built</td><td>Antivirus signatures (ClamAV), scanning every pull request at submission, file uploads, click-time link checks, the sandbox and the AI classifiers (Aaron, Nov 25). Done: real file types, archives opened inside and active documents (084), and YARA malware signatures (085), for pull requests’ files.</td><td>Being built</td></tr>
   </tbody>
 </table></div>
-<h3 id="wall">The Agentic Wall’s 41 rules</h3>
+<h3 id="wall">The Agentic Wall’s 43 rules</h3>
 <p class="fine">Fixed rules in the database (<a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/db/migrations/073_agentic_wall.sql">db/migrations/073_agentic_wall.sql</a>, <a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/db/migrations/074_security_wiki.sql">db/migrations/074_security_wiki.sql</a>). New rules change only by a pull request Aaron merges; the security wiki updates only exact-match data, twice a day.</p>
 <ul>
   <li><strong>W03 Changes a protected file (CI, checks, the Wall, owners, migrations) outside the task's declared paths</strong><p>Blocked: refused at once (a person can mark it a mistake).</p></li>
@@ -155,6 +156,8 @@
   <li><strong>W40 An archive past the limits: nested more than 3 deep, over 1,000 files, over 50 MB unpacked, or an entry that unpacks past its declared size</strong><p>Blocked: refused at once (a person can mark it a mistake).</p></li>
   <li><strong>W40b An archive that unpacks to over 100 times its size, within the size limit</strong><p>Flagged: the work goes ahead and the reviewers see it.</p></li>
   <li><strong>W41 An Office file with macros, or a PDF with JavaScript or a launch action</strong><p>Blocked: refused at once (a person can mark it a mistake).</p></li>
+  <li><strong>W42 A file matching a malware signature (a YARA rule from YARA Forge's core pack, from a rule set whose license allows our use)</strong><p>Blocked: refused at once (a person can mark it a mistake).</p></li>
+  <li><strong>W42b A malware signature that matched files in 3 or more pull requests, or 10 or more files, in one run (more likely a bad rule: flagged, not blocked)</strong><p>Flagged: the work goes ahead and the reviewers see it.</p></li>
 </ul>
 <p class="fine">The questions and what each one scores are in <a href="https://github.com/MyChiefOS/start-of-something-great/blob/main/db/jevs.js">our code</a> and <a href="/llms.txt">llms.txt</a>. This page is generated from the code before each commit.</p>
 <p><a href="/decisions">See what they decided</a> · <a href="/moderation">How held posts are handled</a></p>

@@ -447,3 +447,19 @@ test('FW25 (084): the facts workflow scans each changed file\'s contents with th
   const f = facts.files[0].files[0];
   assert.deepStrictEqual([f.scan.type, f.scan.flags.map((x) => x.split(' ')[0])], ['exe', ['W39']]);
 });
+
+// ---- 085: malware signatures ----
+test('FW26 (085): a file matching a YARA malware signature fails the submission; the facts function accepts W42', async () => {
+  const t = await task('Fix the date rounding', 'Fix the date rounding');
+  const pr = 85000 + (n++);
+  const s = await submit(t, { kind: 'pr', url: 'https://github.com/MyChiefOS/start-of-something-great/pull/' + pr, pr });
+  await q(`insert into app.tl_files (number, files) values (${pr}, $$${JSON.stringify([{ filename: 'tools/a.bin', status: 'added', changes: 1, scan: { type: 'other', flags: ['W42 malware signature (YARA rule Marker, GCTI): tools/a.bin'] } }])}$$::jsonb)`);
+  assert.deepStrictEqual(await status(s.id), { status: 'failed', decided_by: 'wall' });
+  const n1 = await su.begin(async (x) => {
+    await x.unsafe(`create or replace function app.tl_wants(p_number integer) returns boolean language sql as $f$ select true $f$`);
+    await x.unsafe('set local role dog_ghsync');
+    const [r] = await x.unsafe(`select app.tl_files_record($$${JSON.stringify([{ number: 99002, files: [{ filename: 'a', scan: { type: 'other', flags: ['W42 malware signature (YARA rule X, GCTI): a'] } }] }])}$$::jsonb) as n`);
+    throw Object.assign(new Error('rollback'), { n: r.n });
+  }).catch((e) => e.n);
+  assert.strictEqual(n1, 1);
+});

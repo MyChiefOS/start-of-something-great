@@ -41,6 +41,9 @@ const FILES_BYTES = 80_000;
 // 084: the files of one pull request the Wall scans, and the largest it reads.
 const SCAN_FILES = 30;
 const SCAN_BYTES = 10 * 1024 * 1024;
+// 085 review: a rule matching files in this many pull requests, or this many files, in one run is only flagged.
+const MASS_PRS = 3;
+const MASS_FILES = 10;
 const wallFiles = require('../wall/files');
 const DECIDED = new Set(['approved', 'declined', 'shipped']);
 const REPO_API = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
@@ -159,7 +162,37 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
-async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [] }) {
+// The repository's own files this workflow checked out (db/ and the rest): honest code no rule may match (085 review).
+function repoCanaries() {
+  const out = [];
+  const root = path.join(__dirname, '..');
+  const walk = (d) => { for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) {
+    if (out.length >= 300) return;
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) { if (!['node_modules', '.git', 'vendor'].includes(e.name)) walk(p); } else if (e.name.endsWith('.js') || e.name.endsWith('.sql') || e.name.endsWith('.md')) {
+      try { const b = fs.readFileSync(path.join(root, p)); if (b.length <= 1024 * 1024) out.push(b); } catch { /* skip */ }
+    }
+  } };
+  try { for (const d of ['db', 'api', 'wall']) if (fs.existsSync(path.join(root, d))) walk(d); } catch { /* fewer canaries */ }
+  return out;
+}
+
+// 085: YARA Forge's core pack, read once a run (at most 20 MB), its rules prepared by wall/yara.js. Null if it can't be
+// read: the files are still scanned by wall/files.js, and the next run tries again.
+async function forgeRules({ fetchImpl = globalThis.fetch } = {}) {
+  try {
+    const yara = require('../wall/yara');
+    const r = await fetchImpl(yara.FORGE_CORE, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'dayonegreat-github-facts' } });
+    if (!r.ok) return null;
+    const zip = Buffer.from(await r.arrayBuffer());
+    if (zip.length > 20 * 1024 * 1024) return null;
+    const entry = (wallFiles.zipEntries(zip) || []).find((e) => e.name.endsWith('.yar'));
+    if (!entry || entry.usize > 40 * 1024 * 1024) return null;
+    return await yara.prepare(wallFiles.zipRead(zip, entry).toString('utf8'), { extraCanaries: repoCanaries() });
+  } catch { return null; }
+}
+
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -178,18 +211,38 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
     // SCAN_FILES files of at most SCAN_BYTES each per pull request; a file that can't be read isn't scanned, and the
     // Wall flags a changed file it couldn't read (W27).
     if (Array.isArray(raw) && getRaw) {
+      if (rules === undefined) rules = await forgeRules();
       let scanned = 0;
       for (const f of raw) {
         if (scanned >= SCAN_FILES || !f || f.status === 'removed' || typeof f.contents_url !== 'string' || !f.contents_url.startsWith(REPO_API + '/contents/')) continue;
         scanned++;
         try {
           const bytes = await getRaw(f.contents_url.slice(REPO_API.length));
-          if (bytes && bytes.length <= SCAN_BYTES) f.scan = wallFiles.summary(bytes, f.filename);
+          if (bytes && bytes.length <= SCAN_BYTES) {
+            f.scan = wallFiles.summary(bytes, f.filename);
+            // 085: YARA's malware signatures on the file itself.
+            if (rules) for (const g of await require('../wall/yara').scan(rules, bytes, f.filename)) if (f.scan.flags.length < 20) f.scan.flags.push(g);
+          }
         } catch { /* not scanned: the next run asks again */ }
       }
     }
     const list = shapeFiles(raw);
     if (list) files.push({ number: n, files: list });
+  }
+  // 085 review: one YARA rule matching across many pull requests or files in one run is more likely a bad rule than
+  // that many attacks, so its matches are flagged (W42b), not blocked, for this run; the reviewers see them.
+  const hits = new Map();
+  for (const pr of files) for (const f of pr.files) for (const g of (f.scan && f.scan.flags) || []) {
+    if (!g.startsWith('W42 ')) continue;
+    const rule = g.slice(0, g.indexOf(':'));
+    const h = hits.get(rule) || { prs: new Set(), n: 0 };
+    h.prs.add(pr.number); h.n++; hits.set(rule, h);
+  }
+  for (const pr of files) for (const f of pr.files) if (f.scan && f.scan.flags) {
+    f.scan.flags = f.scan.flags.map((g) => {
+      const h = g.startsWith('W42 ') ? hits.get(g.slice(0, g.indexOf(':'))) : null;
+      return h && (h.prs.size >= MASS_PRS || h.n >= MASS_FILES) ? ('W42b' + g.slice(3) + ' (matched widely this run: flagged)').slice(0, 240) : g;
+    });
   }
   const proposals = shapeProposals(await read('/issues?labels=proposal&state=all&per_page=100&sort=created&direction=desc'));
   return { prs, issues, details, refused, files, proposals };

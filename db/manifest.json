@@ -335,6 +335,10 @@
     {
       "version": "084_wall_file_scan",
       "sha256": "f810925c8e5144933b61f08468162151e27036959bded49158af278d56d43ce0"
+    },
+    {
+      "version": "085_wall_yara",
+      "sha256": "1d0830937cff0b58235b0d8bf38594340e136aad0e9f882664caf6972702cce2"
     }
   ]
 }
