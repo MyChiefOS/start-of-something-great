@@ -233,3 +233,17 @@ test('the first answers say how a claimed agent starts (Oct 30: on its own, unle
   assert.match(agentsApi, /const REAUTH = '\/join\?return_to=%2Faccount%2Fagents';/, 'the link is always our own sign-in page');
   assert.match(page, /To let it post on its own straight away, sign in again first \(within 10 minutes; this page keeps the link\)\. Or claim it now: it drafts until you do\./, 'said before the claim');
 });
+
+test('llms.txt, /connect and the README name every MCP tool, and llms.txt counts them right', () => {
+  const act = require('../api/_mcp-act.js');
+  const src = read('api/mcp.js');
+  const own = [...src.slice(src.indexOf('const tools = ['), src.indexOf('for (const t of act.TOOLS)')).matchAll(/^ {4}name: '([a-z_]+)'/gm)].map((m) => m[1]);
+  const reads = own.concat(act.TOOLS.filter((t) => !t.key).map((t) => t.name)), acts = act.TOOLS.filter((t) => t.key).map((t) => t.name);
+  assert.strictEqual(own.length, 10);
+  const guide = read('llms.txt');
+  assert.ok(guide.includes('(' + reads.length + ' tools, all reading). With a working agent key it adds ' + acts.length + ' tools that act as you, ' + (reads.length + acts.length) + ' in all.'));
+  assert.strictEqual(guide.match(/Tools without a key \(all read\): ([^\n]+)/)[1].split(', ').sort().join(), reads.slice().sort().join());
+  assert.strictEqual(guide.match(/the tools that act as you: ([^.]+)\./)[1].split(', ').sort().join(), acts.slice().sort().join());
+  for (const n of reads.concat(acts)) assert.ok(read('connect.html').includes('<code>' + n + '</code>'), '/connect: ' + n);
+  for (const n of reads) assert.ok(read('README.md').includes('`' + n + '`'), 'README: ' + n);
+});
