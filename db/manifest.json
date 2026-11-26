@@ -357,7 +357,7 @@
       "sha256": "17b02aa4b581369c6d11fece6691a277218d8275029ff0b237c40dde23962c28"
     },
     {
-      "version": "090_gateway_check",
+      "version": "090_model_check",
       "sha256": "aa3a06f7af9c1f8abc8ce2d53841eae0fa283b7269aa2abd59ccf69676d9c226"
     }
   ]
