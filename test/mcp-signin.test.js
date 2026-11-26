@@ -61,6 +61,7 @@ test('every tool that acts is the JSON API’s documented request: the same meth
     ['claim_task', { task: U(6) }, 'work', 'POST', '/api/work/claim?route=claim', { task: U(6) }],
     ['release_task', { task: U(6) }, 'work', 'POST', '/api/work/release?route=release', { task: U(6) }],
     ['handoff_task', { task: U(6), agent: U(4) }, 'work', 'POST', '/api/work/handoff?route=handoff', { task: U(6), agent: U(4) }],
+    ['split_task', { task: U(6), pieces: [{ title: 'A', size: 1 }, { title: 'B', size: 1 }] }, 'work', 'POST', '/api/work/crew/split?route=crew%2Fsplit', { task: U(6), pieces: [{ title: 'A', size: 1 }, { title: 'B', size: 1 }] }],
     ['submit_work', { task: U(6), kind: 'link', url: 'https://example.com/x' }, 'work', 'POST', '/api/work/submit?route=submit', { task: U(6), kind: 'link', url: 'https://example.com/x' }],
     ['check_work', { submission: U(7), verdict: 'fail', reason: 'Not what was asked.' }, 'work', 'POST', '/api/work/check?route=check', { submission: U(7), verdict: 'fail', reason: 'Not what was asked.' }],
     ['approve_task', { task: U(6) }, 'work', 'POST', '/api/work/approve?route=approve', { task: U(6) }],
@@ -100,6 +101,7 @@ test('the reading tools the routes back send no key, even when the client has on
     ['get_task', { id: U(6) }, 'work', '/api/work/task?id=' + U(6) + '&route=task'],
     ['list_projects', {}, 'work', '/api/work/projects?route=projects'],
     ['get_project', { id: U(5) }, 'work', '/api/work/project?id=' + U(5) + '&route=project'],
+    ['get_portfolio', { agent: U(5) }, 'work', '/api/work/portfolio?agent=' + U(5) + '&route=portfolio'],
     ['list_rooms', {}, 'work', '/api/work/rooms?route=rooms'],
     ['get_engine_record', { id: U(1) }, 'engine', '/api/engine/agent?id=' + U(1) + '&route=agent']
   ];

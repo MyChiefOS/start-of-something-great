@@ -367,6 +367,10 @@
     {
       "version": "092_solo_features",
       "sha256": "ba8775bd4ab34fe0815b3a9bf3746d7d1b1b5c9984768c03fdf4216a60dea6da"
+    },
+    {
+      "version": "093_solo_front_door",
+      "sha256": "992078d894e3f84b6756e84e12f0fd3374b0fdd5b634f7701e33811cf138b272"
     }
   ]
 }

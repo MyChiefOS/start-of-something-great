@@ -117,7 +117,7 @@ function indicatorOf(kind, value, source, ref) {
 }
 
 // The threat feeds. Each one that fails is skipped (and counted as 0); the others still record.
-async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now, deadline: until } = {}) {
+async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, now = Date.now, deadline: until, held = null } = {}) {
   // Nov 26 (Vercel's limit, checked): the timer's function may run 300 s at most, and the reviewers run after the wiki
   // in the same call. So the feeds share one deadline: each download's timeout is cut to the time left, and a feed with
   // no time left is carried over from the last version like any failed feed (never a half-written wiki).
@@ -154,14 +154,18 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
     return t;
   };
   const lines = (t, n) => t.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).slice(0, n);
-  const daily = new Date(now()).getUTCHours() < 12;
+  // Once-a-day feeds (PhishTank, ESET, Spamhaus) are read before noon UTC; 093 (Agent C's finding, Nov 26): also on any
+  // run when the active version holds none of that feed yet, so a new feed doesn't wait up to a day for its first read.
+  const morning = new Date(now()).getUTCHours() < 12;
+  const due = (name) => morning || (Array.isArray(held) && !held.includes(name));
+  const daily = due('phishtank') || due('eset');
   // A list that can't be read this run keeps its last copy (carried over), so an outage never empties it (086 review).
   try { for (const d of lines(await text(CERTPL, 8000000), 160000)) group('certpl', 'domain', d); } catch { carry.push('certpl'); }
   try { for (const a of lines(await text(ET_COMPROMISED, 1000000), 10000)) group('et', 'ip', a); } catch { carry.push('et'); }
   try { for (const a of lines(await text(CINS, 2000000), 20000)) group('cins', 'ip', a); } catch { carry.push('cins'); }
   if (daily) {
     try {
-      const r = await fetchImpl(PHISHTANK, { signal: budget(30000), headers: { 'user-agent': 'dayonegreat-security-wiki' } });
+      const r = await fetchImpl(PHISHTANK, { signal: budget(30000), headers: { 'user-agent': 'phishtank/dayonegreat' } });
       if (r.status !== 200) throw new Error('phishtank ' + r.status);
       const gz = Buffer.from(await r.arrayBuffer());
       if (gz.length > 8000000) throw new Error('phishtank too large');
@@ -200,7 +204,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
       if (/^\d{4}-\d{2}-\d{2}$/.test(d) && (!newest.feodo || d > newest.feodo)) newest.feodo = d;
     }
   } catch { /* skipped this run */ }
-  if (new Date(now()).getUTCHours() < 12) {
+  if (due('spamhaus')) {
     try {
       const r = await fetchImpl(SPAMHAUS, { headers: { accept: 'application/x-ndjson' }, signal: budget(20000) });
       if (r.status !== 200) throw new Error('spamhaus ' + r.status);
@@ -245,7 +249,7 @@ async function feeds({ fetchImpl = fetch, key = process.env.ABUSECH_AUTH_KEY, no
 }
 
 // Reads NVD and builds one run's payload. fetchImpl and now for tests.
-async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOpt, pause = (ms) => new Promise((ok) => setTimeout(ok, ms)), deadline = now() + GATHER_BUDGET_MS } = {}) {
+async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOpt, pause = (ms) => new Promise((ok) => setTimeout(ok, ms)), deadline = now() + GATHER_BUDGET_MS, held = null } = {}) {
   const budget = (ms) => { const left = deadline - now(); if (left < 1000) throw new Error('out of time'); return AbortSignal.timeout(Math.min(ms, left)); };
   const end = new Date(now());
   const start = new Date(end.getTime() - 3 * DAY);
@@ -298,7 +302,7 @@ async function gather({ fetchImpl = fetch, now = Date.now, key, nvdKey: nvdKeyOp
   const sources = { nvd: entries.filter((e) => e.source === 'nvd').length, kev: entries.filter((e) => e.kev).length, cwe: 0, owasp_api: 0, asvs: 0, npm_packages: packages.length };
   for (const e of REFERENCE.entries) sources[e.source]++;
   // 082: the threat feeds and the wiki's own injection patterns, for the Wall.
-  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key, now, deadline: Math.min(deadline - 10000, now() + FEEDS_BUDGET_MS) });
+  const f = await feeds({ fetchImpl, key: key === undefined ? process.env.ABUSECH_AUTH_KEY : key, now, held, deadline: Math.min(deadline - 10000, now() + FEEDS_BUDGET_MS) });
   const indicators = f.indicators;
   for (const p of REFERENCE.injection || []) { const x = indicatorOf('injection', p, 'reference', 'wiki'); if (x) indicators.push(x); }
   for (const p of REFERENCE.injection_flag || []) { const x = indicatorOf('injection_flag', p, 'reference', 'wiki'); if (x) indicators.push(x); }
@@ -336,7 +340,10 @@ async function run(runTx, { fetchImpl, now } = {}) {
   try { [{ c: claim }] = await runTx({ actor: 'anon' }, (t) => t`select app.wiki_claim() as c`); } catch { return { ran: false }; }
   if (!claim) return { ran: false };
   let payload;
-  try { payload = await gather({ fetchImpl, now }); } catch { return { ran: true, recorded: null }; }
+  // 093: which feeds the active version already holds, so a feed it has never held is read on this run.
+  let held = null;
+  try { [{ h: held }] = await runTx({ actor: 'anon' }, (t) => t`select app.wiki_held_sources() as h`); } catch { held = null; }
+  try { payload = await gather({ fetchImpl, now, held }); } catch { return { ran: true, recorded: null }; }
   try {
     // 086 review: a full run (about 200,000 indicators) takes longer than the usual 5 s, so this one statement gets 60 s.
     const [{ r }] = await runTx({ actor: 'anon', timeout: 'wiki' }, (t) => t`select app.wiki_record(${claim}, ${JSON.stringify(payload)}::text::jsonb) as r`);

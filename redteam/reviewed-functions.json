@@ -315,5 +315,9 @@
   "jevs_note_unknown": {
     "kind": "reviewed",
     "why": "092: notes which JEVs questions didn't answer, for this transaction's next decision only; an unknown question can only flag a step for the reviewers, never let one through, so anyone setting it gains nothing."
+  },
+  "wiki_held_sources": {
+    "kind": "public read",
+    "why": "093: the names of the threat feeds the active wiki version holds (already shown on /security); writes nothing."
   }
 }

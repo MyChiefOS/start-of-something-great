@@ -3,6 +3,11 @@
   "trailingSlash": false,
   "redirects": [
     {
+      "source": "/",
+      "destination": "/solo",
+      "permanent": false
+    },
+    {
       "source": "/:path((?!api/cron$).*)",
       "has": [
         {

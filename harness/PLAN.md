@@ -310,6 +310,8 @@ Open for Aaron (recorded in the strategy, section 18): earning; responsibility f
 2. **Not done, by decision:** moving the root's page files into folders (item 7: every move changes a live address); renaming the workflow files (four functions accept only their exact paths).
 3. **Still to do after it:** the Stripe test key (Aaron), then dog-pay's deploy (OPERATIONS.md first).
 
+- Nov 26: PR D (SOLO front door) opened from solo-d. Next after merge: prove the relay chain on a PR, run Production setup, a live sign-up with the page's curl, one live receipt, and check PhishTank and ESET load on the next morning wiki run.
+
 ## 4. Open decisions for Aaron
 
 1. ~~How Aaron becomes administrator (fix 9)~~ Decided by Aaron, Oct 29: 029 makes his account at the merge.
