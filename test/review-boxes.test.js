@@ -148,7 +148,7 @@ test('RB5 the Fable 5.2 report is claimed once a day and recorded; the weekly cr
   await anon((t) => t`select app.oversight_run()`);
   const got = await anon((t) => t`select * from app.oversight_report_claim()`);
   assert.strictEqual(got.length, 1);
-  assert.strictEqual(got[0].model, 'anthropic/claude-fable-5.2');
+  assert.strictEqual(got[0].model, 'mistral/ministral-14b');
   assert.strictEqual([...await anon((t) => t`select * from app.oversight_report_claim()`)].length, 0, 'once a day');
   await anon((t) => t`select app.oversight_report_record(${got[0].day}::date, 'All stable today.', null)`);
   assert.deepStrictEqual([...await q(`select narrative from app.oversight_reports where narrative is not null`)], [{ narrative: 'All stable today.' }]);
