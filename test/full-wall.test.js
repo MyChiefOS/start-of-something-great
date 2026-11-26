@@ -465,7 +465,7 @@ test('FW26 (085): a file matching a YARA malware signature fails the submission;
 });
 
 // ---- 086: the threat feeds, round two ----
-test('FW27 (086): grouped indicators record; CINS only scores (W28b) and stays off the firewall\'s list; the rest block', async () => {
+test('FW27 (086): grouped indicators record; CINS and Emerging Threats only score (W28b) and stay off the firewall\'s list; the rest block', async () => {
   await q(`delete from app.wiki_versions`);
   await q(`update app.wiki_settings set last_run_at = now() - interval '13 hours', claim_hash = null, claim_until = null`);
   const [{ c: claim }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wiki_claim() as c`);
@@ -478,11 +478,11 @@ test('FW27 (086): grouped indicators record; CINS only scores (W28b) and stays o
   const intel = async (t) => (await q(`select app.wall_intel_flags($$${t}$$) as f`))[0].f.map((x) => x.split(' ')[0]);
   assert.deepStrictEqual(await intel('see https://www.phish-bank.test/x'), ['W28']);
   assert.deepStrictEqual(await intel('from 203.0.113.50'), ['W28b'], 'CINS scores only');
-  assert.deepStrictEqual(await intel('from 203.0.113.60'), ['W28']);
+  assert.deepStrictEqual(await intel('from 203.0.113.60'), ['W28b'], 'Emerging Threats scores only (086 review)');
   assert.deepStrictEqual(await intel('open https://login-evil.test/signin/'), ['W28']);
   assert.deepStrictEqual(await intel('hash ' + 'ef'.repeat(32)), ['W33']);
   const [{ d }] = await db.tx(web, { actor: 'anon' }, (t) => t`select app.wall_edge_addresses() as d`);
-  assert.deepStrictEqual(d.addresses, ['203.0.113.60'], 'the firewall refuses only blocking sources');
+  assert.deepStrictEqual(d.addresses, [], 'the firewall refuses only blocking sources');
 });
 
 test('FW28 (086): OSV\'s findings on added packages: a malicious package fails the submission, a vulnerable one only flags', async () => {
@@ -495,7 +495,7 @@ test('FW28 (086): OSV\'s findings on added packages: a malicious package fails t
   }
   const workjobs = require('../db/workjobs');
   const REPO = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
-  const get = async (p) => (p.startsWith('/pulls/5/files') ? [{ filename: 'package.json', status: 'modified', changes: 2, patch: '@@\n+    "flatmap-stream": "^0.1.1",\n+    "lodash": "4.17.15"', contents_url: REPO + '/contents/package.json?ref=a' }] : []);
+  const get = async (p) => (p.startsWith('/pulls/5/files') ? [{ filename: 'package.json', status: 'modified', changes: 2, patch: '@@\n+    "flatmap-stream": "0.1.1",\n+    "lodash": "4.17.15"', contents_url: REPO + '/contents/package.json?ref=a' }] : []);
   const osvFetch = async (url, init) => {
     const qs = JSON.parse(init.body).queries;
     return { ok: true, json: async () => ({ results: qs.map((x) => (x.package.name === 'flatmap-stream' ? { vulns: [{ id: 'MAL-2025-20690' }] } : { vulns: [{ id: 'GHSA-29mw-wpgm-hmr9' }] })) }) };
