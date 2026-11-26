@@ -299,5 +299,9 @@
   "idem_put": {
     "kind": "proof-based",
     "why": "071: keeps a sealed answer under a scope hash made from who is signed in and their key; only the first answer for a scope is kept, and rows go after 24 hours."
+  },
+  "wall_link_check": {
+    "kind": "public read",
+    "why": "088: one link checked against the security wiki's public threat lists at the moment someone clicks it (/go, through /api/work/link): ok, warn, blocked or bad. No person, no record of who asked, and it changes nothing."
   }
 }

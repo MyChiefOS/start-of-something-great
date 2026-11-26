@@ -174,6 +174,8 @@ const PUBLIC = {
   wiki: { keys: [], fn: (t) => work.wiki(t) },
   // 083: the firewall's threat addresses and ranges (public feeds), read by middleware.js every 10 minutes.
   wall_edge: { keys: [], fn: (t) => work.wallEdge(t) },
+  // 088: click-time link checks: u is the link someone clicked (/go asks this, then sends them on or warns).
+  link: { keys: ['u'], fn: (t, q) => work.linkCheck(t, q.u) },
   // 076: a submission's final score, from facts only (public, like the work's audit).
   score: { keys: ['submission'], fn: (t, q) => work.score(t, q.submission), one: 'No submission has that ID.' }
 };

@@ -91,7 +91,7 @@ test('FWL7: middleware.js lets everything through if the firewall fails, writes 
   assert.ok(refresh.length > 20 && !/await/.test(refresh), 'a request never waits for the list');
   // 087: the body is read from a copy, capped at 64 KB, and for at most 1.5 s.
   assert.match(s, /request\.clone\(\)/);
-  assert.match(s, /setTimeout\(\(\) => ok\(''\), 1500\)/);
+  assert.match(s, /setTimeout\(\(\) => ok\(Buffer.alloc\(0\)\), 1500\)/);
   assert.match(s, /console\.log\(JSON\.stringify\(\{ wall: d\.rule, kind: d\.kind, action: d\.action, enforced: d\.enforced \}\)\)/);
   assert.ok(!/console\.log\([^)]*(ip|path|url)\b/.test(s.replace(/console\.log\(JSON\.stringify\(\{ wall[^\n]*/, '')));
 });

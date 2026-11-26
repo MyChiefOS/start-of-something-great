@@ -457,9 +457,11 @@ constraint app.oauth_redirects oauth_redirects_uri_check CHECK (((char_length(ur
 constraint app.oversight_calls oversight_calls_centi_cents_check CHECK (((centi_cents >= 0) AND (centi_cents <= 100000)))
 constraint app.oversight_calls oversight_calls_error_check CHECK ((char_length(error) <= 40))
 constraint app.oversight_calls oversight_calls_model_check CHECK ((char_length(model) <= 80))
+constraint app.oversight_calls oversight_calls_one_subject CHECK ((num_nonnulls(submission_id, post_id) <= 1))
 constraint app.oversight_calls oversight_calls_pkey PRIMARY KEY (id)
+constraint app.oversight_calls oversight_calls_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE CASCADE
 constraint app.oversight_calls oversight_calls_reason_check CHECK ((char_length(reason) <= 300))
-constraint app.oversight_calls oversight_calls_role_check CHECK ((role = ANY (ARRAY['exploit_researcher'::text, 'penetration_tester'::text, 'quality_assurance'::text, 'solution_architect'::text, 'fable_report'::text, 'fable_crosscheck'::text])))
+constraint app.oversight_calls oversight_calls_role_check CHECK ((role = ANY (ARRAY['exploit_researcher'::text, 'penetration_tester'::text, 'quality_assurance'::text, 'solution_architect'::text, 'fable_report'::text, 'fable_crosscheck'::text, 'classifier'::text])))
 constraint app.oversight_calls oversight_calls_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES app.work_submissions(id) ON DELETE CASCADE
 constraint app.oversight_calls oversight_calls_verdict_check CHECK ((verdict = ANY (ARRAY['ok'::text, 'concern'::text])))
 constraint app.oversight_reports oversight_reports_day_key UNIQUE (day)
@@ -471,7 +473,7 @@ constraint app.oversight_roles oversight_roles_daily_call_cap_check CHECK (((dai
 constraint app.oversight_roles oversight_roles_mode_check CHECK ((mode = ANY (ARRAY['off'::text, 'on'::text])))
 constraint app.oversight_roles oversight_roles_model_check CHECK ((((char_length(model) >= 3) AND (char_length(model) <= 80)) AND (model ~ '^[a-z0-9-]+/[a-z0-9.:-]+$'::text)))
 constraint app.oversight_roles oversight_roles_pkey PRIMARY KEY (id)
-constraint app.oversight_roles oversight_roles_role_check CHECK ((role = ANY (ARRAY['exploit_researcher'::text, 'penetration_tester'::text, 'quality_assurance'::text, 'solution_architect'::text, 'fable_report'::text, 'fable_crosscheck'::text])))
+constraint app.oversight_roles oversight_roles_role_check CHECK ((role = ANY (ARRAY['exploit_researcher'::text, 'penetration_tester'::text, 'quality_assurance'::text, 'solution_architect'::text, 'fable_report'::text, 'fable_crosscheck'::text, 'classifier'::text])))
 constraint app.oversight_roles oversight_roles_role_key UNIQUE (role)
 constraint app.oversight_settings oversight_settings_audit_one_in_check CHECK (((audit_one_in >= 1) AND (audit_one_in <= 1000)))
 constraint app.oversight_settings oversight_settings_monthly_cap_cents_check CHECK (((monthly_cap_cents >= 0) AND (monthly_cap_cents <= 1000000)))
@@ -1833,7 +1835,9 @@ function app.oauth_code_put(p_code_hash text, p_client text, p_redirect text, p_
 function app.oauth_code_take(p_code_hash text, p_client text, p_redirect text) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=48cd06bee95cffa4ff421dcb046addaf
 function app.oauth_register(p_id text, p_name text, p_redirects text[]) owner=dog_signin execute=dog_signin,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=67e47c4b6e857f9723a12f8007ff44f2
 function app.oversight_admin() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=c7dbfff8c9f92d765022c1391916002b
-function app.oversight_claim(p_role text, p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, model text) body_md5=58e44b20fe0af9cd518a5a7eb6dd78a2
+function app.oversight_claim(p_role text, p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, model text) body_md5=5b6043aa8e9b8ff385a4d4829a76cf15
+function app.oversight_classify_claim(p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(post_id uuid, model text, body text) body_md5=c243971df7b572b643c6f7b3695f576b
+function app.oversight_classify_record(p_post uuid, p_verdict text, p_reason text, p_error text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=50b77d583a949d5933a0ec02f940238e
 function app.oversight_item(p_role text, p_sub uuid) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=66d02f8b76ddd385bf249a404328c665
 function app.oversight_record(p_role text, p_sub uuid, p_verdict text, p_reason text, p_error text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=965c2658bf16e33e736f5cd453662307
 function app.oversight_run() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=92b146935169b0a82eeabcded9e4fe0a
@@ -1953,8 +1957,8 @@ function app.timers_run(p_from_cron boolean) owner=dog_timers execute=dog_timers
 function app.tl_claim(p_n integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=TABLE(submission_id uuid, task_title text, task_description text, note text, pr_number integer, pr_title text, jevs_rules text, model text, files jsonb, artifact_kind text, artifact_url text) body_md5=7194e4bb42929273e450f20aa39f0bbb
 function app.tl_decide(p_sub uuid, p_version text, p_model text, p_suggestion text, p_answers jsonb, p_reason text, p_fail_closed boolean, p_truncated boolean, p_latency_ms integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=f47b520c61dc070b12df6b3a3f2b4247
 function app.tl_figures() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eaba76884241e80d5d9a50162c6ee1f1
-function app.tl_files_record(p jsonb) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=9a6396613cd6ebc99498100a8fe62636
-function app.tl_files_wanted(p_n integer) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(number integer) body_md5=d404ab92b773a1e6b1c91ae8811fa024
+function app.tl_files_record(p jsonb) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=76f4b0743c958bf3d3ac91d9567c8e16
+function app.tl_files_wanted(p_n integer) owner=dog_work execute=dog_work,dog_ghsync language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(number integer) body_md5=79e270548fe7d5eb0978d9af308a52d5
 function app.tl_read(p_sub uuid, p_url text, p_sha256 text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=cb81b67cc1db910aa7001ea9a523d73f
 function app.tl_release(p_sub uuid, p_why text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=fae08b304381f375350bbaa0e7149f5e
 function app.tl_set_mode(p_mode text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=d700f0b5dec030927d2f0caf137feb93
@@ -1966,10 +1970,11 @@ function app.wall_code_flags(p_path text, p_added text, p_task text) owner=dog_o
 function app.wall_decide(p_flags jsonb) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=9405808c547e78a11a906a2b21bf6800
 function app.wall_decisions_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=fa85897676c14290138e725a173530c0
 function app.wall_deobfuscate(p_text text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=fd91a742776670676383df53ccf83a69
-function app.wall_edge_addresses() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=0a5fbf5939f840e7cc3182d08afb3abc
+function app.wall_edge_addresses() owner=dog_work execute=dog_work,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=a1533fa13e8b108ec2e6a1af44a0aa23
 function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=e1780776a4759ad14160ca07d057c51c
 function app.wall_gate() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=b2ca0de6125f60f8f7e99e52db2382a3
 function app.wall_intel_flags(p_text text, p_path text) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=a812a7488c12e88f6ccd5538c2ab68ff
+function app.wall_link_check(p_url text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4616fe217a2e8d497221854e534e0fab
 function app.wall_log(p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=308eb9dbb31ca741c29a844c477da571
 function app.wall_metadata_address(p_lower text) owner=dog_owner execute=dog_owner language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=d44431450f5444b896ff74cc7c1a0ec9
 function app.wall_review(p_decision uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=534b342d54cda582027ab33d3f19a15d
@@ -1990,6 +1995,7 @@ function app.watchtower_run() owner=dog_work execute=dog_work,dog_app language=p
 function app.wiki_bad_package(p_eco text, p_name text, p_version text) owner=dog_owner execute=dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=2cfbb62c3f326c698a9ca0a078befa29
 function app.wiki_cidr6_ok(p text) owner=dog_owner execute=dog_owner,dog_work language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=25360c9f8eb7f3eae515f6b1a59f497a
 function app.wiki_claim() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=aa9565857dcb6203581225c98aad770a
+function app.wiki_health_check() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=230e7b7d05a656f488b3fe478dbd7b69
 function app.wiki_never_block(p_domain text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=c2a6100214bc7c94fcb68c494454cdda
 function app.wiki_never_block_cidr(p_cidr text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=8469025b8ef2141d0ce8a5da8f088267
 function app.wiki_never_block_cidr6(p text) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=6641214103011b10754d3689f43a0110
@@ -2840,9 +2846,11 @@ grant app.posts.body dog_erase UPDATE
 grant app.posts.body dog_jevs SELECT
 grant app.posts.body dog_log SELECT
 grant app.posts.body dog_public SELECT
+grant app.posts.body dog_work SELECT
 grant app.posts.body_fp dog_jevs SELECT
 grant app.posts.created_at dog_jevs SELECT
 grant app.posts.created_at dog_limits SELECT
+grant app.posts.created_at dog_work SELECT
 grant app.posts.delegation dog_delegate INSERT
 grant app.posts.delegation dog_jevs SELECT
 grant app.posts.delegation dog_limits SELECT
@@ -2858,6 +2866,7 @@ grant app.posts.id dog_erase SELECT
 grant app.posts.id dog_jevs SELECT
 grant app.posts.id dog_log SELECT
 grant app.posts.id dog_public SELECT
+grant app.posts.id dog_work SELECT
 grant app.posts.lane dog_delegate INSERT
 grant app.posts.lane dog_jevs SELECT
 grant app.posts.lane dog_limits SELECT
@@ -2881,6 +2890,7 @@ grant app.posts.status dog_jevs SELECT
 grant app.posts.status dog_jevs UPDATE
 grant app.posts.status dog_log SELECT
 grant app.posts.status dog_public SELECT
+grant app.posts.status dog_work SELECT
 grant app.rate_limits dog_signin DELETE
 grant app.rate_limits dog_signin SELECT
 grant app.rate_limits.bucket dog_signin INSERT
@@ -2929,6 +2939,8 @@ grant app.review_flags dog_erase DELETE
 grant app.review_flags.classifier dog_app INSERT
 grant app.review_flags.classifier dog_jevs INSERT
 grant app.review_flags.classifier dog_jevs SELECT
+grant app.review_flags.classifier dog_work INSERT
+grant app.review_flags.classifier dog_work SELECT
 grant app.review_flags.created_at dog_jevs INSERT
 grant app.review_flags.created_at dog_jevs SELECT
 grant app.review_flags.decision dog_app UPDATE
@@ -2936,6 +2948,7 @@ grant app.review_flags.decision dog_jevs SELECT
 grant app.review_flags.decision dog_jevs UPDATE
 grant app.review_flags.id dog_erase SELECT
 grant app.review_flags.id dog_jevs SELECT
+grant app.review_flags.id dog_work SELECT
 grant app.review_flags.note dog_app INSERT
 grant app.review_flags.note dog_jevs INSERT
 grant app.review_flags.note dog_jevs SELECT
@@ -2943,6 +2956,8 @@ grant app.review_flags.post_id dog_app INSERT
 grant app.review_flags.post_id dog_erase SELECT
 grant app.review_flags.post_id dog_jevs INSERT
 grant app.review_flags.post_id dog_jevs SELECT
+grant app.review_flags.post_id dog_work INSERT
+grant app.review_flags.post_id dog_work SELECT
 grant app.review_flags.reason dog_app INSERT
 grant app.review_flags.reason dog_jevs INSERT
 grant app.review_flags.reason dog_jevs SELECT
@@ -2951,15 +2966,19 @@ grant app.review_flags.reporter_id dog_erase SELECT
 grant app.review_flags.reporter_id dog_jevs INSERT
 grant app.review_flags.reporter_id dog_jevs SELECT
 grant app.review_flags.resolved_at dog_jevs SELECT
+grant app.review_flags.resolved_at dog_work SELECT
 grant app.review_flags.resolved_by dog_jevs SELECT
 grant app.review_flags.restored_from dog_jevs INSERT
 grant app.review_flags.restored_from dog_jevs SELECT
 grant app.review_flags.score dog_app INSERT
 grant app.review_flags.score dog_jevs INSERT
 grant app.review_flags.score dog_jevs SELECT
+grant app.review_flags.score dog_work INSERT
 grant app.review_flags.source dog_app INSERT
 grant app.review_flags.source dog_jevs INSERT
 grant app.review_flags.source dog_jevs SELECT
+grant app.review_flags.source dog_work INSERT
+grant app.review_flags.source dog_work SELECT
 grant app.review_public_days dog_jevs INSERT
 grant app.review_public_days dog_jevs SELECT
 grant app.review_samples dog_jevs INSERT
@@ -3318,7 +3337,7 @@ policy app.agents agents_signin_update cmd=w permissive=true to=dog_signin using
 policy app.agents agents_update cmd=w permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (parent_id = ( SELECT app.current_agent() AS current_agent)))) check=(((( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['member'::text, 'admin'::text])) AND (owner_id = ( SELECT app.current_member() AS current_member))) OR (( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (parent_id = ( SELECT app.current_agent() AS current_agent))))
 policy app.agents agents_work_select cmd=r permissive=true to=dog_work using=true check=
 policy app.audit_log audit_insert cmd=a permissive=true to=dog_app using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
-policy app.audit_log audit_insert_console cmd=a permissive=true to=dog_work using= check=((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (action = 'console.read'::text) AND (actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
+policy app.audit_log audit_insert_console cmd=a permissive=true to=dog_work using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))) AND (((( SELECT app.actor_kind() AS actor_kind) = 'admin'::text) AND (action = 'console.read'::text)) OR (action = 'review.flag'::text)))
 policy app.audit_log audit_insert_delegate cmd=a permissive=true to=dog_delegate using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
 policy app.audit_log audit_insert_erase cmd=a permissive=true to=dog_erase using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
 policy app.audit_log audit_insert_jevs cmd=a permissive=true to=dog_jevs using= check=((actor_kind = ( SELECT app.actor_kind() AS actor_kind)) AND (NOT (actor_id IS DISTINCT FROM ( SELECT app.current_actor_id() AS current_actor_id))))
@@ -3539,6 +3558,7 @@ policy app.posts posts_log_select cmd=r permissive=true to=dog_log using=(lane =
 policy app.posts posts_public_select cmd=r permissive=true to=dog_public using=(status = 'live'::text) check=
 policy app.posts posts_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (author_id = ( SELECT app.current_member() AS current_member))) OR ((( SELECT app.actor_kind() AS actor_kind) = 'agent'::text) AND (agent_id = ( SELECT app.current_agent() AS current_agent))) OR (( SELECT app.actor_kind() AS actor_kind) = ANY (ARRAY['admin'::text, 'system'::text]))) check=
 policy app.posts posts_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
+policy app.posts posts_work_select cmd=r permissive=true to=dog_work using=true check=
 policy app.rate_limits rate_limits_signin_delete cmd=d permissive=true to=dog_signin using=true check=
 policy app.rate_limits rate_limits_signin_insert cmd=a permissive=true to=dog_signin using= check=true
 policy app.rate_limits rate_limits_signin_select cmd=r permissive=true to=dog_signin using=true check=
@@ -3565,6 +3585,8 @@ policy app.review_flags review_flags_jevs_select cmd=r permissive=true to=dog_je
 policy app.review_flags review_flags_jevs_update cmd=w permissive=true to=dog_jevs using=((source = 'classifier'::text) AND (classifier = 'jevs'::text) AND (resolved_at IS NULL)) check=((source = 'classifier'::text) AND (classifier = 'jevs'::text))
 policy app.review_flags review_flags_select cmd=r permissive=true to=dog_app using=(((( SELECT app.actor_kind() AS actor_kind) = 'member'::text) AND (reporter_id = ( SELECT app.current_member() AS current_member))) OR ( SELECT app.is_reviewer() AS is_reviewer)) check=
 policy app.review_flags review_flags_update cmd=w permissive=true to=dog_app using=( SELECT app.is_reviewer() AS is_reviewer) check=( SELECT app.is_reviewer() AS is_reviewer)
+policy app.review_flags review_flags_work_insert cmd=a permissive=true to=dog_work using= check=((source = 'classifier'::text) AND (classifier = 'ai'::text) AND (reporter_id IS NULL))
+policy app.review_flags review_flags_work_select cmd=r permissive=true to=dog_work using=((source = 'classifier'::text) AND (classifier = 'ai'::text)) check=
 policy app.review_public_days review_public_days_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.review_samples review_samples_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.review_settings review_settings_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=

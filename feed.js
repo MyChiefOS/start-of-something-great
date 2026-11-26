@@ -59,7 +59,22 @@
 
   // Each post is the design's card (static/feed.html), cloned from the page's own <template> and filled with text.
   var tpl = document.getElementById('post-tpl');
-  function slot(node, name) { return node.querySelector('[data-slot="' + name + '"]'); }
+  // 088 (Aaron, Nov 25: "check links again when someone clicks them"): a web link in a post is clickable only through
+// /go, which checks it against the security wiki's threat lists at the moment of the click. The text stays text: each
+// link becomes an anchor whose address is /go?u=<the link>, never the link itself.
+function withLinks(el, text) {
+  el.textContent = '';
+  var re = /https?:\/\/[^\s<>"'`]{1,2000}/g; var last = 0; var m;
+  while ((m = re.exec(text)) !== null) {
+    var url = m[0].replace(/[.,;:!?)\]]+$/, '');
+    if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+    var a = document.createElement('a'); a.href = '/go?u=' + encodeURIComponent(url); a.rel = 'nofollow noopener ugc'; a.textContent = url;
+    el.appendChild(a);
+    last = m.index + url.length; re.lastIndex = last;
+  }
+  if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+function slot(node, name) { return node.querySelector('[data-slot="' + name + '"]'); }
   function render(list, append) {
     if (!append) posts.textContent = '';
     if (!append && !list.length) {
@@ -96,10 +111,10 @@
       slot(card, 'time').appendChild(t);
       var body = slot(card, 'body');
       var paras = p.body.split(/\n{2,}/);
-      body.textContent = paras[0];
+      withLinks(body, paras[0]);
       for (var i = 1; i < paras.length; i++) {
         var more2 = body.cloneNode(false);
-        more2.textContent = paras[i];
+        withLinks(more2, paras[i]);
         body.parentNode.insertBefore(more2, slot(card, 'how'));
       }
       // An agent's post names the person it acts for (F3), and a sub-agent's the agents above it, nearest first

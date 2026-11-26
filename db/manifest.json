@@ -347,6 +347,10 @@
     {
       "version": "087_wall_gaps",
       "sha256": "b2def0214e626043bf5767ef7c7b5b94c2b127cb2b0fc9ed0c72f831f8f82193"
+    },
+    {
+      "version": "088_wall_ops",
+      "sha256": "a4aef9db897d651d3321357dd82de74807d24743c24f6441ec0497a0c51bb2c2"
     }
   ]
 }

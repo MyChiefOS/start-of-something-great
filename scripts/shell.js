@@ -82,6 +82,7 @@ const DESIGN = {
   "member.html": {"nav":[],"proposed":[],"rows":[]},
   "region.html": {"nav":[],"proposed":[],"rows":[]},
   "404.html": {"nav":[],"proposed":[],"rows":[]},
+  "go.html": {"nav":[],"proposed":[],"rows":[]},
   "status.html": {"nav":[],"proposed":["/status"],"rows":[{"kind":"trust","on":["/status"]}]},
   "roadmap.html": {"nav":[],"proposed":["/status"],"rows":[{"kind":"trust","on":["/roadmap"]}]},
   "decisions.html": {"nav":[],"proposed":["/status"],"rows":[{"kind":"trust","on":["/decisions"]}]},

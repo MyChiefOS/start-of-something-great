@@ -136,7 +136,7 @@ function page(file, script, answers, search, hash) {
   const sandbox = {
     document: doc, location: { hash: hash || '', search: search || '', pathname: '/' + file.replace(/\.html$/, ''), replace: (u) => { replaced.push(u); } },
     history: { replaceState: (s, t, url) => { history.push(url); } }, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    navigator: {}, URLSearchParams, Promise, JSON, Date, Math, Array, Object, String, Number, Boolean, encodeURIComponent, isNaN,
+    navigator: {}, URLSearchParams, URL, Promise, JSON, Date, Math, Array, Object, String, Number, Boolean, encodeURIComponent, isNaN,
     addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); },
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: (n) => { if (timers[n - 1]) timers[n - 1].f = null; },
     fetch: (url, init) => {

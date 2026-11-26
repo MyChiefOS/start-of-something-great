@@ -38,7 +38,7 @@ async function bodyOf(request) {
       parts.push(value); size += value.length;
     }
   } finally { reader.cancel().catch(() => {}); }
-  return Buffer.concat(parts.map((x) => Buffer.from(x))).subarray(0, firewall.MAX_BODY).toString('utf8');
+  return Buffer.concat(parts.map((x) => Buffer.from(x))).subarray(0, firewall.MAX_BODY);
 }
 
 export default async function middleware(request) {
@@ -47,11 +47,13 @@ export default async function middleware(request) {
     if (url.pathname === LIST) return next();
     const headers = {};
     for (const [k, v] of request.headers) headers[k] = v;
-    let reqBody = '';
+    let reqBody = Buffer.alloc(0);
     // A slow sender can't hold the request: after 1.5 s the body is checked as far as it came (or not at all).
-    try { reqBody = await Promise.race([bodyOf(request), new Promise((ok) => setTimeout(() => ok(''), 1500))]); } catch { reqBody = ''; }
+    try { reqBody = await Promise.race([bodyOf(request), new Promise((ok) => setTimeout(() => ok(Buffer.alloc(0)), 1500))]); } catch { reqBody = Buffer.alloc(0); }
+    if (typeof reqBody === 'string') reqBody = Buffer.from(reqBody);
     const req = { method: request.method, path: url.pathname, query: url.search.slice(1), ua: request.headers.get('user-agent') || '',
-      ip: ipAddress(request) || '', country: (geolocation(request) || {}).country || '', headers, body: reqBody };
+      ip: ipAddress(request) || '', country: (geolocation(request) || {}).country || '', headers,
+      body: reqBody.toString('utf8'), bodyBytes: reqBody, contentType: request.headers.get('content-type') || '' };
     refresh(url.origin);
     const d = firewall.decide(req, { badAddresses: list.addresses, since: list.since });
     if (d.action === 'allow') return next();
