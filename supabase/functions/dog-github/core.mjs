@@ -25,7 +25,9 @@ export const AUDIENCE = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/d
 export const WORKFLOW = '.github/workflows/github-facts.yml';
 // pull_request_target, not pull_request: a pull_request run's token names the pull request's own ref and its own copy
 // of the workflow, which the check refuses (and must). pull_request_target runs main's workflow file, on main.
-export const EVENTS = ['pull_request_target', 'issues', 'schedule', 'workflow_dispatch'];
+// RK163 (GitHub blocks pull_request_target in public repositories from Dec 2, 2026): workflow_run, after the PR relay,
+// runs main's copy of the workflow on main, as pull_request_target did. The events are exactly the workflow's own.
+export const EVENTS = ['workflow_run', 'issues', 'schedule', 'workflow_dispatch'];
 export const WITNESS_WORKFLOW = '.github/workflows/log-witness.yml';
 export const WITNESS_EVENTS = ['schedule', 'workflow_dispatch'];
 // Each workflow this function accepts, the events it runs on, and the modes it may ask for.
