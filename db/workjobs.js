@@ -38,6 +38,10 @@ const DETAILS = 20;
 // many bytes of JSON (the database takes at most 100,000).
 const FILES = 5;
 const FILES_BYTES = 80_000;
+// 084: the files of one pull request the Wall scans, and the largest it reads.
+const SCAN_FILES = 30;
+const SCAN_BYTES = 10 * 1024 * 1024;
+const wallFiles = require('../wall/files');
 const DECIDED = new Set(['approved', 'declined', 'shipped']);
 const REPO_API = 'https://api.github.com/repos/MyChiefOS/start-of-something-great';
 
@@ -120,6 +124,8 @@ function shapeFiles(list) {
     if (!f || typeof f.filename !== 'string') continue;
     const x = { filename: f.filename.slice(0, 300), status: String(f.status || 'changed').slice(0, 20),
       changes: Number.isSafeInteger(f.changes) && f.changes >= 0 ? f.changes : 0 };
+    // 084: the Wall's scan of the file's contents (wall/files.js), made in this workflow.
+    if (f.scan && typeof f.scan.type === 'string' && Array.isArray(f.scan.flags)) x.scan = { type: f.scan.type.slice(0, 12), flags: f.scan.flags.slice(0, 20).map((g) => String(g).slice(0, 240)) };
     const base = size(x);
     if (bytes + base > room) { out.push({ ...OMITTED }); return out; }
     const patch = typeof f.patch === 'string' ? Buffer.byteLength(JSON.stringify(f.patch)) + 12 : 0;
@@ -153,7 +159,7 @@ async function run(runDb) {
 
 // What the GitHub facts workflow reads, inside GitHub. get(path) returns the JSON of GitHub's API for this repository,
 // or throws with githubStatus; wanted: the pull request numbers dog-github asked for. Returns the facts, shaped.
-async function gather({ get, wanted = [], files: filesWanted = [] }) {
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [] }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -167,7 +173,22 @@ async function gather({ get, wanted = [], files: filesWanted = [] }) {
   }
   const files = [];
   for (const n of (Array.isArray(filesWanted) ? filesWanted : []).filter((x) => Number.isSafeInteger(x) && x > 0 && x < 1e7).slice(0, FILES)) {
-    const list = shapeFiles(await read('/pulls/' + n + '/files?per_page=100')); // null when refused: the next run asks again
+    const raw = await read('/pulls/' + n + '/files?per_page=100'); // null when refused: the next run asks again
+    // 084: each changed file's contents, scanned by the Wall (real type, archives opened, active documents). At most
+    // SCAN_FILES files of at most SCAN_BYTES each per pull request; a file that can't be read isn't scanned, and the
+    // Wall flags a changed file it couldn't read (W27).
+    if (Array.isArray(raw) && getRaw) {
+      let scanned = 0;
+      for (const f of raw) {
+        if (scanned >= SCAN_FILES || !f || f.status === 'removed' || typeof f.contents_url !== 'string' || !f.contents_url.startsWith(REPO_API + '/contents/')) continue;
+        scanned++;
+        try {
+          const bytes = await getRaw(f.contents_url.slice(REPO_API.length));
+          if (bytes && bytes.length <= SCAN_BYTES) f.scan = wallFiles.summary(bytes, f.filename);
+        } catch { /* not scanned: the next run asks again */ }
+      }
+    }
+    const list = shapeFiles(raw);
     if (list) files.push({ number: n, files: list });
   }
   const proposals = shapeProposals(await read('/issues?labels=proposal&state=all&per_page=100&sort=created&direction=desc'));
@@ -195,13 +216,36 @@ function githubGet(token, { fetchImpl = globalThis.fetch, timeoutMs = 20_000 } =
   };
 }
 
+// A file's raw bytes (084), with the same token, read-only; at most SCAN_BYTES (a larger answer is cut off and not scanned).
+function githubRaw(token, { fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {}) {
+  return async (p) => {
+    const r = await fetchImpl(REPO_API + p, { redirect: 'error', signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/vnd.github.raw',
+      'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'dayonegreat-github-facts', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+    if (!r.ok) throw Object.assign(new Error('GitHub returned ' + r.status), { githubStatus: r.status });
+    const len = Number(r.headers && r.headers.get ? r.headers.get('content-length') : 0);
+    if (len > SCAN_BYTES) return null;
+    // Read as a stream and stop past SCAN_BYTES, whether or not GitHub sent a length (084 review).
+    if (!r.body || typeof r.body.getReader !== 'function') { const b = Buffer.from(await r.arrayBuffer()); return b.length > SCAN_BYTES ? null : b; }
+    const reader = r.body.getReader();
+    const parts = []; let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > SCAN_BYTES) { await reader.cancel().catch(() => {}); return null; }
+      parts.push(Buffer.from(value));
+    }
+    return Buffer.concat(parts);
+  };
+}
+
 // The workflow's step: node db/workjobs.js gather <dog-github's wanted answer> <folder>. Writes 1.json, 2.json, ...:
 // the requests to send, in order. Prints counts only.
 async function main(argv, env = process.env) {
   if (argv[0] !== 'gather' || argv.length !== 3) throw new Error('usage: node db/workjobs.js gather <wanted.json> <folder>');
   const answer = JSON.parse(fs.readFileSync(argv[1], 'utf8'));
   if (!answer || answer.ok !== true || !Array.isArray(answer.wanted)) throw new Error('dog-github\'s wanted answer is not usable');
-  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [] });
+  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), getRaw: githubRaw(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [] });
   const dir = path.resolve(argv[2]);
   fs.mkdirSync(dir, { recursive: true });
   const reqs = requests(facts);
@@ -212,4 +256,4 @@ async function main(argv, env = process.env) {
 
 if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 
-module.exports = { run, gather, requests, githubGet, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES };
+module.exports = { run, gather, requests, githubGet, githubRaw, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };

@@ -51,7 +51,10 @@ test('control 8: in api/, db/, secondlook/ and thirdlook/ the only requests carr
   for (const d of ['api', 'db', 'secondlook', 'thirdlook']) walk(d);
   const found = [];
   for (const f of files) for (const m of read(f).matchAll(/['"]Bearer ['"]\s*\+\s*([A-Za-z_.]+)/g)) found.push(f + ' ' + m[1]);
-  assert.deepStrictEqual(found.sort(), ['api/_lib.js token', 'db/sitekeys.js token', 'db/workjobs.js token', 'secondlook/v1.js token', 'secondlook/v1.js token', 'thirdlook/v1.js token']);
+  assert.deepStrictEqual(found.sort(), ['api/_lib.js token', 'db/sitekeys.js token', 'db/workjobs.js token', 'db/workjobs.js token', 'secondlook/v1.js token', 'secondlook/v1.js token', 'thirdlook/v1.js token']);
+  // 084: the facts workflow's own read-only GitHub token also reads changed files' contents for the Wall's scanner, from the same repository's API.
+  assert.match(read('db/workjobs.js'), /githubRaw\(env\.GH_TOKEN/);
+  assert.match(read('db/workjobs.js'), /fetchImpl\(REPO_API \+ p, \{ redirect: 'error'[^\n]*application\/vnd\.github\.raw/);
   // GitHub's own tokens, read from GitHub's settings, to GitHub's API.
   assert.match(read('api/_lib.js'), /const token = process\.env\.GITHUB_TOKEN;[\s\S]*fetch\(GH \+ path/);
   assert.match(read('db/workjobs.js'), /githubGet\(env\.GH_TOKEN/);
