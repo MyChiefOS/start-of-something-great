@@ -7,6 +7,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const shell = require('../scripts/shell');
+const { page, settle } = require('./helpers/mini-dom');
 
 const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
@@ -37,8 +38,9 @@ test('no inline style, no inline script, no on* handler, no outside font or scri
   }
   assert.ok(!/fonts\.googleapis|fonts\.gstatic|JetBrains/.test(html + css), 'no Google Fonts, no unhosted font');
   assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/.test(js), 'text only');
-  // Its one request is the shared status file; nothing else is fetched or sent.
-  assert.deepStrictEqual([...js.matchAll(/fetch\(([^,)]+)/g)].map((m) => m[1].trim()), ["'/solo-status.json'"]);
+  // Two requests: the agent's live card (only with a valid ?agent=) and the shared status file; nothing else is fetched or sent.
+  assert.deepStrictEqual([...js.matchAll(/fetch\(([^,)]+)/g)].map((m) => m[1].trim()), ["'/api/work/portfolio?agent=' + agent", "'/solo-status.json'"]);
+  assert.strictEqual((js.match(/credentials: 'omit'/g) || []).length, 2, 'both without credentials');
   assert.ok(!/XMLHttpRequest|sendBeacon|WebSocket/.test(js));
 });
 
@@ -189,4 +191,74 @@ test('the proof wall and Live and coming are solo-status.json\'s, word for word,
     assert.deepStrictEqual([...col[2].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]), c.items);
   }
   assert.deepStrictEqual(s.columns.map((c) => c.title), ['Live today', 'Running in shadow', 'Coming with SOLO', 'Not offered']);
+});
+
+// The live card (GET /api/work/portfolio?agent=<uuid>), run on the page's real <main> and script in the stand-in DOM.
+const AGENT = '0b6f3c1e-5a4d-4c2b-9e8f-1a2b3c4d5e6f';
+const WIN = { matchMedia: () => ({ matches: true }), performance: { now: () => 0 }, requestAnimationFrame() {}, setInterval: () => 1, clearInterval() {}, localStorage: { getItem: () => null, setItem() {} } };
+const PORTFOLIO = { agent: AGENT, band: 'provisional', provisional: true, audited: 4, claimed: false, generated_at: '2026-11-26T10:00:00Z',
+  pass_rate: { k: 3, n: 4, lo: 0.3006, hi: 0.9544, rate: 0.75 },
+  events: [{ kind: 'pass', task: 't1', title: 'Fix <b>the</b> parser', size: 2, at: '2026-11-25T09:00:00Z' }, { kind: 'miss', task: 't2', title: 'Audit licences', size: 3, at: '2026-11-24T09:00:00Z' },
+    { kind: 'team', task: 't3', title: 'Port the suite', size: 5, at: '2026-11-23T09:00:00Z', crew: 3 }] };
+const open = (search, answer) => page('solo.html', 'solo.js', (url) => (url === '/solo-status.json' ? [404, null] : answer(url)), search, '', WIN);
+
+test('live card: a bad agent ID asks for nothing and the sample stays', async () => {
+  for (const q of ['', '?agent=relay_7', '?agent=' + AGENT + 'x', '?agent=../work/disputes', '?agent=' + AGENT.replace(/-/g, '')]) {
+    const p = open(q, () => { throw new Error('should not be asked'); });
+    await settle();
+    assert.deepStrictEqual(p.asked, ['/solo-status.json'], q);
+    const card = p.$('solo-portfolio');
+    assert.strictEqual(card.getAttribute('data-sample'), 'true');
+    assert.strictEqual(p.$('solo-pct').textContent, '83%');
+    assert.match(card.textContent, /Example · sample figures/);
+  }
+  assert.strictEqual(solo.agentFrom('?agent=' + AGENT.toUpperCase()), AGENT);
+  assert.strictEqual(solo.agentFrom('?agent=nope'), null);
+});
+
+test('live card: a good agent ID fills the card from the live route (k of n, band, range), text only', async () => {
+  const p = open('?agent=' + AGENT, (url) => (url === '/api/work/portfolio?agent=' + AGENT ? [200, PORTFOLIO] : [404, null]));
+  await settle();
+  assert.deepStrictEqual(p.asked.slice().sort(), ['/api/work/portfolio?agent=' + AGENT, '/solo-status.json']);
+  const card = p.$('solo-portfolio');
+  assert.strictEqual(card.getAttribute('data-sample'), 'false');
+  assert.strictEqual(card.getAttribute('data-agent'), AGENT);
+  assert.strictEqual(p.$('solo-pct').textContent, '75%');
+  assert.strictEqual(p.$('solo-note').textContent, 'pass rate · 3 of 4 checked tasks');
+  assert.strictEqual(p.$('solo-range').textContent, 'Likely range 30–95%. Provisional: under 10 audited tasks.');
+  assert.strictEqual(p.$('solo-bar').getAttribute('aria-label'), 'Pass rate 75%, likely range 30 to 95 percent');
+  assert.strictEqual(card.querySelector('.s-cardhd .s-pill').textContent, 'Live record · Provisional');
+  assert.ok(!/sample figures/.test(card.textContent));
+  assert.strictEqual(p.$('solo-band').style.props.left, '30.1%');
+  assert.strictEqual(p.$('solo-stamp').textContent, 'Unclaimed and proud');
+  const rows = p.$('solo-tasks').querySelectorAll('li');
+  assert.deepStrictEqual(rows.map((r) => r.className), ['s-pass', 's-fail', 's-teamrow']);
+  assert.strictEqual(rows[0].children[1].textContent, 'Fix <b>the</b> parserSize 2 · 2026-11-25', 'a title stays text');
+  assert.strictEqual(rows[2].querySelector('.s-who').textContent, 'Split across a crew of 3 · 2026-11-23');
+  assert.ok(p.$('solo-replay').hidden && p.$('solo-claim').hidden, 'the demo controls are off for a live card');
+  // An established record drops the provisional line.
+  const est = solo.liveCard({ ...PORTFOLIO, band: 'strong', provisional: false }, AGENT);
+  assert.strictEqual(est.band, 'Strong');
+  assert.ok(!/Provisional/.test(est.range));
+  // No checked task yet: no range, no marker.
+  assert.strictEqual(solo.liveCard({ ...PORTFOLIO, pass_rate: null, events: [] }, AGENT).range, 'No range yet');
+});
+
+test('live card: when the route fails or answers something else, the sample stays', async () => {
+  for (const answer of [() => [500, { error: 'x' }], () => [404, { error: 'No agent has that ID.' }], () => [200, { ...PORTFOLIO, agent: '11111111-1111-1111-1111-111111111111' }], () => [200, 'nope']]) {
+    const p = open('?agent=' + AGENT, answer);
+    await settle();
+    assert.ok(p.asked.includes('/api/work/portfolio?agent=' + AGENT));
+    assert.strictEqual(p.$('solo-portfolio').getAttribute('data-sample'), 'true');
+    assert.strictEqual(p.$('solo-pct').textContent, '83%');
+    assert.strictEqual(p.$('solo-note').textContent, 'pass rate · 5 of 6 checked tasks');
+    assert.match(p.$('solo-portfolio').textContent, /Example · sample figures/);
+  }
+  // A network failure too.
+  const asked = [];
+  const p = page('solo.html', 'solo.js', () => [404, null], '?agent=' + AGENT, '', { ...WIN, fetch: (u) => { asked.push(u); return Promise.reject(new Error('offline')); } });
+  await settle();
+  assert.deepStrictEqual(asked, ['/api/work/portfolio?agent=' + AGENT, '/solo-status.json']);
+  assert.strictEqual(p.$('solo-portfolio').getAttribute('data-sample'), 'true');
+  assert.strictEqual(p.$('solo-pct').textContent, '83%');
 });
