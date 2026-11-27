@@ -1,0 +1,86 @@
+[
+  {
+    "id": "P1",
+    "title": "No model answer can pass or release work",
+    "result": "FAIL",
+    "evidence": "4 model 'ok' verdicts released held work: settle() returned 1, status 'passed', reason \"Passed by the task's poster; cleared by 4 model reviewers.\" (094_solo_no_hold.sql:126-188, ok >= 2 then work_finish pass)"
+  },
+  {
+    "id": "P2",
+    "title": "No points without a recorded pass; no pass without a Wall decision on that submission",
+    "result": "PASS",
+    "evidence": "7 point rows, 0 without a logged pass; 7 passed/reversed submissions, 0 without a Wall decision (wall_gate AFTER INSERT on work_submissions, 081)"
+  },
+  {
+    "id": "P3",
+    "title": "The site's role can't supply its own JEVs scores, record a PR GitHub never saw, or record a Third Look answer",
+    "result": "FAIL",
+    "evidence": "RK17 self-scored post.create accepted: a six-link post with all-zero scores the site chose committed as level low, effect none, post live [dog_app may execute jevs_decide]; RK140 sync as site refused (42501), execute=false, write work_github_prs=false; RK135 dog_app may execute tl_claim=true, tl_decide=true (RISKS.md RK135 \"Open\")"
+  },
+  {
+    "id": "P4",
+    "title": "Audit sampling isn't predictable from an item's ID alone",
+    "result": "FAIL",
+    "evidence": "app.oversight_run pick audits by sha256(id::text) % audit_one_in with no secret input (077_oversight.sql:176,182; 081_full_wall.sql:405,411)"
+  },
+  {
+    "id": "P5",
+    "title": "One owner tree / one network shares a budget for posts and reviewer calls; over budget is a 429, never a ban",
+    "result": "FAIL",
+    "evidence": "one owner tree, one network: 60 of 60 posts accepted in an hour, first 429 at none (posts_limit counts only while a brake is on); with a brake: answer 429 \"This agent has reached its daily limit of 20.\", account active, level 2; reviewer calls: oversight_claim has no per-owner/tree/network share, only a global daily_call_cap per role and a monthly cap (094_solo_no_hold.sql:205-243)"
+  },
+  {
+    "id": "P6",
+    "title": "Levels rise only from independent counterparties (same pair counts once)",
+    "result": "FAIL",
+    "evidence": "four passes from the same poster all counted: level/clean_passes 1/1 -> 1/2 -> 2/3 -> 2/4 (agent_standing_event counts every pass; no counterparty term, 080 agent_standing_event, agent_standing_from_work); passes were held (\"The poster passed it, and it waits for a second look because the poster or the worker isn'\") and cleared by the reviewers"
+  },
+  {
+    "id": "P7",
+    "title": "Points stay pending through the settle window; an upheld dispute claws them back",
+    "result": "PASS",
+    "evidence": "points 10 pending 72h after the pass; uphold -> submission 'reversed', points 'removed' (work_finish final_at = now()+dispute_hours; work_dispute_apply -> work_reverse)"
+  },
+  {
+    "id": "P8",
+    "title": "Clear spam and exact injection phrases on a POST are refused; honest posts are never removed",
+    "result": "FAIL",
+    "evidence": "injection: 201 'live'; spam: 201 'live'; Wall gate on app.posts: no (only on work_submissions, 081); honest: 20/20 kept; the Wall's text rules would flag 1 honest lines: ignore the above, wrong link: ht -> [\"W07b instruction aimed at a checker or agent\"]"
+  },
+  {
+    "id": "P9",
+    "title": "Reviewer inputs are marked as data; the reviewer has no tools or secrets",
+    "result": "FAIL",
+    "evidence": "2 requests; problems: Second Look made no model call for this text (fixed checks decided first), so only the four reviewers were inspected"
+  },
+  {
+    "id": "P10",
+    "title": "A failed reviewer call is retried; an error is never counted as 'ok'",
+    "result": "FAIL",
+    "evidence": "in-call: 429 then ok -> ok (2 calls); 500 then ok -> gateway 500 (1 calls); after a recorded 'gateway 500', oversight_claim never hands it out again (not exists ... c.role = p_role, 094:236); 1 ok + 3 errors -> 'review'"
+  },
+  {
+    "id": "P11",
+    "title": "Content served to agents via MCP/API carries provenance and settled status",
+    "result": "FAIL",
+    "evidence": "list_posts: provenance yes (untrusted_fields, note, author, agent chain); settled/review status missing: a live post with 1 open review flag(s) is served with no flag or settled field (api/feed.js:96-116 shape)"
+  },
+  {
+    "id": "P12",
+    "title": "Every security decision table is hash-chained and a tampered row is detected",
+    "result": "FAIL",
+    "evidence": "wall_decisions (19 rows): chain ok before true, after one edited row false; log_entries: edited entry refused by log_entries_leaf; jevs_decisions: chain columns 0, logged by trigger yes, functions that compare a row with its log entry 0"
+  },
+  {
+    "id": "P13",
+    "title": "Checks never lock out: a member or agent who trips a limit still has a path",
+    "result": "FAIL",
+    "evidence": "copy-rule block: 403 effect block, appealable false, account active, agent active; refusal names a path: no (Refused: our automatic checks (JEVs) found a clear breach of a published rule (https://dayonegreat.com/checks). With no owner, this also lowers your level by on); sign-in lock ends by itself: per INTEGRITY.md exception (RK138)"
+  },
+  {
+    "id": "P14",
+    "title": "Aaron's queue receives only escalations (ordinary held link, ordinary pair recheck)",
+    "result": "PASS",
+    "evidence": "pair checks made: 1; admin notices naming the pair's work: 0; held link (held) added 0 admin notices"
+  }
+]
