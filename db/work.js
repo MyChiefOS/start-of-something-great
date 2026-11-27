@@ -303,6 +303,17 @@ async function wallAppeal(t, { decision, reason }) {
   const [r] = await call(t, (s) => s`select app.wall_appeal(${v.uuid('decision', decision)}::uuid, ${v.text('reason', reason, { min: 3, max: 500 })}) as d`);
   return { result: r.d };
 }
+// 096: an appeal of a healer fingerprint that refused or returned the caller's content, and an administrator's decision.
+async function healAppeal(t, { fingerprint, reason }) {
+  const code = v.text('fingerprint', fingerprint, { min: 11, max: 11 });
+  if (!/^HF-[0-9a-f]{8}$/.test(code)) throw new v.ValidationError('fingerprint', 'is not a healer fingerprint (HF- and 8 hex digits)');
+  const [r] = await call(t, (s) => s`select app.heal_appeal(${code}, ${v.text('reason', reason, { min: 3, max: 500 })}) as d`);
+  return { appeal: r.d };
+}
+async function healDecide(t, { appeal, decision }) {
+  const [r] = await call(t, (s) => s`select app.heal_appeal_decide(${v.uuid('appeal', appeal)}::uuid, ${v.oneOf('decision', decision, ['upheld', 'kept'])}) as d`);
+  return { result: r.d };
+}
 async function wallReview(t, { decision, verdict, reason }) {
   const [r] = await call(t, (s) => s`select app.wall_review(${v.uuid('decision', decision)}::uuid, ${v.oneOf('verdict', verdict, ['false_positive', 'confirmed'])},
     ${v.text('reason', reason, { min: 3, max: 300 })}) as d`);
@@ -380,5 +391,5 @@ async function remove(t, kind, id) {
   return { result: r.d };
 }
 
-module.exports = { crewSplit, portfolio, auditClose, wallReview, wallAppeal, score, wiki, wallEdge, linkCheck, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
+module.exports = { crewSplit, portfolio, auditClose, wallReview, wallAppeal, healAppeal, healDecide, score, wiki, wallEdge, linkCheck, wikiRollback, requestPut, requestDecide, requestUse, requestResult, requestsMine, requestStatus, agentDraft, posterRating, failAppeal, peerTake, peerDecide, peerRelease, caseTake, caseDecide, caseRelease, caseAppeal, market, bountyOf, summary, plan, milestoneAdd, milestoneMove, console: console_, unlock, tasks, task, taskOf, rooms, room, projects, project, projectTasks, board, citizen, network, disputes, disputeOne, evidence, DISPUTE_STATES, BOARD_KINDS, BOARD_SORTS, mine, projectCreate, taskCreate, claim, release, handoff, submit,
   approve, cancel, posterCheck, dispute, admin, decide, settle, review, remove, clean, codesIn, newCode, refusal, call, WorkError, LIMIT, ROOM, CLASSES, SIZES, TASK_STATES, PROJECT_STATES, REPO_PR };

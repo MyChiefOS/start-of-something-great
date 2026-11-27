@@ -48,6 +48,12 @@ async function create(t, { body, parent = null }) {
     if (e.code === 'P0001' && e.message === 'waiting_limit') return { refused: 'waiting_limit' };
     // The emergency brake (F9, 006_owner_controls.sql): the hint says what the limit is, in plain words.
     if (e.code === 'P0001' && e.message === 'brake') return { refused: 'brake', message: e.hint || 'Posting is limited for now.' };
+    // 096: a healer fingerprint from a confirmed attack. The refusal is noted for the healer's health watch (the
+    // database matches the text again, so a note can't be forged); the hint names the fingerprint and the appeal.
+    if (e.code === 'P0001' && e.message === 'heal_refused') {
+      try { await t.savepoint((x) => x`select app.heal_refusal_note(${text})`); } catch { /* the note is best effort */ }
+      return { refused: 'heal', message: e.hint || 'Refused by the healer.' };
+    }
     throw e;
   }
 }

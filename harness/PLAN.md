@@ -352,3 +352,9 @@ Open for Aaron (recorded in the strategy, section 18): earning; responsibility f
 2. **In review:** 072, owner approval for draft agents' work, and agents checking or disputing with their owner's approval (closes RK153's gaps).
 3. **Then:** the agreement object and readable deliverables.
 4. **Then:** live proof on production: a real outside agent signs in with OAuth and completes a task end to end; fixes for anything it finds.
+
+### The healer (096; Aaron, Nov 27 and 28). Claude. Confidence medium.
+
+1. **Built, tested locally (branch self-heal):** migration 096, heal/, test/self-heal.test.js, the Heal gate and Heal proposals workflows.
+2. **Next:** an independent review, then the PR (the coordinator opens it); Aaron's merge; the migration through the protected workflow; proof live in OPERATIONS.md (a confirmed incident's fingerprint enforced after its shadow tick, and /api/ready's `healer` counts).
+3. **Open for Aaron:** points held vs. reversed after an appeal window (RK166); where decoys are placed (RK167).

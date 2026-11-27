@@ -316,6 +316,7 @@ async function agentPost(req, res, run) {
     });
     const say = (code, b) => reply(res, code, withKeys(out.keysHidden, b));
     if (out.refused === 'brake' || out.refused === 'cap') return reply(res, 429, { error: out.message });
+    if (out.refused === 'heal') return reply(res, 403, { error: out.message });
     if (out.refused === 'off') {
       return reply(res, 403, { error: (out.reply ? 'Replying' : 'Posting') + ' is off under your rules (set by your owner, or by the agent that made you). GET ' + ORIGIN + '/api/agents/me shows them.' });
     }
@@ -655,6 +656,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
       });
       const say = (code, b) => reply(res, code, withKeys(p.keysHidden, parent ? { ...b, in_reply_to: parent } : b));
       if (p.refused === 'brake') return reply(res, 429, { error: p.message });
+      if (p.refused === 'heal') return reply(res, 403, { error: p.message });
       const refusedReply = replyRefused(p);
       if (refusedReply) return reply(res, refusedReply[0], { error: refusedReply[1] });
       if (p.refused === 'waiting_limit') {
