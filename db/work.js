@@ -26,15 +26,16 @@ const newCode = () => { const code = CODE_PREFIX + c.token(16); return { code, h
 // The codes in a pull request's description, as SHA-256 (at most 20; the database keeps at most 20).
 const codesIn = (body) => [...new Set((String(body || '').match(CODE) || []).slice(0, 20))].map((x) => c.sha256hex(x));
 
-// Text people write for the work: keys and passwords, then email addresses and phone numbers, hidden. Returns the text
-// and how many things were hidden (the JEVs auditor's W11 sends a note with any to a person).
+// Text people write for the work: keys and passwords, then email addresses and phone numbers, hidden. Returns the text,
+// how many things were hidden (the JEVs auditor's W11 sends a note with any to a person) and how many of them were
+// keys (096: the Agentic Wall refuses a note that carried a key, W11, though the saved text no longer shows it).
 function clean(field, value, { min = 0, max, multiline = true }) {
-  if ((value === undefined || value === null || value === '') && min === 0) return { text: '', hits: 0 };
+  if ((value === undefined || value === null || value === '') && min === 0) return { text: '', hits: 0, keys: 0 };
   const s = v.text(field, value, { min: Math.max(1, min), max, multiline });
   const keys = maskSecrets(s);
   const out = maskContacts(keys.text);
   const count = (t) => (t.match(/\[(?:email|number) hidden\]/g) || []).length;
-  return { text: out, hits: keys.hits + Math.max(0, count(out) - count(keys.text)) };
+  return { text: out, hits: keys.hits + Math.max(0, count(out) - count(keys.text)), keys: keys.hits };
 }
 
 // The database's refusals, in plain words. The hint is the database's own sentence, written for people.
@@ -271,8 +272,19 @@ async function submit(t, taskId, { kind, url = null, sha256 = null, note = '' })
   if (k !== 'file' && opt(sha256) !== null) throw new v.ValidationError('sha256', 'is only for kind "file"');
   if (k === 'file' && opt(url) !== null) throw new v.ValidationError('url', 'isn’t taken with kind "file"');
   const n = clean('note', note, { max: 2000 });
-  const [r] = await call(t, (s) => s`select app.work_submit(${v.uuid('task', taskId)}::uuid, ${k}, ${u}::text, ${h}::text, ${n.text}, ${n.hits}::integer) as d`);
-  return r.d;
+  const task = v.uuid('task', taskId);
+  const six = (s) => s`select app.work_submit(${task}::uuid, ${k}, ${u}::text, ${h}::text, ${n.text}, ${n.hits}::integer) as d`;
+  if (n.keys === 0) { const [r] = await call(t, six); return r.d; }
+  // 096: the key count rides with the note. Before migration 096 reaches the database, its 7-argument form isn't there
+  // (42883), and the note is sent as before.
+  try {
+    const [r] = await call(t, (s) => s`select app.work_submit(${task}::uuid, ${k}, ${u}::text, ${h}::text, ${n.text}, ${n.hits}::integer, ${n.keys}::integer) as d`);
+    return r.d;
+  } catch (e) {
+    if (!e || e.code !== '42883') throw e;
+    const [r] = await call(t, six);
+    return r.d;
+  }
 }
 async function approve(t, taskId) { const [r] = await call(t, (s) => s`select app.work_approve(${v.uuid('task', taskId)}::uuid) as d`); return { result: r.d }; }
 async function cancel(t, taskId) { const [r] = await call(t, (s) => s`select app.work_cancel(${v.uuid('task', taskId)}::uuid) as d`); return { result: r.d }; }

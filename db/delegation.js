@@ -107,9 +107,10 @@ async function approve(t, { draft, hash }) {
   try {
     const [r] = await t.savepoint((s) => s`select * from app.approve_draft(${id}::uuid, ${hash})`);
     // Where it sits (059), for JEVs's reply-chain question: the owner is its author, so may read it.
-    // Best effort, so approving works before 059 is applied.
-    const at = await t.savepoint((s) => s`select agent_run, parent_id from app.posts where id = ${r.post_id}`).then((x) => x[0]).catch(() => null);
-    return { post: { id: r.post_id, status: r.status, agentRun: at ? at.agent_run : 1, parent: at ? at.parent_id : null } };
+    // Best effort, so approving works before 059 is applied. Its status is read here too (096): the Agentic Wall reads
+    // the post as it is saved and may have removed it, which approve_draft's own answer can't show.
+    const at = await t.savepoint((s) => s`select agent_run, parent_id, status from app.posts where id = ${r.post_id}`).then((x) => x[0]).catch(() => null);
+    return { post: { id: r.post_id, status: at && at.status ? at.status : r.status, agentRun: at ? at.agent_run : 1, parent: at ? at.parent_id : null } };
   } catch (e) {
     if (e.code === 'P0002') return { refused: 'not_found' };
     // 059: the post a reply's draft was written for is gone, or the chain of agents is now at its limit.

@@ -80,7 +80,10 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
   await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'`);
-  // 080: high risk now flags and goes ahead; these tests cover the hold path, kept as the one-step rollback.
+  // 080: production flags high risk and lets it go ahead (high_risk = 'flag'). Every test in this file is about a held
+  // post, which exists only on the one-step rollback (high_risk = 'hold'), so this file is that rollback's suite and
+  // sets it here, explicitly. The production path (flag: the post goes live, flagged, and Second Look reads it through
+  // its intake, 096) is tested in test/second-look-v1.test.js and test/wall-posts.test.js WP3.
   await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
   // No canary at random: the canary test plants its own (the default is a 2% chance with each held post).
   await q('update app.review_settings set canary_rate = 0');
@@ -144,6 +147,10 @@ const decideAs = (who, item, decision, reason, extra = {}) => feed('POST', { coo
   json: { review: item.id, decision, reason, sha256: item.sha256, ...extra } });
 const status = async (id) => (await q(`select status from app.posts where id = '${id}'`))[0].status;
 const fresh = () => q('update app.sl_settings set last_claim_at = null');
+// 096: Second Look's intake reads live posts with an open flag (the earlier tests' reports, for one); here they are
+// marked read, as drain() decides the held posts, so a test's claim sees only what it made.
+const readEarlier = () => q(`insert into app.sl_intake (post_id, why, claimed_at, decided_at, decision)
+  select id, 'flag', now(), now(), 'leave' from app.posts where status = 'live' on conflict (post_id) do nothing`);
 const tick = async () => { await q('update app.review_settings set last_tick_at = null'); return (await run({ actor: 'anon' }, (t) => t`select app.review_tick() as r`))[0].r; };
 // Every held post in the queue decided, so each test starts from an empty queue.
 async function drain(who) {
@@ -302,6 +309,7 @@ test('2.6: a canary\'s truth is committed in the log before Second Look decides 
   const [made] = await q(`select app.review_canary_make() as id`);
   await q(`update app.review_canaries set created_at = created_at - interval '6 minutes' where id = '${made.id}'`);
   const id = await held(poster, 'Canary carrier notes');
+  await readEarlier();
   await fresh();
   const seen = [];
   const claimed = await run({ actor: 'anon' }, (t) => t`select * from app.sl_claim(3)`);
@@ -362,6 +370,7 @@ test('2.6: a canary\'s truth is committed in the log before Second Look decides 
 
 test('the sample: 5% of low-risk posts drawn while Second Look runs, re-read after held posts, a reject comes to Aaron and stays up', async () => {
   await drain(aaron);
+  await readEarlier();
   await q('update app.review_settings set sample_rate = 1');
   // A poster of its own: the batch above makes the first poster's next posts unusually busy for them (J04).
   const quiet = await member('Quiet poster');

@@ -27,7 +27,8 @@ function table(md, title) {
 }
 
 // ---- What to warn about (pure, so it is tested) -------------------------------------------------------------------
-// state: { now, prs: [{number, base, head, created_at}], mainLastChange, offMainOldest, signIn, setupRuns, factsMd }
+// state: { now, prs: [{number, base, head, created_at}], mainLastChange, offMainOldest, signIn, setupRuns, factsMd,
+//          functions: [{name, main, deployed, code}] (096) }
 // Each finding: { level: 'stop' | 'warn' | 'info', rule, text }.
 function evaluate(state) {
   const out = [];
@@ -69,6 +70,17 @@ function evaluate(state) {
   const notDone = instructions.filter((r) => !/^(done|in force)\b/i.test(r[2] || ''));
   if (notDone.length) out.push({ level: 'warn', rule: 0, text: `${notDone.length} of Aaron's instructions are not done yet: ` + notDone.map((r) => `${r[0]} [${r[2] || 'no status'}]`).join('; ') });
   if (!md) out.push({ level: 'stop', rule: 4, text: 'harness/FACTS.md is missing. Every fact must live there.' });
+  // 096: each Edge Function's deployed source digest (its x-source-digest header) against main's source-digest.mjs,
+  // as the daily watch does (watch.yml): drift means the deployed code isn't main's.
+  const fns = state.functions || [];
+  const same = fns.filter((f) => f.main && f.deployed === f.main).map((f) => f.name);
+  if (same.length) out.push({ level: 'info', rule: 3, text: 'Edge Functions matching main: ' + same.join(', ') + '.' });
+  for (const f of fns) {
+    if (!f.main) out.push({ level: 'warn', rule: 3, text: `${f.name}: main has no source digest for it (node scripts/function-digests.js).` });
+    else if (!f.deployed && f.code === '404') out.push({ level: 'info', rule: 3, text: `${f.name}: not deployed (404).` });
+    else if (!f.deployed) out.push({ level: 'warn', rule: 3, text: `${f.name}: the deployed function sent no source digest (answered ${f.code || 'nothing'}); main's is ${f.main.slice(0, 12)}.` });
+    else if (f.deployed !== f.main) out.push({ level: 'warn', rule: 3, text: `${f.name}: DEPLOYED CODE DIFFERS FROM MAIN (deployed ${f.deployed.slice(0, 12)}, main ${f.main.slice(0, 12)}). It needs a redeploy from main.` });
+  }
   return out;
 }
 
@@ -76,6 +88,32 @@ function evaluate(state) {
 function gh(args) { return JSON.parse(execFileSync('gh', ['api', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 })); }
 function curlStatus(url) {
   return execFileSync('curl', ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '15', url], { encoding: 'utf8', timeout: 20000 }).trim();
+}
+// The status and the x-source-digest header of one GET.
+function curlDigest(url) {
+  const out = execFileSync('curl', ['-sS', '-o', '/dev/null', '-D', '-', '-w', '\n%{http_code}', '--max-time', '15', url], { encoding: 'utf8', timeout: 20000 });
+  const lines = out.replace(/\r/g, '').trim().split('\n');
+  const h = lines.find((l) => /^x-source-digest:/i.test(l));
+  const d = h ? h.split(':').slice(1).join(':').trim() : '';
+  return { code: lines[lines.length - 1].trim(), digest: /^[0-9a-f]{64}$/.test(d) ? d : null };
+}
+// main's Edge Functions (dog-copy runs only on the preview copy, never production, RK141) and the address the daily
+// watch reads them at (watch.yml's FUNCTIONS_URL, a public address).
+function functionDrift() {
+  const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'watch.yml'), 'utf8');
+  const base = (wf.match(/FUNCTIONS_URL:\s*(https:\/\/[^\s]+)/) || [])[1];
+  if (!base) throw new Error('no FUNCTIONS_URL in watch.yml');
+  const names = gh([`repos/${REPO}/contents/supabase/functions?ref=main`]).filter((e) => e.type === 'dir' && !e.name.startsWith('_') && e.name !== 'dog-copy').map((e) => e.name);
+  return names.map((name) => {
+    let main = null;
+    try {
+      const c = gh([`repos/${REPO}/contents/supabase/functions/${name}/source-digest.mjs?ref=main`]);
+      main = (Buffer.from(c.content, 'base64').toString('utf8').match(/SOURCE_DIGEST = "([0-9a-f]{64})"/) || [])[1] || null;
+    } catch { main = null; }
+    let got = { code: null, digest: null };
+    try { got = curlDigest(base + '/' + name); } catch { /* reported as no digest */ }
+    return { name, main, deployed: got.digest, code: got.code };
+  });
 }
 
 function gather() {
@@ -98,6 +136,7 @@ function gather() {
     const code = curlStatus(SITE + '/auth/github/start');
     state.signIn = code === '503' ? 'off' : /^30[2-3]$/.test(code) ? 'on' : 'unknown (' + code + ')';
   } catch { state.notChecked.push('live sign-in'); }
+  try { state.functions = functionDrift(); } catch { state.notChecked.push('deployed Edge Functions against main'); }
   return state;
 }
 

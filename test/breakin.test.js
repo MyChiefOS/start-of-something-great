@@ -110,6 +110,7 @@ test.before(async () => {
     await t.unsafe(`insert into app.sl_outcomes (approved) values (true)`);
     // 041: A's post drawn for the sample, and a planted test (canary), made ahead of time as the timer makes them.
     await t.unsafe(`insert into app.review_samples (post_id) values ('${p.id}')`);
+    await t.unsafe(`insert into app.sl_intake (post_id, why) values ('${p.id}', 'flag')`); // 096
     await t.unsafe(`select app.review_canary_make()`);
     // And one day of the public oversight figures, counted as the timer counts them (counts only, no member's row).
     await t.unsafe(`select app.review_count_day((now() at time zone 'UTC')::date - 3)`);

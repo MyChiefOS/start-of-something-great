@@ -80,3 +80,18 @@ test("every instruction of Aaron's that isn't done is shown at the start of each
   const w = f.find((x) => /instructions are not done/.test(x.text));
   assert.ok(w && /remove pass key/.test(w.text) && !/use giscus/.test(w.text));
 });
+
+test('096: each Edge Function deployed from other code than main is named at the start of each session', () => {
+  const { evaluate } = require('../harness/check');
+  const a = 'a'.repeat(64), b = 'b'.repeat(64);
+  const f = evaluate({ now: Date.parse('2026-11-27'), factsMd: '# Facts', functions: [
+    { name: 'jevs', main: a, deployed: a, code: '200' }, { name: 'dog-keys', main: a, deployed: b, code: '405' },
+    { name: 'dog-pay', main: a, deployed: null, code: '404' }, { name: 'dog-github', main: a, deployed: null, code: '500' }] });
+  const t = f.map((x) => x.level + ' ' + x.text);
+  assert.ok(t.includes('info Edge Functions matching main: jevs.'));
+  assert.ok(t.some((x) => /^warn dog-keys: DEPLOYED CODE DIFFERS FROM MAIN \(deployed bbbbbbbbbbbb, main aaaaaaaaaaaa\)/.test(x)), 'drift warns');
+  assert.ok(t.includes('info dog-pay: not deployed (404).'));
+  assert.ok(t.some((x) => /^warn dog-github: the deployed function sent no source digest/.test(x)));
+  // The address it reads is the daily watch's public one, not a secret.
+  assert.match(fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'watch.yml'), 'utf8'), /FUNCTIONS_URL: https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1/);
+});

@@ -172,6 +172,7 @@ test('WO7 the AI classifier reads each new post once; a concern goes to the revi
   const ids = got.map((x) => x.post_id);
   assert.ok(ids.includes(a.id) && ids.includes(b.id), 'both new posts are read (an earlier test\'s post may be too)');
   assert.ok(got.every((x) => x.model === 'mistral/ministral-14b' && x.body.length > 0));
+  // 096: each post is read once while its reading is pending or answered; only a failed reading is tried again (below).
   assert.deepStrictEqual([...await anon((t) => t`select * from app.oversight_classify_claim(5)`)], [], 'each post is read once');
   await anon((t) => t`select app.oversight_classify_record(${a.id}::uuid, 'concern', 'Asks for a password on another site.', null)`);
   await anon((t) => t`select app.oversight_classify_record(${b.id}::uuid, 'ok', 'An update.', null)`);
@@ -179,6 +180,19 @@ test('WO7 the AI classifier reads each new post once; a concern goes to the revi
   assert.deepStrictEqual(flags.map((f) => [f.post_id, f.source]), [[a.id, 'classifier']], 'W48: the concern is in the review queue');
   const [why] = await q(`select verdict, reason from app.oversight_calls where post_id = '${a.id}'`);
   assert.deepStrictEqual([why.verdict, why.reason], ['concern', 'Asks for a password on another site.']);
+  // 096, the retry rule: a failed reading (an error, no verdict) is handed out again once 5 minutes have passed, up to
+  // 3 attempts in all; an answered one never is.
+  const c = await post('Third post, its reading fails.');
+  const claimIds = async () => (await anon((t) => t`select * from app.oversight_classify_claim(10)`)).map((x) => x.post_id);
+  assert.ok((await claimIds()).includes(c.id));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await anon((t) => t`select app.oversight_classify_record(${c.id}::uuid, null, null, 'gateway 429')`);
+    assert.ok(!(await claimIds()).includes(c.id), 'not within 5 minutes of a failure');
+    await q(`update app.oversight_calls set created_at = created_at - interval '6 minutes' where post_id = '${c.id}'`);
+    if (attempt < 3) assert.ok((await claimIds()).includes(c.id), 'tried again after a failure: attempt ' + (attempt + 1));
+  }
+  assert.ok(!(await claimIds()).includes(c.id), 'three attempts, then no more');
+  assert.ok(!(await claimIds()).includes(a.id) && !(await claimIds()).includes(b.id), 'an answered post is never read again');
   // Only the timer (anon or system) may run it: the same guard as 077's reviewers, which test/oversight.test.js checks with a stamped member.
   assert.match((await q(`select prosrc from pg_proc where proname = 'oversight_classify_claim'`))[0].prosrc, /app\.actor_kind\(\) <> all \(array\['anon', 'system'\]\)/);
 });

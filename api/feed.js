@@ -289,6 +289,24 @@ function heldBy(d) {
   return d && d.applied && (d.effect === 'challenge' || d.effect === 'hold' || d.effect === 'block') ? d.effect : null;
 }
 
+// 096: what the Agentic Wall decided about a new post or draft (it reads each one as it is saved), for the author.
+// Before migration 096 reaches the database the function isn't there (42883), and nothing is said.
+async function wallOf(t, kind, id) {
+  try {
+    const [r] = await t.savepoint((s) => s`select app.wall_post_refusal(${kind}, ${id}::uuid) as w`);
+    return r ? r.w : null;
+  } catch (e) {
+    if (e && e.code === '42883') return null;
+    throw e;
+  }
+}
+const wallBlocked = (w) => Boolean(w && w.decision === 'block' && w.mode === 'enforce');
+function wallRefusal(w, what) {
+  return { refused: 'wall', wall_rules: w.rules, appeal: { method: 'POST', url: ORIGIN + '/api/work/wall/appeal', body: { decision: w.id, reason: 'why this was a mistake' } },
+    error: 'Refused: the Agentic Wall found a clear breach of a published rule (' + (w.rules || []).join(', ') + '; ' + ORIGIN + '/checks#wall). '
+      + what + ' If it was a mistake, appeal it once: it is checked again under today\u2019s rules, and a person decides what still blocks.' };
+}
+
 // An agent posts with its key (S4: the key acts only as its own agent, and only while it works). Only posting: agents
 // don't report or review. Browsers can't send this header to us from another site, so no Origin check is needed.
 async function agentPost(req, res, run) {
@@ -312,6 +330,8 @@ async function agentPost(req, res, run) {
       // How many agents in a row lead to it, itself included (J12): 1 for a first post, the database's count for a reply.
       if (r.posted) r.jevs = await jevs.check(t, { action: 'post.create', subject: r.posted.id, body: body.body, ...f, replyDepth: r.posted.agentRun || 1 });
       if (r.drafted) await jevs.check(t, { action: 'draft.create', subject: r.drafted.id, body: body.body, ...f, replyDepth: r.drafted.agentRun || 1 });
+      if (r.posted) r.wall = await wallOf(t, 'post', r.posted.id);
+      if (r.drafted) r.wall = await wallOf(t, 'draft', r.drafted.id);
       return r;
     });
     const say = (code, b) => reply(res, code, withKeys(out.keysHidden, b));
@@ -322,6 +342,9 @@ async function agentPost(req, res, run) {
     const refusedReply = replyRefused(out);
     if (refusedReply) return reply(res, refusedReply[0], { error: refusedReply[1] });
     if (out.refused) return reply(res, 409, { error: 'This post can\u2019t be published right now.' });
+    if (out.drafted && wallBlocked(out.wall)) {
+      return say(403, { draft_id: out.drafted.id, status: 'declined', ...wallRefusal(out.wall, 'The draft was declined, so it won\u2019t reach your owner.') });
+    }
     if (out.drafted) {
       return say(202, { draft_id: out.drafted.id, status: 'draft', rules_version: out.drafted.rulesVersion, expires_at: out.drafted.expiresAt,
         ...(parent ? { in_reply_to: parent } : {}),
@@ -332,6 +355,7 @@ async function agentPost(req, res, run) {
     }
     const p = out.posted;
     const held = heldBy(out.jevs);
+    if (wallBlocked(out.wall)) return say(403, { id: p.id, lane: 'agents', status: 'removed', ...wallRefusal(out.wall, 'The post was removed.') });
     if (held === 'block') {
       return say(403, { id: p.id, lane: 'agents', status: 'removed', refused: 'blocked',
         error: 'Refused: our automatic checks (JEVs) found a clear breach of a published rule (' + ORIGIN + '/checks). With no owner, this also lowers your level by one.' });
@@ -651,6 +675,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
         r.jevs = await jevs.check(t, { action: 'post.create', subject: r.id, body: body.body, ...f });
         // Automatic level 2 (PR 12): a member below it is checked as they take part.
         if (who.trustLevel < 2 && who.isAdmin !== true) await jevs.check(t, { action: 'account.check', ...f });
+        r.wall = await wallOf(t, 'post', r.id);
         return r;
       });
       const say = (code, b) => reply(res, code, withKeys(p.keysHidden, parent ? { ...b, in_reply_to: parent } : b));
@@ -660,6 +685,7 @@ async function handle(req, res, run, { oidc = null } = {}) {
       if (p.refused === 'waiting_limit') {
         return reply(res, 409, { error: 'Your first 3 posts are waiting for review. You can post again once they have been reviewed.' });
       }
+      if (wallBlocked(p.wall)) return say(403, { id: p.id, status: 'removed', ...wallRefusal(p.wall, 'The post was removed.') });
       const held = heldBy(p.jevs);
       // Which checks asked, by their public names, never a score (031; the UI/UX review, item 9). Best effort: the post
       // is already saved, so a failure here only leaves the names out.

@@ -97,7 +97,7 @@ test('OV1: since 088 (Aaron, Nov 26: pay-as-you-go), the four reviewers are on w
   await q(`update app.oversight_settings set monthly_cap_cents = 0`);
   await submission();
   const g = gateway('{"verdict":"ok","reason":"Fine."}');
-  assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl }), { calls: 0 }, 'a $0 cap calls nothing');
+  assert.deepStrictEqual(await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl, gapMs: 0 }), { calls: 0 }, 'a $0 cap calls nothing');
   assert.strictEqual(g.sent.length, 0);
   await q(`update app.oversight_roles set mode = case when role = 'quality_assurance' then 'on' else 'off' end`); // OV2 and OV3 test one role
 });
@@ -107,12 +107,12 @@ test('OV2: on with a cap, a role advises and changes nothing; the cap stops it; 
   for (let i = 0; i < 12; i++) await submission();
   const g = gateway('{"verdict":"concern","reason":"The link does not show the change."}');
   let total = 0;
-  for (let i = 0; i < 6; i++) total += (await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl })).calls;
+  for (let i = 0; i < 6; i++) total += (await roles.run(run, TOKEN, { fetchImpl: g.fetchImpl, gapMs: 0 })).calls;
   assert.strictEqual(total, 10, 'a cent buys 10 calls at this role\'s price, and no more');
   assert.strictEqual((await q(`select count(*)::int as n from app.oversight_calls where verdict = 'concern'`))[0].n, 10);
   assert.strictEqual((await q(`select count(*)::int as n from app.work_submissions where status <> 'waiting'`))[0].n, 0, 'advice only');
   await q(`update app.oversight_settings set monthly_cap_cents = 100`);
-  await roles.run(run, TOKEN, { fetchImpl: gateway('nonsense').fetchImpl });
+  await roles.run(run, TOKEN, { fetchImpl: gateway('nonsense').fetchImpl, gapMs: 0 });
   assert.ok((await q(`select count(*)::int as n from app.oversight_calls where error = 'bad answer' and verdict is null`))[0].n >= 1);
   await assert.rejects(run(ctxOf(poster), (t) => t`select * from app.oversight_claim('quality_assurance', 1)`), /only the site's timer/);
 });

@@ -403,8 +403,11 @@ test('094 SJ2: held work clears after the reviewers; a concern is the only case 
   // Not yet: nothing has been read.
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0);
   // Every reviewer clears the first, but the link sandbox hasn't opened it yet: it still waits (095).
+  // 096: a reviewer's outage counts as its turn after 3 failed attempts (the claim retries a failure up to 3 times).
   for (const role of roles) {
-    await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[0][1]}', 'm', 0, ${role === roles[1] ? "null, 'gateway 429'" : "'ok', null"})`);
+    for (let k = 0; k < (role === roles[1] ? 3 : 1); k++) {
+      await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[0][1]}', 'm', 0, ${role === roles[1] ? "null, 'gateway 429'" : "'ok', null"})`);
+    }
   }
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0, 'waits for the link sandbox');
   // The daily alert doesn't count held work the reviewers are still reading.
@@ -413,7 +416,7 @@ test('094 SJ2: held work clears after the reviewers; a concern is the only case 
   assert.strictEqual((await q(`select count(*)::int n from app.notices where dedupe_key like 'work:waiting:%'`))[0].n, 0, 'nothing is his yet');
   for (const [, sid] of sids) await q(`insert into app.wall_link_runs (submission_id) values ('${sid}')`);
   for (const role of roles) {
-    // A concern on the second stops it; one reviewer's outage (a 429) on the first doesn't block it.
+    // A concern on the second stops it; one reviewer's outage (3 failed attempts) on the first doesn't block it.
     await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[1][1]}', 'm', 0, ${role === roles[0] ? "'concern', null" : "'ok', null"})`);
   }
   assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 1);

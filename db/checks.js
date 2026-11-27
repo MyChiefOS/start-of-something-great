@@ -234,6 +234,15 @@ const DEFINERS = {
   'app.blue_team_lead(uuid, uuid)': { owner: 'dog_owner', callers: '' },
   'app.wall_recheck_flags(uuid)': { owner: 'dog_owner', callers: 'dog_work' },
   'app.wall_appeal(uuid, text)': { owner: 'dog_work', callers: 'dog_app' },
+  // 096, the Wall on posts and drafts: its trigger and check (as wall_gate), the refusal carried out by JEVs's role
+  // (the only one besides a reviewer that may move a post; a restore only from an appeal the recheck cleared), and the
+  // author's own decision for the site's answer. A work note's hidden-key count, and the model reviewers' failure alert.
+  'app.wall_post_gate()': { owner: 'dog_owner', callers: '' },
+  'app.wall_post_check(text, uuid, text, uuid, uuid)': { owner: 'dog_owner', callers: '' },
+  'app.wall_post_act(text, uuid, text, uuid)': { owner: 'dog_jevs', callers: 'dog_owner,dog_work' },
+  'app.wall_post_refusal(text, uuid)': { owner: 'dog_owner', callers: 'dog_app' },
+  'app.work_submit(uuid, text, text, text, text, integer, integer)': 'dog_work',
+  'app.oversight_failure_watch()': 'dog_work',
   'app.wall_recheck_run()': { owner: 'dog_work', callers: 'dog_app' },
   'app.oversight_report_claim()': { owner: 'dog_work', callers: 'dog_app' },
   'app.oversight_report_record(date, text, text)': { owner: 'dog_work', callers: 'dog_app' },

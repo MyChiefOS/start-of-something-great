@@ -188,7 +188,10 @@ test.before(async () => {
   web = db.connect(at(SERVER, NAME, WEB, PW), { ssl: false, max: 4 });
   await trustSystem(su);
   await asOwner(`update app.jevs_settings set value = 'enforce' where key = 'mode'`);
-  // 080: high risk now flags and goes ahead; these tests cover the hold path, kept as the one-step rollback.
+  // 080: production flags high risk and lets it go ahead (high_risk = 'flag'). Every test in this file is about a held
+  // post, which exists only on the one-step rollback (high_risk = 'hold'), so this file is that rollback's suite and
+  // sets it here, explicitly. The production path (flag: the post goes live, flagged, and Second Look reads it through
+  // its intake, 096) is the last test below and test/wall-posts.test.js WP3.
   await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
 });
 test.after(async () => {
@@ -453,5 +456,26 @@ test('Aaron switches it and asks it security questions from the owner controls; 
     assert.strictEqual(asked.status, 403);
   } finally {
     global.fetch = realFetch;
+  }
+});
+
+test('096, production settings (high_risk = flag): the same high-risk post goes live, flagged, and Second Look reads it through its intake', async () => {
+  await asOwner(`update app.jevs_settings set value = 'flag' where key = 'high_risk'`);
+  await q(`update app.sl_settings set mode = 'on', last_claim_at = null`);
+  try {
+    const author = await member('Flagged poster');
+    const r = await feed('POST', { cookie: author.cookie, json: { body: 'Notes from the meetup are on these pages, ' + unique() + ' ' + links(4) } });
+    assert.strictEqual(r.status, 201, 'nothing high risk waits for a person: ' + JSON.stringify(r.json));
+    assert.strictEqual(await status(r.json.id), 'live');
+    const [d] = await q(`select level, effect from app.jevs_decisions where subject_id = '${r.json.id}' and action = 'post.create'`);
+    assert.deepStrictEqual([d.level, d.effect], ['high', 'flag']);
+    const out = await runner.run(run, TOKEN, { fetchImpl: gateway(answer()) });
+    assert.ok(out.claimed >= 1, JSON.stringify(out));
+    const [i] = await q(`select why, decision from app.sl_intake where post_id = '${r.json.id}'`);
+    assert.ok(i && i.why === 'flag' && i.decision, 'read through the intake: ' + JSON.stringify(i));
+    assert.strictEqual(await status(r.json.id), 'live', 'it stays up whatever Second Look says; a reject only puts it in Aaron\'s queue');
+  } finally {
+    await asOwner(`update app.jevs_settings set value = 'hold' where key = 'high_risk'`);
+    await q(`update app.sl_settings set mode = 'off'`);
   }
 });

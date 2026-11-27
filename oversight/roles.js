@@ -69,12 +69,30 @@ async function review({ role, text, token, model, fetchImpl = fetch }) {
   return parse(content) || { error: 'bad answer' };
 }
 
-// The timer's step: the free auditor and report every minute (each runs at most as often as it is due), then each
-// model role, only if the database hands it work (off and $0 hand out nothing).
-async function run(runTx, token, { fetchImpl } = {}) {
+// The timer's step: the free auditor and report every minute (each runs at most as often as it is due), then (096) the
+// classifier, then each model role, only if the database hands it work (off and $0 hand out nothing). gapMs: the wait
+// between two model calls (096: the free tier answers 429 to calls in the same second; the cron allows 300 seconds).
+// A call that failed is handed out again by the database, up to 3 attempts, 5 minutes apart; when a role fails more
+// than half its calls in an hour, the administrators get one alert that hour.
+const GAP_MS = 1500;
+async function run(runTx, token, { fetchImpl, gapMs = GAP_MS } = {}) {
   try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_run()`); } catch { /* the next minute tries again */ }
   let calls = 0;
   if (!token) return { calls };
+  const spaced = async (fn) => {
+    if (calls && gapMs > 0) await new Promise((ok) => setTimeout(ok, gapMs));
+    calls++;
+    return fn();
+  };
+  // 088: the classifier, on the newest posts (up to 5 a minute), under the same daily caps. 096: first, so a burst of
+  // work for the reviewers can't keep posts from being read.
+  let posts = [];
+  try { posts = await runTx({ actor: 'anon' }, (t) => t`select * from app.oversight_classify_claim(5)`); } catch { posts = []; }
+  for (const p of posts) {
+    const out = p.body ? await spaced(() => review({ role: 'classifier', text: p.body, token, model: p.model, fetchImpl })) : { error: 'no text' };
+    if (!p.body) calls++;
+    try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_classify_record(${p.post_id}::uuid, ${out.verdict || null}, ${out.reason || null}, ${out.error || null})`); } catch { /* stays pending */ }
+  }
   for (const role of Object.keys(ROLES)) {
     let items = [];
     try { items = await runTx({ actor: 'anon' }, (t) => t`select * from app.oversight_claim(${role}, 3)`); } catch { items = []; }
@@ -84,19 +102,13 @@ async function run(runTx, token, { fetchImpl } = {}) {
         const [row] = await runTx({ actor: 'anon' }, (t) => t`select app.oversight_item(${role}, ${it.submission_id}::uuid) as d`);
         if (row && row.d) text = JSON.stringify(row.d);
       } catch { text = ''; }
-      const out = text ? await review({ role, text, token, model: it.model, fetchImpl }) : { error: 'no work text' };
-      calls++;
+      const out = text ? await spaced(() => review({ role, text, token, model: it.model, fetchImpl })) : { error: 'no work text' };
+      if (!text) calls++;
       try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_record(${role}, ${it.submission_id}::uuid, ${out.verdict || null}, ${out.reason || null}, ${out.error || null})`); } catch { /* stays pending */ }
     }
   }
-  // 088: the classifier, on the newest posts (up to 5 a minute), under the same daily caps.
-  let posts = [];
-  try { posts = await runTx({ actor: 'anon' }, (t) => t`select * from app.oversight_classify_claim(5)`); } catch { posts = []; }
-  for (const p of posts) {
-    const out = p.body ? await review({ role: 'classifier', text: p.body, token, model: p.model, fetchImpl }) : { error: 'no text' };
-    calls++;
-    try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_classify_record(${p.post_id}::uuid, ${out.verdict || null}, ${out.reason || null}, ${out.error || null})`); } catch { /* stays pending */ }
-  }
+  // 096: a role failing more than half its calls this hour alerts (alert only; the failed readings are retried).
+  try { await runTx({ actor: 'anon' }, (t) => t`select app.oversight_failure_watch()`); } catch { /* the next minute tries again */ }
   // 094: held link work the reviewers have cleared stands; what they or the Wall found goes to Aaron as high risk.
   try { await runTx({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle()`); } catch { /* the next minute tries again */ }
   // 089: the Fable 5.2 report (once a day) and the weekly cross-check by another maker's model.
@@ -187,4 +199,4 @@ async function gatewayCheck(runTx, token, fetchImpl = fetch) {
   return { checked: results.length, results };
 }
 
-module.exports = { gatewayCheck, review, run, parse, system, ask, report, crosscheck, ROLES, CLASSIFIER, REPORT, CROSSCHECK };
+module.exports = { GAP_MS, gatewayCheck, review, run, parse, system, ask, report, crosscheck, ROLES, CLASSIFIER, REPORT, CROSSCHECK };
