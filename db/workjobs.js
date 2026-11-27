@@ -260,8 +260,9 @@ async function forgeRules(pin = null, { fetchImpl = globalThis.fetch } = {}) {
 }
 
 // 088: clam: wall/clamav.js's scan (the facts workflow passes it; tests may pass a stand-in). sandbox: the sandbox job's
-// findings, { 'number:filename': [flags] }, each kept only if it is W47 or W47b in the Wall's own words.
-async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null, clam = null, sandbox = null }) {
+// findings, { 'number:filename': [flags] }, each kept only if it is W47 or W47b in the Wall's own words. 095: links, the
+// link sandbox job's findings, { submission id: { flags, seen } }, each flag kept only if it is W51 or W51b.
+async function gather({ get, getRaw = null, wanted = [], files: filesWanted = [], rules = undefined, osvFetch = null, clam = null, sandbox = null, links = null }) {
   let refused = 0;
   const read = (p) => get(p).catch((e) => { if (e && (e.githubStatus === 403 || e.githubStatus === 429)) refused++; return null; });
   const pages = await Promise.all([1, 2].map((n) => read('/pulls?state=all&per_page=100&sort=updated&direction=desc&page=' + n)));
@@ -343,7 +344,21 @@ async function gather({ get, getRaw = null, wanted = [], files: filesWanted = []
     });
   }
   const proposals = shapeProposals(await read('/issues?labels=proposal&state=all&per_page=100&sort=created&direction=desc'));
-  return { prs, issues, details, refused, files, proposals };
+  return { prs, issues, details, refused, files, proposals, links: linkFindings(links) };
+}
+
+// 095: the link sandbox's findings as dog-github takes them: at most 10, each its flags in the sandbox's own words and
+// the hosts and links the page reached (for the threat lists). Anything else is dropped here; the database checks again.
+function linkFindings(links) {
+  if (!links || typeof links !== 'object' || Array.isArray(links)) return [];
+  const out = [];
+  for (const [id, v] of Object.entries(links)) {
+    if (out.length >= 10 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) || !v || typeof v !== 'object') continue;
+    const flags = (Array.isArray(v.flags) ? v.flags : []).map(String).filter((t) => (t.startsWith('W51 link sandbox: ') || t.startsWith('W51b link sandbox: ')) && t.length <= 240).slice(0, 10);
+    const seen = (Array.isArray(v.seen) ? v.seen : []).map(String).filter((t) => t.length <= 500).slice(0, 50);
+    out.push({ id, flags, seen });
+  }
+  return out;
 }
 
 // The facts as dog-github's sync requests: at most 100 pull requests each (the database's limit); the issues, details,
@@ -352,7 +367,8 @@ function requests(facts) {
   const out = [];
   for (let i = 0; i < Math.max(facts.prs.length, 1); i += 100) {
     out.push({ mode: 'sync', facts: { prs: facts.prs.slice(i, i + 100), issues: i === 0 ? facts.issues : [], details: i === 0 ? facts.details : [],
-      refused: i === 0 ? facts.refused : 0, files: i === 0 ? facts.files || [] : [], proposals: i === 0 ? facts.proposals || [] : [] } });
+      refused: i === 0 ? facts.refused : 0, files: i === 0 ? facts.files || [] : [], proposals: i === 0 ? facts.proposals || [] : [],
+      ...(i === 0 && facts.links && facts.links.length ? { links: facts.links } : {}) } });
   }
   return out;
 }
@@ -400,12 +416,15 @@ async function main(argv, env = process.env) {
   // WALL_SANDBOX as JSON (a broken or missing value means no findings, never a failed run).
   let sandbox = null;
   try { sandbox = env.WALL_SANDBOX ? JSON.parse(env.WALL_SANDBOX) : null; } catch { sandbox = null; }
+  // 095: the link sandbox job's findings, the same way.
+  let links = null;
+  try { links = env.WALL_LINKS ? JSON.parse(env.WALL_LINKS) : null; } catch { links = null; }
   const clam = env.WALL_CLAMAV === '1' ? (items) => require('../wall/clamav').scan(items) : null;
   // 088: the YARA release the wiki pinned (served with the firewall's list), when the site answers.
   let pin = null;
   try { const r = await fetch('https://dayonegreat.com/api/work/wall_edge', { signal: AbortSignal.timeout(15000) }); if (r.ok) { const j = await r.json(); pin = (j && (j.data || j).yara) || null; } } catch { pin = null; }
   const rules = await forgeRules(pin);
-  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), getRaw: githubRaw(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [], clam, sandbox, rules });
+  const facts = await gather({ get: githubGet(env.GH_TOKEN || ''), getRaw: githubRaw(env.GH_TOKEN || ''), wanted: answer.wanted, files: Array.isArray(answer.files) ? answer.files : [], clam, sandbox, links, rules });
   const dir = path.resolve(argv[2]);
   fs.mkdirSync(dir, { recursive: true });
   const reqs = requests(facts);
@@ -416,4 +435,4 @@ async function main(argv, env = process.env) {
 
 if (require.main === module) main(process.argv.slice(2)).catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 
-module.exports = { forgeRules, run, gather, requests, githubGet, githubRaw, addedPackages, osvFlags, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };
+module.exports = { forgeRules, run, gather, requests, linkFindings, githubGet, githubRaw, addedPackages, osvFlags, main, shapePr, shapeIssue, shapeDetail, shapeFiles, shapeProposals, refsOf, DETAILS, FILES, FILES_BYTES, SCAN_FILES, SCAN_BYTES };

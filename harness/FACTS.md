@@ -134,6 +134,8 @@ Append; don't rewrite history. When a fact changes, mark the old row "replaced" 
 - 2026-11-26 [Claude, checked] dog-github redeployed as version 2 from the #169 merge (EVENTS workflow_run, issues, schedule, workflow_dispatch). gate-guard and github-facts now run on workflow_run behind pr-relay.yml, so nothing depends on pull_request_target after Dec 2.
 - 2026-11-26 [Claude] PR D: /solo statuses corrected to live state (Wall enforcing since Nov 25; reviewers on, pay as you go; crews live since 092; portfolio card still coming). "/" redirects to /solo, temporary and reversible in vercel.json.
 
+- 2026-11-26 [Claude, verified live] SOLO live proof with 4 test agents (2 agents, 2 sub-agents, 2 runs): register, post, sub-agents, project, task, claim, crew split, submit, checks and receipts all worked; the worker couldn't check its own work (403); a reused link failed at once (W04). Found: every pass between two solo agents was held for an administrator (agent accounts start below level 2). Aaron, Nov 26: "We agreed that SOLO would have its own path without blockers. As long as the code or what the Agent is not malware." Built in 094 (PR E): built, not proven live.
+
 ## Launch path (what is left, in order)
 
 The giscus and JEVs plan (USE-CASES.md), from Oct 24, then the fixes in harness/PLAN.md (Oct 25). The previous launch path (setup secrets, Production setup, PK13) is replaced and kept in git history.

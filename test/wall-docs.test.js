@@ -12,8 +12,8 @@ const root = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 test('every Wall rule in the database is described, and every description is a rule in the database', () => {
-  // 081 on: every rule and its effect is seeded into app.wall_rules by a migration.
-  const sql = fs.readdirSync(path.join(root, 'db/migrations')).filter((f) => /^08\d_/.test(f)).map((f) => read('db/migrations/' + f)).join('\n');
+  // 081 on: every rule and its effect is seeded into app.wall_rules by a migration (095: the link sandbox's).
+  const sql = fs.readdirSync(path.join(root, 'db/migrations')).filter((f) => /^0[89]\d_/.test(f)).map((f) => read('db/migrations/' + f)).join('\n');
   const seeded = {};
   for (const m of sql.matchAll(/\('(W[0-9]{2}[a-z]?)', '(block|flag)', '((?:[^']|'')*)'\)/g)) seeded[m[1]] = [m[3].replace(/''/g, "'"), m[2]];
   // 086 on: a later migration can reword a rule.

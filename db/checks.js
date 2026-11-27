@@ -34,7 +34,8 @@ const TIMERS = 'dog_timers';
 // dog_ghsync (055, RK140) only records GitHub's facts, inside app.work_github_sync and app.work_github_wanted, for the
 // dog-github function; it holds no table rights, and the site's role can't act as it. Since 057 it also records the
 // changed files Third Look reads (app.tl_files_wanted, app.tl_files_record) and Aaron's proposal decisions
-// (app.log_proposals_record), from the same GitHub facts.
+// (app.log_proposals_record), from the same GitHub facts; since 095 the link sandbox's list and findings
+// (app.wall_links_wanted, app.wall_links_record).
 // dog_witness (057, RK144) only reports the witness, inside app.log_witness_report, for dog-github when the log-witness
 // workflow calls. It holds no table rights, and the site's role can't act as it.
 // dog_pay (061) is the payment function's role: the money tables, and the work rows a release must read. The site's
@@ -210,6 +211,7 @@ const DEFINERS = {
   'app.wiki_health_check()': { owner: 'dog_work', callers: 'dog_app' },
   // 093: which feeds the active wiki version holds, for the wiki job.
   'app.wiki_held_sources()': { owner: 'dog_work', callers: 'dog_app' },
+  'app.work_reviewers_settle()': { owner: 'dog_work', callers: 'dog_app' },
   // 092: the accounts a brake counts together (called only inside posts_limit, by its owner).
   'app.limit_group(uuid)': { owner: 'dog_limits', callers: '' },
   // 092: crews (a split, the guard on a piece's claim and a split task's submission, the whole task done) and the
@@ -222,6 +224,11 @@ const DEFINERS = {
   'app.gateway_check_claim()': { owner: 'dog_work', callers: 'dog_app' },
   'app.gateway_check_record(jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_link_check(text)': { owner: 'dog_owner', callers: 'dog_app' },
+  // 095: the link sandbox. Which links it opens and its findings, only from GitHub's facts (dog_ghsync); whether a link
+  // still waits for it (an internal piece, for the reviewers' settle).
+  'app.wall_links_wanted(integer)': { owner: 'dog_owner', callers: 'dog_ghsync' },
+  'app.wall_links_record(jsonb)': { owner: 'dog_owner', callers: 'dog_ghsync' },
+  'app.wall_link_waiting(uuid)': { owner: 'dog_owner', callers: 'dog_work' },
   // 089: the blue team lead (called by the Wall's gate), the recheck's flags (the timer's recheck), appeals, the
   // recheck run, and the Fable 5.2 report and weekly cross-check (the timer).
   'app.blue_team_lead(uuid, uuid)': { owner: 'dog_owner', callers: '' },

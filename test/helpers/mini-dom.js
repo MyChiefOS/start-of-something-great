@@ -3,6 +3,7 @@
 // .content and cloneNode, as the pages' scripts clone their cards): removeAttribute, a ?query for location.search, and a
 // record of every address fetched, every history.replaceState and every location.replace (a hash can be given too), and
 // window.addEventListener with fire(type) to run what was added (topic threads, /talk). Not a test file itself (test/*.test.js only).
+// For /solo (Nov 26): classList remove, toggle and contains, style.setProperty, removeChild, replaceChild, closest, and page()'s globals.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -16,7 +17,14 @@ class El {
   constructor(tag, doc) {
     this.tagName = tag.toUpperCase(); this.ownerDocument = doc; this.children = []; this.attrs = {}; this.parentNode = null;
     this.hidden = false; this.disabled = false; this.open = false; this.value = ''; this.className = ''; this.on = {}; this._text = '';
-    this.classList = { add: (c) => { this.className = (this.className + ' ' + c).trim(); } };
+    const cls = () => this.className.split(/\s+/).filter(Boolean);
+    this.classList = {
+      add: (c) => { if (!cls().includes(c)) this.className = (this.className + ' ' + c).trim(); },
+      remove: (c) => { this.className = cls().filter((x) => x !== c).join(' '); },
+      contains: (c) => cls().includes(c),
+      toggle: (c, on) => { const want = on === undefined ? !cls().includes(c) : !!on; if (want) this.classList.add(c); else this.classList.remove(c); return want; }
+    };
+    this.style = { props: {}, setProperty: (k, v) => { this.style.props[k] = String(v); } };
   }
   get id() { return this.attrs.id || ''; } set id(v) { this.attrs.id = String(v); }
   get href() { return this.attrs.href; } set href(v) { this.attrs.href = String(v); }
@@ -32,6 +40,9 @@ class El {
   appendChild(n) { if (n.parentNode) n.remove(); n.parentNode = this; this.children.push(n); return n; }
   insertBefore(n, ref) { if (n.parentNode) n.remove(); n.parentNode = this; const i = ref ? this.children.indexOf(ref) : -1; this.children.splice(i < 0 ? this.children.length : i, 0, n); return n; }
   after(n) { const p = this.parentNode; if (n.parentNode) n.remove(); n.parentNode = p; p.children.splice(p.children.indexOf(this) + 1, 0, n); }
+  removeChild(n) { n.remove(); return n; }
+  replaceChild(n, old) { const i = this.children.indexOf(old); if (n.parentNode) n.remove(); n.parentNode = this; this.children.splice(i, 1, n); old.parentNode = null; return old; }
+  closest(sel) { for (let e = this; e && e.tagName !== '#ROOT'; e = e.parentNode) if (e.matches(sel)) return e; return null; }
   remove() { if (!this.parentNode) return; const s = this.parentNode.children; s.splice(s.indexOf(this), 1); this.parentNode = null; }
   addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }
   // Runs the listeners in order, as a browser does; stopImmediatePropagation stops the rest.
@@ -115,7 +126,8 @@ function parseMain(html, doc) {
 }
 
 // Loads a page: its <main>, then its script, with fetch answered by answers(url, init) -> [status, body].
-function page(file, script, answers, search, hash) {
+// globals: anything more the page's script needs in its window (for /solo: matchMedia, performance, requestAnimationFrame).
+function page(file, script, answers, search, hash, globals) {
   const doc = { focused: null };
   const main = parseMain(read(file), doc);
   const sent = [];
@@ -146,6 +158,7 @@ function page(file, script, answers, search, hash) {
       return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
     }
   };
+  Object.assign(sandbox, globals || {});
   sandbox.window = sandbox;
   // One script, or several run in order in the same window (a page with a shared component, such as /admin/review
   // with /approval.js).

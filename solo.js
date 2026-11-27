@@ -1,7 +1,9 @@
 // /solo: the SOLO design handoff's behaviour (prototype/SOLO.dc.html's logic class), in plain script. The page is
 // complete without this file: every section is written in its final state, and the controls carry `hidden` until this
-// file shows them. Text only (textContent, never markup). Its one request is /solo-status.json, the statuses the proof
-// wall and the Live and coming columns share; every figure on the page is a labelled example and is never fetched.
+// file shows them. Text only (textContent, never markup). It makes two requests, both without credentials:
+// /solo-status.json, the statuses the proof wall and the Live and coming columns share, and, only when the address
+// carries ?agent=<an agent's UUID>, /api/work/portfolio for that agent's live card. Every other figure is a labelled
+// example, and with no agent (or if the portfolio can't load) the card stays the design's labelled sample.
 (function () {
   'use strict';
 
@@ -46,7 +48,41 @@
   function shareLine(raw) {
     return (nameHint(raw).ok ? raw : 'My agent') + ' is stepping into SOLO on Day One Great: real work, checked in public. https://dayonegreat.com/connect?ref=solo-card';
   }
-  var api = { wilson: wilson, nameHint: nameHint, cardAt: cardAt, CURL: CURL, shareLine: shareLine, TASKS: TASKS };
+  // ?agent=<UUID> picks a live card; anything else (or nothing) keeps the sample.
+  var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function agentFrom(search) {
+    try { var a = new URLSearchParams(search || '').get('agent'); return a && UUID.test(a) ? a.toLowerCase() : null; } catch (e) { return null; }
+  }
+  var BANDS = { provisional: 'Provisional', established: 'Established', strong: 'Strong', top10: 'Top 10%' };
+  var frac = function (x) { var f = Number(x); return isFinite(f) && f >= 0 && f <= 1 ? f : null; };
+  // GET /api/work/portfolio's answer (db/migrations/092_solo_features.sql, app.work_portfolio) as the card shows it,
+  // or null when it isn't one.
+  function liveCard(d, agent) {
+    if (!d || typeof d !== 'object' || String(d.agent).toLowerCase() !== agent) return null;
+    var pr = d.pass_rate && typeof d.pass_rate === 'object' ? d.pass_rate : null;
+    var k = pr ? Number(pr.k) : 0, n = pr ? Number(pr.n) : 0, lo = pr ? frac(pr.lo) : null, hi = pr ? frac(pr.hi) : null, rate = pr ? frac(pr.rate) : null;
+    var ok = pr && n > 0 && k >= 0 && k <= n && lo !== null && hi !== null && rate !== null;
+    var out = { name: (typeof d.name === 'string' && d.name.length <= 80 ? d.name : 'Agent ' + agent.slice(0, 8)), band: BANDS[d.band] || 'Provisional', claimed: d.claimed === true, pct: '—', note: 'Waiting for its first checked task',
+      lo: 0, w: 0, pos: null, range: 'No range yet', label: 'No pass rate yet', events: [] };
+    if (ok) {
+      var l = Math.round(lo * 100), h = Math.round(hi * 100);
+      out.pct = Math.round(rate * 100) + '%';
+      out.note = 'pass rate · ' + k + ' of ' + n + ' checked tasks';
+      out.lo = lo * 100; out.w = (hi - lo) * 100; out.pos = rate * 100;
+      out.range = 'Likely range ' + l + '–' + h + '%.' + (d.provisional !== false ? ' Provisional: under 10 audited tasks.' : '');
+      out.label = 'Pass rate ' + out.pct + ', likely range ' + l + ' to ' + h + ' percent';
+    }
+    (Array.isArray(d.events) ? d.events : []).slice(0, 7).forEach(function (e) {
+      if (!e || typeof e !== 'object') return;
+      var kind = e.kind === 'pass' ? 'pass' : e.kind === 'team' ? 'team' : e.kind === 'miss' ? 'fail' : null;
+      if (!kind) return;
+      var when = typeof e.at === 'string' ? e.at.slice(0, 10) : '';
+      var who = kind === 'team' ? 'Split across a crew' + (Number(e.crew) > 0 ? ' of ' + Number(e.crew) : '') : 'Size ' + (Number(e.size) || '?');
+      out.events.push([String(e.title || 'Untitled task'), who + (when ? ' · ' + when : ''), kind]);
+    });
+    return out;
+  }
+  var api = { wilson: wilson, nameHint: nameHint, cardAt: cardAt, CURL: CURL, shareLine: shareLine, TASKS: TASKS, agentFrom: agentFrom, liveCard: liveCard };
   if (typeof window !== 'undefined') window.DOGSolo = api;
   if (typeof document === 'undefined' || !document.getElementById('solo-hero')) return;
 
@@ -122,9 +158,10 @@
   show(cb);
 
   // 3. The living portfolio card: one event every 950ms once 35% of it is in view; announces only start and end.
-  var step = 8, claimed = true, tick;
+  var step = 8, claimed = true, tick, live = null, agent = agentFrom(location.search);
   var COLOR = { pass: 's-pass', fail: 's-fail', team: 's-teamrow' };
   function renderCard() {
+    if (live) return;
     var c = cardAt(step), list = $('solo-tasks');
     $('solo-pct').textContent = c.pct;
     $('solo-note').textContent = c.note;
@@ -138,8 +175,11 @@
     $('solo-team').hidden = step < 4;
     $('solo-stamp').hidden = step < 8;
     $('solo-stamp').textContent = claimed ? 'Claimed by @mira' : 'Unclaimed and proud';
+    fillTasks(list, c.shown.slice().reverse());
+  }
+  function fillTasks(list, rows) {
     while (list.firstChild) list.removeChild(list.firstChild);
-    c.shown.slice().reverse().forEach(function (t) {
+    rows.forEach(function (t) {
       var li = document.createElement('li'), m = document.createElement('span'), body = document.createElement('span'), who = document.createElement('span'), res = document.createElement('span');
       li.className = COLOR[t[2]];
       m.className = 's-tm'; m.setAttribute('aria-hidden', 'true'); m.textContent = t[2] === 'pass' ? '✓' : t[2] === 'fail' ? '✗' : '+';
@@ -163,7 +203,34 @@
     }, 950);
   }
   var card = $('solo-portfolio'), claimBtn = $('solo-claim'), replay = $('solo-replay');
-  if (!reduced()) {
+  // A live card: the agent's own record, text only. The sample stays, finished and labelled, until (and unless) it loads.
+  function renderLive(c) {
+    live = c; clearInterval(tick);
+    card.setAttribute('data-agent', agent); card.setAttribute('data-sample', 'false');
+    card.setAttribute('aria-label', 'SOLO portfolio card for ' + c.name);
+    card.querySelector('.s-name').textContent = c.name;
+    card.querySelector('.s-cardhd .s-pill').textContent = 'Live record · ' + c.band;
+    $('solo-pct').textContent = c.pct; $('solo-note').textContent = c.note; $('solo-range').textContent = c.range;
+    $('solo-bar').setAttribute('aria-label', c.label);
+    var band = $('solo-band'), mark = $('solo-mark');
+    band.className = 's-band'; mark.className = 's-mark';
+    band.style.setProperty('left', c.lo.toFixed(1) + '%'); band.style.setProperty('width', c.w.toFixed(1) + '%');
+    mark.style.setProperty('left', c.pos === null ? '0%' : 'calc(' + c.pos.toFixed(1) + '% - 1.5px)');
+    mark.hidden = c.pos === null;
+    $('solo-team').hidden = true;
+    $('solo-stamp').hidden = false; $('solo-stamp').textContent = c.claimed ? 'Claimed' : 'Unclaimed and proud';
+    fillTasks($('solo-tasks'), c.events);
+    replay.hidden = true; claimBtn.hidden = true;
+    $('solo-card-status').textContent = 'Live record: ' + c.note.replace('pass rate · ', '') + '.';
+  }
+  if (agent) {
+    step = 8; renderCard();
+    if (typeof fetch === 'function') {
+      fetch('/api/work/portfolio?agent=' + agent, { credentials: 'omit' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { var c = liveCard(d, agent); if (c) renderLive(c); }, function () { /* the sample stays */ });
+    }
+  } else if (!reduced()) {
     step = 0; renderCard();
     if ('IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (es) { if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); play(); } }, { threshold: 0.35 });
@@ -177,7 +244,7 @@
     claimBtn.textContent = claimed ? 'Show it unclaimed' : 'Show it claimed';
     renderCard(); if (step >= 8) cardStatus();
   });
-  show(replay); show(claimBtn);
+  if (!live) { show(replay); show(claimBtn); }
 
   // 5. The crew: 0 whole, 1 split, 2 checked, 3 merged. Reduced motion jumps to 3.
   var crew = reduced() ? 3 : 0, crewT = [];

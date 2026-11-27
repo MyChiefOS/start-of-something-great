@@ -284,13 +284,12 @@ test('PR C (092, audit findings 3 and 6): a solo agent checks work on its own ta
     values ('${t.id}', '${cl.id}', 'agent', '${wAcct}', '${worker.json.agent_id}', 'link', 'https://example.org/w', 'Done.', decode(repeat('ab', 32), 'hex'), '${crypto.randomBytes(32).toString('hex')}', 'review', 'poster', now()) returning id`);
   const before = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
   const r = await workApi(poster.json.key, 'check', { submission: s.id, verdict: 'pass' });
-  assert.ok(r.status === 200 && ['pass', 'held'].includes(r.json.result), JSON.stringify(r.json));
+  // 094: two solo agents aren't held for being new; the poster's pass stands (the Nov 26 live proof found it held).
+  assert.ok(r.status === 200 && r.json.result === 'pass', JSON.stringify(r.json));
   // The worker can't check its own work, and an agent a person owns still can't check.
   assert.notStrictEqual((await workApi(worker.json.key, 'check', { submission: s.id, verdict: 'pass' })).status, 200);
-  if (r.json.result === 'pass') {
-    const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
-    assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
-  }
+  const after = (await standing(worker.json.agent_id)) || { clean_passes: 0 };
+  assert.strictEqual(after.clean_passes, before.clean_passes, 'an agent poster\'s pass doesn\'t count toward the worker\'s level');
 });
 
 test('092 crews: a lead splits its claimed task for its own crew; only the crew claims a piece; the task is done when every piece passes; the portfolio shows it', async () => {
@@ -335,4 +334,94 @@ test('092 crews: a lead splits its claimed task for its own crew; only the crew 
   const sd = S.data || S;
   assert.deepStrictEqual([sd.pass_rate.k, sd.pass_rate.n, sd.provisional], [1, 1, true]);
   assert.ok(sd.events.some((e) => e.kind === 'pass'));
+});
+
+// 094 (Aaron, Nov 26: "build SOLO like I told you"; "I should only look at high risk cases after several reviews and
+// sandbox testing"). SJ1 is the whole SOLO path over the real routes, no rows written by hand: two solo agents, five
+// tasks, the worker's sub-agent doing some, every pass standing, every task approved, a portfolio of 5 of 5.
+test('094 SJ1: a solo agent finishes five tasks start to finish, some by its sub-agent, and its portfolio shows 5 of 5', async () => {
+  const poster = await register('Journey poster');
+  const worker = await register('Journey worker');
+  const sub = await api(req('POST', 'subagents', { key: worker.json.key, json: { name: 'Journey helper', ttl_hours: 24, rules: { post: 'act', reply: 'off', report: 'off' } } }));
+  assert.strictEqual(sub.status, 201, JSON.stringify(sub.json));
+  const proj = await workApi(poster.json.key, 'projects', { title: 'Journey project', description: 'Five small tasks.', room: '15-0000' });
+  assert.strictEqual(proj.status, 201, JSON.stringify(proj.json));
+  const projectId = (proj.json.data || proj.json).id || (proj.json.project || {}).id;
+  const subs = [];
+  for (let i = 1; i <= 5; i++) {
+    const t = await workApi(poster.json.key, 'tasks', { project: projectId, title: 'Journey task ' + i, description: 'Link a page.', class: 'agent', size: 1 });
+    assert.strictEqual(t.status, 201, JSON.stringify(t.json));
+    const taskId = (t.json.data || t.json).id || (t.json.task || {}).id;
+    const key = i % 2 ? worker.json.key : sub.json.key;
+    assert.strictEqual((await workApi(key, 'claim', { task: taskId })).status, 201);
+    const s = await workApi(key, 'submit', { task: taskId, kind: 'link', url: 'https://example.org/journey/' + i, note: 'Done: page ' + i + '.' });
+    assert.strictEqual(s.status, 201, JSON.stringify(s.json));
+    subs.push([taskId, s.json.submission]);
+  }
+  for (const [taskId, sid] of subs) {
+    const c = await workApi(poster.json.key, 'check', { submission: sid, verdict: 'pass' });
+    assert.strictEqual(c.status, 200, JSON.stringify(c.json));
+    assert.strictEqual(c.json.result, 'pass', 'nothing is held for being new');
+    assert.strictEqual((await q(`select status from app.work_tasks where id = '${taskId}'`))[0].status, 'approved');
+  }
+  assert.strictEqual((await q(`select count(*)::int n from app.notices where title = 'Risky work waits for you'`))[0].n, 0, 'no administrator was asked');
+  const out = res();
+  await require('../api/work.js').handle({ method: 'GET', url: '/api/work/portfolio?agent=' + sub.json.agent_id, headers: { host: 'dayonegreat.com' }, query: { route: 'portfolio', agent: sub.json.agent_id } }, out, run);
+  const subPort = JSON.parse(out.body);
+  assert.deepStrictEqual([subPort.pass_rate.k, subPort.pass_rate.n], [2, 2], JSON.stringify(subPort));
+  assert.strictEqual(subPort.name, 'Journey helper', 'the card shows the agent\'s own name');
+  const out2 = res();
+  await require('../api/work.js').handle({ method: 'GET', url: '/api/work/portfolio?agent=' + worker.json.agent_id, headers: { host: 'dayonegreat.com' }, query: { route: 'portfolio', agent: worker.json.agent_id } }, out2, run);
+  const wp = JSON.parse(out2.body);
+  assert.ok(wp.pass_rate.k >= 3 && wp.pass_rate.k === wp.pass_rate.n, JSON.stringify(wp.pass_rate));
+});
+
+// SJ2: risky work (here, contact details in the note) waits for the model reviewers, not for Aaron. Every reviewer
+// that is on clears it: the pass stands with no administrator. One concern: only then is Aaron told, as high risk.
+test('094 SJ2: held work clears after the reviewers; a concern is the only case that reaches Aaron', async () => {
+  // Registered from another network: the file's earlier tests used this one's hourly registrations.
+  const from = (name, ip) => { const r = req('POST', 'register', { json: { name } }); r.headers['x-vercel-forwarded-for'] = ip; return api(r); };
+  const poster = await from('Held poster', '203.0.113.7');
+  const worker = await from('Held worker', '203.0.113.8');
+  assert.strictEqual(worker.status, 201, JSON.stringify(worker.json));
+  const proj = await workApi(poster.json.key, 'projects', { title: 'Held project', room: '15-0000' });
+  const projectId = (proj.json.data || proj.json).id || (proj.json.project || {}).id;
+  const sids = [];
+  for (const i of [1, 2]) {
+    const t = await workApi(poster.json.key, 'tasks', { project: projectId, title: 'Held task ' + i, class: 'agent', size: 1 });
+    const taskId = (t.json.data || t.json).id || (t.json.task || {}).id;
+    await workApi(worker.json.key, 'claim', { task: taskId });
+    const s = await workApi(worker.json.key, 'submit', { task: taskId, kind: 'link', url: 'https://example.org/held/' + i, note: 'Write to me at held' + i + '@example.org' });
+    assert.strictEqual(s.status, 201, JSON.stringify(s.json));
+    const c = await workApi(poster.json.key, 'check', { submission: s.json.submission, verdict: 'pass' });
+    assert.strictEqual(c.json.result, 'held', JSON.stringify(c.json));
+    sids.push([taskId, s.json.submission]);
+  }
+  assert.strictEqual((await q(`select count(*)::int n from app.notices where title in ('Risky work waits for you', 'High-risk work waits for you')`))[0].n, 0, 'Aaron isn\'t told at the hold');
+  const roles = (await q(`select role from app.oversight_roles where mode <> 'off' and role <> all (array['fable_report', 'fable_crosscheck', 'classifier'])`)).map((r) => r.role);
+  assert.ok(roles.length >= 2, roles.join());
+  // Not yet: nothing has been read.
+  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0);
+  // Every reviewer clears the first, but the link sandbox hasn't opened it yet: it still waits (095).
+  for (const role of roles) {
+    await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[0][1]}', 'm', 0, ${role === roles[1] ? "null, 'gateway 429'" : "'ok', null"})`);
+  }
+  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 0, 'waits for the link sandbox');
+  // The daily alert doesn't count held work the reviewers are still reading.
+  await q(`update app.work_settings set last_alert_day = null`);
+  await run({ actor: 'anon' }, (t) => t`select app.work_tick()`);
+  assert.strictEqual((await q(`select count(*)::int n from app.notices where dedupe_key like 'work:waiting:%'`))[0].n, 0, 'nothing is his yet');
+  for (const [, sid] of sids) await q(`insert into app.wall_link_runs (submission_id) values ('${sid}')`);
+  for (const role of roles) {
+    // A concern on the second stops it; one reviewer's outage (a 429) on the first doesn't block it.
+    await q(`insert into app.oversight_calls (role, submission_id, model, centi_cents, verdict, error) values ('${role}', '${sids[1][1]}', 'm', 0, ${role === roles[0] ? "'concern', null" : "'ok', null"})`);
+  }
+  assert.strictEqual((await run({ actor: 'anon' }, (t) => t`select app.work_reviewers_settle() as n`))[0].n, 1);
+  // The pass is recorded as the poster's, with the readings named, and the task approved.
+  assert.match((await q(`select reason from app.work_person_votes where submission_id = '${sids[0][1]}'`))[0].reason, /cleared by \d model reviewers/);
+  assert.strictEqual((await q(`select status from app.work_tasks where id = '${sids[0][0]}'`))[0].status, 'approved');
+  assert.strictEqual((await q(`select status from app.work_submissions where id = '${sids[1][1]}'`))[0].status, 'review');
+  assert.strictEqual((await q(`select count(*)::int n from app.notices where title = 'High-risk work waits for you' and subject_id = '${sids[1][1]}'`))[0].n, 1);
+  // Only the timer settles.
+  await assert.rejects(run({ actor: 'admin', memberId: crypto.randomUUID(), session: 'x', fresh: true }, (t) => t`select app.work_reviewers_settle()`), /./);
 });

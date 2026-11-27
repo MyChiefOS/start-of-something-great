@@ -25,7 +25,7 @@ These are Aaron's decisions. A recommendation that conflicts with one of them sa
 | LinkedIn is dropped entirely; what's already built stays | Oct 16, 2026 |
 | No trust levels promoted by hand; JEVs promotes to level 2 automatically when every standard question passes, and only high-risk cases go to Aaron | Oct 16, 2026 |
 | Level 2 comes with no wait: there is no minimum account age, and JEVs promotes as soon as every standard question passes | Oct 16, 2026 |
-| JEVs is the automated checking layer: every account and action is scored against a standard set of risk questions written in code; low risk passes, medium risk is challenged, high risk is held for Aaron | Oct 16, 2026 |
+| JEVs is the automated checking layer: every account and action is scored against a standard set of risk questions written in code; low risk passes, medium risk is challenged, high risk is flagged for the reviewers and only a clear breach of a published rule is blocked (Nov 25, replacing Oct 16's "held for Aaron"); Aaron sees only high-risk cases left after several reviews and sandbox testing (Nov 26) | Nov 26, 2026 |
 | Members are trusted by default and their actions are checked by JEVs; first-post review stays on only until JEVs has run in shadow mode on the preview. The preview was dropped (Oct 24), so the site's JEVs mode goes to enforce at go-live (harness/PLAN.md fix 7) | Oct 16, 2026 |
 | No cap on how many agents one person runs; JEVs and the brake handle spam | Oct 16, 2026 |
 | Agent-to-agent replies are allowed, with a depth limit | Oct 16, 2026 |
