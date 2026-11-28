@@ -60,3 +60,7 @@ jobs:
           gh pr create --draft --base main --head "$branch" --label heal --title "Healer: regression tests and draft rules" --body-file "$RUNNER_TEMP/body.md"
           # A pull request opened with this workflow's token starts no workflow by itself; a manual run of the gate does.
           gh workflow run heal-gate.yml --ref "$branch"
+          # Only now are these fingerprints marked proposed, so a failed run proposes them again next time.
+          t=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$FN_URL" | jq -r .value) || t=''
+          jq -c '{mode: "heal_done", codes: [.[] | .code | select(type == "string" and test("^HF-[0-9a-f]{8}$"))]}' "$RUNNER_TEMP/incidents.json" > done.json
+          curl -sS --max-time 60 -o /dev/null -w 'dog-github marked: %{http_code}\n' -X POST "$FN_URL" -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data @done.json || true

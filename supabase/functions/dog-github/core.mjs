@@ -22,6 +22,7 @@
 //                                              -> {ok, prs, tasks, closed, files, proposals, links}
 //   log-witness.yml:  POST {"mode": "witness", "report": {size, root, at, alarm}} -> {ok, status}
 //   heal-propose.yml: POST {"mode": "heal"}    -> {ok, incidents: [{id, source, rule_area, code, label}]}  (096)
+//                     POST {"mode": "heal_done", "codes": [...]} -> {ok, marked}  (after its pull request opened)
 
 export const AUDIENCE = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github';
 export const WORKFLOW = '.github/workflows/github-facts.yml';
@@ -40,7 +41,7 @@ export const HEAL_EVENTS = ['schedule', 'workflow_dispatch'];
 export const WORKFLOWS = {
   [WORKFLOW]: { events: EVENTS, modes: ['wanted', 'links', 'sync'] },
   [WITNESS_WORKFLOW]: { events: WITNESS_EVENTS, modes: ['witness'] },
-  [HEAL_WORKFLOW]: { events: HEAL_EVENTS, modes: ['heal'] }
+  [HEAL_WORKFLOW]: { events: HEAL_EVENTS, modes: ['heal', 'heal_done'] }
 };
 export const REPOSITORY = 'MyChiefOS/start-of-something-great';
 // 100 pull requests with up to 20 claim codes each, 100 issues, 20 details, 100 proposals and the changed files of up
@@ -84,8 +85,13 @@ export function parse(text) {
   if (body.mode === 'wanted') return { mode: 'wanted' };
   if (body.mode === 'links') return { mode: 'links' };
   if (body.mode === 'heal') return { mode: 'heal' };
+  if (body.mode === 'heal_done') {
+    const codes = body.codes;
+    if (!Array.isArray(codes) || codes.length > 20 || codes.some((x) => typeof x !== 'string' || !/^HF-[0-9a-f]{8}$/.test(x))) throw new BadRequest('codes must be up to 20 fingerprint codes');
+    return { mode: 'heal_done', codes };
+  }
   if (body.mode === 'witness') return { mode: 'witness', report: witnessReport(body.report) };
-  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, links, heal, sync or witness');
+  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, links, heal, heal_done, sync or witness');
   const f = body.facts;
   if (!f || typeof f !== 'object' || Array.isArray(f)) throw new BadRequest('facts must be an object');
   if (Object.keys(f).some((k) => !LISTS.includes(k) && k !== 'refused')) throw new BadRequest('facts has an unknown field');
@@ -144,6 +150,15 @@ export async function heal(sql) {
     return r.list;
   });
 }
+// 096: after the proposals' pull request opened, the fingerprints it covers are marked proposed.
+export async function healDone(sql, codes) {
+  return sql.begin(async (t) => {
+    await t`set local role dog_ghsync`;
+    await t`set local statement_timeout = '30s'`;
+    const [r] = await t`select app.heal_export_mark(${t.json(codes)}::jsonb) as n`;
+    return r.n;
+  });
+}
 export async function sync(sql, facts, { files = [], proposals = [], links: found = [] } = {}) {
   return sql.begin(async (t) => {
     await t`set local role dog_ghsync`;
@@ -191,6 +206,7 @@ export async function handle(req, { verify, Refused, seen, db, keys, now }) {
   if (ask.mode === 'wanted') return { status: 200, body: { ok: true, ...(await wanted(db())) } };
   if (ask.mode === 'links') return { status: 200, body: { ok: true, links: await links(db()) } };
   if (ask.mode === 'heal') return { status: 200, body: { ok: true, incidents: await heal(db()) } };
+  if (ask.mode === 'heal_done') return { status: 200, body: { ok: true, marked: await healDone(db(), ask.codes) } };
   try {
     if (ask.mode === 'witness') return { status: 200, body: { ok: true, status: await witness(db(), ask.report) } };
     const r = await sync(db(), ask.facts, { files: ask.files, proposals: ask.proposals, links: ask.links });

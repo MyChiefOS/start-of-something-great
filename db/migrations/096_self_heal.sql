@@ -87,7 +87,8 @@ create table app.heal_settings (
   last_ok_at timestamptz,
   corpus_at timestamptz,
   base_posts_per_hour integer not null default 20 check (base_posts_per_hour between 1 and 10000),
-  max_honest_in_scope integer not null default 3 check (max_honest_in_scope between 0 and 1000)
+  max_honest_in_scope integer not null default 3 check (max_honest_in_scope between 0 and 1000),
+  incident_budget_ms integer not null default 10000 check (incident_budget_ms between 0 and 60000)
 );
 insert into app.heal_settings default values;
 
@@ -275,6 +276,7 @@ grant select, insert, update on app.heal_settings, app.heal_incidents, app.heal_
   app.heal_sweeps, app.heal_appeals, app.heal_tightenings to dog_heal;
 grant select, insert on app.heal_log, app.heal_exemptions to dog_heal;
 grant select, insert, delete on app.heal_corpus, app.heal_corpus_tokens to dog_heal;
+grant delete on app.heal_refusals, app.heal_shadow_hits, app.heal_sweeps, app.heal_appeals to dog_heal;
 grant select on app.heal_golden, app.heal_decoys to dog_heal;
 -- The chain is append-only, for every role.
 create function app.heal_log_append_only() returns trigger language plpgsql set search_path = pg_catalog as $$
@@ -453,8 +455,13 @@ $$;
 -- An account whose hit or appeal can count: unrelated to the attack and at least 7 days old.
 create function app.heal_counts(p_fp uuid, p_member uuid) returns boolean
 language sql stable security definer set search_path = pg_catalog as $$
+  -- Second review, finding 2: only an account whose own content, written before the fingerprint, was swept by it; and
+  -- unrelated to the attack and at least 7 days old. A refusal alone never counts (anyone can post the attack after).
   select p_member is not null and exists (select 1 from app.members m where m.id = p_member and m.created_at < now() - interval '7 days')
      and p_member not in (select r from app.heal_related(p_fp) r where r is not null)
+     and exists (select 1 from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
+                  join app.heal_fingerprints f on f.id = s.fingerprint_id
+                  where s.fingerprint_id = p_fp and s.member_id = p_member and c.created_at < f.created_at)
 $$;
 create function app.heal_member_tightened(p_member uuid) returns boolean
 language sql stable security definer set search_path = pg_catalog as $$
@@ -551,7 +558,8 @@ begin
   select array_agg(w.rule) into blocks from app.wall_rules w where w.effect = 'block';
   -- A Wall block a person confirmed (never a recheck alone): its rule, its offending spans.
   for r in select d.*, w.id as wid from app.wall_reviews w join app.wall_decisions d on d.id = w.decision_id
-            where w.verdict = 'confirmed' and w.reviewed_by is not null and w.created_at > since loop
+            where w.verdict = 'confirmed' and w.reviewed_by is not null and w.created_at > since
+              and not exists (select 1 from app.heal_incidents h where h.source_key = 'review:' || w.id) loop
     if app.heal_incident('wall_confirmed', 'review:' || r.wid, case when r.kind in ('submission', 'task') then r.kind else 'decision' end, r.ref, r.member_id, r.agent_id,
                          app.heal_rule_of(r.flags), app.heal_spans(app.heal_decision_text(r.kind, r.ref) || ' ' || coalesce((select string_agg(g, ' ') from jsonb_array_elements_text(r.flags) g where split_part(g, ' ', 1) in ('W28', 'W33')), ''), true)) is not null then n := n + 1; end if;
   end loop;
@@ -559,15 +567,17 @@ begin
   for r in select d.id as did, p.id, p.author_id, p.agent_id, p.body from app.review_decisions d join app.posts p on p.id = d.post_id
             where d.decision = 'remove' and d.reason = 'security' and d.created_at > since and p.status = 'removed'
               and not exists (select 1 from app.review_decisions y where y.post_id = d.post_id and y.created_at > d.created_at)
-              and exists (select 1 from app.members m where m.id = d.decided_by and m.is_admin) loop
+              and exists (select 1 from app.members m where m.id = d.decided_by and m.is_admin)
+              and not exists (select 1 from app.heal_incidents h where h.source_key = 'review:' || d.id) loop
     if app.heal_incident('post_removed', 'review:' || r.did, 'post', r.id, r.author_id, r.agent_id, 'post', app.heal_spans(r.body, true)) is not null then n := n + 1; end if;
   end loop;
   -- An upheld dispute or a reversed check, only on work the Wall flagged under a blocking rule (a security finding).
   for r in select 'dispute:' || d.id as k, 'dispute_upheld' as src, s.* from app.work_disputes d join app.work_submissions s on s.id = d.submission_id
-            where d.status = 'upheld' and d.decided_at > since
+            where d.status = 'upheld' and d.decided_at > since and not exists (select 1 from app.heal_incidents h where h.source_key = 'dispute:' || d.id)
            union all
            select 'check:' || c.id, 'check_reversed', s.* from app.work_checks c join app.work_submissions s on s.id = c.submission_id
-            where c.status = 'reversed' and c.decided_at > since and s.status = 'reversed' and c.reason not like 'The pass was reversed (dispute)%' loop
+            where c.status = 'reversed' and c.decided_at > since and s.status = 'reversed' and c.reason not like 'The pass was reversed (dispute)%'
+              and not exists (select 1 from app.heal_incidents h where h.source_key = 'check:' || c.id) loop
     continue when not exists (select 1 from app.wall_decisions w, jsonb_array_elements_text(w.flags) g
                                where w.ref in (r.id, r.task_id) and split_part(g, ' ', 1) = any (blocks) and split_part(g, ' ', 1) <> 'W52');
     if app.heal_incident(r.src, r.k, 'submission', r.id, r.worker_member, r.worker_agent, r.src,
@@ -575,7 +585,8 @@ begin
   end loop;
   -- A decoy used anywhere in what people and agents sent: an incident and an alert at once (no fingerprint: the decoy
   -- itself is the tell).
-  for r in select c.*, d.kind as dkind from app.heal_corpus c join app.heal_decoys d on strpos(c.low, d.pattern) > 0 where c.created_at > since loop
+  for r in select c.*, d.kind as dkind from app.heal_corpus c join app.heal_decoys d on strpos(c.low, d.pattern) > 0 where c.created_at > since
+             and not exists (select 1 from app.heal_incidents h where h.source_key = 'decoy:' || c.kind || ':' || c.ref) loop
     if app.heal_incident('decoy', 'decoy:' || r.kind || ':' || r.ref, r.kind, r.ref, r.member_id, null, 'decoy', '[]'::jsonb, 'done') is not null then
       n := n + 1;
       perform app.notify(null, 'alert', 'A decoy was used', 'A decoy ' || r.dkind || ' appeared in a ' || r.kind || '. That is an attack: the healer recorded an incident.',
@@ -596,7 +607,9 @@ begin
               (x.source = 'wall_confirmed' and x.ref is not null and (
                  exists (select 1 from app.wall_decisions d join app.wall_reviews w on w.decision_id = d.id where d.ref = x.ref and w.verdict = 'false_positive')
                  or exists (select 1 from app.wall_decisions d join app.wall_appeals a on a.decision_id = d.id where d.ref = x.ref and a.status = 'cleared')))
-              or (x.source = 'post_removed' and exists (select 1 from app.posts p where p.id = x.ref and p.status <> 'removed'))) loop
+              or (x.source = 'post_removed' and exists (select 1 from app.posts p where p.id = x.ref and p.status <> 'removed'))
+              -- A reversal later put right (the work passes again).
+              or (x.source in ('dispute_upheld', 'check_reversed') and exists (select 1 from app.work_submissions w where w.id = x.ref and w.status = 'passed'))) loop
     update app.heal_incidents x set processed = 'retracted', retracted_at = now() where x.id = i.id;
     for f in select * from app.heal_fingerprints y where y.incident_id = i.id and y.status in ('held', 'shadow', 'active') loop
       perform app.heal_rollback(f.id, 'Its incident was retracted (a person''s later verdict).', 'retracted');
@@ -732,11 +745,13 @@ begin
       return 'refused: a variant of the attack would not be refused, so the patch would not work';
     end if;
   end loop;
+  perform app.heal_deadline();
   -- (a) the golden set: any hit holds it.
   if exists (select 1 from app.heal_golden g, lateral (select app.heal_fold(g.line) as l) y
               where app.heal_hit(f.kind, f.value, regexp_replace(y.l, '[^a-z0-9]+', '', 'g'), app.heal_urls(y.l), app.heal_hosts(y.l), app.heal_shas(y.l))) then
     return 'held: it matches the golden set of honest lines';
   end if;
+  perform app.heal_deadline();
   -- (a, c) one pass over 30 days of the corpus: honest hits, trusted accounts' content, and the 7-day cost.
   select coalesce(bool_or(app.heal_honest(m.kind, m.ref, m.member_id)), false),
          coalesce(bool_or(m.member_id is not null and app.heal_trusted(m.member_id)), false),
@@ -757,6 +772,16 @@ end $$;
 -- 2, 6. Fingerprints from one incident's spans, each through the gate (shadow when it passes). A fingerprint seen
 -- before: an enforced one is kept another 90 days (a new confirmed incident); a rolled-back, expired or retracted one
 -- is re-armed through the gate.
+-- The current incident's deadline (set by heal_queue): past it, the incident stops with an error the queue counts.
+create function app.heal_deadline() returns void
+language plpgsql stable security definer set search_path = pg_catalog as $$
+declare d text := current_setting('heal.deadline', true);
+begin
+  if coalesce(d, '') <> '' and clock_timestamp() > d::timestamptz then
+    raise exception 'heal_incident_budget' using errcode = 'P0001', hint = 'The incident took longer than its budget.';
+  end if;
+end $$;
+
 create function app.heal_fingerprint(p_incident uuid) returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
 declare e jsonb; fid uuid; why text; t0 timestamptz; k integer := 0; old record;
@@ -781,8 +806,10 @@ begin
         on conflict do nothing returning id into fid;
       continue when fid is null;
     end if;
+    perform app.heal_deadline();
     t0 := clock_timestamp();
     why := app.heal_gate(fid);
+    perform app.heal_deadline();
     update app.heal_fingerprints x set
       status = case when why is null then 'shadow' when why like 'held:%' then 'held' else 'refused' end,
       reason = left(why, 300), shadow_at = case when why is null then now() end,
@@ -800,13 +827,21 @@ end $$;
 -- solo agent, its owner otherwise).
 create function app.heal_sweep(p_fp uuid) returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
-declare f record; r record; n integer := 0; st text; swept boolean;
+declare f record; r record; n integer := 0; st text; swept boolean; pr record;
 begin
   select * into f from app.heal_fingerprints x where x.id = p_fp;
   for r in select * from app.heal_matches(f.kind, f.value, now() - interval '30 days') loop
     continue when exists (select 1 from app.heal_sweeps s where s.fingerprint_id = p_fp and s.kind = r.kind and s.ref = r.ref);
     continue when r.member_id is not null and exists (select 1 from app.members m where m.id = r.member_id and m.is_admin);
     continue when exists (select 1 from app.heal_exemptions e where e.fingerprint_id = p_fp and e.member_id = r.member_id);
+    -- Already swept by another fingerprint: recorded for this one too (same prior state), so restoring one of them
+    -- keeps it returned while the other is in force.
+    select y.prior_status, y.prior_final_at into pr from app.heal_sweeps y where y.kind = r.kind and y.ref = r.ref and y.status = 'swept' limit 1;
+    if pr.prior_status is not null then
+      insert into app.heal_sweeps (fingerprint_id, kind, ref, member_id, agent_id, prior_status, prior_final_at)
+        values (p_fp, r.kind, r.ref, r.member_id, r.agent_id, pr.prior_status, pr.prior_final_at) on conflict do nothing;
+      continue;
+    end if;
     swept := false;
     if r.kind = 'post' and exists (select 1 from app.posts p where p.id = r.ref and p.status = 'live') then
       insert into app.heal_sweeps (fingerprint_id, kind, ref, member_id, agent_id, prior_status) values (p_fp, 'post', r.ref, r.member_id, r.agent_id, 'live');
@@ -845,22 +880,31 @@ end $$;
 -- Restores sweeps: all of one fingerprint's (p_member null), or one account's.
 create function app.heal_restore(p_fp uuid, p_member uuid) returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
-declare s record; n integer := 0;
+declare s record; n integer := 0; other boolean;
 begin
   for s in select * from app.heal_sweeps x where x.fingerprint_id = p_fp and x.status = 'swept' and (p_member is null or x.member_id = p_member) for update loop
     update app.heal_sweeps x set status = 'restored', restored_at = now() where x.id = s.id;
-    if s.kind = 'post' then
-      update app.posts p set status = 'live' where p.id = s.ref and p.status = 'waiting';
-      update app.review_flags f set resolved_at = now(), decision = 'restore'
-        where f.post_id = s.ref and f.source = 'classifier' and f.classifier = 'heal' and f.resolved_at is null;
-    elsif s.prior_status = 'passed' then
-      update app.work_points x set final_at = coalesce(s.prior_final_at, now()) where x.submission_id = s.ref and x.status = 'pending';
-    else
-      update app.work_submissions x set status = s.prior_status, decided_by = null, decided_at = null, reason = null where x.id = s.ref and x.status = 'failed';
+    -- Another fingerprint still in force that swept the same item keeps it where it is.
+    other := exists (select 1 from app.heal_sweeps y join app.heal_fingerprints f on f.id = y.fingerprint_id
+                      where y.kind = s.kind and y.ref = s.ref and y.status = 'swept' and y.id <> s.id and f.status = 'active');
+    if not other then
+      if s.kind = 'post' then
+        update app.posts p set status = 'live' where p.id = s.ref and p.status = 'waiting';
+        update app.review_flags f set resolved_at = now(), decision = 'restore'
+          where f.post_id = s.ref and f.source = 'classifier' and f.classifier = 'heal' and f.resolved_at is null;
+      elsif s.prior_status = 'passed' then
+        update app.work_points x set final_at = coalesce(s.prior_final_at, now()) where x.submission_id = s.ref and x.status = 'pending';
+      else
+        update app.work_submissions x set status = s.prior_status, decided_by = null, decided_at = null, reason = null where x.id = s.ref and x.status = 'failed';
+      end if;
+      if s.member_id is not null then
+        perform app.notify(s.member_id, 'alert', 'Your ' || s.kind || ' was restored', 'What the healer returned for review is back as it was.',
+                           '/account', s.kind, s.ref, 'heal:restored:' || s.id);
+      end if;
     end if;
     n := n + 1;
   end loop;
-  if n > 0 then perform app.heal_log_add('restore', p_fp, jsonb_build_object('items', n, 'member', p_member)); end if;
+  if n > 0 then perform app.heal_log_add('restore', p_fp, jsonb_build_object('items', n, 'one_account', p_member is not null)); end if;
   return n;
 end $$;
 
@@ -897,31 +941,27 @@ create function app.heal_canary() returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
 declare f record; r record; n integer := 0; base numeric; hits integer; apps integer; tr integer; up integer;
 begin
-  -- Shadow: 30 minutes of would-be hits, then enforced, unless 3 or more unrelated trusted accounts would have been hit.
+  -- Shadow: 30 minutes of would-be hits (logged), then enforced. Content a trusted account wrote before it already
+  -- held it at the gate.
   for f in select * from app.heal_fingerprints x where x.status = 'shadow' and x.shadow_at < now() - interval '30 minutes' for update loop
     insert into app.heal_shadow_hits (fingerprint_id, kind, ref, member_id)
       select f.id, m.kind, m.ref, m.member_id from app.heal_matches(f.kind, f.value, f.shadow_at) m on conflict do nothing;
-    select count(distinct h.member_id) into tr from app.heal_shadow_hits h
-     where h.fingerprint_id = f.id and app.heal_trusted(h.member_id) and app.heal_counts(f.id, h.member_id);
-    if tr >= 3 then
-      perform app.heal_rollback(f.id, 'In shadow, it would have refused ' || tr || ' unrelated trusted accounts.');
-    else
-      update app.heal_fingerprints x set status = 'active', activated_at = now(), expires_at = now() + interval '90 days' where x.id = f.id;
-      perform app.heal_log_add('active', f.id, jsonb_build_object('code', f.code, 'shadow_hits', (select count(*) from app.heal_shadow_hits h where h.fingerprint_id = f.id)));
-      perform app.heal_sweep(f.id);
-      n := n + 1;
-    end if;
+    update app.heal_fingerprints x set status = 'active', activated_at = now(), expires_at = now() + interval '90 days' where x.id = f.id;
+    perform app.heal_log_add('active', f.id, jsonb_build_object('code', f.code, 'shadow_hits', (select count(*) from app.heal_shadow_hits h where h.fingerprint_id = f.id)));
+    perform app.heal_sweep(f.id);
+    n := n + 1;
   end loop;
-  -- Enforced: honest hits in the first 24 hours, upheld honest appeals or a spike in the first 7 days roll it back.
-  -- Only accounts unrelated to the attack and at least 7 days old count.
+  -- Enforced: only accounts that count (heal_counts: their own earlier content swept, unrelated, 7 days old) can roll
+  -- it back: 3 trusted ones in the first 24 hours, 2 upheld appeals decided by Second Look or a person (never the
+  -- automatic trusted path), or a spike of them in 7 days.
   for f in select * from app.heal_fingerprints x where x.status = 'active' and x.activated_at > now() - interval '7 days' loop
-    select count(distinct rf.member_id) into tr from app.heal_refusals rf
-     where rf.fingerprint_id = f.id and rf.created_at > f.activated_at and rf.created_at < f.activated_at + interval '24 hours'
-       and app.heal_trusted(rf.member_id) and app.heal_counts(f.id, rf.member_id);
+    select count(distinct s.member_id) into tr from app.heal_sweeps s
+     where s.fingerprint_id = f.id and f.activated_at > now() - interval '24 hours' and app.heal_trusted(s.member_id) and app.heal_counts(f.id, s.member_id)
+       and exists (select 1 from app.heal_appeals a where a.fingerprint_id = f.id and a.member_id = s.member_id);
     select count(distinct a.member_id) into up from app.heal_appeals a where a.fingerprint_id = f.id and a.status = 'upheld'
-       and a.decided_by in ('trusted', 'second_look', 'reviewer') and app.heal_counts(f.id, a.member_id);
+       and a.decided_by in ('second_look', 'reviewer') and app.heal_counts(f.id, a.member_id);
     if tr >= 3 then
-      perform app.heal_rollback(f.id, 'It refused ' || tr || ' unrelated trusted accounts in its first 24 hours.');
+      perform app.heal_rollback(f.id, tr || ' unrelated trusted accounts whose earlier content it swept appealed in its first 24 hours.');
       continue;
     elsif up >= 2 then
       perform app.heal_rollback(f.id, up || ' unrelated honest appeals against it were upheld.');
@@ -935,9 +975,9 @@ begin
     select count(distinct a.member_id) into apps from app.heal_appeals a
      where a.fingerprint_id = f.id and a.created_at > now() - interval '1 hour' and app.heal_counts(f.id, a.member_id);
     if hits >= greatest(5, ceil(3 * base)) then
-      perform app.heal_rollback(f.id, 'Refusals spiked: ' || hits || ' unrelated accounts in the last hour, against a baseline of ' || round(base, 2) || ' an hour.');
+      perform app.heal_rollback(f.id, 'Refusals spiked: ' || hits || ' accounts whose earlier content it swept, in the last hour, against a baseline of ' || round(base, 2) || ' an hour.');
     elsif apps >= greatest(3, ceil(3 * base)) then
-      perform app.heal_rollback(f.id, 'Appeals spiked: ' || apps || ' unrelated accounts in the last hour.');
+      perform app.heal_rollback(f.id, 'Appeals spiked: ' || apps || ' accounts whose earlier content it swept, in the last hour.');
     end if;
   end loop;
   for r in update app.heal_fingerprints x set status = 'expired', ended_at = now() where x.status = 'active' and x.expires_at < now() returning x.id, x.code loop
@@ -1008,13 +1048,21 @@ end $$;
 -- else sends it to an administrator (one alert each).
 create function app.heal_appeals_run() returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
-declare a record; f record; d record; n integer := 0; body text;
+declare a record; f record; d record; n integer := 0; body text; earlier boolean;
 begin
   for a in select * from app.heal_appeals x where x.status = 'open' for update loop
-    if app.heal_trusted(a.member_id) then
+    select * into f from app.heal_fingerprints x where x.id = a.fingerprint_id;
+    -- Second review, finding 3: only an appeal about the appellant's own content written before the fingerprint can be
+    -- upheld without a person. One about a refusal alone (the attack sent after) goes to an administrator.
+    earlier := exists (select 1 from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
+                        where s.fingerprint_id = a.fingerprint_id and s.member_id = a.member_id and c.created_at < f.created_at);
+    if not earlier then
+      update app.heal_appeals x set status = 'review' where x.id = a.id;
+      perform app.notify(null, 'alert', 'A healer appeal waits for a person', 'An appeal against ' || f.code || ' about a refusal only (nothing written before it was swept). Decide it: POST /api/work/heal/decide.',
+                         '/admin/review', null, null, 'heal:appeal:' || a.id);
+    elsif app.heal_trusted(a.member_id) then
       perform app.heal_uphold(a.id, 'trusted');
     else
-      select * into f from app.heal_fingerprints x where x.id = a.fingerprint_id;
       body := 'An appeal against a healer fingerprint taken from a confirmed attack. The fingerprint, normalized: ' || f.label
         || '. The appellant''s reason: ' || a.reason || coalesce('. The appellant''s returned content: '
         || (select string_agg(left(c.low, 1500), ' | ') from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
@@ -1042,25 +1090,38 @@ end $$;
 -- and, after 3 tries, skipped with an alert. Never more than 45 seconds of work in one tick.
 create function app.heal_queue() returns integer
 language plpgsql security definer set search_path = pg_catalog as $$
-declare i record; k integer := 0;
+declare i record; k integer := 0; budget integer := (select s.incident_budget_ms from app.heal_settings s); why text; stop boolean := false;
 begin
   for i in select x.id, x.attempts from app.heal_incidents x
             where x.processed = 'new' and (x.tried_at is null or x.tried_at < now() - make_interval(mins => (1 << least(x.attempts, 6))))
             order by x.created_at limit 20 loop
     exit when clock_timestamp() - now() > interval '45 seconds';
+    why := null;
     begin
+      -- Second review, finding 1: each incident has its own deadline, which the gate and the fingerprinting check
+      -- between steps (app.heal_deadline); Postgres's statement_timeout can't be set per incident inside one call.
+      perform set_config('heal.deadline', (clock_timestamp() + make_interval(secs => budget / 1000.0))::text, true);
       k := k + app.heal_fingerprint(i.id);
       update app.heal_incidents x set processed = 'done', tried_at = now() where x.id = i.id;
-    exception when others then
+    exception
+      when query_canceled then
+        -- The tick's own statement budget ran out inside this incident: count the try and stop for this tick.
+        why := 'the tick''s time ran out'; stop := true;
+      when others then
+        why := left(sqlerrm, 200);
+    end;
+    if why is not null then
       update app.heal_incidents x set attempts = x.attempts + 1, tried_at = now(),
         processed = case when x.attempts + 1 >= 3 then 'failed' else 'new' end where x.id = i.id;
       if i.attempts + 1 >= 3 then
-        perform app.heal_log_add('failed', i.id, jsonb_build_object('error', left(sqlerrm, 200)));
-        perform app.notify(null, 'alert', 'The healer skipped an incident', 'An incident failed 3 times and was skipped (' || left(sqlerrm, 120) || '). Nothing else was held up.',
+        perform app.heal_log_add('failed', i.id, jsonb_build_object('error', why));
+        perform app.notify(null, 'alert', 'The healer skipped an incident', 'An incident failed 3 times and was skipped (' || left(why, 120) || '). Nothing else was held up.',
                            '/admin/review', null, null, 'heal:failed:' || i.id);
       end if;
-    end;
+    end if;
+    exit when stop;
   end loop;
+  perform set_config('heal.deadline', '', true);
   return k;
 end $$;
 
@@ -1081,6 +1142,11 @@ begin
                                    'enforced', app.heal_canary(), 'tightened', app.heal_tighten());
   -- 10: an incident's spans are kept 90 days.
   update app.heal_incidents x set spans = '[]'::jsonb where x.created_at < now() - interval '90 days' and x.spans <> '[]'::jsonb;
+  -- The per-account records are kept 90 days too (a sweep still in force stays).
+  delete from app.heal_refusals x where x.created_at < now() - interval '90 days';
+  delete from app.heal_shadow_hits x where x.created_at < now() - interval '90 days';
+  delete from app.heal_sweeps x where x.status = 'restored' and x.restored_at < now() - interval '90 days';
+  delete from app.heal_appeals x where x.status in ('upheld', 'kept') and x.decided_at < now() - interval '90 days';
   select count(*) into held from app.heal_fingerprints x where x.status = 'held' and x.created_at > now() - interval '1 day';
   if held > 0 then
     perform app.notify(null, 'alert', 'The healer held fingerprints for review', held || ' fingerprint(s) from confirmed attacks would have matched honest content, so they are held, not enforced.',
@@ -1200,19 +1266,32 @@ end $$;
 -- 7. What the healer's proposals read (the Heal proposals workflow, through dog-github as dog_ghsync): enforced text
 -- fingerprints not yet proposed, as codes, normalized labels and incident ids; no member, no raw text, no live link.
 create function app.heal_export(p_n integer) returns jsonb
-language plpgsql security definer set search_path = pg_catalog as $$
-declare out jsonb;
+language plpgsql stable security definer set search_path = pg_catalog as $$
 begin
   if current_setting('role') is distinct from 'dog_ghsync' then
     raise exception 'only the GitHub facts function reads this (dog_ghsync)' using errcode = '42501';
   end if;
-  with picked as (
-    select f.id, f.code, f.label, i.id as iid, i.source, i.rule_area from app.heal_fingerprints f join app.heal_incidents i on i.id = f.incident_id
-     where f.status = 'active' and f.kind = 'text' and f.exported_at is null order by f.activated_at limit least(greatest(coalesce(p_n, 1), 1), 20)),
-  marked as (update app.heal_fingerprints x set exported_at = now() from picked where x.id = picked.id returning x.id)
-  select coalesce(jsonb_agg(jsonb_build_object('id', p.iid, 'source', p.source, 'rule_area', p.rule_area, 'code', p.code, 'label', p.label)), '[]'::jsonb)
-    into out from picked p where p.id in (select id from marked);
-  return out;
+  -- Read only: a fingerprint is marked proposed (app.heal_export_mark) after its pull request opens, so a failed run retries.
+  return (select coalesce(jsonb_agg(jsonb_build_object('id', p.iid, 'source', p.source, 'rule_area', p.rule_area, 'code', p.code, 'label', p.label)), '[]'::jsonb)
+    from (select f.code, f.label, i.id as iid, i.source, i.rule_area from app.heal_fingerprints f join app.heal_incidents i on i.id = f.incident_id
+           where f.status = 'active' and f.kind = 'text' and f.exported_at is null order by f.activated_at limit least(greatest(coalesce(p_n, 1), 1), 20)) p);
+end $$;
+
+-- After the proposals' pull request opened: those fingerprints are marked proposed. Returns how many.
+create function app.heal_export_mark(p jsonb) returns integer
+language plpgsql security definer set search_path = pg_catalog as $$
+declare n integer;
+begin
+  if current_setting('role') is distinct from 'dog_ghsync' then
+    raise exception 'only the GitHub facts function records this (dog_ghsync)' using errcode = '42501';
+  end if;
+  if p is null or jsonb_typeof(p) <> 'array' or jsonb_array_length(p) > 20
+     or exists (select 1 from jsonb_array_elements(p) e where jsonb_typeof(e) <> 'string' or (e #>> '{}') !~ '^HF-[0-9a-f]{8}$') then
+    raise exception 'bad codes' using errcode = '22023';
+  end if;
+  update app.heal_fingerprints x set exported_at = now() where x.exported_at is null and x.code in (select e #>> '{}' from jsonb_array_elements(p) e);
+  get diagnostics n = row_count;
+  return n;
 end $$;
 
 -- The post gate: a post matching an enforced fingerprint is refused, naming it and the appeal.
@@ -1260,7 +1339,7 @@ begin
     'app.heal_honest(text, uuid, uuid)', 'app.heal_matches(text, text, timestamp with time zone)', 'app.heal_gate(uuid)', 'app.heal_fingerprint(uuid)',
     'app.heal_sweep(uuid)', 'app.heal_restore(uuid, uuid)', 'app.heal_rollback(uuid, text, text)', 'app.heal_uphold(uuid, text)', 'app.heal_canary()',
     'app.heal_note_wall()', 'app.heal_tighten()', 'app.heal_appeals_run()', 'app.heal_queue()', 'app.heal_run()', 'app.heal_stale_check()', 'app.heal_status()',
-    'app.heal_appeal(text, text)', 'app.heal_appeal_decide(uuid, text)', 'app.heal_admin(text, text, text)', 'app.heal_refusal_note(text)', 'app.heal_export(integer)',
+    'app.heal_appeal(text, text)', 'app.heal_appeal_decide(uuid, text)', 'app.heal_admin(text, text, text)', 'app.heal_refusal_note(text)', 'app.heal_export(integer)', 'app.heal_export_mark(jsonb)', 'app.heal_deadline()',
     'app.heal_post_gate()', 'app.heal_post_sample()', 'app.heal_points_window()'] loop
     execute 'revoke execute on function ' || f || ' from public';
   end loop;
@@ -1268,7 +1347,7 @@ end
 $heal_fns$;
 grant execute on function app.heal_run(), app.heal_stale_check(), app.heal_status(), app.heal_appeal(text, text), app.heal_appeal_decide(uuid, text),
   app.heal_admin(text, text, text), app.heal_refusal_note(text) to dog_app;
-grant execute on function app.heal_export(integer) to dog_ghsync;
+grant execute on function app.heal_export(integer), app.heal_export_mark(jsonb) to dog_ghsync;
 reset role;
 revoke create on schema app from dog_heal;
 

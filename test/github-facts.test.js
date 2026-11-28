@@ -117,7 +117,7 @@ test('RK140: the deployed function is dog-github\'s core behind the shared check
   assert.doesNotMatch(ix, /console\.|vault|password/i, 'it logs nothing and reads no secret');
   assert.match(read('supabase/config.toml'), /\[functions\.dog-github\]\nverify_jwt = false/);
   const core = read('supabase/functions/dog-github/core.mjs');
-  assert.strictEqual((core.match(/set local role dog_ghsync/g) || []).length, 4, 'every database call (wanted, links since 095, heal since 096, sync) acts as dog_ghsync');
+  assert.strictEqual((core.match(/set local role dog_ghsync/g) || []).length, 5, 'every database call (wanted, links since 095, heal and heal_done since 096, sync) acts as dog_ghsync');
 });
 
 test('RK140: the GitHub facts workflow reads GitHub inside GitHub on GitHub\'s own events, on main, and nothing from the event reaches a command', async () => {
@@ -337,7 +337,7 @@ test('RK140: the coverage check passes with dog_ghsync, which can\'t sign in, be
     where n.nspname = 'app' and has_function_privilege('dog_ghsync', p.oid, 'execute') order by 1`);
   // 055's two, and since 057 the changed files Third Look reads and the proposal decisions, from the same facts; since
   // 095 the link sandbox's list and findings; since 096 the healer's proposals' list.
-  assert.deepStrictEqual(fns.map((x) => x.fn), ['app.heal_export(integer)', 'app.log_proposals_record(jsonb)', 'app.tl_files_record(jsonb)', 'app.tl_files_wanted(integer)',
+  assert.deepStrictEqual(fns.map((x) => x.fn), ['app.heal_export(integer)', 'app.heal_export_mark(jsonb)', 'app.log_proposals_record(jsonb)', 'app.tl_files_record(jsonb)', 'app.tl_files_wanted(integer)',
     'app.wall_links_record(jsonb)', 'app.wall_links_wanted(integer)', 'app.work_github_sync(jsonb)', 'app.work_github_wanted(integer)']);
   const tables = await q(`select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'app' and c.relkind = 'r' and has_table_privilege('dog_ghsync', c.oid, 'select, insert, update, delete')`);

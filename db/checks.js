@@ -206,6 +206,8 @@ const DEFINERS = {
   'app.heal_flags(text)': { owner: 'dog_heal', callers: 'dog_owner' },
   'app.heal_member_cap(uuid, integer)': { owner: 'dog_heal', callers: 'dog_limits' },
   'app.heal_export(integer)': { owner: 'dog_heal', callers: 'dog_ghsync' },
+  'app.heal_export_mark(jsonb)': { owner: 'dog_heal', callers: 'dog_ghsync' },
+  'app.heal_deadline()': { owner: 'dog_heal', callers: '' },
   'app.heal_log_add(text, uuid, jsonb)': { owner: 'dog_heal', callers: '' },
   'app.heal_trusted(uuid)': { owner: 'dog_heal', callers: '' },
   'app.heal_scope_members(text, text)': { owner: 'dog_heal', callers: '' },
