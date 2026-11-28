@@ -22,7 +22,7 @@ const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? pro
 const SHOTS = arg('--shots');
 const AGO = (h) => new Date(Date.now() - h * 3600e3).toISOString();
 const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
-const REASONS = { approve: ['ordinary', 'checked', 'other'], keep: ['not_upheld', 'ordinary', 'checked', 'other'], remove: ['spam', 'abuse', 'private_info', 'illegal', 'other'], restore: ['mistake', 'other'] };
+const REASONS = { approve: ['ordinary', 'checked', 'other'], keep: ['not_upheld', 'ordinary', 'checked', 'other'], remove: ['spam', 'abuse', 'private_info', 'illegal', 'security', 'other'], restore: ['mistake', 'other'] };
 const BODY1 = 'My first post here: notes from the meetup on agent permissions.\n\nThe slides are linked below.';
 const QUEUE = { open: 3, budget: { daily: 25, used: 4 }, items: [
   { id: '0190a000-0000-7000-8000-0000000000c3', lane: 'people', status: 'live', body: 'A post someone reported for private information.', tier: 3, item_type: 'reported', sha256: sha('x'),

@@ -288,68 +288,85 @@ constraint app.gh_posts gh_posts_pkey PRIMARY KEY (id)
 constraint app.gh_posts gh_posts_risk_check CHECK ((risk = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
 constraint app.gh_posts gh_posts_thread_node_id_check CHECK ((char_length(thread_node_id) <= 100))
 constraint app.gh_posts gh_posts_tree_key_check CHECK ((char_length(tree_key) <= 80))
-constraint app.heal_appeals heal_appeals_decided_by_check CHECK ((decided_by = ANY (ARRAY['trusted'::text, 'reviewer'::text, 'rollback'::text])))
+constraint app.heal_appeals heal_appeals_decided_by_check CHECK ((decided_by = ANY (ARRAY['trusted'::text, 'second_look'::text, 'reviewer'::text, 'rollback'::text])))
 constraint app.heal_appeals heal_appeals_fingerprint_id_fkey FOREIGN KEY (fingerprint_id) REFERENCES app.heal_fingerprints(id) ON DELETE CASCADE
 constraint app.heal_appeals heal_appeals_fingerprint_id_member_id_key UNIQUE (fingerprint_id, member_id)
 constraint app.heal_appeals heal_appeals_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.heal_appeals heal_appeals_pkey PRIMARY KEY (id)
 constraint app.heal_appeals heal_appeals_reason_check CHECK (((char_length(reason) >= 3) AND (char_length(reason) <= 500)))
-constraint app.heal_appeals heal_appeals_status_check CHECK ((status = ANY (ARRAY['open'::text, 'upheld'::text, 'kept'::text])))
+constraint app.heal_appeals heal_appeals_status_check CHECK ((status = ANY (ARRAY['open'::text, 'second_look'::text, 'review'::text, 'upheld'::text, 'kept'::text])))
 constraint app.heal_corpus heal_corpus_kind_check CHECK ((kind = ANY (ARRAY['post'::text, 'submission'::text, 'task'::text])))
 constraint app.heal_corpus heal_corpus_kind_ref_key UNIQUE (kind, ref)
 constraint app.heal_corpus heal_corpus_low_check CHECK ((char_length(low) <= 6000))
+constraint app.heal_corpus heal_corpus_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.heal_corpus heal_corpus_norm_check CHECK ((char_length(norm) <= 6000))
 constraint app.heal_corpus heal_corpus_pkey PRIMARY KEY (id)
+constraint app.heal_corpus_tokens heal_corpus_tokens_corpus_id_fkey FOREIGN KEY (corpus_id) REFERENCES app.heal_corpus(id) ON DELETE CASCADE
+constraint app.heal_corpus_tokens heal_corpus_tokens_kind_check CHECK ((kind = ANY (ARRAY['host'::text, 'url'::text, 'sha256'::text])))
+constraint app.heal_corpus_tokens heal_corpus_tokens_pkey PRIMARY KEY (id)
+constraint app.heal_corpus_tokens heal_corpus_tokens_value_check CHECK (((char_length(value) >= 1) AND (char_length(value) <= 500)))
 constraint app.heal_decoys heal_decoys_kind_check CHECK ((kind = ANY (ARRAY['credential'::text, 'record'::text])))
 constraint app.heal_decoys heal_decoys_note_check CHECK ((char_length(note) <= 200))
 constraint app.heal_decoys heal_decoys_pattern_check CHECK ((((char_length(pattern) >= 16) AND (char_length(pattern) <= 200)) AND (pattern = lower(pattern))))
 constraint app.heal_decoys heal_decoys_pattern_key UNIQUE (pattern)
 constraint app.heal_decoys heal_decoys_pkey PRIMARY KEY (id)
+constraint app.heal_exemptions heal_exemptions_fingerprint_id_fkey FOREIGN KEY (fingerprint_id) REFERENCES app.heal_fingerprints(id) ON DELETE CASCADE
+constraint app.heal_exemptions heal_exemptions_fingerprint_id_member_id_key UNIQUE (fingerprint_id, member_id)
+constraint app.heal_exemptions heal_exemptions_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE CASCADE
+constraint app.heal_exemptions heal_exemptions_pkey PRIMARY KEY (id)
 constraint app.heal_fingerprints heal_fingerprints_code_check CHECK (((char_length(code) = 11) AND (code ~ '^HF-[0-9a-f]{8}$'::text)))
 constraint app.heal_fingerprints heal_fingerprints_code_key UNIQUE (code)
 constraint app.heal_fingerprints heal_fingerprints_gate_ms_check CHECK (((gate_ms >= 0) AND (gate_ms <= 600000)))
 constraint app.heal_fingerprints heal_fingerprints_incident_id_fkey FOREIGN KEY (incident_id) REFERENCES app.heal_incidents(id) ON DELETE SET NULL
 constraint app.heal_fingerprints heal_fingerprints_kind_check CHECK ((kind = ANY (ARRAY['text'::text, 'host'::text, 'url'::text, 'sha256'::text])))
 constraint app.heal_fingerprints heal_fingerprints_kind_value_key UNIQUE (kind, value)
+constraint app.heal_fingerprints heal_fingerprints_label_check CHECK ((char_length(label) <= 300))
 constraint app.heal_fingerprints heal_fingerprints_pkey PRIMARY KEY (id)
 constraint app.heal_fingerprints heal_fingerprints_reason_check CHECK ((char_length(reason) <= 300))
-constraint app.heal_fingerprints heal_fingerprints_status_check CHECK ((status = ANY (ARRAY['refused'::text, 'held'::text, 'shadow'::text, 'active'::text, 'rolled_back'::text, 'expired'::text])))
+constraint app.heal_fingerprints heal_fingerprints_status_check CHECK ((status = ANY (ARRAY['refused'::text, 'held'::text, 'shadow'::text, 'active'::text, 'rolled_back'::text, 'retracted'::text, 'expired'::text])))
 constraint app.heal_fingerprints heal_fingerprints_value_check CHECK (((char_length(value) >= 1) AND (char_length(value) <= 500)))
 constraint app.heal_golden heal_golden_line_check CHECK (((char_length(line) >= 1) AND (char_length(line) <= 500)))
 constraint app.heal_golden heal_golden_line_key UNIQUE (line)
 constraint app.heal_golden heal_golden_pkey PRIMARY KEY (id)
-constraint app.heal_incidents heal_incidents_evidence_check CHECK ((char_length(evidence) <= 6000))
+constraint app.heal_incidents heal_incidents_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agents(id) ON DELETE SET NULL
+constraint app.heal_incidents heal_incidents_attempts_check CHECK (((attempts >= 0) AND (attempts <= 100)))
 constraint app.heal_incidents heal_incidents_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.heal_incidents heal_incidents_net_check CHECK (((char_length(net) = 64) AND (net ~ '^[0-9a-f]+$'::text)))
 constraint app.heal_incidents heal_incidents_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.heal_incidents heal_incidents_pkey PRIMARY KEY (id)
+constraint app.heal_incidents heal_incidents_processed_check CHECK ((processed = ANY (ARRAY['new'::text, 'done'::text, 'failed'::text, 'retracted'::text])))
 constraint app.heal_incidents heal_incidents_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['post'::text, 'submission'::text, 'task'::text, 'decision'::text, 'points'::text, 'jevs'::text])))
 constraint app.heal_incidents heal_incidents_rule_area_check CHECK (((char_length(rule_area) >= 1) AND (char_length(rule_area) <= 40)))
-constraint app.heal_incidents heal_incidents_source_check CHECK ((source = ANY (ARRAY['wall_upheld'::text, 'post_removed'::text, 'dispute_upheld'::text, 'check_reversed'::text, 'decoy'::text, 'sandbox'::text, 'invariant'::text])))
+constraint app.heal_incidents heal_incidents_source_check CHECK ((source = ANY (ARRAY['wall_confirmed'::text, 'post_removed'::text, 'dispute_upheld'::text, 'check_reversed'::text, 'decoy'::text, 'invariant'::text])))
 constraint app.heal_incidents heal_incidents_source_key_check CHECK ((char_length(source_key) <= 120))
 constraint app.heal_incidents heal_incidents_source_key_key UNIQUE (source_key)
+constraint app.heal_incidents heal_incidents_spans_check CHECK (((jsonb_typeof(spans) = 'array'::text) AND (octet_length((spans)::text) <= 8000)))
 constraint app.heal_log heal_log_detail_check CHECK (((jsonb_typeof(detail) = 'object'::text) AND (octet_length((detail)::text) <= 4000)))
 constraint app.heal_log heal_log_hash_check CHECK (((char_length(hash) = 64) AND (hash ~ '^[0-9a-f]+$'::text)))
 constraint app.heal_log heal_log_hash_key UNIQUE (hash)
-constraint app.heal_log heal_log_kind_check CHECK ((kind = ANY (ARRAY['incident'::text, 'refused'::text, 'held'::text, 'shadow'::text, 'active'::text, 'rollback'::text, 'expired'::text, 'sweep'::text, 'restore'::text, 'tighten'::text, 'tighten_refused'::text, 'tighten_end'::text, 'appeal'::text])))
+constraint app.heal_log heal_log_kind_check CHECK ((kind = ANY (ARRAY['incident'::text, 'retract'::text, 'failed'::text, 'refused'::text, 'held'::text, 'shadow'::text, 'active'::text, 'rollback'::text, 'expired'::text, 'sweep'::text, 'restore'::text, 'tighten'::text, 'tighten_refused'::text, 'tighten_end'::text, 'appeal'::text, 'exempt'::text, 'pause'::text, 'resume'::text, 'release'::text])))
 constraint app.heal_log heal_log_pkey PRIMARY KEY (id)
 constraint app.heal_log heal_log_prev_hash_check CHECK (((char_length(prev_hash) = 64) AND (prev_hash ~ '^[0-9a-f]+$'::text)))
 constraint app.heal_log heal_log_prev_hash_key UNIQUE (prev_hash)
 constraint app.heal_refusals heal_refusals_fingerprint_id_fkey FOREIGN KEY (fingerprint_id) REFERENCES app.heal_fingerprints(id) ON DELETE CASCADE
 constraint app.heal_refusals heal_refusals_kind_check CHECK ((kind = ANY (ARRAY['post'::text, 'submission'::text, 'task'::text])))
+constraint app.heal_refusals heal_refusals_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.heal_refusals heal_refusals_pkey PRIMARY KEY (id)
 constraint app.heal_settings heal_settings_base_posts_per_hour_check CHECK (((base_posts_per_hour >= 1) AND (base_posts_per_hour <= 10000)))
 constraint app.heal_settings heal_settings_max_honest_in_scope_check CHECK (((max_honest_in_scope >= 0) AND (max_honest_in_scope <= 1000)))
+constraint app.heal_settings heal_settings_paused_reason_check CHECK ((char_length(paused_reason) <= 300))
 constraint app.heal_settings heal_settings_pkey PRIMARY KEY (id)
 constraint app.heal_settings heal_settings_singleton_check CHECK (singleton)
 constraint app.heal_settings heal_settings_singleton_key UNIQUE (singleton)
 constraint app.heal_shadow_hits heal_shadow_hits_fingerprint_id_fkey FOREIGN KEY (fingerprint_id) REFERENCES app.heal_fingerprints(id) ON DELETE CASCADE
 constraint app.heal_shadow_hits heal_shadow_hits_fingerprint_id_kind_ref_key UNIQUE (fingerprint_id, kind, ref)
 constraint app.heal_shadow_hits heal_shadow_hits_kind_check CHECK ((kind = ANY (ARRAY['post'::text, 'submission'::text, 'task'::text])))
+constraint app.heal_shadow_hits heal_shadow_hits_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.heal_shadow_hits heal_shadow_hits_pkey PRIMARY KEY (id)
 constraint app.heal_sweeps heal_sweeps_fingerprint_id_fkey FOREIGN KEY (fingerprint_id) REFERENCES app.heal_fingerprints(id) ON DELETE CASCADE
 constraint app.heal_sweeps heal_sweeps_fingerprint_id_kind_ref_key UNIQUE (fingerprint_id, kind, ref)
 constraint app.heal_sweeps heal_sweeps_kind_check CHECK ((kind = ANY (ARRAY['post'::text, 'submission'::text])))
+constraint app.heal_sweeps heal_sweeps_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.heal_sweeps heal_sweeps_pkey PRIMARY KEY (id)
 constraint app.heal_sweeps heal_sweeps_prior_status_check CHECK ((prior_status = ANY (ARRAY['live'::text, 'waiting'::text, 'review'::text, 'passed'::text])))
 constraint app.heal_sweeps heal_sweeps_status_check CHECK ((status = ANY (ARRAY['swept'::text, 'restored'::text])))
@@ -681,7 +698,6 @@ constraint app.review_canary_templates review_canary_templates_truth_check CHECK
 constraint app.review_decisions review_decisions_bound_sha256_check CHECK (((char_length(bound_sha256) = 64) AND (bound_sha256 ~ '^[0-9a-f]+$'::text)))
 constraint app.review_decisions review_decisions_check CHECK (((post_id IS NULL) OR (bound_sha256 IS NOT NULL)))
 constraint app.review_decisions review_decisions_check1 CHECK (((post_id IS NULL) OR ((reason = 'other'::text) = (note IS NOT NULL))))
-constraint app.review_decisions review_decisions_check2 CHECK (((reason = 'other'::text) OR ((decision = 'approve'::text) AND (reason = ANY (ARRAY['ordinary'::text, 'checked'::text]))) OR ((decision = 'keep'::text) AND (reason = ANY (ARRAY['not_upheld'::text, 'ordinary'::text, 'checked'::text]))) OR ((decision = 'remove'::text) AND (reason = ANY (ARRAY['spam'::text, 'abuse'::text, 'private_info'::text, 'illegal'::text]))) OR ((decision = 'restore'::text) AND (reason = ANY (ARRAY['mistake'::text, 'undo'::text])))))
 constraint app.review_decisions review_decisions_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES app.members(id) ON DELETE SET NULL
 constraint app.review_decisions review_decisions_decision_check CHECK ((decision = ANY (ARRAY['approve'::text, 'keep'::text, 'remove'::text, 'restore'::text])))
 constraint app.review_decisions review_decisions_item_type_check CHECK ((item_type = ANY (ARRAY['held'::text, 'hidden'::text, 'reported'::text, 'appealed'::text, 'sampled'::text])))
@@ -689,7 +705,8 @@ constraint app.review_decisions review_decisions_note_check CHECK (((char_length
 constraint app.review_decisions review_decisions_pkey PRIMARY KEY (id)
 constraint app.review_decisions review_decisions_post_id_fkey FOREIGN KEY (post_id) REFERENCES app.posts(id) ON DELETE SET NULL
 constraint app.review_decisions review_decisions_prior_status_check CHECK ((prior_status = ANY (ARRAY['live'::text, 'waiting'::text, 'removed'::text])))
-constraint app.review_decisions review_decisions_reason_check CHECK ((reason = ANY (ARRAY['ordinary'::text, 'checked'::text, 'not_upheld'::text, 'spam'::text, 'abuse'::text, 'private_info'::text, 'illegal'::text, 'mistake'::text, 'undo'::text, 'other'::text])))
+constraint app.review_decisions review_decisions_reason_check CHECK ((reason = ANY (ARRAY['ordinary'::text, 'checked'::text, 'not_upheld'::text, 'spam'::text, 'abuse'::text, 'private_info'::text, 'illegal'::text, 'security'::text, 'mistake'::text, 'undo'::text, 'other'::text])))
+constraint app.review_decisions review_decisions_reason_fits CHECK (((reason = 'other'::text) OR ((decision = 'approve'::text) AND (reason = ANY (ARRAY['ordinary'::text, 'checked'::text]))) OR ((decision = 'keep'::text) AND (reason = ANY (ARRAY['not_upheld'::text, 'ordinary'::text, 'checked'::text]))) OR ((decision = 'remove'::text) AND (reason = ANY (ARRAY['spam'::text, 'abuse'::text, 'private_info'::text, 'illegal'::text, 'security'::text]))) OR ((decision = 'restore'::text) AND (reason = ANY (ARRAY['mistake'::text, 'undo'::text])))))
 constraint app.review_decisions review_decisions_seen_ms_check CHECK (((seen_ms >= 0) AND (seen_ms <= 86400000)))
 constraint app.review_decisions review_decisions_tier_check CHECK (((tier >= 0) AND (tier <= 3)))
 constraint app.review_decisions review_decisions_waited_s_check CHECK (((waited_s >= 0) AND (waited_s <= 315360000)))
@@ -785,7 +802,7 @@ constraint app.sl_decisions sl_decisions_version_check CHECK ((version = ANY (AR
 constraint app.sl_items sl_items_author_member_fkey FOREIGN KEY (author_member) REFERENCES app.members(id) ON DELETE CASCADE
 constraint app.sl_items sl_items_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 6000)))
 constraint app.sl_items sl_items_decision_check CHECK ((decision = ANY (ARRAY['clear'::text, 'reject'::text, 'leave'::text])))
-constraint app.sl_items sl_items_kind_check CHECK ((kind = ANY (ARRAY['task'::text, 'submission'::text, 'dispute'::text, 'evidence'::text])))
+constraint app.sl_items sl_items_kind_check CHECK ((kind = ANY (ARRAY['task'::text, 'submission'::text, 'dispute'::text, 'evidence'::text, 'heal_appeal'::text])))
 constraint app.sl_items sl_items_kind_ref_key UNIQUE (kind, ref)
 constraint app.sl_items sl_items_model_check CHECK ((char_length(model) <= 60))
 constraint app.sl_items sl_items_pkey PRIMARY KEY (id)
@@ -1339,13 +1356,19 @@ default app.heal_appeals.created_at = now()
 default app.heal_appeals.id = app.uuid_v7()
 default app.heal_appeals.status = 'open'::text
 default app.heal_corpus.id = app.uuid_v7()
+default app.heal_corpus_tokens.id = app.uuid_v7()
 default app.heal_decoys.id = app.uuid_v7()
+default app.heal_exemptions.created_at = now()
+default app.heal_exemptions.id = app.uuid_v7()
 default app.heal_fingerprints.created_at = now()
 default app.heal_fingerprints.id = app.uuid_v7()
+default app.heal_fingerprints.label = ''::text
 default app.heal_golden.id = app.uuid_v7()
+default app.heal_incidents.attempts = 0
 default app.heal_incidents.created_at = now()
-default app.heal_incidents.evidence = ''::text
 default app.heal_incidents.id = app.uuid_v7()
+default app.heal_incidents.processed = 'new'::text
+default app.heal_incidents.spans = '[]'::jsonb
 default app.heal_log.created_at = now()
 default app.heal_log.detail = '{}'::jsonb
 default app.heal_log.id = app.uuid_v7()
@@ -1354,6 +1377,7 @@ default app.heal_refusals.id = app.uuid_v7()
 default app.heal_settings.base_posts_per_hour = 20
 default app.heal_settings.id = app.uuid_v7()
 default app.heal_settings.max_honest_in_scope = 3
+default app.heal_settings.paused = false
 default app.heal_settings.since = now()
 default app.heal_settings.singleton = true
 default app.heal_shadow_hits.created_at = now()
@@ -1896,39 +1920,58 @@ function app.gh_bans_apply(p_fps text[]) owner=dog_jevs execute=dog_jevs languag
 function app.gh_decisions_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=5b1a144fe83ad0c8bfb735a696c71c2e
 function app.gh_hidden(p_nodes text[]) owner=dog_jevs execute=dog_jevs,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF text body_md5=ad846da3a078644d20feb1901d0cb575
 function app.gh_site_banned(p_fps text[]) owner=dog_jevs execute=dog_jevs language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=119345769325afdb478078c067bf111c
-function app.heal_appeal(p_code text, p_reason text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=bfe6a5d1c451a6b8a21695000740d82c
-function app.heal_appeal_decide(p_appeal uuid, p_decision text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=2f8d29cd105b5e658a79140f46bf5359
-function app.heal_canary() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=19fced970c82e1546c315cf70b8db769
-function app.heal_corpus_refresh() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=9f737f060f2eee0d82b8810fd5bc7fb7
-function app.heal_decision_text(p_kind text, p_ref uuid, p_flags jsonb) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=8182434b765bb7928ac217aa36cdbfa8
-function app.heal_fingerprint(p_incident uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=973f58228863a99d242dc4f1462cb36b
-function app.heal_flags(p_text text) owner=dog_heal execute=dog_heal,dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=55406f02a5dc3b86403dad4269a8b501
+function app.heal_admin(p_action text, p_code text, p_reason text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=f5c32ad6bc1bd923c904055e416312a7
+function app.heal_appeal(p_code text, p_reason text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=fedc84d063df453004f053fd63af7b67
+function app.heal_appeal_decide(p_appeal uuid, p_decision text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=fd99564d5b3f82ad0bca49d2a6f9c40e
+function app.heal_appeals_run() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=24074e4ff1dd03106dfa7d5d52e8c010
+function app.heal_canary() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=eb2a63d281d467fdb9707e3e085037ab
+function app.heal_corpus_add(p_kind text, p_ref uuid, p_member uuid, p_agent uuid, p_text text, p_at timestamp with time zone) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=891630de96333e9e2e40e1ec330b43d6
+function app.heal_corpus_refresh() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=130c16497fdb5c12113e8d2ad53dfc2d
+function app.heal_counts(p_fp uuid, p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=e149237026e818abb8aa9b09687828e9
+function app.heal_decision_text(p_kind text, p_ref uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=text body_md5=8182434b765bb7928ac217aa36cdbfa8
+function app.heal_export(p_n integer) owner=dog_heal execute=dog_heal,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=04263a60252bbf95bad376499ec2a203
+function app.heal_fingerprint(p_incident uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=3c81faf46958e2755f7ea70a2df647fd
+function app.heal_flags(p_text text) owner=dog_heal execute=dog_heal,dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=28b3ec713d88dcd4784f3189aeca72a3
 function app.heal_fold(p text) owner=dog_owner execute=dog_owner,dog_heal language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=cc046b5c9facab7688d9ccf44193979e
-function app.heal_gate(p_fp uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=c2fcdb8094b4e8561cae60ae06f709b0
-function app.heal_hit(p_kind text, p_value text, p_low text, p_norm text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=d3a765810bd06f685b088f2e3e8f21e3
-function app.heal_honest(p_kind text, p_ref uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=139bafe57ad692660610a2c48018b1cf
-function app.heal_incident(p_source text, p_key text, p_ref_kind text, p_ref uuid, p_member uuid, p_agent uuid, p_rule text, p_evidence text) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=c9db427c81604d00e191bc92192060ac
-function app.heal_intake() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=a8bb4562901bbe0eb694a28a47afc86e
-function app.heal_invariants() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=683d44d826beee0754bfe80c338d95ed
+function app.heal_gate(p_fp uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=faf4956d36f97b27d79e0c444bad9a45
+function app.heal_hit(p_kind text, p_value text, p_norm text, p_urls text[], p_hosts text[], p_shas text[]) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=72cab303beba17d931dd2140dc1d2ccf
+function app.heal_honest(p_kind text, p_ref uuid, p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=094f6d768017432a12172ceaa368ffe0
+function app.heal_hosts(p_low text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text[] body_md5=8b27be5fbf814626ebea21d93921b006
+function app.heal_incident(p_source text, p_key text, p_ref_kind text, p_ref uuid, p_member uuid, p_agent uuid, p_rule text, p_spans jsonb, p_processed text) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=uuid body_md5=59d86fa63daa8f6cbddde75be13de61b
+function app.heal_incident_forget() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=2d2d508034dad328745a7e0a2ed8fd6b
+function app.heal_intake() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=8ef3d97da5aa8de3bada8f8ecb0f4860
+function app.heal_invariants() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=a27a89cd447ead94640df09c29656da1
+function app.heal_label(p_kind text, p_value text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=dc9004a9278c77418044157e6c4c3aab
 function app.heal_log_add(p_kind text, p_ref uuid, p_detail jsonb) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=deed019fbd4e427e19e900a869b0fc64
 function app.heal_log_append_only() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=73fb90dbedaf15c0243c47e91d49f129
+function app.heal_matches(p_kind text, p_value text, p_since timestamp with time zone) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF app.heal_corpus body_md5=da1407972b85809f489cfe4f9d8c8243
 function app.heal_member_cap(p_member uuid, p_brake integer) owner=dog_heal execute=dog_heal,dog_limits language=sql volatile=s definer=true config=search_path=pg_catalog returns=integer body_md5=4908fc681c24556893bc712b8e1cb132
-function app.heal_member_tightened(p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=82c754a3f96161613e64fed423f0492a
+function app.heal_member_tightened(p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=4fa19a830a8ef2336912ba2a17b4ffe3
 function app.heal_norm(p text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=dfc116da07fde8570120024318657aaa
-function app.heal_note_wall() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=427e5d65e0f08eeb05b1e99698c0ab69
+function app.heal_note_wall() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=1b611432b1452fc57df54e35de8abc5d
+function app.heal_own_domain(p_host text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=63eecf7e51e5f02188d2143e2ac8b85f
 function app.heal_points_window() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=466c2fd9c0cf8c78634447aae38755da
 function app.heal_post_gate() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=5478b37dbc08a34dba9087bb546b57f8
 function app.heal_post_sample() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=994874b397e2f3ac0dedf49b46c81944
-function app.heal_refusal_note(p_body text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=7647723eeec0fefdb332f324966a410e
-function app.heal_restore(p_fp uuid, p_member uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=4752b39468b312c9195c4872601b46ea
-function app.heal_rollback(p_fp uuid, p_why text) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=ef20da75c8f4245df87d27a1c337e662
+function app.heal_queue() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=7d52e9382ebe1fc34c7d3b0c5f96d37b
+function app.heal_refusal_note(p_body text) owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=0d48ffc84591d154e354095481a65053
+function app.heal_related(p_fp uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF uuid body_md5=4134aedf4fddf6ee575a642ddd3f8685
+function app.heal_restore(p_fp uuid, p_member uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=5634e91a35377d023291789706a7eb7a
+function app.heal_retract() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=f7baa574261d2fda73d7bbc9ab584ed1
+function app.heal_rollback(p_fp uuid, p_why text, p_status text) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=23e073ff47d78ddcd41599665c09888c
 function app.heal_rule_of(p_flags jsonb) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=deaad3a8beb046d28698b2bb4f68a77f
-function app.heal_run() owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=e9ebc6a45055a83680d1a4b0922ec638
-function app.heal_scope_members(p_kind text, p_value text) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF uuid body_md5=c407c6591adf746d14b0e9daac3b1e9d
-function app.heal_status() owner=dog_heal execute=dog_heal,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=0b03a74441e19b3b9a18e9b8b5e0b078
-function app.heal_sweep(p_fp uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=867ac2e8b2fe07641e753270d1dae700
-function app.heal_tighten() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=c85fbc77296fe40ade171329af9a648f
-function app.heal_trusted(p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=149609403e4777d274fa8a90c3d1bd08
+function app.heal_run() owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=31c6c1f1338176fcac735b1aec5940a8
+function app.heal_scope_members(p_kind text, p_value text) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=SETOF uuid body_md5=b29c04a26d80f8845f66c7a7be674cd8
+function app.heal_shas(p_low text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text[] body_md5=4d7e8d192aded7c382187b0186463954
+function app.heal_spans(p_text text, p_whole boolean) owner=dog_heal execute=dog_heal language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=56365454b82ad17896ed420f5f9e35e0
+function app.heal_stale_check() owner=dog_heal execute=dog_heal,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=5b03f39316857c51d0ff6f405c3b9196
+function app.heal_status() owner=dog_heal execute=dog_heal,dog_app language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=6b52ced268200b11217403a5fae7ea0a
+function app.heal_sweep(p_fp uuid) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=b7fe9be4b8195318fc829e4d5b26c470
+function app.heal_tighten() owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=c56e84aeda7c20d9add52045654dd6ec
+function app.heal_trusted(p_member uuid) owner=dog_heal execute=dog_heal language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=b07d4fef1166f3ffeb7389891e85226b
+function app.heal_uphold(p_appeal uuid, p_by text) owner=dog_heal execute=dog_heal language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=b7fcbccc30079edea99bc3ca0cf92fc6
+function app.heal_urls(p_low text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text[] body_md5=770d34a05e72199009b58e99f6fd5227
+function app.heal_valid_host(p text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=a164600ba72ad452a8f2f1aaf3b26e89
 function app.idem_begin(p_scope text, p_route text, p_request text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=jsonb body_md5=9feb32a6ff5038dd0119f4874fe960bc
 function app.idem_put(p_scope text, p_route text, p_request text, p_status integer, p_sealed bytea) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=void body_md5=77879f232e713deace1064fbc1ec3751
 function app.identities_level_cap() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config=search_path=pg_catalog returns=trigger body_md5=7515e26c8188fcc76cc26f3ef97c412b
@@ -2078,7 +2121,7 @@ function app.review_digest_run() owner=dog_work execute=dog_work,dog_app languag
 function app.review_flags_agent_upheld() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=c31a377b1002e32e615cf9b0bb66a462
 function app.review_flags_audit_close() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=d057505395d47ce86184e9eeb9a9fb44
 function app.review_flags_audit_new() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=acdb2736ac0b604cb72d7a96b008e49e
-function app.review_flags_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=71abd7db373f152b882c0c0a0f4d1a40
+function app.review_flags_guard() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=7052fffe8ea5ae3e1155f9c8d3e350e6
 function app.review_flags_recheck() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=false config= returns=trigger body_md5=1214c4777835106d470422e4ff21ecbb
 function app.review_item_type(p_post uuid) owner=dog_owner execute=dog_owner,dog_app language=sql volatile=s definer=false config= returns=text body_md5=e0c806de44e4f6ca87cfb732e2aefef1
 function app.review_k_parts(p_parts bigint[]) owner=dog_owner execute=dog_owner,dog_jevs language=sql volatile=i definer=false config= returns=jsonb body_md5=ffb700a2e95726578f402bfa0aefbf93
@@ -2151,18 +2194,18 @@ function app.wall_files_flags(p_task uuid, p_files jsonb) owner=dog_owner execut
 function app.wall_gate() owner=dog_owner execute=dog_owner language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=ab0e4176b368141d1184eb1090e64cf4
 function app.wall_intel_flags(p_text text, p_path text) owner=dog_owner execute=dog_owner language=sql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=49a805e4cd663b60102db15d9a73cd34
 function app.wall_intel_flags_wiki(p_text text, p_path text) owner=dog_owner execute=dog_owner language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=a812a7488c12e88f6ccd5538c2ab68ff
-function app.wall_link_check(p_url text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=4616fe217a2e8d497221854e534e0fab
+function app.wall_link_check(p_url text) owner=dog_owner execute=dog_owner,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=eb9f367e83f382382c64adf7e851170e
 function app.wall_link_waiting(p_sub uuid) owner=dog_owner execute=dog_owner,dog_work language=sql volatile=s definer=true config=search_path=pg_catalog returns=boolean body_md5=660eba67ebc390b3dc5c2522ccabc8f3
 function app.wall_links_record(p jsonb) owner=dog_owner execute=dog_owner,dog_ghsync language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=9c8570820b3ad186f3d970de92c4ed08
 function app.wall_links_wanted(p_n integer) owner=dog_owner execute=dog_owner,dog_ghsync language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=TABLE(id uuid, url text) body_md5=c03e783908891f9d26adc1e2863905cd
 function app.wall_log(p_limit integer) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=308eb9dbb31ca741c29a844c477da571
-function app.wall_metadata_address(p_lower text) owner=dog_owner execute=dog_owner language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=d44431450f5444b896ff74cc7c1a0ec9
+function app.wall_metadata_address(p_lower text) owner=dog_owner execute=dog_owner,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=boolean body_md5=d44431450f5444b896ff74cc7c1a0ec9
 function app.wall_recheck_flags(p_decision uuid) owner=dog_owner execute=dog_owner,dog_work language=plpgsql volatile=s definer=true config=search_path=pg_catalog returns=jsonb body_md5=53ba6565a448b7575ee868202b2defe0
 function app.wall_recheck_run() owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=integer body_md5=5d47cd8134412b280f3b99812ecb0989
 function app.wall_review(p_decision uuid, p_verdict text, p_reason text) owner=dog_work execute=dog_work,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=text body_md5=534b342d54cda582027ab33d3f19a15d
 function app.wall_safe_chr(p bigint) owner=dog_owner execute=dog_owner language=sql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=a80cef22bf50df957e94a3040df11ead
-function app.wall_spam_level(p_para text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=integer body_md5=b873dd882ce9258917c6f655e7b75e75
-function app.wall_text_flags(p_text text) owner=dog_owner execute=dog_owner language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=74dcde555ffa3e5b1bebcfdee8bd0a42
+function app.wall_spam_level(p_para text) owner=dog_owner execute=dog_owner,dog_heal language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=integer body_md5=b873dd882ce9258917c6f655e7b75e75
+function app.wall_text_flags(p_text text) owner=dog_owner execute=dog_owner,dog_heal language=plpgsql volatile=i definer=false config=search_path=pg_catalog returns=jsonb body_md5=74dcde555ffa3e5b1bebcfdee8bd0a42
 function app.wall_url_norm(p_url text) owner=dog_owner execute=dog_owner,dog_work,dog_heal language=sql volatile=i definer=false config=search_path=pg_catalog returns=text body_md5=0486f05f7e1c13f70c11d08594a708e2
 function app.watch_audit() owner=dog_signin execute=dog_signin language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=trigger body_md5=a9c57f4fb1a2b3fd0aab06aa0b240a9f
 function app.watch_first(p_action text) owner=dog_jevs execute=dog_jevs,dog_app language=plpgsql volatile=v definer=true config=search_path=pg_catalog returns=boolean body_md5=76ce42ef4268c83a8bc316285a7e24a4
@@ -2673,7 +2716,12 @@ grant app.heal_appeals dog_heal UPDATE
 grant app.heal_corpus dog_heal DELETE
 grant app.heal_corpus dog_heal INSERT
 grant app.heal_corpus dog_heal SELECT
+grant app.heal_corpus_tokens dog_heal DELETE
+grant app.heal_corpus_tokens dog_heal INSERT
+grant app.heal_corpus_tokens dog_heal SELECT
 grant app.heal_decoys dog_heal SELECT
+grant app.heal_exemptions dog_heal INSERT
+grant app.heal_exemptions dog_heal SELECT
 grant app.heal_fingerprints dog_heal INSERT
 grant app.heal_fingerprints dog_heal SELECT
 grant app.heal_fingerprints dog_heal UPDATE
@@ -3309,6 +3357,8 @@ grant app.sl_decisions dog_app SELECT
 grant app.sl_decisions dog_jevs INSERT
 grant app.sl_decisions dog_jevs SELECT
 grant app.sl_decisions.published dog_jevs UPDATE
+grant app.sl_items dog_heal INSERT
+grant app.sl_items dog_heal SELECT
 grant app.sl_items dog_work DELETE
 grant app.sl_items dog_work INSERT
 grant app.sl_items dog_work SELECT
@@ -3388,6 +3438,7 @@ grant app.wall_removed_tasks dog_work SELECT
 grant app.wall_reviews dog_heal SELECT
 grant app.wall_reviews dog_work INSERT
 grant app.wall_reviews dog_work SELECT
+grant app.wall_rules dog_heal SELECT
 grant app.wall_rules dog_public SELECT
 grant app.wall_rules dog_work SELECT
 grant app.wall_settings dog_work SELECT
@@ -3711,7 +3762,9 @@ policy app.gh_post_domains gh_post_domains_jevs cmd=* permissive=true to=dog_jev
 policy app.gh_posts gh_posts_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.heal_appeals heal_appeals_heal cmd=* permissive=true to=dog_heal using=true check=true
 policy app.heal_corpus heal_corpus_heal cmd=* permissive=true to=dog_heal using=true check=true
+policy app.heal_corpus_tokens heal_corpus_tokens_heal cmd=* permissive=true to=dog_heal using=true check=true
 policy app.heal_decoys heal_decoys_heal cmd=* permissive=true to=dog_heal using=true check=true
+policy app.heal_exemptions heal_exemptions_heal cmd=* permissive=true to=dog_heal using=true check=true
 policy app.heal_fingerprints heal_fingerprints_heal cmd=* permissive=true to=dog_heal using=true check=true
 policy app.heal_golden heal_golden_heal cmd=* permissive=true to=dog_heal using=true check=true
 policy app.heal_incidents heal_incidents_heal cmd=* permissive=true to=dog_heal using=true check=true
@@ -3937,6 +3990,7 @@ policy app.signin_pins signin_pins_signin_update cmd=w permissive=true to=dog_si
 policy app.sl_claims sl_claims_jevs cmd=* permissive=true to=dog_jevs using=true check=true
 policy app.sl_decisions sl_decisions_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
 policy app.sl_decisions sl_decisions_jevs cmd=* permissive=true to=dog_jevs using=true check=true
+policy app.sl_items sl_items_heal cmd=* permissive=true to=dog_heal using=(kind = 'heal_appeal'::text) check=(kind = 'heal_appeal'::text)
 policy app.sl_items sl_items_owner_insert cmd=a permissive=true to=dog_owner using= check=true
 policy app.sl_items sl_items_work cmd=* permissive=true to=dog_work using=true check=true
 policy app.sl_outcomes sl_outcomes_admin_select cmd=r permissive=true to=dog_app using=(app.actor_kind() = 'admin'::text) check=
@@ -3976,6 +4030,7 @@ policy app.wall_removed_tasks wall_removed_tasks_work cmd=* permissive=true to=d
 policy app.wall_reviews wall_reviews_heal_select cmd=r permissive=true to=dog_heal using=true check=
 policy app.wall_reviews wall_reviews_owner cmd=r permissive=true to=dog_owner using=true check=
 policy app.wall_reviews wall_reviews_work cmd=* permissive=true to=dog_work using=true check=true
+policy app.wall_rules wall_rules_heal_select cmd=r permissive=true to=dog_heal using=true check=
 policy app.wall_rules wall_rules_read cmd=r permissive=true to=dog_owner,dog_public,dog_work using=true check=
 policy app.wall_settings wall_settings_owner cmd=r permissive=true to=dog_owner using=true check=
 policy app.wall_settings wall_settings_read cmd=r permissive=true to=dog_work using=true check=
@@ -4115,6 +4170,7 @@ trigger app.file_keys enabled=A CREATE TRIGGER file_keys_audit AFTER INSERT OR D
 trigger app.file_keys enabled=O CREATE TRIGGER a_buyer_scope BEFORE INSERT OR UPDATE OF member_id ON app.file_keys FOR EACH ROW EXECUTE FUNCTION app.buyer_scope('member_id')
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_guard BEFORE UPDATE ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.gh_decisions_guard()
 trigger app.gh_decisions enabled=A CREATE TRIGGER gh_decisions_log AFTER INSERT ON app.gh_decisions FOR EACH ROW EXECUTE FUNCTION app.log_queue_decision()
+trigger app.heal_incidents enabled=O CREATE TRIGGER heal_incident_forget BEFORE UPDATE ON app.heal_incidents FOR EACH ROW EXECUTE FUNCTION app.heal_incident_forget()
 trigger app.heal_log enabled=A CREATE TRIGGER heal_log_no_change BEFORE DELETE OR UPDATE ON app.heal_log FOR EACH ROW EXECUTE FUNCTION app.heal_log_append_only()
 trigger app.heal_log enabled=A CREATE TRIGGER heal_log_no_truncate BEFORE TRUNCATE ON app.heal_log FOR EACH STATEMENT EXECUTE FUNCTION app.heal_log_append_only()
 trigger app.identities enabled=A CREATE TRIGGER identities_level_cap BEFORE INSERT OR UPDATE OF level ON app.identities FOR EACH ROW EXECUTE FUNCTION app.identities_level_cap()

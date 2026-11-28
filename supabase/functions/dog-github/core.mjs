@@ -21,6 +21,7 @@
 //                     POST {"mode": "sync", "facts": {prs, issues, details, refused, files, proposals, links}}
 //                                              -> {ok, prs, tasks, closed, files, proposals, links}
 //   log-witness.yml:  POST {"mode": "witness", "report": {size, root, at, alarm}} -> {ok, status}
+//   heal-propose.yml: POST {"mode": "heal"}    -> {ok, incidents: [{id, source, rule_area, code, label}]}  (096)
 
 export const AUDIENCE = 'https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github';
 export const WORKFLOW = '.github/workflows/github-facts.yml';
@@ -31,10 +32,15 @@ export const WORKFLOW = '.github/workflows/github-facts.yml';
 export const EVENTS = ['workflow_run', 'issues', 'schedule', 'workflow_dispatch'];
 export const WITNESS_WORKFLOW = '.github/workflows/log-witness.yml';
 export const WITNESS_EVENTS = ['schedule', 'workflow_dispatch'];
+// 096: the healer's proposals read the enforced fingerprints they turn into regression tests (codes and normalized
+// labels only), on main, on its schedule or a manual run.
+export const HEAL_WORKFLOW = '.github/workflows/heal-propose.yml';
+export const HEAL_EVENTS = ['schedule', 'workflow_dispatch'];
 // Each workflow this function accepts, the events it runs on, and the modes it may ask for.
 export const WORKFLOWS = {
   [WORKFLOW]: { events: EVENTS, modes: ['wanted', 'links', 'sync'] },
-  [WITNESS_WORKFLOW]: { events: WITNESS_EVENTS, modes: ['witness'] }
+  [WITNESS_WORKFLOW]: { events: WITNESS_EVENTS, modes: ['witness'] },
+  [HEAL_WORKFLOW]: { events: HEAL_EVENTS, modes: ['heal'] }
 };
 export const REPOSITORY = 'MyChiefOS/start-of-something-great';
 // 100 pull requests with up to 20 claim codes each, 100 issues, 20 details, 100 proposals and the changed files of up
@@ -55,6 +61,7 @@ function claimedWorkflow(token) {
     const bin = atob(part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4));
     const ref = String(JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))).workflow_ref || '');
     if (ref.startsWith(REPOSITORY + '/' + WITNESS_WORKFLOW + '@')) return WITNESS_WORKFLOW;
+    if (ref.startsWith(REPOSITORY + '/' + HEAL_WORKFLOW + '@')) return HEAL_WORKFLOW;
   } catch { /* not readable: the shared check refuses it */ }
   return WORKFLOW;
 }
@@ -76,8 +83,9 @@ export function parse(text) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequest('body must be an object');
   if (body.mode === 'wanted') return { mode: 'wanted' };
   if (body.mode === 'links') return { mode: 'links' };
+  if (body.mode === 'heal') return { mode: 'heal' };
   if (body.mode === 'witness') return { mode: 'witness', report: witnessReport(body.report) };
-  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, links, sync or witness');
+  if (body.mode !== 'sync') throw new BadRequest('mode must be wanted, links, heal, sync or witness');
   const f = body.facts;
   if (!f || typeof f !== 'object' || Array.isArray(f)) throw new BadRequest('facts must be an object');
   if (Object.keys(f).some((k) => !LISTS.includes(k) && k !== 'refused')) throw new BadRequest('facts has an unknown field');
@@ -127,6 +135,15 @@ export async function links(sql) {
     return rows.map((r) => ({ id: String(r.id), url: r.url }));
   });
 }
+// 096: the enforced text fingerprints the healer's proposals haven't read yet (at most 20), as dog_ghsync.
+export async function heal(sql) {
+  return sql.begin(async (t) => {
+    await t`set local role dog_ghsync`;
+    await t`set local statement_timeout = '30s'`;
+    const [r] = await t`select app.heal_export(20) as list`;
+    return r.list;
+  });
+}
 export async function sync(sql, facts, { files = [], proposals = [], links: found = [] } = {}) {
   return sql.begin(async (t) => {
     await t`set local role dog_ghsync`;
@@ -173,6 +190,7 @@ export async function handle(req, { verify, Refused, seen, db, keys, now }) {
   if (!WORKFLOWS[claims.checked_workflow].modes.includes(ask.mode)) return { status: 403, body: { ok: false, error: 'not for this workflow' } };
   if (ask.mode === 'wanted') return { status: 200, body: { ok: true, ...(await wanted(db())) } };
   if (ask.mode === 'links') return { status: 200, body: { ok: true, links: await links(db()) } };
+  if (ask.mode === 'heal') return { status: 200, body: { ok: true, incidents: await heal(db()) } };
   try {
     if (ask.mode === 'witness') return { status: 200, body: { ok: true, status: await witness(db(), ask.report) } };
     const r = await sync(db(), ask.facts, { files: ask.files, proposals: ask.proposals, links: ask.links });

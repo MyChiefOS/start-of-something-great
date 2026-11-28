@@ -114,7 +114,12 @@ async function handle(req, res, run, { now = Date.now, oidc = null, fetchImpl } 
   try { await run({ actor: 'anon' }, (t) => t`select app.wall_recheck_run()`); } catch { /* logs nothing (027) */ }
   // 096: the healer (confirmed incidents, fingerprints through the patch gate, the canary and health watch, sweep-back,
   // tightening, the invariants). At most once every 20 seconds; its own transaction; a failure changes nothing else.
-  try { await run({ actor: 'anon' }, (t) => t`select app.heal_run()`); } catch { /* logs nothing (027) */ }
+  // Its own budget: 60 seconds for the statement (the function stops taking new incidents after 45), within the route's.
+  try {
+    await run({ actor: 'anon' }, async (t) => { await t`set local statement_timeout = '60s'`; await t`select app.heal_run()`; });
+  } catch { /* logs nothing (027) */ }
+  // An alert when no healer tick has finished in 15 minutes (its own transaction, so it runs when the tick fails).
+  try { await run({ actor: 'anon' }, (t) => t`select app.heal_stale_check()`); } catch { /* logs nothing (027) */ }
   // 077: the random auditor and the day's oversight report (free), then the model reviewers and (088) the AI classifier:
   // on, pay-as-you-go (Aaron, Nov 26), each under its role's daily call cap.
   try { await require('../oversight/roles').run(run, oidc, fetchImpl ? { fetchImpl } : {}); } catch { /* logs nothing (027) */ }

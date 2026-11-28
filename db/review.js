@@ -112,7 +112,7 @@ async function queue(t, { limit = 50 } = {}) {
 const DECISION_REASONS = {
   approve: ['ordinary', 'checked', 'other'],
   keep: ['not_upheld', 'ordinary', 'checked', 'other'],
-  remove: ['spam', 'abuse', 'private_info', 'illegal', 'other'],
+  remove: ['spam', 'abuse', 'private_info', 'illegal', 'security', 'other'],
   restore: ['mistake', 'undo', 'other']
 };
 

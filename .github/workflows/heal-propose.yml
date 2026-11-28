@@ -1,41 +1,62 @@
-# The healer's code proposals (096): run by hand with the incidents an administrator exported (the JSON heal/propose.js
-# reads). It writes the regression tests and draft rules to a new heal/... branch and opens a draft pull request
-# labelled "heal" for Aaron. It never pushes to main, never marks the pull request ready and never merges.
+# The healer's code proposals (096). Once a day, or by hand: asks dog-github (mode "heal", with a short-lived GitHub
+# identity token that names this file on main) for enforced healer fingerprints not yet proposed: codes, incident ids
+# and normalized labels only. heal/propose.js turns them into regression tests and draft rules on a new heal/... branch,
+# opens a draft pull request labeled "heal" for Aaron, and starts the Heal gate on it. It never pushes to main, never
+# marks the pull request ready and never merges.
 name: Heal proposals
 
 on:
+  schedule:
+    - cron: '23 6 * * *'
   workflow_dispatch:
-    inputs:
-      incidents:
-        description: 'The exported incidents, as JSON'
-        required: true
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   propose:
+    if: github.repository_id == 1418125608 && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write # only to start the Heal gate on the new branch
+      id-token: write # only to ask GitHub for the identity token dog-github checks
+    env:
+      FN_URL: https://nksagchwpyljvjiwolmp.supabase.co/functions/v1/dog-github
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
-      - name: Write the proposals
-        env:
-          INCIDENTS: ${{ github.event.inputs.incidents }}
+      - name: Ask dog-github for the fingerprints to propose
+        id: ask
         run: |
-          printf '%s' "$INCIDENTS" > "$RUNNER_TEMP/incidents.json"
-          node heal/propose.js --incidents "$RUNNER_TEMP/incidents.json" > "$RUNNER_TEMP/body.md"
-      - name: Open a draft pull request for Aaron
+          t=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$FN_URL" | jq -r .value) || t=''
+          code=$(curl -sS --max-time 60 -o answer.json -w '%{http_code}' -X POST "$FN_URL" \
+            -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data '{"mode":"heal"}') || code=none
+          # Only the expected shape goes on; heal/propose.js checks every field again.
+          if [ "$code" = 200 ] && jq -e '.ok == true and (.incidents | type == "array")' answer.json > /dev/null 2>&1; then
+            jq -c '.incidents[:20]' answer.json > "$RUNNER_TEMP/incidents.json"
+          else
+            echo "dog-github answered $code"; echo '[]' > "$RUNNER_TEMP/incidents.json"
+          fi
+          echo "n=$(jq length "$RUNNER_TEMP/incidents.json")" >> "$GITHUB_OUTPUT"
+      - name: Write the proposals
+        if: steps.ask.outputs.n != '0'
+        run: node heal/propose.js --incidents "$RUNNER_TEMP/incidents.json" > "$RUNNER_TEMP/body.md"
+      - name: Open a draft pull request for Aaron and start the Heal gate
+        if: steps.ask.outputs.n != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ -z "$(git status --porcelain test/heal heal/drafts)" ]; then echo "nothing to propose"; exit 0; fi
           branch="heal/$(date -u +%Y%m%d-%H%M%S)"
           git switch -c "$branch"
           git add test/heal heal/drafts
           git -c user.name="healer" -c user.email="healer@users.noreply.github.com" commit -m "Healer: regression tests and draft rules"
           git push origin "$branch"
           gh pr create --draft --base main --head "$branch" --label heal --title "Healer: regression tests and draft rules" --body-file "$RUNNER_TEMP/body.md"
+          # A pull request opened with this workflow's token starts no workflow by itself; a manual run of the gate does.
+          gh workflow run heal-gate.yml --ref "$branch"

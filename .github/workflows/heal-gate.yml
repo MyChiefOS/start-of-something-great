@@ -7,6 +7,7 @@ name: Heal gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   gate:
-    if: startsWith(github.head_ref, 'heal/') || contains(github.event.pull_request.labels.*.name, 'heal')
+    if: startsWith(github.head_ref, 'heal/') || contains(github.event.pull_request.labels.*.name, 'heal') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'heal/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -57,8 +58,13 @@ jobs:
         run: |
           if ls test/heal/*.test.js >/dev/null 2>&1; then node --test --test-concurrency=1 test/heal/*.test.js; else echo "no regression tests"; fi
       - name: Not ready until every check passes
-        if: failure() && github.event.pull_request.draft == false
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-        run: gh pr ready "$PR" --undo --repo "$GITHUB_REPOSITORY"
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          n="${PR:-$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --json number --jq '.[0].number')}"
+          if [ -n "$n" ] && [ "$(gh pr view "$n" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ]; then
+            gh pr ready "$n" --undo --repo "$GITHUB_REPOSITORY"
+          fi

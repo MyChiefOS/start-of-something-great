@@ -22,7 +22,7 @@
   var REASON = { spam: 'spam', abuse: 'abuse', private_info: 'private information', illegal: 'illegal', other: 'other' };
   // Why a decision is made, in words, for each reason code the database accepts (041, app.review_decisions).
   var BECAUSE = { ordinary: 'an ordinary post', checked: 'I checked what it flags', not_upheld: 'the report isn’t upheld', spam: 'spam', abuse: 'abuse',
-    private_info: 'private information', illegal: 'illegal', mistake: 'removed by mistake', other: 'other reason' };
+    private_info: 'private information', illegal: 'illegal', security: 'an attack (security)', mistake: 'removed by mistake', other: 'other reason' };
   // UX PR G (finding 12): the public titles of JEVs's questions, as db/jevs.js names them (test/ux-g.test.js keeps the
   // two the same). The queue sends only the IDs that flagged a post, highest first, never a number.
   var TITLES = {
@@ -135,7 +135,7 @@
 
   function choicesFor(i) {
     var reasons = i.decision_reasons || { approve: ['ordinary', 'checked', 'other'], keep: ['not_upheld', 'ordinary', 'checked', 'other'],
-      remove: ['spam', 'abuse', 'private_info', 'illegal', 'other'], restore: ['mistake', 'other'] };
+      remove: ['spam', 'abuse', 'private_info', 'illegal', 'security', 'other'], restore: ['mistake', 'other'] };
     return i.actions.map(function (a) {
       return { decision: a, label: LABEL[a], side: a === 'remove' ? 'reject' : 'approve', deferred: a !== 'remove', waiting: WAITING[a], done: DONE[a],
         reasons: (reasons[a] || ['other']).map(function (r) { return { code: r, label: BECAUSE[r] || r }; }) };

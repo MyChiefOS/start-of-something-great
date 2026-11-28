@@ -355,6 +355,6 @@ Open for Aaron (recorded in the strategy, section 18): earning; responsibility f
 
 ### The healer (096; Aaron, Nov 27 and 28). Claude. Confidence medium.
 
-1. **Built, tested locally (branch self-heal):** migration 096, heal/, test/self-heal.test.js, the Heal gate and Heal proposals workflows.
-2. **Next:** an independent review, then the PR (the coordinator opens it); Aaron's merge; the migration through the protected workflow; proof live in OPERATIONS.md (a confirmed incident's fingerprint enforced after its shadow tick, and /api/ready's `healer` counts).
+1. **Built, tested locally (branch self-heal):** migration 096, heal/, test/self-heal.test.js, the Heal gate and Heal proposals workflows. The independent review's 11 findings (Nov 28) are fixed on the same branch.
+2. **Next:** the PR (the coordinator opens it); Aaron's merge; the migration through the protected workflow; dog-github redeployed (its new "heal" mode); proof live in OPERATIONS.md (a confirmed incident's fingerprint enforced after its shadow tick, and /api/ready's `healer` counts).
 3. **Open for Aaron:** points held vs. reversed after an appeal window (RK166); where decoys are placed (RK167).

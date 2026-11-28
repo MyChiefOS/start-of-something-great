@@ -314,17 +314,19 @@ test.before(async () => {
   await q(`insert into app.signin_failures (member_id) values ('${A.id}')`);
   await q(`insert into app.signin_locks (member_id, until) values ('${A.id}', now() - interval '1 hour')`);
   await q(`insert into app.audit_net (audit_id, ip, user_agent, method, path, host) values (gen_random_uuid(), '203.0.113.7', 'A browser', 'GET', '/feed', 'dayonegreat.com')`);
-  // 096, the healer: an incident about A, its fingerprint, a sweep, an appeal, a refusal, a shadow hit, a tightening
-  // on A's tree, a corpus row and a chain entry.
-  await q(`with i as (insert into app.heal_incidents (source, source_key, ref_kind, member_id, owner_id, rule_area, evidence)
-             values ('post_removed', 'fixture:a', 'post', '${A.id}', '${A.id}', 'post', 'A fixture attack text for the healer') returning id),
+  // 096, the healer: an incident about A, its fingerprint, a sweep, an appeal, an exemption, a refusal, a shadow hit, a
+  // tightening on A's tree, a corpus row with its token, and a chain entry.
+  await q(`with i as (insert into app.heal_incidents (source, source_key, ref_kind, member_id, owner_id, rule_area, spans)
+             values ('post_removed', 'fixture:a', 'post', '${A.id}', '${A.id}', 'post', '[{"kind": "text", "value": "afixtureattacktextforthehealer"}]') returning id),
            f as (insert into app.heal_fingerprints (code, kind, value, incident_id, status) select 'HF-0000000a', 'text', 'afixtureattacktextforthehealer', id, 'active' from i returning id),
            s as (insert into app.heal_sweeps (fingerprint_id, kind, ref, member_id, prior_status) select id, 'post', gen_random_uuid(), '${A.id}', 'live' from f),
            a as (insert into app.heal_appeals (fingerprint_id, member_id, reason) select id, '${A.id}', 'My own words.' from f),
-           r as (insert into app.heal_refusals (fingerprint_id, kind, member_id, trusted) select id, 'post', '${A.id}', false from f)
-           insert into app.heal_shadow_hits (fingerprint_id, kind, ref, member_id, trusted) select id, 'post', gen_random_uuid(), '${A.id}', false from f`);
+           e as (insert into app.heal_exemptions (fingerprint_id, member_id) select id, '${A.id}' from f),
+           r as (insert into app.heal_refusals (fingerprint_id, kind, member_id) select id, 'post', '${A.id}' from f)
+           insert into app.heal_shadow_hits (fingerprint_id, kind, ref, member_id) select id, 'post', gen_random_uuid(), '${A.id}' from f`);
   await q(`insert into app.heal_tightenings (scope_kind, scope_value, status, incidents, expires_at) values ('owner_tree', '${A.id}', 'active', 3, now() + interval '1 day')`);
-  await q(`insert into app.heal_corpus (kind, ref, member_id, low, norm, created_at) values ('post', gen_random_uuid(), '${A.id}', 'a', 'a', now())`);
+  await q(`with c as (insert into app.heal_corpus (kind, ref, member_id, low, norm, created_at) values ('post', gen_random_uuid(), '${A.id}', 'a', 'a', now()) returning id)
+           insert into app.heal_corpus_tokens (corpus_id, kind, value) select id, 'host', 'a.example' from c`);
   await q(`insert into app.heal_log (kind, detail, prev_hash, hash) values ('incident', '{}', '${'0'.repeat(64)}', '${'1'.repeat(64)}')`);
   tables = (await q(`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind in ('r', 'p') order by 1`)).map((r) => r.name);
 });
