@@ -379,6 +379,10 @@
     {
       "version": "095_sandbox_links",
       "sha256": "02e714b20ea2f1968cd5a4dc7c6c293eaf257f710208a3d5e10200e103bb6103"
+    },
+    {
+      "version": "096_self_heal",
+      "sha256": "fc796ef3bf767ff463413790b76028ddc9d876cb02ea194925296f9f87a2bf73"
     }
   ]
 }

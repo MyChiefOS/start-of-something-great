@@ -15,7 +15,7 @@
 const FORBIDDEN_COLUMN = /(passport|ssn|social_security|national_id|id_number|id_document|drivers?_licen[cs]e|licen[cs]e_number|tax_id|face|selfie|biometric|password|passwd)/;
 const MAX_LIMIT = 100000; // a "limit" above this many characters or bytes isn't a limit
 // The roles that requests act as. dog_signin acts only inside the reviewed sign-in functions below.
-const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync',
+const ACTING = ['dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_heal',
   'dog_witness', 'dog_pay'];
 // 027: the timers' role. It belongs to dog_app only (so the timers run under the site's own policies), can't sign in,
 // no role can act as it (027 lets dog_owner do so only while it hands the role its function), and it owns exactly one
@@ -40,7 +40,9 @@ const TIMERS = 'dog_timers';
 // workflow calls. It holds no table rights, and the site's role can't act as it.
 // dog_pay (061) is the payment function's role: the money tables, and the work rows a release must read. The site's
 // role can't act as it; the money moves only through dog-pay and the two request functions below.
-const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
+// dog_heal (096) is the healer's role: it owns the healer's functions and reads what they read; the site's role can't act
+// as it, and calls only the timer's entry point, the counts, an appeal, its decision and a refusal's note.
+const NARROW = ['dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_heal',
   'dog_witness', 'dog_pay'];
 // The only functions allowed to run with their owner's rights (security definer). Each must be owned by the narrow
 // role named for it, fix its search path, and be callable only by dog_app. Adding one is a reviewed change to this list.
@@ -113,7 +115,7 @@ const DEFINERS = {
   // owner; any role that runs checks of who is acting may test one; only the site's role may ask to act as someone.
   // 027: and dog_timers, whose one function (app.timers_run) stamps the site itself around the timers.
   'app.actor_stamp(text, text, text, text, text)': { owner: 'dog_signin', callers: 'dog_owner,dog_timers' },
-  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_jevs,dog_limits,dog_owner,dog_pay,dog_public,dog_work' },
+  'app.stamp_ok()': { owner: 'dog_signin', callers: 'dog_app,dog_delegate,dog_erase,dog_heal,dog_jevs,dog_limits,dog_owner,dog_pay,dog_public,dog_work' },
   'app.act_as(text, uuid, uuid, boolean, text, text, text)': 'dog_signin',
   // PR 7: approving a draft, a session's start (for the fresh sign-in), and the public receipt.
   'app.approve_draft(uuid, text)': 'dog_delegate',
@@ -191,6 +193,54 @@ const DEFINERS = {
   'app.wall_decide(jsonb)': { owner: 'dog_owner', callers: 'dog_work' },
   // 082: the Wall's lookups against the security wiki's active indicators (feeds and injection patterns); the gate calls it.
   'app.wall_intel_flags(text, text)': { owner: 'dog_owner', callers: '' },
+  // 096, the healer: every function is dog_heal's. The site calls the timer's entry point and its stale check, the counts,
+  // an appeal, its decision and the controls (an administrator), and a refusal's note; the Wall reads the fingerprints; the
+  // brake reads a tightening; the Heal proposals workflow reads enforced fingerprints through dog-github (dog_ghsync).
+  'app.heal_run()': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_stale_check()': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_status()': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_appeal(text, text)': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_appeal_decide(uuid, text)': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_admin(text, text, text)': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_refusal_note(text)': { owner: 'dog_heal', callers: 'dog_app' },
+  'app.heal_flags(text)': { owner: 'dog_heal', callers: 'dog_owner' },
+  'app.heal_member_cap(uuid, integer)': { owner: 'dog_heal', callers: 'dog_limits' },
+  'app.heal_export(integer)': { owner: 'dog_heal', callers: 'dog_ghsync' },
+  'app.heal_export_mark(jsonb)': { owner: 'dog_heal', callers: 'dog_ghsync' },
+  'app.heal_deadline()': { owner: 'dog_heal', callers: '' },
+  'app.heal_settled_earlier(uuid, uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_log_add(text, uuid, jsonb)': { owner: 'dog_heal', callers: '' },
+  'app.heal_trusted(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_scope_members(text, text)': { owner: 'dog_heal', callers: '' },
+  'app.heal_related(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_counts(uuid, uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_member_tightened(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_spans(text, boolean)': { owner: 'dog_heal', callers: '' },
+  'app.heal_incident(text, text, text, uuid, uuid, uuid, text, jsonb, text)': { owner: 'dog_heal', callers: '' },
+  'app.heal_decision_text(text, uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_intake()': { owner: 'dog_heal', callers: '' },
+  'app.heal_retract()': { owner: 'dog_heal', callers: '' },
+  'app.heal_invariants()': { owner: 'dog_heal', callers: '' },
+  'app.heal_corpus_add(text, uuid, uuid, uuid, text, timestamp with time zone)': { owner: 'dog_heal', callers: '' },
+  'app.heal_corpus_refresh()': { owner: 'dog_heal', callers: '' },
+  'app.heal_honest(text, uuid, uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_matches(text, text, timestamp with time zone)': { owner: 'dog_heal', callers: '' },
+  'app.heal_gate(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_fingerprint(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_sweep(uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_restore(uuid, uuid)': { owner: 'dog_heal', callers: '' },
+  'app.heal_rollback(uuid, text, text)': { owner: 'dog_heal', callers: '' },
+  'app.heal_uphold(uuid, text)': { owner: 'dog_heal', callers: '' },
+  'app.heal_canary()': { owner: 'dog_heal', callers: '' },
+  'app.heal_note_wall()': { owner: 'dog_heal', callers: '' },
+  'app.heal_tighten()': { owner: 'dog_heal', callers: '' },
+  'app.heal_appeals_run()': { owner: 'dog_heal', callers: '' },
+  'app.heal_queue()': { owner: 'dog_heal', callers: '' },
+  'app.heal_post_gate()': { owner: 'dog_heal', callers: '' },
+  'app.heal_post_sample()': { owner: 'dog_heal', callers: '' },
+  'app.heal_points_window()': { owner: 'dog_heal', callers: '' },
+  // 096: the wiki's half of the Wall's lookups, renamed; wall_intel_flags adds the healer's fingerprints to it.
+  'app.wall_intel_flags_wiki(text, text)': { owner: 'dog_owner', callers: '' },
   'app.work_task_scope_put(uuid, jsonb)': { owner: 'dog_work', callers: 'dog_app' },
   'app.work_task_scope_get(uuid)': { owner: 'dog_work', callers: 'dog_app' },
   'app.wall_log(integer)': { owner: 'dog_work', callers: 'dog_app' },
@@ -572,6 +622,8 @@ const AUDIT_POLICIES = {
   audit_insert_erase: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   audit_insert_delegate: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   audit_insert_jevs: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
+  // 096: the healer's sweep and restore of a post.
+  audit_insert_heal: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   audit_insert_owner: { cmd: 'a', using: '', check: "actor_kind=SELECTapp.actor_kind()ASactor_kindANDNOTactor_idISDISTINCTFROMSELECTapp.current_actor_id()AScurrent_actor_id" },
   // 030 (the CSO's review, S1): restrictive, so it only narrows the ones above. The site's roles can't record the two
   // actions the behaviour watch turns into alerts on its own (a new administrator, a JEVs setting changed).
@@ -657,7 +709,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where (n.nspname in ('app', 'public') or pg_get_userbyid(n.nspowner) = 'dog_owner')
       and c.relkind in ('r', 'p', 'v')
-      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_pay')`;
+      and coalesce(r.rolname, 'PUBLIC') not in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_timers', 'dog_log', 'dog_work', 'dog_pay', 'dog_heal')`;
   for (const g of grants) add(g.name + ' grants ' + g.privilege + ' to ' + g.grantee + '; only dog_owner, dog_app and the narrow roles may hold rights (S1)');
   // dog_signin's rights are pinned exactly by the reviewed snapshot; it holds none on the tables of later features.
 
@@ -690,7 +742,7 @@ async function problems(sql, { snapshot } = {}) {
     left join pg_roles r on r.oid = a.grantee
     where n.nspname = 'app' and coalesce(r.rolname, '') <> 'dog_owner'
       and not (coalesce(r.rolname, '') in ('dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_log', 'dog_work', 'dog_ghsync',
-                                         'dog_witness', 'dog_pay') and a.privilege_type = 'USAGE')`;
+                                         'dog_witness', 'dog_pay', 'dog_heal') and a.privilege_type = 'USAGE')`;
   for (const g of appSchema) add('schema app grants ' + g.privilege + ' to ' + g.grantee + '; the acting roles may only use it (S1)');
 
   // The audit log: read the table, write only the four content columns.

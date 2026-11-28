@@ -58,6 +58,9 @@
 //     POST audit/close {sample, status, note?}       an administrator: a random audit sample looked at, or a concern (077)
 //     POST wall/review {decision, verdict, reason}   an administrator: a Wall flag is a false positive or confirmed (076)
 //     POST wall/appeal {decision, reason}            the account a Wall block was about appeals it (089)
+//     POST heal/appeal {fingerprint, reason}         appeal a healer fingerprint that refused or returned your content (096)
+//     POST heal/decide {appeal, decision}            an administrator decides a healer appeal: upheld or kept (096)
+//     POST heal/control {action, fingerprint, reason} an administrator pauses or resumes the healer, releases or rolls back a fingerprint (096)
 //     POST wiki/rollback                             an administrator: the wiki's previous version becomes active again (074)
 //     GET  admin                                     the repository's tasks the rules couldn't decide, checks after a poster's pass, disputes
 //     POST decide {submission, verdict, size?, reason}   pass or fail work on the repository's own task, with a reason
@@ -245,6 +248,11 @@ const WRITES = {
   'wall/review': { keys: ['decision', 'verdict', 'reason'], fn: (t, b) => work.wallReview(t, b), adminOnly: true },
   // 089: the account a Wall block was about appeals it; the timer rechecks it, and a person decides what still blocks.
   'wall/appeal': { keys: ['decision', 'reason'], fn: (t, b) => work.wallAppeal(t, b) },
+  // 096: appeal a healer fingerprint that refused or returned your content; an administrator decides what isn't upheld.
+  'heal/appeal': { keys: ['fingerprint', 'reason'], fn: (t, b) => work.healAppeal(t, b), code: 201 },
+  'heal/decide': { keys: ['appeal', 'decision'], fn: (t, b) => work.healDecide(t, b), adminOnly: true },
+  // 096 review: the healer's controls, an administrator's: pause, resume, release a held fingerprint, roll one back.
+  'heal/control': { keys: ['action', 'fingerprint', 'reason'], fn: (t, b) => work.healControl(t, b), adminOnly: true },
   // 077: close one of the random auditor's samples.
   'audit/close': { keys: ['sample', 'status', 'note'], fn: (t, b) => work.auditClose(t, b), adminOnly: true },
   // Project plans (050): a milestone, by the project's poster (a repository project: an administrator); moving one keeps

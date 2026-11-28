@@ -183,7 +183,7 @@ test.before(async () => {
   await server.unsafe(`create database ${NAME} owner ${OWNER}`);
   // On a server where an earlier run already made the roles, the migration login is given the admin right over
   // them that it would have had as their creator. On a fresh server (CI) it creates them itself.
-  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_web', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_witness', 'dog_pay')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
+  for (const r of await server`select rolname from pg_roles where rolname in ('dog_owner', 'dog_app', 'dog_signin', 'dog_public', 'dog_limits', 'dog_erase', 'dog_delegate', 'dog_jevs', 'dog_web', 'dog_timers', 'dog_log', 'dog_work', 'dog_ghsync', 'dog_witness', 'dog_pay', 'dog_heal')`) await server.unsafe(`grant ${r.rolname} to ${OWNER} with admin true, inherit false, set false`);
   admin = postgres(at(SERVER, { db: NAME, user: OWNER, password: OWNER_PASSWORD }), { max: 2, ssl: false, onnotice: () => {} });
   su = postgres(at(SERVER, { db: NAME }), { max: 2, ssl: false, onnotice: () => {} });
   await migrate(admin);
@@ -278,7 +278,7 @@ test('S1: the coverage check fails the build for a table without forced row-leve
     ['create schema side; create table side.t (id bigserial, note text); grant all on side.t to dog_app', /dog_app can reach side\.t/],
     ['create schema side2; create table side2.t (n int); grant select on side2.t to dog_app', /dog_app can reach side2\.t/],
     ['grant create on schema public to dog_app', /dog_app can create objects in schema public/],
-    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_console, audit_insert_delegate, audit_insert_erase, audit_insert_jevs, audit_insert_not_watched, audit_insert_owner, audit_insert_signin, audit_jevs_select, audit_select, audit_select_console/],
+    ['set local role dog_owner; create policy audit_extra on app.audit_log for select to dog_app using (true)', /it must have exactly audit_insert, audit_insert_console, audit_insert_delegate, audit_insert_erase, audit_insert_heal, audit_insert_jevs, audit_insert_not_watched, audit_insert_owner, audit_insert_signin, audit_jevs_select, audit_select, audit_select_console/],
     ['set local role dog_owner; drop policy audit_select on app.audit_log; create policy audit_select on app.audit_log for select to dog_app using (true)', /audit_select differs/],
     // 030: the restrictive policy made permissive (which would only widen the audit log) is caught.
     ['set local role dog_owner; drop policy audit_insert_not_watched on app.audit_log; create policy audit_insert_not_watched on app.audit_log for insert to dog_app, dog_delegate, dog_erase, dog_signin with check (action <> all (array[\'admin.set\', \'jevs.setting\']))', /audit_insert_not_watched differs from the reviewed one/],

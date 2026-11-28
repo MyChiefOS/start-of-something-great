@@ -16,6 +16,8 @@
 //   vercel_env      Vercel's VERCEL_ENV as this function sees it (production, preview, or null when unset): anything
 //                   but production keeps the site closed (launch.js), so the check after the go-live merge reads it
 //   rules           the same for the hourly never-break checks (032): { last_run_s_ago }, "never", "closed" or "unreadable"
+//   healer          the healer's counts (096): incidents, fingerprints active, in shadow and held, rollbacks, active
+//                   tightenings and its last run; "closed", "never" or "unreadable" as the heartbeats are. Counts only
 //   timers          the heartbeat (R-9): { last_run_s_ago } since the timers last finished, "never", "closed" while
 //                   the site is closed (the timers don't run then), or "unreadable". A time, nothing else. The uptime
 //                   monitor raises its issue when the site is open and this passes 15 minutes
@@ -92,7 +94,23 @@ const readRulesAge = () => {
   return db.run({ actor: 'anon' }, (t) => require('../db/notify').rulesAge(t));
 };
 
-async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge, verify } = {}) {
+// The healer's counts (096), read the same way: counts only.
+const readHealer = () => {
+  const db = require('../db');
+  if (!db.configured()) throw new Error('no database');
+  return db.run({ actor: 'anon' }, async (t) => (await t`select app.heal_status() as s`)[0].s);
+};
+async function healer(env, read) {
+  if (launch.stage(env) !== 'public') return 'closed';
+  try {
+    const s = await read();
+    return s && s.last_run_s_ago == null && !s.incidents ? 'never' : s;
+  } catch {
+    return 'unreadable';
+  }
+}
+
+async function check(req, { env = process.env, connect, fetchImpl, timersAge = readAge, rulesAge = readRulesAge, healerRead = readHealer, verify } = {}) {
   // Noted before ensure(), which removes the token from the request (M3).
   const identityToken = Boolean(req.headers && req.headers['x-vercel-oidc-token']);
   const identityTokenVerified = identityToken && Boolean(await sitekeys.verifiedToken(req, verify ? { verify } : {}));
@@ -125,7 +143,8 @@ async function check(req, { env = process.env, connect, fetchImpl, timersAge = r
     vercel_env: env.VERCEL_ENV ? String(env.VERCEL_ENV).trim().toLowerCase().slice(0, 20) : null,
     launch_stage_set: Boolean(String(env.LAUNCH_STAGE || '').trim()),
     timers: await heartbeat(env, timersAge),
-    rules: await heartbeat(env, rulesAge)
+    rules: await heartbeat(env, rulesAge),
+    healer: await healer(env, healerRead)
   };
 }
 

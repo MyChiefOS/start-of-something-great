@@ -177,7 +177,7 @@ test('route B, /api/ready: says what is present and which step failed, never a v
   const out = await ready.check(req, { env, connect, fetchImpl });
   // A junk token reached the function, but it isn't one Vercel signed (RK134), so Second and Third Look couldn't run.
   assert.deepStrictEqual(out, { identity_token: true, identity_token_verified: false, broker: 'ok', keys: true, github_signin: true, github_setting_names: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
-    database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', stage_repo: 'public', vercel_env: null, launch_stage_set: true, timers: 'closed', rules: 'closed' }, 'stops at the first address that answers');
+    database: { 'aws-0-us-east-1': 'reached' }, code_signin_keys: 'same_as_gate', stage: 'closed', stage_repo: 'public', vercel_env: null, launch_stage_set: true, timers: 'closed', rules: 'closed', healer: 'closed' }, 'stops at the first address that answers');
   assert.ok(!JSON.stringify(out).includes('"x"'), 'names only, never a value');
   // L2: while closed, the check's answer stays inside the check: nothing is written where the site reads settings.
   assert.deepStrictEqual(Object.keys(env).sort(), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'LAUNCH_STAGE']);

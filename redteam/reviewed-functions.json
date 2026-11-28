@@ -319,5 +319,9 @@
   "wiki_held_sources": {
     "kind": "public read",
     "why": "093: the names of the threat feeds the active wiki version holds (already shown on /security); writes nothing."
+  },
+  "heal_status": {
+    "kind": "counts only",
+    "why": "Returns the healer's counts (incidents, fingerprints by state, tightenings, last run): no row, no text, no account. The same counts /api/ready shows."
   }
 }
