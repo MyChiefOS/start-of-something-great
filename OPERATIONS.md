@@ -196,3 +196,4 @@ Times are UTC.
 
 ## Edge function redeploys
 - 2026-11-26: dog-github version 2 (digest aba8a249…) from the #169 merge commit, authorized by that merge (standing practice). Adds workflow_run to its events for the pr-relay chain.
+- 2026-11-28 (04:09 UTC): dog-github version 4 (digest 6e94be75…) from the #172 merge commit (af40fbf), authorized by that merge (standing practice). Adds the `heal` and `heal_done` modes for heal-propose.yml. Verified: the live x-source-digest equals main's; the files were read back after the deploy. Proven at 04:10 UTC: heal-propose run 46106242957 (workflow_dispatch on main) got a valid answer with no fingerprints, so it proposed and marked nothing. Migration 096 applied by the Database migrations workflow at the merge (03:47 UTC): 14 heal_ tables, the dog_heal role, and /api/ready reports the healer running (last run under a minute ago, not paused, 0 incidents). Undo: redeploy version 3 from the #171 merge commit.
