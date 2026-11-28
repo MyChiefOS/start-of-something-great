@@ -453,15 +453,23 @@ language sql stable security definer set search_path = pg_catalog as $$
   union select y.member_id from app.heal_incidents y, i where y.rule_area = i.rule_area and y.created_at > now() - interval '7 days' and y.member_id is not null
 $$;
 -- An account whose hit or appeal can count: unrelated to the attack and at least 7 days old.
+-- Whether this account's settled content, older than the incident's own content, was swept by this fingerprint.
+create function app.heal_settled_earlier(p_fp uuid, p_member uuid) returns boolean
+language sql stable security definer set search_path = pg_catalog as $$
+  select exists (select 1 from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
+                  join app.heal_fingerprints f on f.id = s.fingerprint_id
+                  left join app.heal_incidents i on i.id = f.incident_id
+                 where s.fingerprint_id = p_fp and s.member_id = p_member and s.prior_status in ('live', 'passed')
+                   and c.created_at < least(f.created_at, coalesce((select y.created_at from app.heal_corpus y where y.ref = i.ref limit 1), f.created_at)))
+$$;
 create function app.heal_counts(p_fp uuid, p_member uuid) returns boolean
 language sql stable security definer set search_path = pg_catalog as $$
-  -- Second review, finding 2: only an account whose own content, written before the fingerprint, was swept by it; and
-  -- unrelated to the attack and at least 7 days old. A refusal alone never counts (anyone can post the attack after).
+  -- Second and third reviews: only an account whose own settled content (live or passed when it was swept), written
+  -- before the incident's own content, was swept by this fingerprint; unrelated to the attack and at least 7 days old.
+  -- A refusal alone, or work parked waiting, never counts.
   select p_member is not null and exists (select 1 from app.members m where m.id = p_member and m.created_at < now() - interval '7 days')
      and p_member not in (select r from app.heal_related(p_fp) r where r is not null)
-     and exists (select 1 from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
-                  join app.heal_fingerprints f on f.id = s.fingerprint_id
-                  where s.fingerprint_id = p_fp and s.member_id = p_member and c.created_at < f.created_at)
+     and app.heal_settled_earlier(p_fp, p_member)
 $$;
 create function app.heal_member_tightened(p_member uuid) returns boolean
 language sql stable security definer set search_path = pg_catalog as $$
@@ -695,7 +703,7 @@ language sql stable security definer set search_path = pg_catalog as $$
     when 'post' then exists (select 1 from app.posts p where p.id = p_ref and p.status = 'live')
          and not exists (select 1 from app.review_flags f where f.post_id = p_ref and (f.resolved_at is null or f.decision = 'remove'))
     when 'submission' then exists (select 1 from app.work_submissions s where s.id = p_ref and s.status = 'passed')
-         and not exists (select 1 from app.work_disputes d where d.submission_id = p_ref and d.status = 'upheld')
+         and not exists (select 1 from app.work_disputes d where d.submission_id = p_ref and d.status in ('open', 'upheld'))  -- under dispute isn't settled
     when 'task' then exists (select 1 from app.work_tasks t where t.id = p_ref and t.status <> 'removed')
     else false end
 $$;
@@ -774,7 +782,7 @@ end $$;
 -- is re-armed through the gate.
 -- The current incident's deadline (set by heal_queue): past it, the incident stops with an error the queue counts.
 create function app.heal_deadline() returns void
-language plpgsql stable security definer set search_path = pg_catalog as $$
+language plpgsql volatile security definer set search_path = pg_catalog as $$
 declare d text := current_setting('heal.deadline', true);
 begin
   if coalesce(d, '') <> '' and clock_timestamp() > d::timestamptz then
@@ -958,8 +966,9 @@ begin
     select count(distinct s.member_id) into tr from app.heal_sweeps s
      where s.fingerprint_id = f.id and f.activated_at > now() - interval '24 hours' and app.heal_trusted(s.member_id) and app.heal_counts(f.id, s.member_id)
        and exists (select 1 from app.heal_appeals a where a.fingerprint_id = f.id and a.member_id = s.member_id);
+    -- Third review: an appeal Second Look upheld restores that one item and carries no rollback weight.
     select count(distinct a.member_id) into up from app.heal_appeals a where a.fingerprint_id = f.id and a.status = 'upheld'
-       and a.decided_by in ('second_look', 'reviewer') and app.heal_counts(f.id, a.member_id);
+       and a.decided_by in ('reviewer', 'trusted') and app.heal_counts(f.id, a.member_id);
     if tr >= 3 then
       perform app.heal_rollback(f.id, tr || ' unrelated trusted accounts whose earlier content it swept appealed in its first 24 hours.');
       continue;
@@ -973,7 +982,7 @@ begin
     select count(distinct rf.member_id) into hits from app.heal_refusals rf
      where rf.fingerprint_id = f.id and rf.created_at > now() - interval '1 hour' and app.heal_counts(f.id, rf.member_id);
     select count(distinct a.member_id) into apps from app.heal_appeals a
-     where a.fingerprint_id = f.id and a.created_at > now() - interval '1 hour' and app.heal_counts(f.id, a.member_id);
+     where a.fingerprint_id = f.id and a.created_at > now() - interval '1 hour' and coalesce(a.decided_by, '') <> 'second_look' and app.heal_counts(f.id, a.member_id);
     if hits >= greatest(5, ceil(3 * base)) then
       perform app.heal_rollback(f.id, 'Refusals spiked: ' || hits || ' accounts whose earlier content it swept, in the last hour, against a baseline of ' || round(base, 2) || ' an hour.');
     elsif apps >= greatest(3, ceil(3 * base)) then
@@ -1053,9 +1062,9 @@ begin
   for a in select * from app.heal_appeals x where x.status = 'open' for update loop
     select * into f from app.heal_fingerprints x where x.id = a.fingerprint_id;
     -- Second review, finding 3: only an appeal about the appellant's own content written before the fingerprint can be
-    -- upheld without a person. One about a refusal alone (the attack sent after) goes to an administrator.
-    earlier := exists (select 1 from app.heal_sweeps s join app.heal_corpus c on c.kind = s.kind and c.ref = s.ref
-                        where s.fingerprint_id = a.fingerprint_id and s.member_id = a.member_id and c.created_at < f.created_at);
+    -- upheld without a person, and only settled content (live or passed) older than the incident's. One about a refusal
+    -- alone, or about work parked waiting, goes to an administrator.
+    earlier := app.heal_settled_earlier(a.fingerprint_id, a.member_id);
     if not earlier then
       update app.heal_appeals x set status = 'review' where x.id = a.id;
       perform app.notify(null, 'alert', 'A healer appeal waits for a person', 'An appeal against ' || f.code || ' about a refusal only (nothing written before it was swept). Decide it: POST /api/work/heal/decide.',
@@ -1095,7 +1104,8 @@ begin
   for i in select x.id, x.attempts from app.heal_incidents x
             where x.processed = 'new' and (x.tried_at is null or x.tried_at < now() - make_interval(mins => (1 << least(x.attempts, 6))))
             order by x.created_at limit 20 loop
-    exit when clock_timestamp() - now() > interval '45 seconds';
+    -- Room for the rest of the tick: no incident starts once 45 seconds less one incident's budget have passed.
+    exit when clock_timestamp() - now() > interval '45 seconds' - make_interval(secs => budget / 1000.0);
     why := null;
     begin
       -- Second review, finding 1: each incident has its own deadline, which the gate and the fingerprinting check
@@ -1333,7 +1343,7 @@ do $heal_fns$
 declare f text;
 begin
   foreach f in array array['app.heal_log_add(text, uuid, jsonb)', 'app.heal_trusted(uuid)', 'app.heal_scope_members(text, text)', 'app.heal_related(uuid)',
-    'app.heal_counts(uuid, uuid)', 'app.heal_member_tightened(uuid)', 'app.heal_member_cap(uuid, integer)', 'app.heal_flags(text)', 'app.heal_spans(text, boolean)',
+    'app.heal_counts(uuid, uuid)', 'app.heal_settled_earlier(uuid, uuid)', 'app.heal_member_tightened(uuid)', 'app.heal_member_cap(uuid, integer)', 'app.heal_flags(text)', 'app.heal_spans(text, boolean)',
     'app.heal_incident(text, text, text, uuid, uuid, uuid, text, jsonb, text)', 'app.heal_decision_text(text, uuid)', 'app.heal_intake()', 'app.heal_retract()',
     'app.heal_invariants()', 'app.heal_corpus_add(text, uuid, uuid, uuid, text, timestamp with time zone)', 'app.heal_corpus_refresh()',
     'app.heal_honest(text, uuid, uuid)', 'app.heal_matches(text, text, timestamp with time zone)', 'app.heal_gate(uuid)', 'app.heal_fingerprint(uuid)',

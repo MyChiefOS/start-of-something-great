@@ -60,7 +60,15 @@ jobs:
           gh pr create --draft --base main --head "$branch" --label heal --title "Healer: regression tests and draft rules" --body-file "$RUNNER_TEMP/body.md"
           # A pull request opened with this workflow's token starts no workflow by itself; a manual run of the gate does.
           gh workflow run heal-gate.yml --ref "$branch"
-          # Only now are these fingerprints marked proposed, so a failed run proposes them again next time.
+      - name: Mark them proposed
+        # After the pull request opened, or when nothing new came of them (already proposed); a failed run marks
+        # nothing, so the next run proposes them again. A failed mark warns and fails this step, so GitHub alerts.
+        if: steps.ask.outputs.n != '0'
+        run: |
           t=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$FN_URL" | jq -r .value) || t=''
           jq -c '{mode: "heal_done", codes: [.[] | .code | select(type == "string" and test("^HF-[0-9a-f]{8}$"))]}' "$RUNNER_TEMP/incidents.json" > done.json
-          curl -sS --max-time 60 -o /dev/null -w 'dog-github marked: %{http_code}\n' -X POST "$FN_URL" -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data @done.json || true
+          code=$(curl -sS --max-time 60 -o marked.json -w '%{http_code}' -X POST "$FN_URL" -H "Authorization: Bearer $t" -H 'Content-Type: application/json' --data @done.json) || code=none
+          if [ "$code" != 200 ]; then
+            echo "::warning::dog-github answered $code when marking the proposed fingerprints; the next run will propose them again"
+            exit 1
+          fi
